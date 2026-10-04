@@ -429,3 +429,49 @@ credentials — `no_platform_credentials_configured`; credentials
 есть, но сама интеграция ещё не написана — `not_implemented`), а не
 тихо ничего не делать или использовать моковые данные. Реальный опрос
 API и периодический cron — PHASE 18/29, когда появятся credentials.
+
+## ADR-0027 — Forms: доменные reference-поля валидируются по готовности домена
+
+**Context.** `FormFieldType` содержит 33 значения, среди которых 8 —
+ссылки/селекторы на домены, часть которых ещё не реализована:
+`PLAYER_SELECTOR`/`SERVER_SELECTOR`/`RANK_SELECTOR` (PHASE 18, Minecraft-
+серверы), `PRODUCT_SELECTOR`/`ORDER_SELECTOR` (PHASE 17, магазин),
+`REPORT_REFERENCE`/`PUNISHMENT_REFERENCE` (PHASE 16, жалобы/наказания),
+`ACHIEVEMENT_SELECTOR` (PHASE 19, геймификация). `NEWS_REFERENCE`,
+`TOPIC_REFERENCE` и `FRIENDS_SELECTOR` ссылаются на уже реализованные
+домены (News — PHASE 13, Topics — PHASE 14, Friends — ранняя фаза).
+
+**Decision.** `FormsService.buildAnswerData()` проверяет существование и
+актуальность только для доменов, которые уже есть: `NEWS_REFERENCE`
+требует `News.status === PUBLISHED`, `TOPIC_REFERENCE` — `Topic.isActive
+=== true`, `FRIENDS_SELECTOR` — `FriendsService.isFriend(viewerId,
+value)` (пропускается для анонимного `viewerId`, т.к. анонимный ответ не
+может иметь список друзей). Остальные 8 селекторов принимаются без
+referential-проверки — значение сохраняется как есть (`textValue`), а
+комментарий в коде перечисляет все 8 типов и фазу, которая добавит
+валидацию. Это не заглушка и не моковые данные — поле реально хранится
+и возвращается, просто без проверки, что ID существует в ещё не
+созданной таблице. Решение централизовано в одном месте
+(`buildAnswerData`), чтобы при реализации PHASE 16-19 было видно, что
+именно нужно дополнить.
+
+## ADR-0028 — Forms: FormFieldAnswer как Unchecked create/upsert, без `field`/`response` relation input
+
+**Context.** `FormFieldAnswer` хранит значение одного поля одного ответа
+и ссылается на `FormField`/`FormResponse` через `fieldId`/`responseId`.
+Prisma для вложенного `create` (`FormResponse.create({data: {answers:
+{create: [...]}}})`) и для top-level `upsert` (используется в
+`saveDraft` для апдейта черновика без создания дублей — см. unique-
+индекс `@@unique([responseId, fieldId])`) предлагает на выбор checked-
+вариант типа (с вложенным `field: {connect: {id}}`/`response: {connect:
+{id}}`) и unchecked-вариант (плоский `fieldId`/`responseId`).
+
+**Decision.** Везде используется unchecked-форма: `fieldId`/`responseId`
+передаются как обычные скалярные поля, а не через вложенный `connect`.
+Причина чисто техническая — `buildAnswerData()` возвращает значение поля
+без знания, создаётся ли ответ (`submitResponse`, formId уже есть в
+транзакции) или апдейтится черновик (`saveDraft`, нужен только
+`fieldId`), и собственный тип `FieldAnswerValues` (вместо генерируемого
+Prisma-типа `FormFieldAnswerCreateWithoutResponseInput`, который требует
+вложенный `field`) позволяет переиспользовать один и тот же метод для
+обоих путей без дублирования веток checked/unchecked.

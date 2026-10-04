@@ -2853,6 +2853,9 @@ model FormFieldAnswer {
   response FormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
   field    FormField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
 
+  /// Один ответ на поле в рамках одного FormResponse — нужно для upsert
+  /// при сохранении черновика (saveDraft), PHASE 15.
+  @@unique([responseId, fieldId])
   @@index([responseId])
   @@index([fieldId])
   @@map("form_field_answers")
