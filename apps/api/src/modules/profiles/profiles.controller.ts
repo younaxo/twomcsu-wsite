@@ -17,6 +17,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -100,5 +101,20 @@ export class ProfilesController {
     @Body() dto: SelectDecorationDto,
   ) {
     return this.profiles.selectDecoration(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/media-request')
+  async createMediaRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateMediaRequestDto,
+  ) {
+    return this.profiles.createMediaRequest(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/media-requests')
+  async listMediaRequests(@CurrentUser() user: AuthenticatedUser) {
+    return this.profiles.listMyMediaRequests(user.id);
   }
 }

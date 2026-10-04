@@ -437,4 +437,40 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'servers.edit', module: 'servers', description: 'Редактирование сервера' },
   { key: 'servers.delete', module: 'servers', description: 'Удаление сервера' },
   { key: 'servers.logs', module: 'servers', description: 'Просмотр истории статуса сервера' },
+
+  { key: 'achievements.view', module: 'achievements', description: 'Просмотр списка достижений в админке' },
+  { key: 'achievements.create', module: 'achievements', description: 'Создание достижения' },
+  { key: 'achievements.edit', module: 'achievements', description: 'Редактирование достижения' },
+  { key: 'achievements.delete', module: 'achievements', description: 'Удаление достижения' },
+  {
+    key: 'achievements.check_all_users.create',
+    module: 'achievements',
+    description: 'Запуск пересчёта прогресса достижений для всех пользователей',
+  },
+  { key: 'awards.view', module: 'awards', description: 'Просмотр списка наград в админке' },
+  { key: 'awards.create', module: 'awards', description: 'Создание награды' },
+  { key: 'awards.edit', module: 'awards', description: 'Редактирование награды' },
+  { key: 'awards.delete', module: 'awards', description: 'Удаление награды' },
+  {
+    key: 'media_requests.view',
+    module: 'media_requests',
+    description: 'Просмотр заявок на бейдж создателя контента',
+  },
+  {
+    key: 'media_requests.edit',
+    module: 'media_requests',
+    description: 'Рассмотрение заявки на бейдж создателя контента',
+  },
+  {
+    key: 'users.achievements',
+    module: 'users',
+    description: 'Отзыв вручную выданного достижения пользователя',
+  },
+  {
+    key: 'users.achievements.grant',
+    module: 'users',
+    description: 'Ручная выдача достижения пользователю',
+  },
+  { key: 'users.awards', module: 'users', description: 'Выдача/отзыв награды пользователю' },
+  { key: 'users.badges', module: 'users', description: 'Выдача/отзыв бейджа пользователю' },
 ];
