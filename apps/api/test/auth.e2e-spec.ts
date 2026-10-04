@@ -18,6 +18,11 @@ async function flushBruteForceKeys(redis: RedisService): Promise<void> {
   }
 }
 
+// Компиляция AppModule под полным e2e-сьютом (8 файлов параллельно, общие
+// Postgres+Redis) может подойти ближе к дефолтному таймауту хука Jest
+// (5000 мс), чем при изолированном запуске — см. RISKS.md.
+jest.setTimeout(20_000);
+
 describe('Auth (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;

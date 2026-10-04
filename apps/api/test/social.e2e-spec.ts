@@ -6,6 +6,12 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 
+// Компиляция AppModule + 3 реальных register/login (bcrypt) в beforeAll
+// укладываются в дефолтные 5000 мс Jest по отдельности, но под полным
+// e2e-сьютом (8 файлов параллельно, общие Postgres+Redis) конкуренция за
+// ресурсы может вытолкнуть хук за дефолтный таймаут — см. RISKS.md.
+jest.setTimeout(20_000);
+
 describe('Social system (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -62,9 +68,11 @@ describe('Social system (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({
-      where: { email: { in: [alice.email, bob.email, carol.email] } },
-    });
+    if (alice && bob && carol) {
+      await prisma.user.deleteMany({
+        where: { email: { in: [alice.email, bob.email, carol.email] } },
+      });
+    }
     await app.close();
   });
 
