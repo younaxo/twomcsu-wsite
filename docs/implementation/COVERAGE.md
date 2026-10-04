@@ -11,7 +11,7 @@
 |---|---|---|
 | achievements | PARTIAL | PHASE 19 — CRUD, публичный список с прогрессом/секретностью, пакетный пересчёт (check-all-users) по 17/19 ConditionType из реальных данных, ручная выдача/отзыв, витрина готовы, покрыты e2e; DAYS_STREAK/PROFILE_VIEWS — нет персистентного счётчика (ADR-0044); rewardRubies не зачисляется — нет кошелька (ADR-0045); upload-icon — PHASE 23 |
 | activity | PARTIAL | PHASE 09 — лента (глобальная+персональная с учётом видимости), реакции, комментарии, настройки готовы и покрыты e2e; создание записей для событий других модулей (покупки, достижения и т.п.) — по мере появления этих модулей |
-| admin | MISSING | PHASE 20/21 |
+| admin | PARTIAL | PHASE 20 — dashboard, audit log (read/stats), broadcast, KV- и структурированные настройки сайта, saved-filters/bookmarks/scheduled-exports (персональные), security (sessions/suspicious/logins/ip-whitelist), content/finance-дашборды, users/bulk (ban/unban с priority-проверкой), CSV-экспорт (users/orders/reports/news/audit-log) готовы, покрыты e2e; ретроактивное audit-логирование всех остальных доменов — PHASE 22; фактическое выполнение scheduled-exports по расписанию — PHASE 29; frontend-панель — PHASE 21 |
 | auth | PARTIAL | PHASE 05 — register/login/refresh/sessions/change-reset-password готовы и покрыты e2e-тестами; email verification (`User.isVerified`) не реализована (как и в старом проекте — не было явного требования) |
 | awards | IMPLEMENTED | PHASE 19 — публичный список, admin CRUD, выдача/отзыв пользователю, покрыто e2e |
 | cache | MISSING | PHASE 24 |
@@ -24,7 +24,7 @@
 | direct-messages | IMPLEMENTED | PHASE 10 — личные/групповые беседы, WebSocket-гейтвей, покрыто e2e |
 | emojis | MISSING | кастомные emoji не описаны требованиями этой фазы; свободные emoji-реакции уже работают в comments/activity/direct-messages (PHASE 09/10) |
 | events | PARTIAL | PHASE 14 — публичный CRUD/attendance/видимость и admin CRUD+publish/cancel готовы, покрыты e2e; EVENT_REMINDER (cron) — PHASE 29 |
-| export | MISSING | PHASE 20 |
+| export | IMPLEMENTED | PHASE 20 — CSV-экспорт users/orders/reports/news/audit-log (+ finance/export — тот же `exportService.exportOrders`), покрыто e2e |
 | forms | PARTIAL | PHASE 15 — конструктор форм (33 типа полей), публичный CRUD/видимость/invite-only/черновики и admin CRUD+publish/close/duplicate+responses+stats+invites готовы, покрыты e2e; загрузка файлов для FILE_UPLOAD/IMAGE_GALLERY — PHASE 23 (RISKS.md R3); шаблоны форм (`FormTemplate`) и экспорт ответов — вне scope схемы БД этой фазы; referential-валидация PLAYER/SERVER/RANK/PRODUCT/ORDER/REPORT/PUNISHMENT/ACHIEVEMENT-селекторов — по мере соответствующих фаз (PHASE 16/17/18/19, ADR-0027) |
 | friends | IMPLEMENTED | PHASE 09 — заявки/приём/отклонение/отмена/блокировка, все friendRequestPolicy, покрыты e2e |
 | health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
@@ -38,7 +38,7 @@
 | redis | PARTIAL | `RedisService` используется для brute-force (PHASE 05), RBAC permission-кеша (PHASE 06), chat presence (PHASE 11); централизованные cache keys/инвалидация — PHASE 24 |
 | reports | PARTIAL | PHASE 16 — тикет-система обращений (создание/переписка/assign/status/verdict/заметки/lock/архив/report-ban), история наказаний (`UserPunishment`), donation-problem готовы, покрыты e2e; game-report/game-punishment (внешняя анти-чит интеграция), экспорт и upload вложений — вне scope (ADR-0033, RISKS.md R3) |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
-| statistics | MISSING | PHASE 20 (уточнение: авторитетный ROADMAP.md относит общий admin-дашборд к PHASE 20, не PHASE 19 — см. PHASE-19 doc) |
+| statistics | PARTIAL | PHASE 20 — общий `/admin/dashboard` и `/admin/content/dashboard` готовы, покрыты e2e; `/admin/finance/overview` делегирует в `StoreStatsService` (PHASE 17) |
 | store | PARTIAL | PHASE 17 — каталог (категории/товары+варианты/наборы), скидки (bulk/loyalty)/промокоды/валюты, корзина с подарками и единым пересчётом сервером, заказы через PaymentProvider+вебхук (TestPaymentProvider), quick-buy, wishlist, admin-статистика готовы, покрыты e2e; `mock-complete` не перенесён (ADR-0009, PHASE 00); реальный платёжный провайдер — RISKS.md R2; доставка на игровой сервер (RCON) не предусмотрена схемой `Server` (ADR-0041); загрузка изображений — PHASE 23 |
 | streaming | PARTIAL | PHASE 14 — публичный список и admin CRUD готовы, покрыты e2e; реальный опрос Twitch/YouTube — PHASE 18/29 (RISKS.md R6) |
 | system | MISSING | PHASE 25 |
