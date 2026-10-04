@@ -50,4 +50,10 @@ export const envValidationSchema = Joi.object({
   VAPID_PUBLIC_KEY: Joi.string().allow('').default(''),
   VAPID_PRIVATE_KEY: Joi.string().allow('').default(''),
   VAPID_SUBJECT: Joi.string().default('mailto:admin@twomc.su'),
+
+  /// Без credentials реальный опрос Twitch/YouTube не выполняется (CRUD
+  /// каналов и закэшированный в БД статус работают) — см. RISKS.md R6.
+  TWITCH_CLIENT_ID: Joi.string().allow('').default(''),
+  TWITCH_CLIENT_SECRET: Joi.string().allow('').default(''),
+  YOUTUBE_API_KEY: Joi.string().allow('').default(''),
 }).unknown(true);
