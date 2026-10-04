@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 10 — Direct Messages (готово, PR на проверке)
-Current branch: feature/direct-messages
+Current phase: PHASE 11 — Chat
+Current branch: feature/chat
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -32,7 +32,7 @@ Completed:
   включая реальные Socket.IO-соединения)
 
 In progress:
-none (PHASE 10 завершена и ждёт merge PR; следующая — PHASE 11, Chat)
+- PHASE 11 — Chat
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -56,7 +56,8 @@ PHASE 04/05).
 | PHASE 07 — Users | `feature/users` | `4bee251` | completed |
 | PHASE 08 — Profiles | `feature/profiles` | merged (PR #18) | completed |
 | PHASE 09 — Social system | `feature/social-system` | merged (PR #19, `a63af67`) | completed |
-| PHASE 10 — Direct Messages | `feature/direct-messages` | *(PR на проверке)* | in progress |
+| PHASE 10 — Direct Messages | `feature/direct-messages` | merged (PR #20, `2c9ddba`) | completed |
+| PHASE 11 — Chat | `feature/chat` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
