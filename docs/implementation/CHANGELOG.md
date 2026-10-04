@@ -113,3 +113,12 @@
   активности (новые типы `ACTIVITY_COMMENT`/`ACTIVITY_COMMENT_MENTION`),
   личные сообщения и упоминания в чате теперь создают уведомления через
   единую точку `NotificationsService.create()`.
+
+### News
+- Публичный `/news/*` (список/featured/latest/popular/categories/tags/RSS/
+  деталь по slug с подсчётом просмотров/like/комментарии с toggle-реакциями)
+  и `/admin/news/*` (CRUD с тегами, архивация вместо hard delete, pin/
+  feature, статистика) под permissions; `/moderation/news/comments/*`
+  (pin/delete чужого комментария).
+- Лайк и ответ/упоминание в комментарии создают `NEWS_LIKED`/
+  `NEWS_COMMENT_REPLY`/`NEWS_COMMENT_MENTION` через `NotificationsService`.

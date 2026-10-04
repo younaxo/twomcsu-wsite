@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 12 — Notifications
-Current branch: feature/notifications
+Current phase: PHASE 13 — News
+Current branch: feature/news
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -34,9 +34,12 @@ Completed:
   публичным/приватным payload, WebSocket-гейтвей — 12 e2e-тестов)
 - PHASE 12 — Notifications (REST/WS/email/push/discord-вебхуки + реальная
   интеграция в friends/comments/activity/direct-messages/chat — 10 e2e-тестов)
+- PHASE 13 — News (публичный CRUD/лайки/комментарии/RSS, admin CRUD+
+  модерация, интеграция с уведомлениями — 11 e2e-тестов)
 
 In progress:
-none (PHASE 12 завершена и ждёт merge PR; следующая — PHASE 13, News)
+none (PHASE 13 завершена и ждёт merge PR; следующая — PHASE 14, Events/
+Topics/Voting/Streaming)
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -62,7 +65,8 @@ PHASE 04/05).
 | PHASE 09 — Social system | `feature/social-system` | merged (PR #19, `a63af67`) | completed |
 | PHASE 10 — Direct Messages | `feature/direct-messages` | merged (PR #20, `2c9ddba`) | completed |
 | PHASE 11 — Chat | `feature/chat` | merged (PR #21, `5b25b80`) | completed |
-| PHASE 12 — Notifications | `feature/notifications` | *(PR на проверке)* | in progress |
+| PHASE 12 — Notifications | `feature/notifications` | merged (PR #22, `b49866d`) | completed |
+| PHASE 13 — News | `feature/news` | *(PR на проверке)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -75,9 +79,9 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 10 suite / 67 тестов — auth + RBAC + users-domain +
-profiles + social + direct-messages + chat + notifications, против реального
-Postgres+Redis, полный параллельный прогон всего сьюта)
+tests: pass (unit 1/1, e2e 11 suite / 78 тестов — auth + RBAC + users-domain +
+profiles + social + direct-messages + chat + notifications + news, против
+реального Postgres+Redis, полный параллельный прогон всего сьюта)
 build: pass
 
 Last updated: 2026-10-04

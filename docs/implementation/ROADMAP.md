@@ -27,7 +27,7 @@
 - [x] PHASE 10 — Direct Messages (беседы, WebSocket, непрочитанные)
 - [x] PHASE 11 — Chat (каналы, модерация, WebSocket; anti-spam/rate-limit — PHASE 26)
 - [x] PHASE 12 — Notifications (website/WS/email/push; периодический digest — PHASE 29)
-- [ ] PHASE 13 — News (черновики, публикация, комментарии, медиа)
+- [x] PHASE 13 — News (черновики, публикация, комментарии; медиа-загрузка — PHASE 23)
 - [ ] PHASE 14 — Events / Topics / Voting / Streaming
 - [ ] PHASE 15 — Forms engine (конструктор форм, submissions, экспорт)
 - [ ] PHASE 16 — Reports / Moderation (жалобы, наказания, audit)

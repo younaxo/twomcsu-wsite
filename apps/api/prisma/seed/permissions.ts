@@ -121,4 +121,21 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'notifications',
     description: 'Просмотр агрегированной статистики уведомлений',
   },
+
+  { key: 'news.view', module: 'news', description: 'Просмотр черновиков/архива и статистики новостей' },
+  { key: 'news.create', module: 'news', description: 'Создание новости' },
+  { key: 'news.edit', module: 'news', description: 'Редактирование новости' },
+  { key: 'news.delete', module: 'news', description: 'Архивация новости' },
+  { key: 'news.pin', module: 'news', description: 'Закрепление/открепление новости' },
+  { key: 'news.feature', module: 'news', description: 'Вынесение новости в рекомендуемые' },
+  {
+    key: 'news.comments.pin',
+    module: 'news',
+    description: 'Закрепление/открепление комментария к новости',
+  },
+  {
+    key: 'news.comments.delete',
+    module: 'news',
+    description: 'Удаление чужого комментария к новости (модерация)',
+  },
 ];
