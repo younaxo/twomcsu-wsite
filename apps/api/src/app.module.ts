@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { envValidationSchema } from './config/env.validation';
 import { AchievementsModule } from './modules/achievements/achievements.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
 import { CommentsModule } from './modules/comments/comments.module';
@@ -74,6 +75,7 @@ import { VotingModule } from './modules/voting/voting.module';
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [
