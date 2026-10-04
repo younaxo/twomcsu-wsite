@@ -98,3 +98,18 @@
   `pin_message`, `mute_user`/`ban_user` — публично без причины, причина и
   детали уходят только в личную комнату цели (в отличие от старого проекта,
   S12). Чат-бан проверяется при подключении и блокирует весь namespace.
+
+### Notifications
+- `/notifications/*` (список/unread-count/read/read-all/remove, settings,
+  push subscribe/unsubscribe, личный Discord-вебхук, digest test) и
+  `/admin/notifications/*` (CRUD системных Discord-вебхуков, broadcast,
+  stats) под permissions.
+- `NotificationsGateway` (Socket.IO, namespace `/notifications`, только
+  server→client): `notification:new` в реальном времени.
+- Email (PHASE 05) и push (`web-push`, молча выключается без VAPID-ключей)
+  каналы доставки с учётом `quietHours`/`digestMode`; личный и системные
+  Discord-вебхуки с allowlist домена против SSRF.
+- Реальная межмодульная интеграция: друзья, комментарии профиля, комментарии
+  активности (новые типы `ACTIVITY_COMMENT`/`ACTIVITY_COMMENT_MENTION`),
+  личные сообщения и упоминания в чате теперь создают уведомления через
+  единую точку `NotificationsService.create()`.

@@ -3,9 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { User } from '@prisma/client';
+import { ProfileComment, User } from '@prisma/client';
 import { escapeToHtml, extractMentions } from '../../common/html.util';
 import { FriendsService } from '../friends/friends.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReactCommentDto } from './dto/react-comment.dto';
@@ -17,6 +18,7 @@ export class CommentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async getProfileOwner(username: string): Promise<User> {
@@ -75,8 +77,9 @@ export class CommentsService {
       );
     }
 
+    let parent: ProfileComment | null = null;
     if (dto.parentId) {
-      const parent = await this.prisma.profileComment.findUnique({
+      parent = await this.prisma.profileComment.findUnique({
         where: { id: dto.parentId },
       });
       if (!parent || parent.profileId !== owner.id || parent.isDeleted) {
@@ -84,17 +87,84 @@ export class CommentsService {
       }
     }
 
-    return this.prisma.profileComment.create({
+    const mentions = extractMentions(dto.content);
+    const created = await this.prisma.profileComment.create({
       data: {
         profileId: owner.id,
         authorId,
         content: dto.content,
         contentHtml: escapeToHtml(dto.content),
         parentId: dto.parentId,
-        mentions: extractMentions(dto.content),
+        mentions,
       },
       include: { author: true },
     });
+
+    await this.notifyParticipants(created, owner, parent, mentions);
+
+    return created;
+  }
+
+  private async notifyParticipants(
+    comment: { id: string; authorId: string; profileId: string },
+    owner: User,
+    parent: ProfileComment | null,
+    mentions: string[],
+  ): Promise<void> {
+    const author = await this.prisma.user.findUnique({
+      where: { id: comment.authorId },
+    });
+    if (!author) {
+      return;
+    }
+    const link = `/users/${owner.username}#comment-${comment.id}`;
+
+    if (owner.id !== comment.authorId && owner.notifyOnComment) {
+      await this.notifications.create({
+        userId: owner.id,
+        type: 'COMMENT_ON_PROFILE',
+        title: `${author.username} оставил(а) комментарий на вашем профиле`,
+        link,
+        fromUserId: author.id,
+      });
+    }
+
+    if (
+      parent?.authorId &&
+      parent.authorId !== comment.authorId &&
+      parent.authorId !== owner.id
+    ) {
+      const parentAuthor = await this.prisma.user.findUnique({
+        where: { id: parent.authorId },
+      });
+      if (parentAuthor?.notifyOnReply) {
+        await this.notifications.create({
+          userId: parentAuthor.id,
+          type: 'COMMENT_REPLY',
+          title: `${author.username} ответил(а) на ваш комментарий`,
+          link,
+          fromUserId: author.id,
+        });
+      }
+    }
+
+    for (const username of mentions) {
+      if (username.toLowerCase() === author.username.toLowerCase()) {
+        continue;
+      }
+      const mentioned = await this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: 'insensitive' } },
+      });
+      if (mentioned && mentioned.notifyOnMention) {
+        await this.notifications.create({
+          userId: mentioned.id,
+          type: 'COMMENT_MENTION',
+          title: `${author.username} упомянул(а) вас в комментарии`,
+          link,
+          fromUserId: author.id,
+        });
+      }
+    }
   }
 
   async update(authorId: string, commentId: string, dto: UpdateCommentDto) {

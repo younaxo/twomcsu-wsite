@@ -5,11 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FriendshipStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   private async findBetween(userAId: string, userBId: string) {
     return this.prisma.friendship.findFirst({
@@ -99,13 +103,30 @@ export class FriendsService {
       }
     }
 
-    return this.prisma.friendship.create({
+    const created = await this.prisma.friendship.create({
       data: {
         requesterId,
         addresseeId: target.id,
         status: FriendshipStatus.PENDING,
       },
     });
+
+    if (target.notifyOnFriendRequest) {
+      const requester = await this.prisma.user.findUnique({
+        where: { id: requesterId },
+      });
+      if (requester) {
+        await this.notifications.create({
+          userId: target.id,
+          type: 'FRIEND_REQUEST',
+          title: `${requester.username} хочет добавить вас в друзья`,
+          link: `/users/${requester.username}`,
+          fromUserId: requester.id,
+        });
+      }
+    }
+
+    return created;
   }
 
   async acceptRequest(userId: string, friendshipId: string) {
@@ -133,6 +154,24 @@ export class FriendsService {
         metadata: { friendId: friendship.addresseeId },
       },
     });
+
+    const requesterSettings = await this.prisma.user.findUnique({
+      where: { id: friendship.requesterId },
+    });
+    if (requesterSettings?.notifyOnFriendRequest) {
+      const addressee = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+      if (addressee) {
+        await this.notifications.create({
+          userId: friendship.requesterId,
+          type: 'FRIEND_ACCEPTED',
+          title: `${addressee.username} принял(а) вашу заявку в друзья`,
+          link: `/users/${addressee.username}`,
+          fromUserId: addressee.id,
+        });
+      }
+    }
 
     return updated;
   }

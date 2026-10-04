@@ -32,7 +32,7 @@
 | minecraft | MISSING | PHASE 18 |
 | moderation | MISSING | PHASE 16 |
 | news | MISSING | PHASE 13 |
-| notifications | MISSING | PHASE 12 |
+| notifications | PARTIAL | PHASE 12 — REST/WS/email/push/discord-вебхуки и реальная межмодульная интеграция (friends/comments/activity/direct-messages/chat) готовы, покрыты e2e; периодический cron-дайджест — PHASE 29; push требует VAPID-ключей (RISKS.md R7) |
 | positions | PARTIAL | PHASE 07 — CRUD + assign готовы, покрыты e2e; donor-тиры/staff-позиции — по мере необходимости |
 | prisma | IMPLEMENTED | PHASE 04 — схема (108 моделей/53 enum) + миграция + PrismaModule |
 | redis | PARTIAL | `RedisService` используется для brute-force (PHASE 05), RBAC permission-кеша (PHASE 06), chat presence (PHASE 11); централизованные cache keys/инвалидация — PHASE 24 |

@@ -8,6 +8,7 @@ import { ConversationRole, ConversationType } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { escapeToHtml } from '../../common/html.util';
 import { FriendsService } from '../friends/friends.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDirectConversationDto } from './dto/create-direct-conversation.dto';
 import { CreateGroupConversationDto } from './dto/create-group-conversation.dto';
@@ -25,6 +26,7 @@ export class DirectMessagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /// Публичный метод (не private): используется также DirectMessagesGateway
@@ -233,7 +235,37 @@ export class DirectMessagesService {
         data: { lastMessageAt: new Date() },
       }),
     ]);
+
+    await this.notifyRecipients(userId, conversationId, message);
+
     return message;
+  }
+
+  private async notifyRecipients(
+    senderId: string,
+    conversationId: string,
+    message: {
+      id: string;
+      content: string;
+      sender: { username: string } | null;
+    },
+  ): Promise<void> {
+    const members = await this.prisma.conversationMember.findMany({
+      where: { conversationId, userId: { not: senderId }, isMuted: false },
+    });
+    const senderName = message.sender?.username ?? 'Пользователь';
+    await Promise.all(
+      members.map((member) =>
+        this.notifications.create({
+          userId: member.userId,
+          type: 'MESSAGE_RECEIVED',
+          title: `Новое сообщение от ${senderName}`,
+          message: message.content.slice(0, 200),
+          link: `/messages/${conversationId}`,
+          fromUserId: senderId,
+        }),
+      ),
+    );
   }
 
   async editMessage(userId: string, messageId: string, dto: EditMessageDto) {

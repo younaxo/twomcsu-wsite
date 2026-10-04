@@ -4,8 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { escapeToHtml } from '../../common/html.util';
+import { escapeToHtml, extractMentions } from '../../common/html.util';
 import { FriendsService } from '../friends/friends.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateActivityCommentDto } from './dto/create-activity-comment.dto';
 import { ReactActivityDto } from './dto/react-activity.dto';
@@ -19,6 +20,7 @@ export class ActivityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async listGlobalFeed(page: number, limit: number) {
@@ -160,8 +162,8 @@ export class ActivityService {
     activityId: string,
     dto: CreateActivityCommentDto,
   ) {
-    await this.assertVisible(activityId, userId);
-    return this.prisma.activityComment.create({
+    const activity = await this.assertVisible(activityId, userId);
+    const created = await this.prisma.activityComment.create({
       data: {
         activityId,
         authorId: userId,
@@ -170,6 +172,62 @@ export class ActivityService {
       },
       include: { author: true },
     });
+
+    await this.notifyCommentParticipants(
+      activity.userId,
+      activityId,
+      created.author,
+      dto.content,
+    );
+
+    return created;
+  }
+
+  /// mentions вычисляются на лету только для рассылки уведомлений —
+  /// ActivityComment не хранит их персистентно (нет поля mentions в схеме,
+  /// в отличие от ProfileComment/ChatMessage).
+  private async notifyCommentParticipants(
+    activityOwnerId: string,
+    activityId: string,
+    author: { id: string; username: string },
+    content: string,
+  ): Promise<void> {
+    const link = `/activity/${activityId}`;
+
+    if (activityOwnerId !== author.id) {
+      const settings = await this.getSettings(activityOwnerId);
+      if (settings.notifyOnComment) {
+        await this.notifications.create({
+          userId: activityOwnerId,
+          type: 'ACTIVITY_COMMENT',
+          title: `${author.username} прокомментировал(а) вашу активность`,
+          link,
+          fromUserId: author.id,
+        });
+      }
+    }
+
+    for (const username of extractMentions(content)) {
+      if (username.toLowerCase() === author.username.toLowerCase()) {
+        continue;
+      }
+      const mentioned = await this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: 'insensitive' } },
+      });
+      if (
+        mentioned &&
+        mentioned.id !== activityOwnerId &&
+        mentioned.notifyOnMention
+      ) {
+        await this.notifications.create({
+          userId: mentioned.id,
+          type: 'ACTIVITY_COMMENT_MENTION',
+          title: `${author.username} упомянул(а) вас в комментарии к активности`,
+          link,
+          fromUserId: author.id,
+        });
+      }
+    }
   }
 
   async removeComment(userId: string, commentId: string): Promise<void> {

@@ -26,7 +26,7 @@
 - [x] PHASE 09 — Social system (друзья, комментарии, реакции, activity feed)
 - [x] PHASE 10 — Direct Messages (беседы, WebSocket, непрочитанные)
 - [x] PHASE 11 — Chat (каналы, модерация, WebSocket; anti-spam/rate-limit — PHASE 26)
-- [ ] PHASE 12 — Notifications (website/WS/email/push, digest)
+- [x] PHASE 12 — Notifications (website/WS/email/push; периодический digest — PHASE 29)
 - [ ] PHASE 13 — News (черновики, публикация, комментарии, медиа)
 - [ ] PHASE 14 — Events / Topics / Voting / Streaming
 - [ ] PHASE 15 — Forms engine (конструктор форм, submissions, экспорт)

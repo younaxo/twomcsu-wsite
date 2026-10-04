@@ -90,4 +90,35 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'chat.bans.view', module: 'chat', description: 'Просмотр списка банов чата' },
   { key: 'chat.bans.create', module: 'chat', description: 'Бан пользователя в чате' },
   { key: 'chat.bans.delete', module: 'chat', description: 'Снятие бана в чате' },
+
+  {
+    key: 'notifications.webhooks.view',
+    module: 'notifications',
+    description: 'Просмотр системных Discord-вебхуков',
+  },
+  {
+    key: 'notifications.webhooks.create',
+    module: 'notifications',
+    description: 'Создание системного Discord-вебхука',
+  },
+  {
+    key: 'notifications.webhooks.edit',
+    module: 'notifications',
+    description: 'Редактирование системного Discord-вебхука',
+  },
+  {
+    key: 'notifications.webhooks.delete',
+    module: 'notifications',
+    description: 'Удаление системного Discord-вебхука',
+  },
+  {
+    key: 'notifications.broadcast',
+    module: 'notifications',
+    description: 'Массовая рассылка уведомления всем или части пользователей',
+  },
+  {
+    key: 'notifications.stats.view',
+    module: 'notifications',
+    description: 'Просмотр агрегированной статистики уведомлений',
+  },
 ];

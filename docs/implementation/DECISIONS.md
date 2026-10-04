@@ -260,3 +260,88 @@ namespace.
 forbidNonWhitelisted: true, transform: true })`, что и глобально на HTTP
 (`@UsePipes` на уровне класса гейтвея), — WS-клиент получает те же гарантии
 против mass assignment, что и REST-клиент.
+
+## ADR-0019 — Notifications: грубый profile-флаг vs точный per-type override
+
+**Context.** В схеме есть два независимых механизма контроля уведомлений:
+`User.notifyOn*` (заведены в PHASE 08 вместе с профилем — `notifyOnComment`,
+`notifyOnMention`, `notifyOnReply`, `notifyOnFriendRequest`, `notifyOnGift`,
+`notifyOnOrder`) и `NotificationSettings.typeSettings` (JSON-карта
+`{ [NotificationType]: boolean }`, PHASE 12). Используются оба одновременно —
+это не дублирование, а два разных уровня детализации.
+
+**Decision.** `User.notifyOn*` — грубый переключатель ЦЕЛОЙ категории,
+проверяется **доменным сервисом** (`FriendsService`, `CommentsService`,
+`ActivityService`) ДО вызова `NotificationsService.create()` — он решает,
+стоит ли вообще пытаться уведомить. `NotificationSettings.typeSettings[type]`
+— точный переключатель ОДНОГО конкретного `NotificationType`, проверяется
+**внутри** `NotificationsService.create()` как последний рубеж (например
+можно включить комментарии в целом, но выключить конкретно
+`ACTIVITY_COMMENT_MENTION`). Если оба проверяют одно и то же для каких-то
+типов — это осознанная избыточность в пользу UX (профиль даёт быстрый
+грубый тумблер, настройки уведомлений — тонкую настройку), а не ошибка.
+
+Личные (per-user) каналы доставки (`emailEnabled`/`pushEnabled`/
+`discordEnabled`, quiet hours, `digestMode`) проверяются **после** обоих
+вышеописанных гейтов, уже в `deliver()` — они решают не "создавать ли
+запись", а "каким каналом её доставить", и не влияют на WS realtime и на
+саму запись в БД (она создаётся всегда, если оба гейта пройдены — иначе
+непрочитанные уведомления не накапливались бы для дайджеста при
+отключённом email).
+
+## ADR-0020 — Discord webhook URL: allowlist домена против SSRF
+
+**Context.** И личный вебхук пользователя (`POST /notifications/discord/
+webhook`), и системный вебхук админа (`POST /admin/notifications/webhooks`)
+принимают произвольный URL от клиента, на который backend сам делает
+исходящий HTTP POST (`fetch`) — классический SSRF-вектор (можно подставить
+внутренний адрес вместо `discord.com` и прозондировать внутреннюю сеть).
+
+**Decision.** `apps/api/src/modules/notifications/discord-webhook-url.util.ts`
+(`isValidDiscordWebhookUrl`) разрешает только `https://` на хостах
+`discord.com`/`discordapp.com` с путём, соответствующим формату
+`/api/webhooks/{id}/{token}`. Проверка применяется в **обоих** местах, где
+URL попадает в систему: `DiscordService.createWebhook/updateWebhook` (admin)
+и `NotificationSettingsService.saveDiscordWebhook` (личный) — т.е. до записи
+в БД, а не только перед отправкой, чтобы невалидный URL не мог быть
+сохранён вообще. `class-validator`-уровня `@IsUrl()` в DTO сознательно НЕ
+используется для этой проверки (проверяет только общую корректность URL,
+не домен) — allowlist-проверка живёт в сервисе как бизнес-правило, по той
+же логике, что и остальные доменные проверки в проекте (например
+`directMessagePolicy`).
+
+## ADR-0021 — Activity: новые типы уведомлений вместо переиспользования profile-типов
+
+**Context.** `NotificationType` не содержал типа для "кто-то прокомментировал
+вашу запись активности" или "вас упомянули в комментарии к активности" —
+ближайшие по смыслу `COMMENT_ON_PROFILE`/`COMMENT_MENTION` описывают именно
+комментарии **на профиле** (`ProfileComment`), не к ленте активности
+(`ActivityComment`) — у этих моделей разные владельцы (профиль vs запись
+активности) и разный `link` в уведомлении.
+
+**Decision.** Добавлены `ACTIVITY_COMMENT`/`ACTIVITY_COMMENT_MENTION` в
+`NotificationType` (миграция `20261004144405_add_activity_notification_types`,
+добавление enum-значений — не breaking, данных не теряет). Это соответствует
+уже существующему в схеме паттерну разделения по домену (`NEWS_COMMENT_REPLY`/
+`NEWS_COMMENT_MENTION` отдельно от `COMMENT_REPLY`/`COMMENT_MENTION`).
+`ActivityComment` не имеет поля `mentions` в схеме (в отличие от
+`ProfileComment`/`ChatMessage`) — упоминания для целей уведомления
+вычисляются на лету (`extractMentions`), не сохраняются персистентно,
+т.к. единственный потребитель этих данных — сама рассылка уведомления в
+момент создания комментария.
+
+## ADR-0022 — Периодический дайджест и TTL-based push-presence не входят в PHASE 12
+
+**Context.** `NotificationSettings.digestMode` (`HOURLY`/`DAILY`/`WEEKLY`)
+и `POST /notifications/digest/test` предполагают периодическую агрегацию
+непрочитанных уведомлений по расписанию.
+
+**Decision.** PHASE 12 реализует только **ручной** триггер
+(`sendDigestForUser`, вызывается через `/notifications/digest/test`) —
+честная, не-заглушечная проверка "как будет выглядеть дайджест" (реальный
+email с реальным списком непрочитанных). Реальный периодический cron,
+который сам решает, когда у кого наступило время дайджеста согласно
+`digestMode`/`digestTime`, требует фоновых задач с распределённой
+блокировкой (чтобы два инстанса API не отправили дайджест дважды) — это
+прямо соответствует PHASE 29 (Background jobs) и реализуется там, а не
+здесь через `setInterval`-подобный костыль в рамках HTTP-модуля.
