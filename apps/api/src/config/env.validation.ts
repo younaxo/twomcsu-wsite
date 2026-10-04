@@ -44,4 +44,10 @@ export const envValidationSchema = Joi.object({
   SMTP_FROM_EMAIL: Joi.string()
     .email({ tlds: false })
     .default('noreply@twomc.su'),
+
+  /// Без обеих VAPID-переменных push-рассылка выключается (как SMTP выше) —
+  /// см. RISKS.md R7. Явно не required — внешний блокер, не ошибка конфигурации.
+  VAPID_PUBLIC_KEY: Joi.string().allow('').default(''),
+  VAPID_PRIVATE_KEY: Joi.string().allow('').default(''),
+  VAPID_SUBJECT: Joi.string().default('mailto:admin@twomc.su'),
 }).unknown(true);
