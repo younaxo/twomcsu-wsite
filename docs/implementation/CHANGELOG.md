@@ -122,3 +122,18 @@
   (pin/delete чужого комментария).
 - Лайк и ответ/упоминание в комментарии создают `NEWS_LIKED`/
   `NEWS_COMMENT_REPLY`/`NEWS_COMMENT_MENTION` через `NotificationsService`.
+
+### Events / Topics / Voting / Streaming
+- `/events/*` (список/featured/mine/деталь, attendance с лимитом участников
+  и дедлайном регистрации) и `/admin/events/*` (CRUD, publish/cancel) под
+  permissions; изменение расписания/отмена опубликованного события создаёт
+  `EVENT_UPDATED` участникам.
+- `/topics/*` (список/деталь с фильтрацией по видимости через permission-
+  ключи) и `/admin/topics/*` (CRUD, reorder, pin) под permissions.
+- `/voting` (публичный обзор vote-сайтов с cooldown для viewer) и
+  `/voting/webhook/:slug` (публичный, bcrypt-секрет вместо HMAC) с
+  начислением `rewardCoins` в `PlayerStatistics.coins`; `/admin/voting/
+  sites/*` (CRUD, rotate-secret) под permissions.
+- `/streams` (публичный список каналов) и `/admin/streams/*` (CRUD,
+  refresh — честно сообщает об отсутствии Twitch/YouTube credentials) под
+  permissions.

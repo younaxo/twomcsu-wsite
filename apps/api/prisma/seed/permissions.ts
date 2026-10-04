@@ -138,4 +138,63 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'news',
     description: 'Удаление чужого комментария к новости (модерация)',
   },
+
+  { key: 'events.view', module: 'events', description: 'Просмотр списка событий в админке' },
+  { key: 'events.create', module: 'events', description: 'Создание события' },
+  { key: 'events.edit', module: 'events', description: 'Редактирование события' },
+  { key: 'events.publish', module: 'events', description: 'Публикация события' },
+  { key: 'events.cancel', module: 'events', description: 'Отмена события' },
+  { key: 'events.delete', module: 'events', description: 'Удаление события' },
+  {
+    key: 'events.view.staff',
+    module: 'events',
+    description: 'Просмотр событий с видимостью STAFF',
+  },
+
+  { key: 'topics.view', module: 'topics', description: 'Просмотр списка/карточки темы в админке' },
+  { key: 'topics.create', module: 'topics', description: 'Создание темы' },
+  { key: 'topics.edit', module: 'topics', description: 'Редактирование темы' },
+  { key: 'topics.delete', module: 'topics', description: 'Удаление темы' },
+  { key: 'topics.reorder', module: 'topics', description: 'Изменение порядка тем' },
+  { key: 'topics.pin', module: 'topics', description: 'Закрепление/открепление темы' },
+  {
+    key: 'topics.view.helper',
+    module: 'topics',
+    description: 'Просмотр тем с видимостью HELPER_ONLY',
+  },
+  {
+    key: 'topics.view.moderator',
+    module: 'topics',
+    description: 'Просмотр тем с видимостью MODERATOR_ONLY',
+  },
+  {
+    key: 'topics.view.admin',
+    module: 'topics',
+    description: 'Просмотр тем с видимостью ADMIN_ONLY',
+  },
+  {
+    key: 'topics.view.owner',
+    module: 'topics',
+    description: 'Просмотр тем с видимостью OWNER_ONLY',
+  },
+
+  { key: 'voting.sites.view', module: 'voting', description: 'Просмотр списка vote-сайтов в админке' },
+  { key: 'voting.sites.create', module: 'voting', description: 'Добавление vote-сайта' },
+  { key: 'voting.sites.edit', module: 'voting', description: 'Редактирование vote-сайта' },
+  { key: 'voting.sites.delete', module: 'voting', description: 'Удаление vote-сайта' },
+  {
+    key: 'voting.sites.rotate_secret',
+    module: 'voting',
+    description: 'Перевыпуск webhook-секрета vote-сайта',
+  },
+
+  { key: 'streams.view', module: 'streams', description: 'Просмотр списка стрим-каналов в админке' },
+  { key: 'streams.create', module: 'streams', description: 'Добавление стрим-канала' },
+  { key: 'streams.edit', module: 'streams', description: 'Редактирование стрим-канала' },
+  { key: 'streams.delete', module: 'streams', description: 'Удаление стрим-канала' },
+  {
+    key: 'streams.refresh',
+    module: 'streams',
+    description: 'Ручной запуск обновления статуса стримов',
+  },
 ];

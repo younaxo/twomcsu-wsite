@@ -376,3 +376,56 @@ pubDate), чтобы не оправдывать новую зависимост
 `NewsComment` не имеет поля `mentions` в схеме (как и `ActivityComment`,
 см. ADR-0021) — `NEWS_COMMENT_MENTION` вычисляет упоминания на лету через
 `extractMentions`, не сохраняя их персистентно.
+
+## ADR-0024 — Events/Topics/Voting/Streaming: видимость по permission вместо RoleGroup
+
+**Context.** `CalendarEvent.visibility` (PUBLIC/AUTHENTICATED/STAFF) и
+`Topic.visibility` (PUBLIC/AUTHENTICATED/HELPER_ONLY/MODERATOR_ONLY/
+ADMIN_ONLY/OWNER_ONLY) в старом проекте проверялись через RoleGroup-
+иерархию, которой в целевой архитектуре нет (ADR-0004).
+
+**Decision.** Каждый непубличный уровень видимости (кроме AUTHENTICATED,
+который означает просто «любой залогиненный») получил собственный
+permission-ключ: `events.view.staff`, `topics.view.helper`/`.moderator`/
+`.admin`/`.owner`. Проверка видимости — `PermissionService.hasPermission`,
+не сравнение ролей/приоритетов — соответствует ADR-0004 («никаких
+`if (role === 'ADMIN')` вне PermissionService»). Список (`listPublic`)
+фильтрует по видимости на уровне запроса, где это дёшево (события — через
+`visibility: {in: [...]}` в `where`), либо постфильтром после загрузки
+(темы — обычно их мало, лишняя нагрузка пренебрежимо мала).
+
+## ADR-0025 — Voting: webhook-секрет как bcrypt-хеш, не HMAC-подпись
+
+**Context.** `VoteSite.webhookSecretHash` нужно использовать для проверки
+подлинности входящего webhook от внешнего vote-сайта. Два очевидных
+подхода: (а) HMAC-подпись всего тела запроса, которую сервер пересчитывает
+и сравнивает — но для этого нужен **сырой** секрет на сервере, а не его
+хеш; (б) простой shared-secret токен в теле запроса, сравниваемый через
+`bcrypt.compare` с хешем.
+
+**Decision.** Выбран вариант (б) — название поля (`*Hash`) и общий паттерн
+проекта (пароли уже хранятся как bcrypt-хеш, не обратимо) делают именно
+этот подход согласованным с остальной кодовой базой. `VoteWebhookDto`
+принимает `secret` в теле; сырой секрет генерируется (`randomBytes(32)`)
+и возвращается администратору ровно один раз — при создании сайта и при
+`rotate-secret` — после чего существует только как bcrypt-хеш. Webhook
+всегда отвечает `200 { accepted, reason? }`, никогда не 4xx/5xx для
+бизнес-отказов (неверный секрет/юзер не найден/cooldown) — внешние
+vote-сайты типично агрессивно ретраят non-2xx ответы.
+
+## ADR-0026 — Streaming: refresh честно не реализован без credentials
+
+**Context.** `POST /admin/streams/refresh` в целевом поведении должен
+опрашивать Twitch Helix / YouTube Data API и обновлять `isLive`/
+`viewerCount` в `StreamChannel`. `TWITCH_CLIENT_ID/SECRET`/`YOUTUBE_API_KEY`
+— внешний блокер (RISKS.md R6), в этом окружении не предоставлены.
+
+**Decision.** `UpdateStreamChannelDto` намеренно не включает `isLive`/
+`viewerCount`/`title`/`thumbnailUrl`/`liveUrl`/`startedAt` — эти поля
+отражают факт из внешнего API, ручной PATCH не должен позволять
+администратору создать фальшивый «live»-статус. `refresh()` реализован
+так, чтобы честно возвращать `{refreshed: false, reason}` (нет
+credentials — `no_platform_credentials_configured`; credentials
+есть, но сама интеграция ещё не написана — `not_implemented`), а не
+тихо ничего не делать или использовать моковые данные. Реальный опрос
+API и периодический cron — PHASE 18/29, когда появятся credentials.

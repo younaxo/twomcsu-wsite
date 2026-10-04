@@ -13,6 +13,7 @@ import { CustomPositionsModule } from './modules/custom-positions/custom-positio
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
 import { EmailModule } from './modules/email/email.module';
+import { EventsModule } from './modules/events/events.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
 import { NewsModule } from './modules/news/news.module';
@@ -22,7 +23,10 @@ import { ProfilesModule } from './modules/profiles/profiles.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { StreamingModule } from './modules/streaming/streaming.module';
+import { TopicsModule } from './modules/topics/topics.module';
 import { UsersModule } from './modules/users/users.module';
+import { VotingModule } from './modules/voting/voting.module';
 
 @Module({
   imports: [
@@ -50,6 +54,10 @@ import { UsersModule } from './modules/users/users.module';
     DirectMessagesModule,
     ChatModule,
     NewsModule,
+    EventsModule,
+    TopicsModule,
+    VotingModule,
+    StreamingModule,
   ],
   controllers: [AppController],
   providers: [
