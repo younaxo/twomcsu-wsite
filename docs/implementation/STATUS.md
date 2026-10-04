@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 11 — Chat
-Current branch: feature/chat
+Current phase: PHASE 12 — Notifications
+Current branch: feature/notifications
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -30,9 +30,11 @@ Completed:
 - PHASE 10 — Direct Messages (личные/групповые беседы, инвайты, WebSocket-
   гейтвей с аутентификацией через namespace-middleware — 12 e2e-тестов,
   включая реальные Socket.IO-соединения)
+- PHASE 11 — Chat (публичные каналы, модерация мут/бан с раздельными
+  публичным/приватным payload, WebSocket-гейтвей — 12 e2e-тестов)
 
 In progress:
-- PHASE 11 — Chat
+- PHASE 12 — Notifications
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -57,7 +59,8 @@ PHASE 04/05).
 | PHASE 08 — Profiles | `feature/profiles` | merged (PR #18) | completed |
 | PHASE 09 — Social system | `feature/social-system` | merged (PR #19, `a63af67`) | completed |
 | PHASE 10 — Direct Messages | `feature/direct-messages` | merged (PR #20, `2c9ddba`) | completed |
-| PHASE 11 — Chat | `feature/chat` | *(в работе)* | in progress |
+| PHASE 11 — Chat | `feature/chat` | merged (PR #21, `5b25b80`) | completed |
+| PHASE 12 — Notifications | `feature/notifications` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
