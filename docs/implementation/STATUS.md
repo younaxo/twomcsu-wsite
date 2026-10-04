@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 14 — Events / Topics / Voting / Streaming
-Current branch: feature/events
+Current phase: PHASE 15 — Forms
+Current branch: feature/forms
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -42,7 +42,7 @@ Completed:
   credentials — 21 e2e-тест)
 
 In progress:
-none (PHASE 14 завершена и ждёт merge PR; следующая — PHASE 15, Forms)
+- PHASE 15 — Forms
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -70,7 +70,8 @@ PHASE 04/05).
 | PHASE 11 — Chat | `feature/chat` | merged (PR #21, `5b25b80`) | completed |
 | PHASE 12 — Notifications | `feature/notifications` | merged (PR #22, `b49866d`) | completed |
 | PHASE 13 — News | `feature/news` | merged (PR #23, `e3d8035`) | completed |
-| PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | *(PR на проверке)* | in progress |
+| PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | merged (PR #24, `927fe35`) | completed |
+| PHASE 15 — Forms | `feature/forms` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
