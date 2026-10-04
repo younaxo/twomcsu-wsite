@@ -20,6 +20,13 @@ GitHub (Settings → SSH and GPG keys).
 **Нужно от владельца:** выбрать провайдера (ЮKassa/CloudPayments/Stripe/другой),
 получить `PAYMENT_PROVIDER`, `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET`.
 
+PHASE 17 (Store): реализовано полностью по плану выше —
+`modules/store/payment/{payment-provider.interface,payment-provider.registry,
+test-payment-provider.service}.ts`, вебхук `POST /webhooks/payments/:provider`
+(ADR-0034). `PaymentProviderRegistry` не регистрирует `TestPaymentProvider` при
+`NODE_ENV=production` — до выбора реального провайдера `createFromCart()`/
+`quickBuy()` в production вернут 503 (ADR-0039), не тихий фейк-успех.
+
 ## R3 — Объектное хранилище (S3-совместимое) для CDN — OPEN
 
 `StorageService` с `local`-драйвером реализуется полностью рабочим для dev. Для
