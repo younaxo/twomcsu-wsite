@@ -55,3 +55,18 @@
   пользователя (`/admin/users`, `/admin/users/:id/full`).
 - Seed: базовая позиция `Default` — без неё регистрация не работала на
   чистой БД.
+
+### Profiles
+- `GET /users/:username/public` (фильтрация по приватности),
+  `GET/PATCH /users/me/profile`, соцсети (`/users/me/social-links`),
+  выбор декорации (`/users/me/decoration`, только из принадлежащих).
+
+### Social system
+- Друзья: заявки/принятие/отклонение/отмена, список/блокировка,
+  `friendRequestPolicy` (включая `FRIENDS_OF_FRIENDS`).
+- Комментарии профиля: создание/редактирование/soft-delete, реакции
+  (свободный emoji), жалобы; учитывают `commentsEnabled`/`commentPolicy`.
+- Лента активности: глобальная (`PUBLIC`) и персональная (с учётом
+  `FRIENDS`/`PRIVATE`), реакции и комментарии к активности, персональные
+  настройки (`ActivityFeedSettings`). Принятие заявки в друзья создаёт первую
+  реальную запись активности (`FRIENDSHIP_STARTED`).
