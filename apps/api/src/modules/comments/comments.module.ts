@@ -7,5 +7,6 @@ import { CommentsService } from './comments.service';
   imports: [FriendsModule],
   controllers: [CommentsController],
   providers: [CommentsService],
+  exports: [CommentsService],
 })
 export class CommentsModule {}

@@ -236,4 +236,95 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'forms',
     description: 'Просмотр форм с видимостью OWNER_ONLY',
   },
+
+  { key: 'users.mute', module: 'users', description: 'Быстрый mute пользователя (quick moderation)' },
+  { key: 'users.warn', module: 'users', description: 'Выдача предупреждения пользователю' },
+  { key: 'users.kick', module: 'users', description: 'Принудительный разрыв сессий пользователя' },
+  { key: 'users.ban', module: 'users', description: 'Бан пользователя (временный или перманентный)' },
+  {
+    key: 'users.punishments',
+    module: 'users',
+    description: 'Просмотр и управление историей наказаний пользователя',
+  },
+  { key: 'users.delete', module: 'users', description: 'Удаление аккаунта пользователя' },
+  {
+    key: 'messages.hard_delete',
+    module: 'messages',
+    description: 'Безвозвратное удаление сообщения чата модератором',
+  },
+  {
+    key: 'comments.hard_delete',
+    module: 'comments',
+    description: 'Безвозвратное удаление комментария профиля модератором',
+  },
+  {
+    key: 'comment_reports.view',
+    module: 'comment_reports',
+    description: 'Просмотр жалоб на комментарии профиля',
+  },
+  {
+    key: 'comment_reports.edit',
+    module: 'comment_reports',
+    description: 'Рассмотрение жалобы на комментарий профиля',
+  },
+  {
+    key: 'profile_reports.view',
+    module: 'profile_reports',
+    description: 'Просмотр жалоб на профили',
+  },
+  {
+    key: 'profile_reports.edit',
+    module: 'profile_reports',
+    description: 'Рассмотрение жалобы на профиль',
+  },
+
+  { key: 'reports.view', module: 'reports', description: 'Просмотр очереди обращений (тикетов)' },
+  { key: 'reports.assign', module: 'reports', description: 'Назначение обращения модератору' },
+  { key: 'reports.status', module: 'reports', description: 'Изменение статуса обращения' },
+  { key: 'reports.verdict', module: 'reports', description: 'Вынесение вердикта по обращению' },
+  {
+    key: 'reports.messages',
+    module: 'reports',
+    description: 'Ответ модератора в обращении, мягкое/жёсткое удаление сообщений',
+  },
+  {
+    key: 'reports.messages.pin',
+    module: 'reports',
+    description: 'Закрепление сообщения в обращении',
+  },
+  {
+    key: 'reports.messages.unpin',
+    module: 'reports',
+    description: 'Открепление сообщения в обращении',
+  },
+  {
+    key: 'reports.notes',
+    module: 'reports',
+    description: 'Заметки модератора по обращению (CRUD)',
+  },
+  {
+    key: 'reports.notes.pin',
+    module: 'reports',
+    description: 'Закрепление заметки модератора',
+  },
+  { key: 'reports.lock', module: 'reports', description: 'Блокировка обращения для новых сообщений' },
+  { key: 'reports.stats', module: 'reports', description: 'Просмотр статистики по обращениям' },
+  {
+    key: 'reports.archived.view',
+    module: 'reports',
+    description: 'Просмотр архива обращений',
+  },
+  { key: 'reports.archive', module: 'reports', description: 'Архивация обращения' },
+  { key: 'reports.unarchive', module: 'reports', description: 'Восстановление обращения из архива' },
+  { key: 'reports.delete', module: 'reports', description: 'Безвозвратное удаление обращения' },
+  {
+    key: 'reports.ban',
+    module: 'reports',
+    description: 'Бан/разбан пользователя в тикет-системе обращений',
+  },
+  {
+    key: 'support.donations.view',
+    module: 'support',
+    description: 'Просмотр обращений по проблемам с донатом',
+  },
 ];

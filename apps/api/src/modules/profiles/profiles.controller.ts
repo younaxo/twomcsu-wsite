@@ -6,6 +6,7 @@ import {
   Param,
   ParseEnumPipe,
   Patch,
+  Post,
   Put,
   Req,
   UseGuards,
@@ -16,6 +17,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
@@ -30,6 +32,16 @@ export class ProfilesController {
   async getPublic(@Param('username') username: string, @Req() req: Request) {
     const viewer = (req as Request & { user?: AuthenticatedUser }).user;
     return this.profiles.getPublicProfile(username, viewer?.id ?? null);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':username/report')
+  async report(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('username') username: string,
+    @Body() dto: CreateProfileReportDto,
+  ) {
+    return this.profiles.report(user.id, username, dto);
   }
 
   @UseGuards(JwtAuthGuard)

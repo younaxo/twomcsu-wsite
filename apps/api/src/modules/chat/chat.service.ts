@@ -250,6 +250,19 @@ export class ChatService {
     });
   }
 
+  /// Безвозвратное удаление (в отличие от deleteMessage() — soft-delete с
+  /// сохранением записи). Ответы (parentId) остаются — ChatMessage.parent
+  /// использует onDelete: SetNull, не Cascade.
+  async hardDeleteMessage(messageId: string): Promise<void> {
+    const message = await this.prisma.chatMessage.findUnique({
+      where: { id: messageId },
+    });
+    if (!message) {
+      throw new NotFoundException('Сообщение не найдено');
+    }
+    await this.prisma.chatMessage.delete({ where: { id: messageId } });
+  }
+
   async setPinned(userId: string, messageId: string, pinned: boolean) {
     const canPin = await this.permissions.hasPermission(
       userId,
