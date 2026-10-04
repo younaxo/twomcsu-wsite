@@ -18,11 +18,13 @@ import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
 import { NewsModule } from './modules/news/news.module';
+import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { StreamingModule } from './modules/streaming/streaming.module';
 import { TopicsModule } from './modules/topics/topics.module';
@@ -60,6 +62,8 @@ import { VotingModule } from './modules/voting/voting.module';
     VotingModule,
     StreamingModule,
     FormsModule,
+    ModerationModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [

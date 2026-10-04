@@ -10,5 +10,6 @@ import { ModerationService } from './moderation.service';
   imports: [AuthModule],
   controllers: [ChatController, AdminChatController],
   providers: [ChatService, ModerationService, ChatGateway],
+  exports: [ChatService],
 })
 export class ChatModule {}

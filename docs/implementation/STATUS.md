@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 15 — Forms
-Current branch: feature/forms
+Current phase: PHASE 16 — Reports / Moderation
+Current branch: feature/reports-moderation
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -44,10 +44,14 @@ Completed:
   валидации по типу, реальная referential-проверка NEWS_REFERENCE/
   TOPIC_REFERENCE/FRIENDS_SELECTOR, публикация/видимость/лимиты/invite-only/
   черновики — 17 e2e-тестов)
+- PHASE 16 — Reports / Moderation (quick moderation mute/warn/kick/ban с
+  мгновенным эффектом бана и разрывом сессий при kick, hard-delete сообщений
+  чата/комментариев профиля, рассмотрение жалоб на комментарии/профили,
+  тикет-система обращений с ролевой видимостью/lock/заметками модератора,
+  report-ban отдельно от account-бана, история наказаний — 32 e2e-теста)
 
 In progress:
-none (PHASE 15 завершена и ждёт merge PR; следующая — PHASE 16, Reports/
-Moderation)
+none (PHASE 16 завершена и ждёт merge PR; следующая — PHASE 17, Store)
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -76,7 +80,8 @@ PHASE 04/05).
 | PHASE 12 — Notifications | `feature/notifications` | merged (PR #22, `b49866d`) | completed |
 | PHASE 13 — News | `feature/news` | merged (PR #23, `e3d8035`) | completed |
 | PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | merged (PR #24, `927fe35`) | completed |
-| PHASE 15 — Forms | `feature/forms` | *(PR на проверке)* | in progress |
+| PHASE 15 — Forms | `feature/forms` | merged (PR #25, `b44caa8`) | completed |
+| PHASE 16 — Reports / Moderation | `feature/reports-moderation` | *(PR на проверке)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -89,10 +94,10 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 16 suite / 116 тестов — auth + RBAC + users-domain +
+tests: pass (unit 1/1, e2e 18 suite / 136 тестов — auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
-topics + voting + streaming + forms, против реального Postgres+Redis, полный
-параллельный прогон всего сьюта)
+topics + voting + streaming + forms + moderation + reports, против реального
+Postgres+Redis, полный параллельный прогон всего сьюта)
 build: pass
 
 Last updated: 2026-10-04

@@ -257,4 +257,18 @@ export class CommentsService {
       update: { reason: dto.reason, description: dto.description },
     });
   }
+
+  /// Безвозвратное удаление (в отличие от remove() — soft-delete автором).
+  /// Каскадом удаляет ответы на комментарий (ProfileComment.parent — onDelete:
+  /// Cascade в schema.prisma) — осознанное поведение модераторского
+  /// инструмента, не баг.
+  async hardDelete(commentId: string): Promise<void> {
+    const comment = await this.prisma.profileComment.findUnique({
+      where: { id: commentId },
+    });
+    if (!comment) {
+      throw new NotFoundException('Комментарий не найден');
+    }
+    await this.prisma.profileComment.delete({ where: { id: commentId } });
+  }
 }

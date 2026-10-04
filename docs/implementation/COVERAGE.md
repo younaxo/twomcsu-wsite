@@ -16,7 +16,7 @@
 | awards | MISSING | PHASE 19 |
 | cache | MISSING | PHASE 24 |
 | chat | IMPLEMENTED | PHASE 11 — публичные/admin REST, WebSocket-гейтвей (каналы, мут/бан, pin), покрыто e2e; rate-limit/anti-spam — PHASE 26 |
-| comments | PARTIAL | PHASE 09 — CRUD + реакции + жалобы готовы и покрыты e2e; рассмотрение жалоб модератором — PHASE 16 |
+| comments | IMPLEMENTED | PHASE 09 — CRUD + реакции + жалобы готовы; PHASE 16 — рассмотрение жалоб модератором (`/admin/comment-reports`) и hard-delete готовы, покрыты e2e |
 | consent | MISSING | PHASE 25 |
 | custom-positions | PARTIAL | PHASE 07 — CRUD + assign (1:1 на пользователя) готовы, покрыты e2e |
 | decorations | PARTIAL | PHASE 08 — выбор из принадлежащих готов и покрыт e2e; выдача декораций (покупка/admin grant) — PHASE 17/20 |
@@ -30,13 +30,13 @@
 | health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
 | leaderboards | MISSING | PHASE 19 |
 | minecraft | MISSING | PHASE 18 |
-| moderation | MISSING | PHASE 16 |
+| moderation | IMPLEMENTED | PHASE 16 — quick moderation (mute/warn/kick/ban/hard-delete сообщения и комментария/удаление аккаунта), рассмотрение жалоб на комментарии/профили готовы, покрыты e2e; `users.change_role` заменён RBAC-эндпоинтами PHASE 06 (ADR-0029) |
 | news | PARTIAL | PHASE 13 — публичный CRUD/лайки/комментарии/RSS и admin CRUD+модерация готовы, покрыты e2e; загрузка изображений — PHASE 23, автопубликация по расписанию — PHASE 29 |
 | notifications | PARTIAL | PHASE 12 — REST/WS/email/push/discord-вебхуки и реальная межмодульная интеграция (friends/comments/activity/direct-messages/chat) готовы, покрыты e2e; периодический cron-дайджест — PHASE 29; push требует VAPID-ключей (RISKS.md R7) |
 | positions | PARTIAL | PHASE 07 — CRUD + assign готовы, покрыты e2e; donor-тиры/staff-позиции — по мере необходимости |
 | prisma | IMPLEMENTED | PHASE 04 — схема (108 моделей/53 enum) + миграция + PrismaModule |
 | redis | PARTIAL | `RedisService` используется для brute-force (PHASE 05), RBAC permission-кеша (PHASE 06), chat presence (PHASE 11); централизованные cache keys/инвалидация — PHASE 24 |
-| reports | MISSING | PHASE 16 |
+| reports | PARTIAL | PHASE 16 — тикет-система обращений (создание/переписка/assign/status/verdict/заметки/lock/архив/report-ban), история наказаний (`UserPunishment`), donation-problem готовы, покрыты e2e; game-report/game-punishment (внешняя анти-чит интеграция), экспорт и upload вложений — вне scope (ADR-0033, RISKS.md R3) |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |
 | store | MISSING | PHASE 17 |
@@ -44,7 +44,7 @@
 | system | MISSING | PHASE 25 |
 | topics | PARTIAL | PHASE 14 — публичный CRUD/видимость и admin CRUD+reorder+pin готовы, покрыты e2e; вложения — PHASE 23 (CDN) |
 | uploads (→ CDN) | MISSING | PHASE 23 |
-| users | PARTIAL | PHASE 07 — admin список/поиск/пагинация + детальная карточка готовы, покрыты e2e; ban/kick/mute/warn — PHASE 16, badges/awards — PHASE 19 |
+| users | PARTIAL | PHASE 07 — admin список/поиск/пагинация + детальная карточка готовы; PHASE 16 — ban/kick/mute/warn/delete-account/жалобы на профиль готовы, покрыты e2e; badges/awards — PHASE 19 |
 | voting | IMPLEMENTED | PHASE 14 — публичный обзор+webhook и admin CRUD+rotate-secret готовы, покрыты e2e |
 
 ## Сознательно не переносится (NOT_APPLICABLE)

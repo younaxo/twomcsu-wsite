@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, SocialPlatform } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
@@ -196,6 +197,33 @@ export class ProfilesService {
     await this.prisma.user.update({
       where: { id: userId },
       data: { selectedDecorationId: dto.decorationId },
+    });
+    return { success: true };
+  }
+
+  async report(
+    reporterId: string,
+    username: string,
+    dto: CreateProfileReportDto,
+  ): Promise<{ success: true }> {
+    const profile = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
+    });
+    if (!profile) {
+      throw new NotFoundException('Профиль не найден');
+    }
+    if (profile.id === reporterId) {
+      throw new ForbiddenException('Нельзя пожаловаться на самого себя');
+    }
+    await this.prisma.profileReport.upsert({
+      where: { profileId_reporterId: { profileId: profile.id, reporterId } },
+      create: {
+        profileId: profile.id,
+        reporterId,
+        reason: dto.reason,
+        description: dto.description,
+      },
+      update: { reason: dto.reason, description: dto.description },
     });
     return { success: true };
   }
