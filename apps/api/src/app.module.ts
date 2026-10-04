@@ -8,6 +8,7 @@ import { envValidationSchema } from './config/env.validation';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CommentsModule } from './modules/comments/comments.module';
+import { ChatModule } from './modules/chat/chat.module';
 import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
@@ -44,6 +45,7 @@ import { UsersModule } from './modules/users/users.module';
     CommentsModule,
     ActivityModule,
     DirectMessagesModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [

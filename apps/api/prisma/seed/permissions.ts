@@ -63,4 +63,31 @@ export const PERMISSIONS: PermissionDefinition[] = [
   },
 
   { key: 'users.view', module: 'users', description: 'Просмотр списка и карточки пользователя' },
+
+  { key: 'chat.channels.create', module: 'chat', description: 'Создание канала чата' },
+  { key: 'chat.channels.edit', module: 'chat', description: 'Редактирование канала чата' },
+  { key: 'chat.channels.delete', module: 'chat', description: 'Удаление канала чата' },
+  {
+    key: 'chat.messages.post_readonly',
+    module: 'chat',
+    description: 'Отправка сообщений в read-only канал',
+  },
+  {
+    key: 'chat.messages.delete',
+    module: 'chat',
+    description: 'Удаление чужого сообщения в чате (soft-delete с причиной)',
+  },
+  { key: 'chat.messages.pin', module: 'chat', description: 'Закрепление/открепление сообщения в чате' },
+  { key: 'chat.messages.view', module: 'chat', description: 'Просмотр любого сообщения чата по id (админ)' },
+  {
+    key: 'chat.messages.search.view',
+    module: 'chat',
+    description: 'Полнотекстовый поиск по сообщениям чата (админ)',
+  },
+  { key: 'chat.mutes.view', module: 'chat', description: 'Просмотр списка мутов чата' },
+  { key: 'chat.mutes.create', module: 'chat', description: 'Выдача мута в чате' },
+  { key: 'chat.mutes.delete', module: 'chat', description: 'Снятие мута в чате' },
+  { key: 'chat.bans.view', module: 'chat', description: 'Просмотр списка банов чата' },
+  { key: 'chat.bans.create', module: 'chat', description: 'Бан пользователя в чате' },
+  { key: 'chat.bans.delete', module: 'chat', description: 'Снятие бана в чате' },
 ];
