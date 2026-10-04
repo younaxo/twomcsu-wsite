@@ -7,6 +7,9 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
+// См. auth.e2e-spec.ts — тот же риск конкуренции за ресурсы под полным сьютом.
+jest.setTimeout(20_000);
+
 describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;

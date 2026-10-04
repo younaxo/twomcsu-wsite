@@ -24,6 +24,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, BruteForceService, CaptchaService],
-  exports: [AuthService],
+  // JwtModule экспортируется, чтобы WS-шлюзы (например DirectMessagesGateway)
+  // могли проверять access-token из handshake тем же JwtService, не
+  // регистрируя JwtModule повторно со своим конфигом.
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

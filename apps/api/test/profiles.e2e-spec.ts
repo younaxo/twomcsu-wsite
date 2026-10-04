@@ -6,6 +6,9 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 
+// См. auth.e2e-spec.ts — тот же риск конкуренции за ресурсы под полным сьютом.
+jest.setTimeout(20_000);
+
 describe('Profiles (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;

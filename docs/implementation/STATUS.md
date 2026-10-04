@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 10 — Direct Messages
-Current branch: feature/social-system
+Current phase: PHASE 10 — Direct Messages (готово, PR на проверке)
+Current branch: feature/direct-messages
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -27,9 +27,12 @@ Completed:
 - PHASE 09 — Social system (друзья с полной проверкой policy/блокировок,
   комментарии профиля с реакциями, лента активности с учётом видимости —
   6 e2e-тестов)
+- PHASE 10 — Direct Messages (личные/групповые беседы, инвайты, WebSocket-
+  гейтвей с аутентификацией через namespace-middleware — 12 e2e-тестов,
+  включая реальные Socket.IO-соединения)
 
 In progress:
-- PHASE 10 — Direct Messages
+none (PHASE 10 завершена и ждёт merge PR; следующая — PHASE 11, Chat)
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -52,7 +55,8 @@ PHASE 04/05).
 | PHASE 06 — RBAC / Permissions | `feature/rbac-permissions` | `81699a7` | completed |
 | PHASE 07 — Users | `feature/users` | `4bee251` | completed |
 | PHASE 08 — Profiles | `feature/profiles` | merged (PR #18) | completed |
-| PHASE 09 — Social system | `feature/social-system` | *(в работе)* | in progress |
+| PHASE 09 — Social system | `feature/social-system` | merged (PR #19, `a63af67`) | completed |
+| PHASE 10 — Direct Messages | `feature/direct-messages` | *(PR на проверке)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -65,8 +69,9 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 7 suite / 33 теста — auth + RBAC + users-domain +
-profiles + social, против реального Postgres+Redis)
+tests: pass (unit 1/1, e2e 8 suite / 45 тестов — auth + RBAC + users-domain +
+profiles + social + direct-messages, против реального Postgres+Redis, полный
+параллельный прогон всего сьюта)
 build: pass
 
 Last updated: 2026-10-04
