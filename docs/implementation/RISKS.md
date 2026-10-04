@@ -30,6 +30,10 @@ production нужен S3-совместимый бакет и домен `cdn-fi
 файлов для `FILE_UPLOAD`/`IMAGE_GALLERY`) не реализован в PHASE 15 — поля этих
 типов принимают уже готовые URL в `fileUrls` (см. `FormsService.buildAnswerData`),
 сам upload-эндпоинт появится вместе с `StorageService` (PHASE 23).
+Затронуто также PHASE 16 (Reports): `POST /reports/:reportNumber/attachments`,
+`.../messages/:messageId/attachments` (вложения к обращениям) и
+`POST /admin/reports/:reportNumber/export` (экспорт ответов) не реализованы —
+та же зависимость от `StorageService`, ADR-0033.
 
 ## R4 — SMTP (доставка писем) — OPEN
 

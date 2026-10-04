@@ -475,3 +475,102 @@ Prisma для вложенного `create` (`FormResponse.create({data: {answer
 Prisma-типа `FormFieldAnswerCreateWithoutResponseInput`, который требует
 вложенный `field`) позволяет переиспользовать один и тот же метод для
 обоих путей без дублирования веток checked/unchecked.
+
+## ADR-0029 — Reports/Moderation: `users.change_role` не переносится — заменено RBAC-эндпоинтами PHASE 06
+
+**Context.** Старый `POST /admin/users/:userId/change-role` менял
+единственное значение `RoleGroup` у пользователя. Новая RBAC-модель
+(ADR-0004) — many-to-many `UserRole`, без понятия «единственная роль».
+`/admin/users/:userId/roles/:roleId` (POST/DELETE, PHASE 06,
+`user-roles.controller.ts`) уже полностью покрывает назначение/снятие
+ролей, включая множественные роли и историю изменений.
+
+**Decision.** `users.change_role` не реализуется как отдельный эндпоинт
+— это не урезание функциональности, а устранение дублирующего,
+архитектурно устаревшего интерфейса поверх уже существующего, более
+гибкого API. Переход пользователя между ролями выполняется через
+`POST/DELETE /admin/users/:userId/roles/:roleId`. `users.delete`
+(полное удаление аккаунта) реализован отдельно — это не про роли.
+
+## ADR-0030 — Quick Moderation и Punishments: один источник данных (`UserPunishment`), два входа
+
+**Context.** `QuickModerationController` (`/moderation/users/:userId/
+mute|warn|kick|ban`) — быстрые действия в один клик из контекста
+(например, из карточки сообщения в чате). `PunishmentsController`
+(`/admin/users/:userId/punishments`) — более гибкий инструмент с явным
+выбором `PunishmentType`/`duration`/`server`/`expiresAt` из карточки
+пользователя в админке. Оба в итоге создают записи в одной и той же
+истории наказаний.
+
+**Decision.** `QuickModerationService` создаёт `UserPunishment`
+напрямую (не переиспользует `PunishmentsService` — модули `moderation`
+и `reports` не имеют циклической зависимости друг на друга, а логика
+quick-действий тривиальна: одна запись + опциональный побочный эффект),
+с типом, зафиксированным самим действием (`mute`→MUTE, `warn`→WARN,
+`kick`→KICK, `ban`→TEMPBAN/PERMBAN в зависимости от `durationHours`).
+Только `ban` и `kick` имеют немедленный системный эффект: `kick` —
+`AuthService.revokeAllSessions()` (разрыв текущих refresh-сессий,
+доступ по уже выданному access-token сохраняется до истечения, это не
+баг — см. ADR ниже); `ban` — дополнительно `User.isBanned`/`banReason`/
+`bannedUntil`, что даёт мгновенный эффект на каждый запрос через
+`JwtStrategy.validate()` (PHASE 05). `mute` — только дисциплинарная
+запись; глобального mute-гейта вне ChatMute (PHASE 11, канальный)
+требованиями не описано, поэтому не добавлен.
+
+## ADR-0031 — `messages.hard_delete`/`comments.hard_delete` — только ChatMessage/ProfileComment
+
+**Context.** В проекте несколько «типов сообщений» (ChatMessage,
+DirectMessage) и несколько «типов комментариев» (ProfileComment,
+NewsComment), но `QuickModerationController` даёt ровно один
+cross-cutting `hard-delete` эндпоинт на каждую категорию.
+
+**Decision.** `hard-delete message` применяется только к `ChatMessage`
+(публичная поверхность, уже поддерживает soft-delete с `isDeleted` —
+hard-delete добавляет более жёсткий инструмент для действительно
+недопустимого контента). `DirectMessage` (личная переписка) намеренно
+исключена — cross-cutting модераторский доступ к приватным сообщениям
+не описан требованиями и является спорным продуктовым решением без
+явного запроса. `hard-delete comment` применяется только к
+`ProfileComment` (PHASE 09) — `NewsComment` уже имеет собственный путь
+модерации (`DELETE /moderation/news/comments/:commentId`, `news.
+comments.delete`, PHASE 13). Hard-delete комментария каскадно удаляет
+его ответы (`ProfileComment.parent` — `onDelete: Cascade` в schema) —
+осознанное поведение, не баг.
+
+## ADR-0032 — Report-ban (тикет-система) — отдельный от account-бана механизм
+
+**Context.** `ReportBan` ограничивает подачу обращений/сообщений в
+тикет-системе конкретным пользователем (антиспам для системы жалоб),
+тогда как `User.isBanned` — полная блокировка аккаунта (PHASE 05).
+Смешивать их нельзя: репорт-бан — это санкция за злоупотребление именно
+тикет-системой (спам обращениями), а не наказание в целом.
+
+**Decision.** `ReportsService.requireNotBanned()` проверяет активный
+`ReportBan` (`isActive: true` и `bannedUntil` в будущем или `null` —
+бессрочный) перед `createReport()`/`createDonationProblem()`. Повторный
+`POST /admin/reports/ban/:userId` деактивирует предыдущий активный бан
+перед созданием нового (не копит дублирующие активные записи).
+`reportNumber` генерируется в формате `R-YYYYMMDD-XXXXXX` (6 hex-символов
+из `randomBytes(3)`), с retry-циклом на случай коллизии (аналогично
+генерации уникального slug в Forms/PHASE 15).
+
+## ADR-0033 — GameReport/GamePunishment и экспорт/upload-вложения не входят в PHASE 16
+
+**Context.** Старый API-REFERENCE описывает `/game-reports`,
+`/users/:username/game-reports/incoming|outgoing`, `/bans`
+(`listActiveGamePunishments`), `/users/:username/punishments-history` —
+все они оперируют `GameReportSummary`/`GamePunishmentSummary`, то есть
+данными, которые в старом проекте приходили STUB-интеграцией с
+внешними игровыми плагинами (TigerReports/LiteBans). Эта интеграция уже
+зафиксирована как NOT_APPLICABLE в COVERAGE.md (раздел «Сознательно не
+переносится») — в схеме нет моделей `GameReport`/`GamePunishment`.
+
+**Decision.** Эти эндпоинты не реализуются — не урезание scope, а
+продолжение уже принятого в PHASE 00 решения. Их аналог на основе
+реальных данных — `UserPunishment` (`/users/me/punishments`, `/admin/
+users/:username/punishments`) — полностью реализован. Аналогично не
+реализованы `POST /admin/reports/export` (экспорт ответов в файл) и
+upload вложений к обращениям/сообщениям (`/reports/:reportNumber/
+attachments`, `.../messages/:messageId/attachments`) — зависят от
+`StorageService` (PHASE 23, RISKS.md R3), тот же паттерн, что и в Forms
+(ADR не требуется — уже задокументировано в RISKS.md R3).

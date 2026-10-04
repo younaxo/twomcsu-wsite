@@ -153,3 +153,28 @@
 - Приём ответов учитывает публикацию/видимость (включая `INVITE_ONLY` по
   коду приглашения)/окно приёма/лимит ответов/`onePerUser`/hCaptcha;
   `ipHash` (SHA-256, не сырой IP) для анти-спам аналитики.
+
+### Reports / Moderation
+- `/moderation/users/:userId/mute|warn|kick|ban` (quick moderation —
+  создают `UserPunishment`; `kick` разрывает refresh-сессии, `ban`
+  дополнительно выставляет `User.isBanned` с мгновенным эффектом на каждый
+  запрос), `/moderation/messages/:messageId/hard-delete` (ChatMessage),
+  `/moderation/comments/:commentId/hard-delete` (ProfileComment, каскадно
+  удаляет ответы), `DELETE /admin/users/:userId` (удаление аккаунта с
+  понятной ошибкой при FK-конфликте) под permissions.
+- `/admin/comment-reports`, `/admin/profile-reports` — список и
+  рассмотрение жалоб на комментарии профиля/профили; создание жалобы на
+  профиль (`POST /users/:username/report`) добавлено в `profiles`.
+- Тикет-система обращений (`/reports/*`, `/moderation/reports/*`,
+  `/admin/reports/*`, `/support/donation-problem`, `/admin/support/
+  donations`): создание с резолвом целей по username, переписка автора/
+  staff, assign/status/verdict, заметки модератора (скрыты от автора),
+  lock/unlock, архив (отдельный от удаления), `ReportBan` (бан в
+  тикет-системе, независим от `User.isBanned`).
+- История наказаний (`UserPunishment`): `/users/me/punishments`, `/admin/
+  users/:username/punishments` (список), `/admin/users/:userId/
+  punishments` (выдача/редактирование) под `users.punishments`.
+- `users.change_role` не перенесён — заменён существующими `/admin/
+  users/:userId/roles/:roleId` (PHASE 06, many-to-many RBAC); game-report/
+  game-punishment эндпоинты (внешняя интеграция с анти-чит плагинами) не
+  реализованы — не описаны требованиями (NOT_APPLICABLE с PHASE 00).
