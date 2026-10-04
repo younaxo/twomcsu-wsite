@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 18 — Minecraft servers
-Current branch: feature/minecraft
+Current phase: PHASE 19 — Gamification
+Current branch: feature/gamification
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -59,9 +59,14 @@ Completed:
   моков; статус/игроки/история/overview/HTML-виджет; honest offline при
   недоступности сервера; RCON и доставка игровых команд не предусмотрены
   схемой (ADR-0041) — 10 e2e-тестов против настоящего TCP-сервера в тесте)
+- PHASE 19 — Gamification (achievements с реальным пересчётом прогресса
+  по 17 из 19 ConditionType из текущих данных БД, пакетная модель
+  check-all-users, секретные достижения скрыты до разблокировки, витрина;
+  awards/badges/media-request; leaderboards с 5 реальными рейтингами —
+  11 e2e-тестов)
 
 In progress:
-none (PHASE 18 завершена и ждёт merge PR; следующая — PHASE 19, Gamification)
+none (PHASE 19 завершена и ждёт merge PR; следующая — PHASE 20, Admin backend)
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -93,7 +98,8 @@ PHASE 04/05).
 | PHASE 15 — Forms | `feature/forms` | merged (PR #25, `b44caa8`) | completed |
 | PHASE 16 — Reports / Moderation | `feature/reports-moderation` | merged (PR #26, `687cd20`) | completed |
 | PHASE 17 — Store | `feature/store` | merged (PR #27, `20b2dac`) | completed |
-| PHASE 18 — Minecraft servers | `feature/minecraft` | *(PR на проверке)* | in progress |
+| PHASE 18 — Minecraft servers | `feature/minecraft` | merged (PR #28, `289363a`) | completed |
+| PHASE 19 — Gamification | `feature/gamification` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -106,11 +112,12 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 21 suite / 167 тестов — auth + RBAC + users-domain +
+tests: pass (unit 1/1, e2e 22 suite / 178 тестов — auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
-store-checkout + minecraft, против реального Postgres+Redis (и настоящего
-TCP-сервера в minecraft-тестах), полный параллельный прогон всего сьюта)
+store-checkout + minecraft + gamification, против реального Postgres+Redis
+(и настоящего TCP-сервера в minecraft-тестах), полный параллельный прогон
+всего сьюта)
 build: pass
 
 Last updated: 2026-10-04

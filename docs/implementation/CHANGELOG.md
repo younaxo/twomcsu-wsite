@@ -230,3 +230,31 @@
   `AuditLog` не подключается точечно — сквозной механизм для всего
   проекта будет в PHASE 22 (ADR-0042).
 - 9 новых permission-ключей (`server_categories.*`, `servers.*`).
+
+### Gamification
+- `modules/achievements/` — `AchievementProgressService` реально считает
+  прогресс по 17 из 19 `AchievementConditionType` из текущих данных БД
+  (друзья/комментарии/реакции/заказы/подарки/жалобы/бейджи/возраст
+  аккаунта и т.д.); пересчёт — явный `POST /admin/achievements/
+  check-all-users` (пакетная модель, ADR-0043), не событийный. Публичный
+  `/achievements/*` (список с прогрессом viewer'а, секретные скрыты до
+  разблокировки, деталь, stats), admin CRUD + check-all-users, ручная
+  выдача/отзыв модератором (единственный путь для MANUAL/CUSTOM условий),
+  `/users/me/achievements` + `/users/:username/achievements` + витрина
+  (showcase, до 10 завершённых достижений). `rewardBadgeType` реально
+  выдаёт `UserBadge`; `rewardRubies` не зачисляется — нет кошелька
+  премиум-валюты (ADR-0045); `DAYS_STREAK`/`PROFILE_VIEWS` не продвигаются
+  автоматически — нет персистентного счётчика (ADR-0044).
+- `modules/awards/` — декоративные награды: публичный список, admin CRUD,
+  выдача/отзыв пользователю.
+- Бейджи (`/admin/users/:userId/badges`) и заявки на бейдж создателя
+  контента (`/users/me/media-request(s)`, `/admin/media-requests`) —
+  одобрение реально создаёт `UserMediaBadge`.
+- `modules/leaderboards/` — `GET /leaderboards`, 5 реальных рейтингов
+  (playtime/kills/coins из `PlayerStatistics`, achievements, purchases) —
+  без выдуманных метрик (ADR-0046).
+- Попутно: `SERVER_SELECTOR` в Forms (PHASE 15) получил реальную
+  referential-проверку теперь, когда модель `Server` (PHASE 18) появилась.
+- 15 новых permission-ключей (`achievements.*`, `awards.*`,
+  `media_requests.*`, `users.achievements`/`.achievements.grant`/
+  `.awards`/`.badges`).
