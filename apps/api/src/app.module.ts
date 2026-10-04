@@ -5,8 +5,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { envValidationSchema } from './config/env.validation';
+import { AchievementsModule } from './modules/achievements/achievements.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AwardsModule } from './modules/awards/awards.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
@@ -17,6 +19,7 @@ import { EventsModule } from './modules/events/events.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
+import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
 import { NewsModule } from './modules/news/news.module';
 import { MinecraftModule } from './modules/minecraft/minecraft.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
@@ -68,6 +71,9 @@ import { VotingModule } from './modules/voting/voting.module';
     ReportsModule,
     StoreModule,
     MinecraftModule,
+    AchievementsModule,
+    AwardsModule,
+    LeaderboardsModule,
   ],
   controllers: [AppController],
   providers: [
