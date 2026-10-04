@@ -197,4 +197,43 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'streams',
     description: 'Ручной запуск обновления статуса стримов',
   },
+
+  { key: 'forms.view', module: 'forms', description: 'Просмотр списка/карточки формы в админке' },
+  { key: 'forms.create', module: 'forms', description: 'Создание формы' },
+  { key: 'forms.edit', module: 'forms', description: 'Редактирование формы и её полей' },
+  { key: 'forms.delete', module: 'forms', description: 'Архивация формы' },
+  { key: 'forms.publish', module: 'forms', description: 'Публикация формы' },
+  { key: 'forms.close', module: 'forms', description: 'Закрытие формы для новых ответов' },
+  { key: 'forms.duplicate', module: 'forms', description: 'Дублирование формы' },
+  {
+    key: 'forms.responses',
+    module: 'forms',
+    description: 'Просмотр и удаление ответов на форму',
+  },
+  {
+    key: 'forms.invites',
+    module: 'forms',
+    description: 'Управление инвайт-кодами формы (список/создание/удаление)',
+  },
+  { key: 'forms.stats', module: 'forms', description: 'Просмотр статистики формы' },
+  {
+    key: 'forms.view.helper',
+    module: 'forms',
+    description: 'Просмотр форм с видимостью HELPER_ONLY',
+  },
+  {
+    key: 'forms.view.moderator',
+    module: 'forms',
+    description: 'Просмотр форм с видимостью MODERATOR_ONLY',
+  },
+  {
+    key: 'forms.view.admin',
+    module: 'forms',
+    description: 'Просмотр форм с видимостью ADMIN_ONLY',
+  },
+  {
+    key: 'forms.view.owner',
+    module: 'forms',
+    description: 'Просмотр форм с видимостью OWNER_ONLY',
+  },
 ];
