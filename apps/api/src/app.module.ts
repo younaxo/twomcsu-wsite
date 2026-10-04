@@ -10,6 +10,7 @@ import { EmailModule } from './modules/email/email.module';
 import { HealthModule } from './modules/health/health.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RedisModule } from './modules/redis/redis.module';
     EmailModule,
     HealthModule,
     AuthModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [
