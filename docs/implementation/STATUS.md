@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 17 — Store
-Current branch: feature/store
+Current phase: PHASE 18 — Minecraft servers
+Current branch: feature/minecraft
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -56,7 +56,7 @@ Completed:
   admin статистика с реальной SQL-агрегацией — 21 e2e-тест)
 
 In progress:
-none (PHASE 17 завершена и ждёт merge PR; следующая — PHASE 18, Minecraft servers)
+- PHASE 18 — Minecraft servers
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -87,7 +87,8 @@ PHASE 04/05).
 | PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | merged (PR #24, `927fe35`) | completed |
 | PHASE 15 — Forms | `feature/forms` | merged (PR #25, `b44caa8`) | completed |
 | PHASE 16 — Reports / Moderation | `feature/reports-moderation` | merged (PR #26, `687cd20`) | completed |
-| PHASE 17 — Store | `feature/store` | *(PR на проверке)* | in progress |
+| PHASE 17 — Store | `feature/store` | merged (PR #27, `20b2dac`) | completed |
+| PHASE 18 — Minecraft servers | `feature/minecraft` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
