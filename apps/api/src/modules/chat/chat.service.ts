@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ChatBan } from '@prisma/client';
 import { escapeToHtml, extractMentions } from '../../common/html.util';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionService } from '../roles/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -21,6 +22,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly permissions: PermissionService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async listActiveChannels() {
@@ -153,17 +155,49 @@ export class ChatService {
       }
     }
 
-    return this.prisma.chatMessage.create({
+    const mentions = extractMentions(dto.content);
+    const created = await this.prisma.chatMessage.create({
       data: {
         channelId,
         authorId: userId,
         content: dto.content,
         contentHtml: escapeToHtml(dto.content),
-        mentions: extractMentions(dto.content),
+        mentions,
         parentId: dto.parentId,
       },
       include: { author: true },
     });
+
+    await this.notifyMentioned(created.author, channelId, mentions);
+
+    return created;
+  }
+
+  private async notifyMentioned(
+    author: { id: string; username: string } | null,
+    channelId: string,
+    mentions: string[],
+  ): Promise<void> {
+    if (!author) {
+      return;
+    }
+    for (const username of mentions) {
+      if (username.toLowerCase() === author.username.toLowerCase()) {
+        continue;
+      }
+      const mentioned = await this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: 'insensitive' } },
+      });
+      if (mentioned?.notifyOnMention) {
+        await this.notifications.create({
+          userId: mentioned.id,
+          type: 'CHAT_MENTION',
+          title: `${author.username} упомянул(а) вас в чате`,
+          link: `/chat/${channelId}`,
+          fromUserId: author.id,
+        });
+      }
+    }
   }
 
   async editMessage(userId: string, messageId: string, dto: EditMessageDto) {
