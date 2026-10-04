@@ -23,7 +23,7 @@
 | departments | PARTIAL | PHASE 07 — CRUD + assign/reorder готовы, покрыты e2e |
 | direct-messages | IMPLEMENTED | PHASE 10 — личные/групповые беседы, WebSocket-гейтвей, покрыто e2e |
 | emojis | MISSING | кастомные emoji не описаны требованиями этой фазы; свободные emoji-реакции уже работают в comments/activity/direct-messages (PHASE 09/10) |
-| events | MISSING | PHASE 14 |
+| events | PARTIAL | PHASE 14 — публичный CRUD/attendance/видимость и admin CRUD+publish/cancel готовы, покрыты e2e; EVENT_REMINDER (cron) — PHASE 29 |
 | export | MISSING | PHASE 20 |
 | forms | MISSING | PHASE 15 |
 | friends | IMPLEMENTED | PHASE 09 — заявки/приём/отклонение/отмена/блокировка, все friendRequestPolicy, покрыты e2e |
@@ -40,12 +40,12 @@
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |
 | store | MISSING | PHASE 17 |
-| streaming | MISSING | PHASE 14 |
+| streaming | PARTIAL | PHASE 14 — публичный список и admin CRUD готовы, покрыты e2e; реальный опрос Twitch/YouTube — PHASE 18/29 (RISKS.md R6) |
 | system | MISSING | PHASE 25 |
-| topics | MISSING | PHASE 14 |
+| topics | PARTIAL | PHASE 14 — публичный CRUD/видимость и admin CRUD+reorder+pin готовы, покрыты e2e; вложения — PHASE 23 (CDN) |
 | uploads (→ CDN) | MISSING | PHASE 23 |
 | users | PARTIAL | PHASE 07 — admin список/поиск/пагинация + детальная карточка готовы, покрыты e2e; ban/kick/mute/warn — PHASE 16, badges/awards — PHASE 19 |
-| voting | MISSING | PHASE 14 |
+| voting | IMPLEMENTED | PHASE 14 — публичный обзор+webhook и admin CRUD+rotate-secret готовы, покрыты e2e |
 
 ## Сознательно не переносится (NOT_APPLICABLE)
 

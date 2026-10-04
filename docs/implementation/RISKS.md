@@ -42,9 +42,14 @@ production. В dev/test работает `HCAPTCHA_DISABLED=true`.
 
 ## R6 — Внешние интеграции стриминга (Twitch/YouTube) — OPEN
 
-`TWITCH_CLIENT_ID/SECRET`, `YOUTUBE_API_KEY` — нужны только на фазе PHASE 14
-(Streaming). Реализуется с явной проверкой наличия ключей — модуль выключается,
-если ключей нет, без падения остального приложения.
+`TWITCH_CLIENT_ID/SECRET`, `YOUTUBE_API_KEY` — нужны для реального опроса
+статуса каналов (PHASE 14, Streaming — см. ADR-0026). CRUD каналов и
+публичный список полностью рабочие уже сейчас; `POST /admin/streams/refresh`
+честно отвечает `{refreshed: false, reason: 'no_platform_credentials_configured'}`
+без ключей, без падения и без моковых данных. Сам реальный опрос API плюс
+периодический cron для автообновления — PHASE 18/29, когда ключи появятся.
+**Нужно от владельца:** зарегистрировать приложение в Twitch Developer
+Console и получить API key в Google Cloud Console (YouTube Data API v3).
 
 ## R7 — Web Push (VAPID) — OPEN
 
