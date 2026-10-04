@@ -15,6 +15,7 @@ import { DirectMessagesModule } from './modules/direct-messages/direct-messages.
 import { EmailModule } from './modules/email/email.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
+import { NewsModule } from './modules/news/news.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
@@ -48,6 +49,7 @@ import { UsersModule } from './modules/users/users.module';
     ActivityModule,
     DirectMessagesModule,
     ChatModule,
+    NewsModule,
   ],
   controllers: [AppController],
   providers: [
