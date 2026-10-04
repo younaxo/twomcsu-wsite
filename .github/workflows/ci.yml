@@ -93,6 +93,15 @@ jobs:
             echo "::notice::prisma/schema.prisma ещё не создан (PHASE 04) — шаг пропущен"
           fi
 
+      - name: Prisma seed (roles/permissions)
+        working-directory: apps/api
+        run: |
+          if [ -d prisma/seed ]; then
+            pnpm exec prisma db seed
+          else
+            echo "::notice::prisma/seed ещё не создан (PHASE 06) — шаг пропущен"
+          fi
+
       - name: Test
         run: pnpm test
 
