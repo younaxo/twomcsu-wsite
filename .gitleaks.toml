@@ -1,0 +1,13 @@
+[extend]
+useDefault = true
+
+# Тестовые фикстуры (apps/*/test/**, *.spec.ts) намеренно содержат заведомо
+# фиктивные пароли/токены для e2e-сценариев (например reset-password с
+# неверным токеном) — это не секреты проекта. Без этого allowlist каждый
+# такой тестовый литерал ловится generic-api-key по энтропии (см.
+# docs/implementation/phases/PHASE-05-authentication.md).
+[allowlist]
+paths = [
+  '''.*\.e2e-spec\.ts$''',
+  '''.*\.spec\.ts$''',
+]
