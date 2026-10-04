@@ -25,8 +25,8 @@
     "format:check": "pnpm -r --if-present run format:check",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
-    "db:up": "docker compose -f infrastructure/docker-compose.yml up -d postgres redis",
-    "db:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "db:up": "docker compose --env-file .env -f infrastructure/docker-compose.yml up -d postgres redis",
+    "db:down": "docker compose --env-file .env -f infrastructure/docker-compose.yml down",
     "db:migrate": "pnpm --filter @twomc/api run db:migrate",
     "db:seed": "pnpm --filter @twomc/api run db:seed",
     "prepare": "node -e \"process.exit(0)\""
