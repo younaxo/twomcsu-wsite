@@ -264,11 +264,26 @@ export class AchievementProgressService {
     unlocksGranted: number;
   }> {
     const users = await this.prisma.user.findMany({ select: { id: true } });
+    let usersChecked = 0;
     let unlocksGranted = 0;
     for (const user of users) {
-      const results = await this.checkUser(user.id);
-      unlocksGranted += results.filter((r) => r.justCompleted).length;
+      try {
+        const results = await this.checkUser(user.id);
+        unlocksGranted += results.filter((r) => r.justCompleted).length;
+        usersChecked += 1;
+      } catch (error) {
+        // Пользователь мог быть удалён между findMany и обработкой (гонка
+        // с параллельным удалением аккаунта) — пропускаем, а не валим весь
+        // batch-пересчёт.
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          (error.code === 'P2003' || error.code === 'P2025')
+        ) {
+          continue;
+        }
+        throw error;
+      }
     }
-    return { usersChecked: users.length, unlocksGranted };
+    return { usersChecked, unlocksGranted };
   }
 }
