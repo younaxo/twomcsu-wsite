@@ -33,7 +33,11 @@
     "db:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:validate": "dotenv -e ../../.env -- prisma validate",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
+    "db:seed": "dotenv -e ../../.env -- prisma db seed",
     "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed/index.ts"
   },
   "dependencies": {
     "@twomc/shared": "workspace:*",
