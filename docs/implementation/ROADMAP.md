@@ -29,7 +29,7 @@
 - [x] PHASE 12 — Notifications (website/WS/email/push; периодический digest — PHASE 29)
 - [x] PHASE 13 — News (черновики, публикация, комментарии; медиа-загрузка — PHASE 23)
 - [x] PHASE 14 — Events / Topics / Voting / Streaming (реальный опрос Twitch/YouTube — PHASE 18/29)
-- [ ] PHASE 15 — Forms engine (конструктор форм, submissions, экспорт)
+- [x] PHASE 15 — Forms engine (конструктор форм, submissions; экспорт/шаблоны/upload — см. PHASE 15 doc)
 - [ ] PHASE 16 — Reports / Moderation (жалобы, наказания, audit)
 - [ ] PHASE 17 — Store (каталог, корзина, заказы, промокоды)
 - [ ] PHASE 18 — Minecraft servers (мониторинг, статус, история)

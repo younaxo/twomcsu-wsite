@@ -137,3 +137,19 @@
 - `/streams` (публичный список каналов) и `/admin/streams/*` (CRUD,
   refresh — честно сообщает об отсутствии Twitch/YouTube credentials) под
   permissions.
+
+### Forms
+- `/forms/*` (список опубликованных форм с учётом видимости, мои формы/
+  мои ответы, автоподстановка username/email, доступ по коду приглашения,
+  деталь по slug, отправка ответа, сохранение черновика) и `/admin/forms/*`
+  (CRUD с вложенными полями, publish/close/duplicate, список/деталь/
+  удаление ответов, статистика, CRUD приглашений) под 14 permission-ключами.
+- Конструктор форм — 33 типа полей (`FormFieldType`), валидация и хранение
+  диспетчеризируются по типу: RADIO/SELECT/CHECKBOX проверяются против
+  `options`, NUMBER/RATING/CURRENCY_AMOUNT — против min/max, AGREEMENT_
+  CHECKLIST обязан быть `true`, NEWS_REFERENCE/TOPIC_REFERENCE/
+  FRIENDS_SELECTOR проверяются реальной референциальной валидацией
+  (существование/публикация/дружба).
+- Приём ответов учитывает публикацию/видимость (включая `INVITE_ONLY` по
+  коду приглашения)/окно приёма/лимит ответов/`onePerUser`/hCaptcha;
+  `ipHash` (SHA-256, не сырой IP) для анти-спам аналитики.

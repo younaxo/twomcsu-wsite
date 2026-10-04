@@ -25,7 +25,7 @@
 | emojis | MISSING | кастомные emoji не описаны требованиями этой фазы; свободные emoji-реакции уже работают в comments/activity/direct-messages (PHASE 09/10) |
 | events | PARTIAL | PHASE 14 — публичный CRUD/attendance/видимость и admin CRUD+publish/cancel готовы, покрыты e2e; EVENT_REMINDER (cron) — PHASE 29 |
 | export | MISSING | PHASE 20 |
-| forms | MISSING | PHASE 15 |
+| forms | PARTIAL | PHASE 15 — конструктор форм (33 типа полей), публичный CRUD/видимость/invite-only/черновики и admin CRUD+publish/close/duplicate+responses+stats+invites готовы, покрыты e2e; загрузка файлов для FILE_UPLOAD/IMAGE_GALLERY — PHASE 23 (RISKS.md R3); шаблоны форм (`FormTemplate`) и экспорт ответов — вне scope схемы БД этой фазы; referential-валидация PLAYER/SERVER/RANK/PRODUCT/ORDER/REPORT/PUNISHMENT/ACHIEVEMENT-селекторов — по мере соответствующих фаз (PHASE 16/17/18/19, ADR-0027) |
 | friends | IMPLEMENTED | PHASE 09 — заявки/приём/отклонение/отмена/блокировка, все friendRequestPolicy, покрыты e2e |
 | health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
 | leaderboards | MISSING | PHASE 19 |

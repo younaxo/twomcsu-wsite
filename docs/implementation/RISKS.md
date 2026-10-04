@@ -26,6 +26,10 @@ GitHub (Settings → SSH and GPG keys).
 production нужен S3-совместимый бакет и домен `cdn-files.twomc.su`.
 **Нужно от владельца:** `STORAGE_BUCKET`, `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`,
 `STORAGE_SECRET_KEY`, настройка DNS/реверс-прокси для `cdn-files.twomc.su`.
+Затронуто также PHASE 15 (Forms): `POST /forms/:slug/responses/upload` (загрузка
+файлов для `FILE_UPLOAD`/`IMAGE_GALLERY`) не реализован в PHASE 15 — поля этих
+типов принимают уже готовые URL в `fileUrls` (см. `FormsService.buildAnswerData`),
+сам upload-эндпоинт появится вместе с `StorageService` (PHASE 23).
 
 ## R4 — SMTP (доставка писем) — OPEN
 
