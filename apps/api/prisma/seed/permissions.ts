@@ -19,4 +19,48 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'roles',
     description: 'Просмотр реестра permissions и изменение набора прав роли',
   },
+
+  { key: 'positions.view', module: 'positions', description: 'Просмотр позиций' },
+  { key: 'positions.create', module: 'positions', description: 'Создание позиции' },
+  { key: 'positions.edit', module: 'positions', description: 'Редактирование позиции' },
+  { key: 'positions.delete', module: 'positions', description: 'Удаление позиции' },
+  { key: 'positions.assign', module: 'positions', description: 'Назначение позиции пользователю' },
+
+  { key: 'departments.view', module: 'departments', description: 'Просмотр отделов' },
+  { key: 'departments.create', module: 'departments', description: 'Создание отдела' },
+  { key: 'departments.edit', module: 'departments', description: 'Редактирование отдела' },
+  { key: 'departments.delete', module: 'departments', description: 'Удаление отдела' },
+  {
+    key: 'departments.assign',
+    module: 'departments',
+    description: 'Добавление/удаление пользователя из отдела',
+  },
+
+  {
+    key: 'custom_positions.view',
+    module: 'custom_positions',
+    description: 'Просмотр кастомных должностей',
+  },
+  {
+    key: 'custom_positions.create',
+    module: 'custom_positions',
+    description: 'Создание кастомной должности',
+  },
+  {
+    key: 'custom_positions.edit',
+    module: 'custom_positions',
+    description: 'Редактирование кастомной должности',
+  },
+  {
+    key: 'custom_positions.delete',
+    module: 'custom_positions',
+    description: 'Удаление кастомной должности',
+  },
+  {
+    key: 'custom_positions.assign',
+    module: 'custom_positions',
+    description: 'Назначение/снятие кастомной должности у пользователя',
+  },
+
+  { key: 'users.view', module: 'users', description: 'Просмотр списка и карточки пользователя' },
 ];

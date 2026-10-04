@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { PERMISSIONS } from './permissions';
+import { DEFAULT_POSITIONS } from './positions';
 import { SUPERUSER_ROLES } from './roles';
 
 const prisma = new PrismaClient();
@@ -17,6 +18,15 @@ async function main(): Promise<void> {
     });
   }
   console.log(`Permissions: ${PERMISSIONS.length} синхронизировано`);
+
+  for (const position of DEFAULT_POSITIONS) {
+    await prisma.position.upsert({
+      where: { slug: position.slug },
+      create: position,
+      update: { displayName: position.displayName, color: position.color },
+    });
+  }
+  console.log(`Позиции: ${DEFAULT_POSITIONS.length} синхронизировано`);
 
   for (const role of SUPERUSER_ROLES) {
     await prisma.role.upsert({
