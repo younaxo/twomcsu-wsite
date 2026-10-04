@@ -37,6 +37,7 @@
 | prisma | MISSING | PHASE 04 |
 | redis | PARTIAL | Базовый клиент (`RedisService`) подключён в PHASE 05 для brute-force; централизованные cache keys/инвалидация — PHASE 24 |
 | reports | MISSING | PHASE 16 |
+| roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |
 | store | MISSING | PHASE 17 |
 | streaming | MISSING | PHASE 14 |

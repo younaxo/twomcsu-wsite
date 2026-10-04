@@ -196,3 +196,27 @@ advisory до апдейта фреймворка.
 PHASE 05 Authentication), а не заранее списком из `.env.example`. Так схема
 валидации никогда не рассогласуется с фактически используемыми переменными и
 не создаёт ложного впечатления, что что-то уже подключено, когда это не так.
+
+## ADR-0016 — Реестр permissions наполняется по доменным фазам, а не сразу
+
+**Context.** `docs/technical/11-PERMISSION-MATRIX.md` описывает 246 ключей по
+47 модулям — но на PHASE 06 в коде существуют только Auth и сам RBAC-модуль;
+подавляющее большинство ключей матрицы относится к модулям, которые ещё не
+реализованы (store, chat, news, reports и т.д.).
+
+**Decision.** `prisma/seed/permissions.ts` на PHASE 06 содержит только 7 ключей
+модуля `roles` (`roles.view|create|edit|delete|assign|history.view`,
+`permissions.manage`) — ровно то, что реально защищает `RolesController`/
+`UserRolesController` в этом коммите. Каждая следующая доменная фаза добавляет
+**свои** ключи в `PERMISSIONS` вместе со своими endpoints (а не весь реестр
+из 11-PERMISSION-MATRIX.md заранее одним PR) — так `PERMISSIONS` и код всегда
+синхронны, и в БД никогда нет permission, которую ничего не проверяет.
+Нормализация артефактов автогенерации матрицы (`misc.view`→`dashboard.view`
+и т.п., см. 11-PERMISSION-MATRIX.md «Замечания») применяется в момент, когда
+соответствующий модуль реализуется, а не заранее.
+
+**Роли:** на PHASE 06 заведены только 3 superuser-роли (`Owner`,
+`Chief Curator`, `Chief Developer` — `isSuperuser=true`, `isSystem=true`,
+см. ADR-0005/ADR-0006). Staff-роли уровня Admin/Moderator/Helper создаются в
+PHASE 32 вместе с bootstrap-аккаунтами, когда уже есть реальные permissions
+доменных модулей, которые им имеет смысл назначать.

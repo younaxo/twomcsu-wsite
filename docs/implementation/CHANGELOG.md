@@ -36,3 +36,14 @@
   только логируются).
 - helmet, cookie-parser, глобальный `ValidationPipe`, CORS, `ThrottlerModule`
   (100/60с глобально, 10/мин на login).
+
+### RBAC
+- `PermissionService` (effective permissions, superuser, priority-иерархия,
+  Redis-кеш `perm:user:{id}` с немедленной инвалидацией), `PermissionsGuard`,
+  `@RequirePermissions(...)`.
+- `GET/POST /admin/roles`, `GET/PATCH/DELETE /admin/roles/:id`,
+  `PUT /admin/roles/:id/permissions`, `GET /admin/roles/:id/history`,
+  `GET /admin/permissions`, `POST/DELETE /admin/users/:id/roles/:roleId`,
+  `GET /admin/users/:id/effective-permissions`.
+- Seed: 3 superuser-роли (`Owner`, `Chief Curator`, `Chief Developer`), 7
+  permission keys модуля `roles`.
