@@ -93,3 +93,28 @@ docker volume rm twomcsu_postgres-data twomcsu_redis-data
 "services scanned" частично). Там, где старая документация неполна, архитектурные
 решения принимаются по лучшим практикам и фиксируются в `DECISIONS.md`, а не
 додумываются как «факт старого проекта».
+
+## R12 — Границы historical branches для PHASE 04/05 неоднозначны — MITIGATED
+
+**Контекст.** PHASE 00–07 изначально велись в одной ветке
+(`feature/project-bootstrap`) вместо отдельной ветки на каждый этап — задним
+числом созданы historical branches (`feature/infrastructure`,
+`feature/database-foundation`, `feature/authentication`,
+`feature/rbac-permissions`, `feature/users`), указывающие на последний commit
+соответствующего этапа (см. таблицу в `STATUS.md`).
+
+Три commit'а (`344f9b1` fix(docs) — убрать шаблонный README, `9911306`
+docs(status) — зафиксировать находку gitleaks, `2346864` fix(ci) — добавить
+`.gitleaksignore`) оказались между завершением PHASE 04 (`33996ef`) и началом
+PHASE 05 (`c8c3f65`). Это не фичи PHASE 04 и не PHASE 05 — это исправления
+CI/repo hygiene (ложные срабатывания gitleaks) для PR, который на тот момент
+покрывал фазы 0–4 целиком.
+
+**Решение.** Не переписывать историю ради идеальной границы. `344f9b1`/
+`9911306`/`2346864` включены в хвост `feature/database-foundation` (ветка
+указывает на `2346864`) — это честнее, чем прикреплять их к PHASE 05
+(`feature/authentication`), так как они фиксируют состояние CI именно после
+PHASE 04, до появления кода PHASE 05. `feature/project-bootstrap` сохранена
+как есть (указывает на актуальный HEAD, т.к. это действующая ветка открытого
+PR #5) — согласно прямому указанию не удалять и не менять её при
+нормализации.

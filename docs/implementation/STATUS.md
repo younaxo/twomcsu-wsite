@@ -26,6 +26,29 @@ Completed:
 In progress:
 - PHASE 08 — Profiles
 
+## История веток (normalized, см. RISKS.md R12)
+
+PHASE 00–07 изначально велись в одной ветке (`feature/project-bootstrap`).
+Ниже — historical branches, задним числом указывающие на commit завершения
+каждого этапа (созданы как обычные branch pointers, без переписывания
+истории — см. RISKS.md R12 про единственную неоднозначную границу
+PHASE 04/05).
+
+| PHASE | Branch | Last commit | Status |
+|---|---|---|---|
+| PHASE 00–01 — Discovery, Project bootstrap | `feature/project-bootstrap` | `7a6779e` | completed |
+| PHASE 02–03 — CI, Local infrastructure | `feature/infrastructure` | `331ff09` | completed |
+| PHASE 04 — Database foundation | `feature/database-foundation` | `2346864` | completed |
+| PHASE 05 — Authentication | `feature/authentication` | `d5e05b8` | completed |
+| PHASE 06 — RBAC / Permissions | `feature/rbac-permissions` | `81699a7` | completed |
+| PHASE 07 — Users | `feature/users` | `4bee251` | completed |
+
+`feature/project-bootstrap` — действующая ветка открытого PR #5, по факту
+указывает на HEAD (все коммиты PHASE 00–07 до нормализации). Historical
+branches выше созданы дополнительно, как точки навигации по истории; ветку
+PR не меняли и не удаляли. Новые этапы (начиная с PHASE 08) идут через
+отдельные feature-ветки по стандартному workflow.
+
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
 R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
