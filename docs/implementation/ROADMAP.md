@@ -31,7 +31,7 @@
 - [x] PHASE 14 — Events / Topics / Voting / Streaming (реальный опрос Twitch/YouTube — PHASE 18/29)
 - [x] PHASE 15 — Forms engine (конструктор форм, submissions; экспорт/шаблоны/upload — см. PHASE 15 doc)
 - [x] PHASE 16 — Reports / Moderation (жалобы, наказания; audit log — отдельно PHASE 22)
-- [ ] PHASE 17 — Store (каталог, корзина, заказы, промокоды)
+- [x] PHASE 17 — Store (каталог, корзина, заказы, промокоды; реальный провайдер/доставка на сервер — RISKS.md R2, PHASE 18)
 - [ ] PHASE 18 — Minecraft servers (мониторинг, статус, история)
 - [ ] PHASE 19 — Gamification (achievements, awards, badges, leaderboards)
 - [ ] PHASE 20 — Admin backend (административные API, hierarchy, audit)

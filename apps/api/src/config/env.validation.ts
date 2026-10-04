@@ -56,4 +56,10 @@ export const envValidationSchema = Joi.object({
   TWITCH_CLIENT_ID: Joi.string().allow('').default(''),
   TWITCH_CLIENT_SECRET: Joi.string().allow('').default(''),
   YOUTUBE_API_KEY: Joi.string().allow('').default(''),
+
+  /// Провайдер не выбран (RISKS.md R2, ADR-0009) — только 'test' реализован.
+  /// PAYMENT_WEBHOOK_SECRET подписывает вебхук (HMAC-SHA256 от сырого тела).
+  PAYMENT_PROVIDER: Joi.string().valid('test').default('test'),
+  PAYMENT_API_KEY: Joi.string().allow('').default(''),
+  PAYMENT_WEBHOOK_SECRET: Joi.string().allow('').default('test-webhook-secret'),
 }).unknown(true);

@@ -178,3 +178,36 @@
   users/:userId/roles/:roleId` (PHASE 06, many-to-many RBAC); game-report/
   game-punishment эндпоинты (внешняя интеграция с анти-чит плагинами) не
   реализованы — не описаны требованиями (NOT_APPLICABLE с PHASE 00).
+
+### Store
+- Каталог: `/store/categories` (дерево), `/store/products` (+варианты
+  цен по длительности, «часто покупают вместе» — реальная аналитика по
+  завершённым заказам, `inWishlist` для viewer), `/store/bundles` (наборы
+  с окном действия) под публичными GET и admin CRUD (`store.*`
+  permissions).
+- Скидки/промокоды/валюты: `BulkDiscount` (по товару/типу+количеству/
+  сумме) и `LoyaltyDiscount` (по числу завершённых заказов) — публичные
+  списки + admin CRUD; `PromoCode` — публичная валидация, применение
+  через корзину, admin CRUD; `CurrencyRate` — admin CRUD + публичный
+  калькулятор обмена (без баланса — ADR-0035).
+- `PricingService` — единая точка пересчёта стоимости (bulk → loyalty →
+  promo, последовательно от остатка — ADR-0036), используется и
+  корзиной, и оформлением заказа — итог всегда пересчитывается сервером.
+- `/store/cart/*` — получение/добавление/изменение/удаление позиции,
+  очистка, применение/снятие промокода, пересчёт с превью; подарок товара
+  проверяет `isGiftable`/`isSelfOnly`. `/store/wishlist/*` — список,
+  видимость, публичная страница, «подарить из списка желаний».
+- `/store/orders/*` (оформление из корзины, список/деталь своих заказов),
+  `/store/quick-buy` (всегда анонимный, `guestMinecraftNick` — ADR-0038),
+  `/store/recent-purchases` (публичная лента), `/admin/orders/*`
+  (список/статистика/отмена/возврат).
+- `PaymentProvider`/`TestPaymentProvider`/`PaymentProviderRegistry` —
+  заказ подтверждается только вебхуком (`POST /webhooks/payments/
+  :provider`, секрет в теле, constant-time, идемпотентно — ADR-0034);
+  `isUnique`-товары проверяются при оформлении заказа (ADR-0037); тестовый
+  провайдер не регистрируется в production (RISKS.md R2).
+- `/admin/store/stats/*` — overview/sales-by-day/sales-by-category/
+  top-products/revenue-by-week, реальная SQL-агрегация.
+- `mock-complete` не перенесён (решение зафиксировано ещё в PHASE 00,
+  ADR-0009); доставка на игровой сервер (`gameCommands`) — зависит от
+  Minecraft-интеграции (PHASE 18, ADR-0039).

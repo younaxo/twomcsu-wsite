@@ -39,7 +39,7 @@
 | reports | PARTIAL | PHASE 16 — тикет-система обращений (создание/переписка/assign/status/verdict/заметки/lock/архив/report-ban), история наказаний (`UserPunishment`), donation-problem готовы, покрыты e2e; game-report/game-punishment (внешняя анти-чит интеграция), экспорт и upload вложений — вне scope (ADR-0033, RISKS.md R3) |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |
-| store | MISSING | PHASE 17 |
+| store | PARTIAL | PHASE 17 — каталог (категории/товары+варианты/наборы), скидки (bulk/loyalty)/промокоды/валюты, корзина с подарками и единым пересчётом сервером, заказы через PaymentProvider+вебхук (TestPaymentProvider), quick-buy, wishlist, admin-статистика готовы, покрыты e2e; `mock-complete` не перенесён (ADR-0009, PHASE 00); реальный платёжный провайдер — RISKS.md R2; доставка на игровой сервер — PHASE 18 (ADR-0039); загрузка изображений — PHASE 23 |
 | streaming | PARTIAL | PHASE 14 — публичный список и admin CRUD готовы, покрыты e2e; реальный опрос Twitch/YouTube — PHASE 18/29 (RISKS.md R6) |
 | system | MISSING | PHASE 25 |
 | topics | PARTIAL | PHASE 14 — публичный CRUD/видимость и admin CRUD+reorder+pin готовы, покрыты e2e; вложения — PHASE 23 (CDN) |
