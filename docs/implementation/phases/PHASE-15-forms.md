@@ -82,6 +82,13 @@ RADIO, список/получение/удаление ответа админ�
   REPORT_REFERENCE/PUNISHMENT_REFERENCE (PHASE 16), ACHIEVEMENT_SELECTOR
   (PHASE 19) — эти домены ещё не существуют (ADR-0027); значения
   принимаются и хранятся без проверки существования ID.
+  **Обновление (PHASE 18):** `SERVER_SELECTOR` получил реальную
+  referential-проверку (`Server.isActive`) сразу после появления модели
+  `Server` — см. PHASE-18 doc и ADR-0027. `PRODUCT_SELECTOR`/
+  `ORDER_SELECTOR`/`REPORT_REFERENCE`/`PUNISHMENT_REFERENCE` технически
+  тоже уже можно проверять (модели существуют с PHASE 16/17), но это
+  намеренно не сделано задним числом — зафиксированный techdebt для
+  отдельного прохода, не забытая работа.
 - Условная логика полей (`conditionalLogic`, `stepsConfig` для
   `multiStep`) хранится как есть (JSON от клиента), серверная интерпретация
   «показывать ли поле N в зависимости от ответа на поле M» — это

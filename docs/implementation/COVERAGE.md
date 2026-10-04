@@ -29,7 +29,7 @@
 | friends | IMPLEMENTED | PHASE 09 — заявки/приём/отклонение/отмена/блокировка, все friendRequestPolicy, покрыты e2e |
 | health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
 | leaderboards | MISSING | PHASE 19 |
-| minecraft | MISSING | PHASE 18 |
+| minecraft | PARTIAL | PHASE 18 — категории/серверы CRUD, реальный Server List Ping (статус/игроки/история/overview/widget) готовы, покрыты e2e против настоящего TCP-сервера; RCON/доставка игровых команд не предусмотрены схемой (ADR-0041); периодический cron — PHASE 29; audit log — PHASE 22 |
 | moderation | IMPLEMENTED | PHASE 16 — quick moderation (mute/warn/kick/ban/hard-delete сообщения и комментария/удаление аккаунта), рассмотрение жалоб на комментарии/профили готовы, покрыты e2e; `users.change_role` заменён RBAC-эндпоинтами PHASE 06 (ADR-0029) |
 | news | PARTIAL | PHASE 13 — публичный CRUD/лайки/комментарии/RSS и admin CRUD+модерация готовы, покрыты e2e; загрузка изображений — PHASE 23, автопубликация по расписанию — PHASE 29 |
 | notifications | PARTIAL | PHASE 12 — REST/WS/email/push/discord-вебхуки и реальная межмодульная интеграция (friends/comments/activity/direct-messages/chat) готовы, покрыты e2e; периодический cron-дайджест — PHASE 29; push требует VAPID-ключей (RISKS.md R7) |
@@ -39,7 +39,7 @@
 | reports | PARTIAL | PHASE 16 — тикет-система обращений (создание/переписка/assign/status/verdict/заметки/lock/архив/report-ban), история наказаний (`UserPunishment`), donation-problem готовы, покрыты e2e; game-report/game-punishment (внешняя анти-чит интеграция), экспорт и upload вложений — вне scope (ADR-0033, RISKS.md R3) |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |
-| store | PARTIAL | PHASE 17 — каталог (категории/товары+варианты/наборы), скидки (bulk/loyalty)/промокоды/валюты, корзина с подарками и единым пересчётом сервером, заказы через PaymentProvider+вебхук (TestPaymentProvider), quick-buy, wishlist, admin-статистика готовы, покрыты e2e; `mock-complete` не перенесён (ADR-0009, PHASE 00); реальный платёжный провайдер — RISKS.md R2; доставка на игровой сервер — PHASE 18 (ADR-0039); загрузка изображений — PHASE 23 |
+| store | PARTIAL | PHASE 17 — каталог (категории/товары+варианты/наборы), скидки (bulk/loyalty)/промокоды/валюты, корзина с подарками и единым пересчётом сервером, заказы через PaymentProvider+вебхук (TestPaymentProvider), quick-buy, wishlist, admin-статистика готовы, покрыты e2e; `mock-complete` не перенесён (ADR-0009, PHASE 00); реальный платёжный провайдер — RISKS.md R2; доставка на игровой сервер (RCON) не предусмотрена схемой `Server` (ADR-0041); загрузка изображений — PHASE 23 |
 | streaming | PARTIAL | PHASE 14 — публичный список и admin CRUD готовы, покрыты e2e; реальный опрос Twitch/YouTube — PHASE 18/29 (RISKS.md R6) |
 | system | MISSING | PHASE 25 |
 | topics | PARTIAL | PHASE 14 — публичный CRUD/видимость и admin CRUD+reorder+pin готовы, покрыты e2e; вложения — PHASE 23 (CDN) |

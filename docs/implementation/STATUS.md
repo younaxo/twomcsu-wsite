@@ -54,9 +54,14 @@ Completed:
   TestPaymentProvider с вебхук-подтверждением (секрет в теле, constant-time,
   идемпотентно), quick-buy анонимный с guestMinecraftNick, wishlist с gift,
   admin статистика с реальной SQL-агрегацией — 21 e2e-тест)
+- PHASE 18 — Minecraft servers (реальный клиент Server List Ping —
+  handshake/status/ping-pong поверх TCP, без внешних credentials и без
+  моков; статус/игроки/история/overview/HTML-виджет; honest offline при
+  недоступности сервера; RCON и доставка игровых команд не предусмотрены
+  схемой (ADR-0041) — 10 e2e-тестов против настоящего TCP-сервера в тесте)
 
 In progress:
-- PHASE 18 — Minecraft servers
+none (PHASE 18 завершена и ждёт merge PR; следующая — PHASE 19, Gamification)
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -88,7 +93,7 @@ PHASE 04/05).
 | PHASE 15 — Forms | `feature/forms` | merged (PR #25, `b44caa8`) | completed |
 | PHASE 16 — Reports / Moderation | `feature/reports-moderation` | merged (PR #26, `687cd20`) | completed |
 | PHASE 17 — Store | `feature/store` | merged (PR #27, `20b2dac`) | completed |
-| PHASE 18 — Minecraft servers | `feature/minecraft` | *(в работе)* | in progress |
+| PHASE 18 — Minecraft servers | `feature/minecraft` | *(PR на проверке)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -101,11 +106,11 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 20 suite / 157 тестов — auth + RBAC + users-domain +
+tests: pass (unit 1/1, e2e 21 suite / 167 тестов — auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
-store-checkout, против реального Postgres+Redis, полный параллельный прогон
-всего сьюта)
+store-checkout + minecraft, против реального Postgres+Redis (и настоящего
+TCP-сервера в minecraft-тестах), полный параллельный прогон всего сьюта)
 build: pass
 
 Last updated: 2026-10-04
