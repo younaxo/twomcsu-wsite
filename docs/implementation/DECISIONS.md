@@ -146,7 +146,18 @@ owner-only разделы (department/custom-position/topics и т.п.), кот�
 WebSocket: `socket.io-client` внутри Jest. Обязательные наборы — см.
 `docs/technical/46-TESTING.md` (перенесены в `COVERAGE.md` как чеклист).
 
-## ADR-0012 — Подпись коммитов
+## ADR-0012 — Стилизация frontend: Tailwind CSS
+
+**Context.** Документация старого проекта (`docs/technical/01-ARCHITECTURE.md`,
+`03-PAGES.md`) не фиксирует используемый CSS-подход (не дочитан `02-FRONTEND.md`).
+MASTER PROMPT §90 требует сначала функциональность, но UI должен быть аккуратным,
+современным и адаптивным.
+
+**Decision.** `apps/web` использует Tailwind CSS (utility-first) поверх Next.js App
+Router — быстрый старт, встроенная поддержка в `create-next-app`, не блокирует
+дальнейший выбор компонентной библиотеки/дизайн-системы на фазе PHASE 31.
+
+## ADR-0013 — Подпись коммитов
 
 **Context.** `git config commit.gpgsign` не настроен, `gpg --list-secret-keys` не
 возвращает ключей в текущем окружении.

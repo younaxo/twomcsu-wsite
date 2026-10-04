@@ -1,0 +1,34 @@
+{
+  "name": "twomc-su",
+  "version": "0.1.0",
+  "private": true,
+  "description": "twomc.su — сайт Minecraft-проекта (monorepo: apps/api, apps/web, packages/shared)",
+  "author": {
+    "name": "younaxo",
+    "email": "menidan78.offical@gmail.com"
+  },
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/younaxo/twomcsu-wsite.git"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @twomc/api --filter @twomc/web run dev",
+    "build": "pnpm -r --if-present run build",
+    "lint": "pnpm -r --if-present run lint",
+    "format": "pnpm -r --if-present run format",
+    "format:check": "pnpm -r --if-present run format:check",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "db:up": "docker compose -f infrastructure/docker-compose.yml up -d postgres redis",
+    "db:down": "docker compose -f infrastructure/docker-compose.yml down",
+    "db:migrate": "pnpm --filter @twomc/api run db:migrate",
+    "db:seed": "pnpm --filter @twomc/api run db:seed",
+    "prepare": "node -e \"process.exit(0)\""
+  }
+}
