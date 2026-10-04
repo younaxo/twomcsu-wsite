@@ -6,11 +6,15 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { envValidationSchema } from './config/env.validation';
 import { AuthModule } from './modules/auth/auth.module';
+import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
 import { EmailModule } from './modules/email/email.module';
 import { HealthModule } from './modules/health/health.module';
+import { PositionsModule } from './modules/positions/positions.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -26,6 +30,10 @@ import { RolesModule } from './modules/roles/roles.module';
     HealthModule,
     AuthModule,
     RolesModule,
+    PositionsModule,
+    DepartmentsModule,
+    CustomPositionsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [

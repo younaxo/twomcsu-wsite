@@ -1,0 +1,55 @@
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+} from 'class-validator';
+
+export class CreatePositionDto {
+  @IsString()
+  @Length(2, 64)
+  name!: string;
+
+  @IsString()
+  @Length(2, 64)
+  @Matches(/^[a-z0-9-]+$/, {
+    message: 'slug: только латиница в нижнем регистре, цифры и дефис',
+  })
+  slug!: string;
+
+  @IsString()
+  @Length(2, 64)
+  displayName!: string;
+
+  @IsString()
+  @Length(1, 32)
+  group!: string;
+
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/)
+  color!: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^#[0-9a-fA-F]{8}$/)
+  backgroundColor?: string;
+
+  @IsOptional()
+  @IsString()
+  icon?: string;
+
+  @IsOptional()
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisible?: boolean;
+}
