@@ -18,6 +18,7 @@ import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
 import { NewsModule } from './modules/news/news.module';
+import { MinecraftModule } from './modules/minecraft/minecraft.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PositionsModule } from './modules/positions/positions.module';
@@ -66,6 +67,7 @@ import { VotingModule } from './modules/voting/voting.module';
     ModerationModule,
     ReportsModule,
     StoreModule,
+    MinecraftModule,
   ],
   controllers: [AppController],
   providers: [

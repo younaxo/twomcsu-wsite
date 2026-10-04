@@ -411,4 +411,30 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'store',
     description: 'Просмотр выручки по неделям',
   },
+
+  {
+    key: 'server_categories.view',
+    module: 'server_categories',
+    description: 'Просмотр категорий серверов в админке',
+  },
+  {
+    key: 'server_categories.create',
+    module: 'server_categories',
+    description: 'Создание категории серверов',
+  },
+  {
+    key: 'server_categories.edit',
+    module: 'server_categories',
+    description: 'Редактирование категории серверов',
+  },
+  {
+    key: 'server_categories.delete',
+    module: 'server_categories',
+    description: 'Удаление категории серверов',
+  },
+  { key: 'servers.view', module: 'servers', description: 'Просмотр списка серверов в админке' },
+  { key: 'servers.create', module: 'servers', description: 'Добавление сервера' },
+  { key: 'servers.edit', module: 'servers', description: 'Редактирование сервера' },
+  { key: 'servers.delete', module: 'servers', description: 'Удаление сервера' },
+  { key: 'servers.logs', module: 'servers', description: 'Просмотр истории статуса сервера' },
 ];

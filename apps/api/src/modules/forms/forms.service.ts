@@ -361,12 +361,14 @@ export class FormsService {
 
   /// Значения из FieldAnswerDto приходят как `unknown` (JSON) — тип
   /// FormField определяет, в какую колонку FormFieldAnswer их положить и
-  /// какую валидацию применить. Доменные ссылочные типы (PLAYER_SELECTOR/
-  /// SERVER_SELECTOR/RANK_SELECTOR/PRODUCT_SELECTOR/ORDER_SELECTOR/
-  /// REPORT_REFERENCE/PUNISHMENT_REFERENCE/ACHIEVEMENT_SELECTOR) относятся
-  /// к ещё не реализованным доменам (PHASE 16-19) — принимаются без
-  /// referential-проверки существования; NEWS_REFERENCE/TOPIC_REFERENCE/
-  /// FRIENDS_SELECTOR проверяются по-настоящему, т.к. эти домены уже есть.
+  /// какую валидацию применить. Доменные ссылочные типы без своего домена
+  /// (PLAYER_SELECTOR/RANK_SELECTOR/PRODUCT_SELECTOR/ORDER_SELECTOR/
+  /// REPORT_REFERENCE/PUNISHMENT_REFERENCE/ACHIEVEMENT_SELECTOR) —
+  /// принимаются без referential-проверки существования (PLAYER_SELECTOR/
+  /// RANK_SELECTOR — нет соответствующих моделей в схеме вообще; остальные
+  /// — PHASE 16/17/19, см. ADR-0027); NEWS_REFERENCE/TOPIC_REFERENCE/
+  /// SERVER_SELECTOR/FRIENDS_SELECTOR проверяются по-настоящему, т.к. эти
+  /// домены уже есть.
   private async buildAnswerData(
     field: FormField,
     answer: FieldAnswerDto,
@@ -489,6 +491,23 @@ export class FormsService {
       });
       if (!topic || !topic.isActive) {
         throw new BadRequestException(`Поле «${field.label}»: тема не найдена`);
+      }
+      return { textValue: value };
+    }
+
+    if (field.type === 'SERVER_SELECTOR') {
+      if (typeof value !== 'string') {
+        throw new BadRequestException(
+          `Поле «${field.label}» должно ссылаться на сервер`,
+        );
+      }
+      const server = await this.prisma.server.findUnique({
+        where: { id: value },
+      });
+      if (!server || !server.isActive) {
+        throw new BadRequestException(
+          `Поле «${field.label}»: сервер не найден`,
+        );
       }
       return { textValue: value };
     }

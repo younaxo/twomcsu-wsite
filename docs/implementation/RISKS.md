@@ -62,7 +62,8 @@ production. В dev/test работает `HCAPTCHA_DISABLED=true`.
 публичный список полностью рабочие уже сейчас; `POST /admin/streams/refresh`
 честно отвечает `{refreshed: false, reason: 'no_platform_credentials_configured'}`
 без ключей, без падения и без моковых данных. Сам реальный опрос API плюс
-периодический cron для автообновления — PHASE 18/29, когда ключи появятся.
+периодический cron для автообновления — когда появятся ключи (реализация
+API-клиента) и PHASE 29 (cron-инфраструктура для автообновления).
 **Нужно от владельца:** зарегистрировать приложение в Twitch Developer
 Console и получить API key в Google Cloud Console (YouTube Data API v3).
 

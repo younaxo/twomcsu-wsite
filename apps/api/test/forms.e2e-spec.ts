@@ -138,6 +138,9 @@ describe('Forms (e2e)', () => {
       await prisma.topic.deleteMany({
         where: { slug: { startsWith: `e2e-forms-${unique}` } },
       });
+      await prisma.server.deleteMany({
+        where: { slug: { startsWith: `e2e-forms-${unique}` } },
+      });
       await prisma.friendship.deleteMany({
         where: { OR: [{ requesterId: alice.id }, { requesterId: bob.id }] },
       });
@@ -568,7 +571,7 @@ describe('Forms (e2e)', () => {
       .expect(200);
   });
 
-  it('NEWS_REFERENCE/TOPIC_REFERENCE/FRIENDS_SELECTOR: реальная referential-валидация', async () => {
+  it('NEWS_REFERENCE/TOPIC_REFERENCE/SERVER_SELECTOR/FRIENDS_SELECTOR: реальная referential-валидация', async () => {
     const news = await prisma.news.create({
       data: {
         slug: `e2e-forms-${unique}-news`,
@@ -610,6 +613,25 @@ describe('Forms (e2e)', () => {
       },
     });
 
+    const activeServer = await prisma.server.create({
+      data: {
+        name: 'E2E Форм-сервер',
+        slug: `e2e-forms-${unique}-server`,
+        address: '127.0.0.1',
+        type: 'SURVIVAL',
+        isActive: true,
+      },
+    });
+    const inactiveServer = await prisma.server.create({
+      data: {
+        name: 'E2E Выключенный сервер',
+        slug: `e2e-forms-${unique}-server-inactive`,
+        address: '127.0.0.1',
+        type: 'SURVIVAL',
+        isActive: false,
+      },
+    });
+
     const slug = slugFor('refs');
     const created = await request(app.getHttpServer())
       .post('/admin/forms')
@@ -622,6 +644,7 @@ describe('Forms (e2e)', () => {
         fields: [
           { type: 'NEWS_REFERENCE', label: 'Новость' },
           { type: 'TOPIC_REFERENCE', label: 'Тема' },
+          { type: 'SERVER_SELECTOR', label: 'Сервер' },
           { type: 'FRIENDS_SELECTOR', label: 'Друг' },
         ],
       })
@@ -632,6 +655,9 @@ describe('Forms (e2e)', () => {
     ).id;
     const topicFieldId = created.body.fields.find(
       (f: { type: string }) => f.type === 'TOPIC_REFERENCE',
+    ).id;
+    const serverFieldId = created.body.fields.find(
+      (f: { type: string }) => f.type === 'SERVER_SELECTOR',
     ).id;
     const friendFieldId = created.body.fields.find(
       (f: { type: string }) => f.type === 'FRIENDS_SELECTOR',
@@ -658,6 +684,13 @@ describe('Forms (e2e)', () => {
       .send({ answers: [{ fieldId: friendFieldId, value: admin.id }] })
       .expect(400);
 
+    // Выключенный сервер отклоняется SERVER_SELECTOR
+    await request(app.getHttpServer())
+      .post(`/forms/${refSlug}/responses`)
+      .set('Authorization', auth(alice))
+      .send({ answers: [{ fieldId: serverFieldId, value: inactiveServer.id }] })
+      .expect(400);
+
     // Валидные ссылки проходят
     const ok = await request(app.getHttpServer())
       .post(`/forms/${refSlug}/responses`)
@@ -666,6 +699,7 @@ describe('Forms (e2e)', () => {
         answers: [
           { fieldId: newsFieldId, value: news.id },
           { fieldId: topicFieldId, value: topic.id },
+          { fieldId: serverFieldId, value: activeServer.id },
           { fieldId: friendFieldId, value: bob.id },
         ],
       })

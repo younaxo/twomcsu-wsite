@@ -209,5 +209,24 @@
 - `/admin/store/stats/*` — overview/sales-by-day/sales-by-category/
   top-products/revenue-by-week, реальная SQL-агрегация.
 - `mock-complete` не перенесён (решение зафиксировано ещё в PHASE 00,
-  ADR-0009); доставка на игровой сервер (`gameCommands`) — зависит от
-  Minecraft-интеграции (PHASE 18, ADR-0039).
+  ADR-0009); доставка на игровой сервер (`gameCommands`) — не предусмотрена
+  текущей схемой (ADR-0041, уточнение ADR-0039).
+
+### Minecraft servers
+- `modules/minecraft/slp/` — реальный клиент Server List Ping (TCP,
+  без внешних ключей): `varint.ts` + `slp-client.ts` (handshake → status
+  request → JSON-ответ → ping/pong для задержки). Недоступность сервера —
+  честный `{online: false}`, не исключение и не моковые данные (ADR-0040).
+- `/server-categories`, `/admin/server-categories/*` — плоский список с
+  `order`, нельзя удалить категорию с серверами.
+- `/servers/*` (публичный): список активных, `overview` (реальный
+  параллельный опрос всех серверов), `widget` (HTML-фрагмент), деталь,
+  `status`/`players`/`history` (живой опрос + лог `ServerStatusLog`).
+  `/admin/servers/*` — CRUD + пагинированная история статуса.
+- Опрос — на каждый запрос, без фонового cron (нет background-job
+  инфраструктуры — PHASE 29). RCON/доставка игровых команд не
+  предусмотрены схемой `Server` (нет поля для RCON-пароля) — окончательно
+  закрывает вопрос доставки `Product.gameCommands` из Store (ADR-0041).
+  `AuditLog` не подключается точечно — сквозной механизм для всего
+  проекта будет в PHASE 22 (ADR-0042).
+- 9 новых permission-ключей (`server_categories.*`, `servers.*`).

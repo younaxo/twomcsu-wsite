@@ -433,27 +433,36 @@ API и периодический cron — PHASE 18/29, когда появят�
 ## ADR-0027 — Forms: доменные reference-поля валидируются по готовности домена
 
 **Context.** `FormFieldType` содержит 33 значения, среди которых 8 —
-ссылки/селекторы на домены, часть которых ещё не реализована:
-`PLAYER_SELECTOR`/`SERVER_SELECTOR`/`RANK_SELECTOR` (PHASE 18, Minecraft-
-серверы), `PRODUCT_SELECTOR`/`ORDER_SELECTOR` (PHASE 17, магазин),
-`REPORT_REFERENCE`/`PUNISHMENT_REFERENCE` (PHASE 16, жалобы/наказания),
-`ACHIEVEMENT_SELECTOR` (PHASE 19, геймификация). `NEWS_REFERENCE`,
-`TOPIC_REFERENCE` и `FRIENDS_SELECTOR` ссылаются на уже реализованные
-домены (News — PHASE 13, Topics — PHASE 14, Friends — ранняя фаза).
+ссылки/селекторы на домены, часть которых на момент PHASE 15 ещё не была
+реализована: `PLAYER_SELECTOR`/`SERVER_SELECTOR`/`RANK_SELECTOR`
+(Minecraft-серверы), `PRODUCT_SELECTOR`/`ORDER_SELECTOR` (магазин),
+`REPORT_REFERENCE`/`PUNISHMENT_REFERENCE` (жалобы/наказания),
+`ACHIEVEMENT_SELECTOR` (геймификация, PHASE 19 — всё ещё не реализована).
+`NEWS_REFERENCE`, `TOPIC_REFERENCE` и `FRIENDS_SELECTOR` ссылались на уже
+реализованные домены (News — PHASE 13, Topics — PHASE 14, Friends —
+ранняя фаза) и сразу получили реальную проверку.
 
 **Decision.** `FormsService.buildAnswerData()` проверяет существование и
-актуальность только для доменов, которые уже есть: `NEWS_REFERENCE`
-требует `News.status === PUBLISHED`, `TOPIC_REFERENCE` — `Topic.isActive
-=== true`, `FRIENDS_SELECTOR` — `FriendsService.isFriend(viewerId,
-value)` (пропускается для анонимного `viewerId`, т.к. анонимный ответ не
-может иметь список друзей). Остальные 8 селекторов принимаются без
-referential-проверки — значение сохраняется как есть (`textValue`), а
-комментарий в коде перечисляет все 8 типов и фазу, которая добавит
-валидацию. Это не заглушка и не моковые данные — поле реально хранится
-и возвращается, просто без проверки, что ID существует в ещё не
-созданной таблице. Решение централизовано в одном месте
-(`buildAnswerData`), чтобы при реализации PHASE 16-19 было видно, что
-именно нужно дополнить.
+актуальность только для доменов, у которых есть модель в схеме:
+`NEWS_REFERENCE` требует `News.status === PUBLISHED`, `TOPIC_REFERENCE` —
+`Topic.isActive === true`, `FRIENDS_SELECTOR` — `FriendsService.isFriend(
+viewerId, value)` (пропускается для анонимного `viewerId`). При PHASE 18
+(Minecraft servers) добавлена реальная проверка `SERVER_SELECTOR` —
+`Server.isActive === true` (прямой запрос через `PrismaService`, без
+отдельного сервиса — как у `NEWS_REFERENCE`/`TOPIC_REFERENCE`).
+Остальные селекторы по-прежнему принимаются без referential-проверки —
+`PLAYER_SELECTOR`/`RANK_SELECTOR` не получат её вовсе (в схеме нет
+соответствующих моделей — не планируется); `PRODUCT_SELECTOR`/
+`ORDER_SELECTOR` (Store, PHASE 17) и `REPORT_REFERENCE`/
+`PUNISHMENT_REFERENCE` (Reports, PHASE 16) технически уже МОГУТ быть
+проверены (модели существуют), но это не было сделано в соответствующих
+фазах и намеренно не добавлено задним числом в PHASE 18 — чтобы не
+смешивать несвязанный рефактор Forms в фазу Minecraft servers; это
+зафиксированный, осознанный technical debt для отдельного прохода, а не
+забытая работа. `ACHIEVEMENT_SELECTOR` ждёт PHASE 19. Это не заглушка и
+не моковые данные — значение реально хранится и возвращается, просто без
+дополнительной проверки существования. Решение централизовано в одном
+месте (`buildAnswerData`).
 
 ## ADR-0028 — Forms: FormFieldAnswer как Unchecked create/upsert, без `field`/`response` relation input
 
@@ -686,3 +695,64 @@ handleWebhook`) переводит заказ в `COMPLETED`, но не трог
 в production (`NODE_ENV=production`) — до появления реального провайдера
 (RISKS.md R2) `createFromCart()`/`quickBuy()` в production возвращают
 503 с понятной причиной вместо тихого заглушечного успеха.
+
+## ADR-0040 — Minecraft servers: реальный Server List Ping вместо моков/внешнего API
+
+**Context.** `GET /servers/:slug/status|players|history`, `/servers/
+overview`, `/servers/widget` должны отражать реальное состояние игрового
+сервера (онлайн/офлайн, число игроков, версия, MOTD). В отличие от
+Twitch/YouTube (PHASE 14, RISKS.md R6) или платёжного провайдера (PHASE
+17, RISKS.md R2), для этого не нужен внешний API-ключ: Minecraft Server
+List Ping (SLP, см. wiki.vg/Server_List_Ping) — открытый, неаутентифицированный
+бинарный протокол поверх TCP, тот же, что использует ванильный клиент
+Minecraft для показа сервера в списке серверов. Нужны только `address`/
+`port` сервера, которые уже есть в модели `Server`.
+
+**Decision.** Протокол реализован вручную (`modules/minecraft/slp/`:
+`varint.ts` — кодирование/декодирование VarInt, `slp-client.ts` —
+handshake → status request → разбор JSON-ответа → ping/pong для задержки)
+— без внешней npm-зависимости (протокол простой, пакет добавлял бы риск
+без реальной экономии кода) и без моковых данных. Недоступность сервера
+(таймаут/connection refused/невалидный ответ) — не ошибка, а валидный
+результат `{online: false}`; `MinecraftStatusService` не выбрасывает
+исключение. e2e-тесты проверяют клиент против собственного
+протокол-корректного TCP-сервера в тесте (не против импорта той же
+кодирующей функции — VarInt-кодирование продублировано в тесте, чтобы
+тест реально валидировал wire-формат, а не "соглашался сам с собой"), и
+против реально закрытого порта для случая `offline`.
+
+## ADR-0041 — Minecraft servers: нет фоновой периодичности и RCON — честно, не заглушка
+
+**Context.** Старый `GameServer`-REST подразумевает частый live-опрос;
+реальный продакшен обычно кеширует статус и опрашивает по расписанию
+(cron), а `Product.gameCommands` (Store, ADR-0039) требует RCON —
+отдельный протокол с паролем для выполнения команд на сервере.
+
+**Decision.** Статус опрашивается **на каждый запрос** (`GET /servers/
+:slug/status`, `/overview`, `/widget`) и дополнительно пишется в
+`ServerStatusLog` для истории — без фонового job/кеша, поскольку
+cron-инфраструктуры в проекте ещё нет (PHASE 29); это осознанно иначе,
+чем "честно недоступно" — функция полностью рабочая, просто не
+оптимизирована (лишние запросы = лишние TCP-соединения, не проблема
+корректности). RCON **не реализован и не будет** в рамках этого
+проекта в его текущем виде схемы: модель `Server` не имеет поля для
+RCON-пароля — добавление RCON потребовало бы миграции схемы и отдельного
+ADR о хранении секрета (аналогично `VoteSite.webhookSecretHash`,
+ADR-0025), что не было запрошено требованиями. Это окончательно
+закрывает вопрос доставки `gameCommands` (Store ADR-0039) — не "ещё не
+реализовано", а "не предусмотрено текущей схемой данных".
+
+## ADR-0042 — Minecraft servers: audit log не подключается ad-hoc
+
+**Context.** Старый API-REFERENCE упоминает `audit.log()` рядом с каждым
+admin CRUD-вызовом (`servers.create()`, `.update()`, `.remove()` и т.д.,
+аналогично для категорий серверов). Модель `AuditLog` в схеме уже есть
+(PHASE 04), но сервис для записи в неё — отдельная, сквозная для всего
+проекта фаза (PHASE 22, ROADMAP.md), ещё не реализованная.
+
+**Decision.** Admin-эндпоинты этой фазы не пишут в `AuditLog` напрямую —
+согласовано с тем, что ни один из уже реализованных admin-модулей
+(Forms/Reports/Store и т.д.) этого тоже не делает: добавлять его точечно
+только здесь было бы несогласованным заделом, который PHASE 22 всё равно
+придётся переписывать под единый сквозной механизм (вероятно, через
+interceptor/decorator, а не ручные вызовы в каждом сервисе).
