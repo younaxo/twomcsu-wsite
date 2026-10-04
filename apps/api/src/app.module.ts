@@ -11,6 +11,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
 import { EmailModule } from './modules/email/email.module';
 import { HealthModule } from './modules/health/health.module';
 import { PositionsModule } from './modules/positions/positions.module';
+import { ProfilesModule } from './modules/profiles/profiles.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { RolesModule } from './modules/roles/roles.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './modules/users/users.module';
     DepartmentsModule,
     CustomPositionsModule,
     UsersModule,
+    ProfilesModule,
   ],
   controllers: [AppController],
   providers: [
