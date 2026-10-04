@@ -64,6 +64,27 @@ Dockerfile/Compose готовятся (PHASE 35), но реальный выез
 всё равно будут запушены, PR title/description подготовлены текстом в этой же
 директории, а блокер будет явно зафиксирован здесь.
 
+## R11 — Обнаружены старые Docker volumes от предыдущего проекта (не удалены)
+
+При первом `pnpm db:up` (PHASE 03) docker compose с project-именем `twomcsu`
+(как в `docs/technical/33-DEPLOYMENT.md`) обнаружил уже существующие volumes
+`twomcsu_postgres-data` и `twomcsu_redis-data`, созданные **2026-07-27** — то есть
+до начала этой сессии, предположительно локальные данные предыдущей версии
+проекта. Контейнеры были пересозданы поверх этих volumes (данные не удалялись —
+`docker compose down` без `-v` не трогает volumes), после чего это было замечено
+и **исправлено**: `infrastructure/docker-compose.yml` переименован в project
+`twomc-su` (контейнеры `twomc-su-postgres`/`twomc-su-redis`), что создаёт отдельные
+volumes `twomc-su_postgres-data`/`twomc-su_redis-data` и не трогает старые.
+
+**Статус:** старые volumes `twomcsu_postgres-data`/`twomcsu_redis-data` по-прежнему
+существуют на машине и не удалены — автоматическое удаление чужих/непроверенных
+данных не выполнялось намеренно. **Нужно от владельца:** решить, нужны ли эти
+данные (похоже на дев-дамп предыдущей версии проекта) — если нет, удалить вручную:
+
+```bash
+docker volume rm twomcsu_postgres-data twomcsu_redis-data
+```
+
 ## R10 — Старая техническая документация описывает чужой (предыдущий) код
 
 `docs/technical/*` — реверс-инжиниринг **предыдущей** кодовой базы twomc.su, а не

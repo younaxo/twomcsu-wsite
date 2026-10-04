@@ -14,7 +14,7 @@
 - [x] PHASE 00 — Discovery (репозиторий, документация, архитектурные решения)
 - [x] PHASE 01 — Project bootstrap (monorepo, tsconfig, lint, prettier, env)
 - [x] PHASE 02 — CI / development infrastructure (GitHub Actions)
-- [ ] PHASE 03 — Local infrastructure (Docker Compose: Postgres, Redis)
+- [x] PHASE 03 — Local infrastructure (Docker Compose: Postgres, Redis)
 - [ ] PHASE 04 — Database foundation (Prisma schema, migrations)
 
 ## Платформа и безопасность
