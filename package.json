@@ -25,6 +25,7 @@
     "format:check": "pnpm -r --if-present run format:check",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
+    "test:e2e": "pnpm -r --if-present run test:e2e",
     "db:up": "docker compose --env-file .env -f infrastructure/docker-compose.yml up -d postgres redis",
     "db:down": "docker compose --env-file .env -f infrastructure/docker-compose.yml down",
     "db:migrate": "pnpm --filter @twomc/api run db:migrate",
