@@ -10,6 +10,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
+import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
 import { EmailModule } from './modules/email/email.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
@@ -42,6 +43,7 @@ import { UsersModule } from './modules/users/users.module';
     FriendsModule,
     CommentsModule,
     ActivityModule,
+    DirectMessagesModule,
   ],
   controllers: [AppController],
   providers: [

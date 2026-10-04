@@ -2,11 +2,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
 /// и в e2e-тестах (Test.createTestingModule не прогоняет main.ts). Если
 /// добавлять middleware/pipes только в main.ts, e2e-тесты будут тестировать
-/// другое приложение (без cookie-parser/ValidationPipe/helmet).
+/// другое приложение (без cookie-parser/ValidationPipe/helmet/WS-адаптера).
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
@@ -23,4 +24,5 @@ export function configureApp(app: INestApplication): void {
       transform: true,
     }),
   );
+  app.useWebSocketAdapter(new ConfigurableIoAdapter(app));
 }
