@@ -14,6 +14,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
 import { EmailModule } from './modules/email/email.module';
 import { EventsModule } from './modules/events/events.module';
+import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
 import { NewsModule } from './modules/news/news.module';
@@ -58,6 +59,7 @@ import { VotingModule } from './modules/voting/voting.module';
     TopicsModule,
     VotingModule,
     StreamingModule,
+    FormsModule,
   ],
   controllers: [AppController],
   providers: [
