@@ -1,0 +1,2988 @@
+// twomc.su — схема базы данных.
+//
+// Источник бизнес-доменной модели: docs/technical/07-DATABASE.md и
+// 08-DATABASE-RELATIONS.md (реверс-инжиниринг предыдущей версии проекта).
+// Решения по отклонениям от источника — docs/implementation/DECISIONS.md:
+//   ADR-0003 — id (cuid) + shortId (публичный numeric id)
+//   ADR-0004 — RBAC (Role/Permission/RolePermission/UserRole/RoleAssignmentLog)
+//              вместо enum RoleGroup (удалён полностью)
+//   ADR-0005 — роли по умолчанию без wildcard у staff ниже superuser (seed, не схема)
+//   ADR-0006 — bootstrap-аккаунты: User.accountType, User.mustChangePassword
+//   ADR-0008 — файловое хранилище/CDN: модель File
+//   ADR-0009 — платежи: Order.paymentProvider/paymentWebhookVerifiedAt
+// Не перенесены (docs/implementation/COVERAGE.md, NOT_APPLICABLE):
+//   ChatMessageReaction (реакции в чате убраны из продукта в старом проекте)
+//   GameReport, GamePunishment (внешний bridge не описан в задании, вне scope)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================================================
+// RBAC (ADR-0004)
+// =========================================================================
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum AccountType {
+  DEFAULT
+  SYSTEM
+}
+
+/// Контейнер permissions. Имя роли само по себе не даёт доступа — доступ
+/// определяется только набором Permission через RolePermission.
+model Role {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  slug         String   @unique
+  displayName  String
+  priority     Int
+  color        String?  @db.VarChar(7)
+  /// Системная роль: нельзя удалить/переименовать slug, права редактирует только superuser.
+  isSystem     Boolean  @default(false)
+  /// Единственный источник wildcard-доступа (PermissionService.isSuperuser), см. ADR-0004.
+  isSuperuser  Boolean  @default(false)
+  isAssignable Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  permissions    RolePermission[]
+  users          UserRole[]
+  assignmentLogs RoleAssignmentLog[]
+
+  @@index([priority])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  module      String
+  description String
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  effect       PermissionEffect @default(ALLOW)
+  createdAt    DateTime         @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedBy String?
+  assignedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+/// История выдачи/снятия ролей — audit-лог отдельно от общего AuditLog,
+/// т.к. это критическая security-операция с собственным форматом (B.7).
+/// userId/actorId — мягкие ссылки (без FK), чтобы запись истории переживала
+/// удаление учётной записи пользователя или актёра.
+model RoleAssignmentLog {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  action    String // GRANTED | REVOKED
+  actorId   String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([roleId])
+  @@map("role_assignment_logs")
+}
+
+// =========================================================================
+// Users & Profiles
+// =========================================================================
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum ProfileVisibility {
+  EVERYONE
+  FRIENDS_ONLY
+  NOBODY
+}
+
+enum FriendRequestPolicy {
+  EVERYONE
+  FRIENDS_OF_FRIENDS
+  NOBODY
+}
+
+enum CommentPolicy {
+  EVERYONE
+  FRIENDS
+  FRIENDS_OF_FRIENDS
+  NOBODY
+}
+
+enum DirectMessagePolicy {
+  EVERYONE
+  FRIENDS_OF_FRIENDS
+  FRIENDS
+  NOBODY
+}
+
+enum CommentReportReason {
+  SPAM
+  INAPPROPRIATE
+  HARASSMENT
+  IMPERSONATION
+  OTHER
+}
+
+enum CommentReportStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+enum SocialPlatform {
+  DISCORD
+  TELEGRAM
+  VK
+  YOUTUBE
+  TWITCH
+  TIKTOK
+  STEAM
+}
+
+/// Платформы, на которых можно подтвердить статус создателя контента — подмножество SocialPlatform.
+enum MediaGroup {
+  YOUTUBE
+  TWITCH
+  TIKTOK
+}
+
+enum UserBadgeType {
+  LEADERSHIP
+  VERIFIED
+  SUBSCRIBER_PLUS
+  PROJECT_TEAM
+  DEVELOPERS_TEAM
+}
+
+enum MediaBadgeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ProfileReportReason {
+  SPAM
+  INAPPROPRIATE_CONTENT
+  HARASSMENT
+  IMPERSONATION
+  OTHER
+}
+
+enum ProfileReportStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+enum ReactionType {
+  LIKE
+  DISLIKE
+}
+
+/// Титул внутри организации — чистая косметика (бейдж/цвет), не участвует
+/// в авторизации (это делает RBAC выше). `group` — свободная метка для
+/// группировки в UI управления позициями (ADR-0004: было enum RoleGroup).
+model Position {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  slug            String   @unique
+  displayName     String
+  group           String
+  color           String   @db.VarChar(7)
+  backgroundColor String?  @db.VarChar(9)
+  icon            String?
+  priority        Int      @default(0)
+  description     String?
+  isVisible       Boolean  @default(true)
+  /// Выдаётся новым пользователям группы по умолчанию (одна на group).
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users    User[]
+  products Product[]
+
+  @@index([slug])
+  @@index([group])
+  @@index([priority])
+  @@map("positions")
+}
+
+model User {
+  id       String @id @default(cuid())
+  /// Публичный числовой id (#1, #2, ...). #0 зарезервирован для системного аккаунта (ADR-0006).
+  shortId  Int    @unique @default(autoincrement())
+  /// Публичный тег вида name#4a2b.
+  tag      String @unique @db.VarChar(32)
+  email    String @unique
+  username String @unique @db.VarChar(16)
+  password String
+
+  accountType        AccountType @default(DEFAULT)
+  /// true для #1/#2 сразу после bootstrap-seed (ADR-0006); сбрасывается при смене пароля.
+  mustChangePassword Boolean     @default(false)
+
+  positionId String
+  avatar     String?
+
+  isVerified  Boolean   @default(false)
+  isBanned    Boolean   @default(false)
+  banReason   String?
+  bannedUntil DateTime?
+
+  lastLoginAt    DateTime?
+  lastLoginIp    String?
+  /// Обновляется на любой авторизованный API-вызов.
+  lastActivityAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  /// Загруженное изображение, имеет приоритет над bannerPreset при наличии обоих.
+  banner        String?
+  bannerPreset  String?
+  statusText    String?   @db.VarChar(128)
+  bio           String?   @db.VarChar(500)
+  country       String?
+  city          String?   @db.VarChar(100)
+  gender        Gender?
+  birthDate     DateTime?
+  showBirthDate Boolean   @default(false)
+
+  /// Кто может открыть публичную страницу профиля.
+  profileVisibility   ProfileVisibility   @default(EVERYONE)
+  /// Кто может отправлять заявки в друзья.
+  friendRequestPolicy FriendRequestPolicy @default(EVERYONE)
+  /// Кто может начать личную переписку.
+  directMessagePolicy DirectMessagePolicy @default(EVERYONE)
+
+  hideEmail      Boolean @default(true)
+  hideCountry    Boolean @default(false)
+  hideCity       Boolean @default(false)
+  hideBirthDate  Boolean @default(true)
+  hideGender     Boolean @default(false)
+  hideStatistics Boolean @default(false)
+  hideSocials    Boolean @default(false)
+
+  /// Кто может оставлять комментарии на этом профиле.
+  commentPolicy            CommentPolicy @default(EVERYONE)
+  /// Принудительно отключено модерацией; владелец не может включить обратно, пока false.
+  commentsEnabled          Boolean       @default(true)
+  commentsForcedDisabledBy String?
+  commentsForcedReason     String?
+
+  notifyOnComment       Boolean @default(true)
+  notifyOnMention       Boolean @default(true)
+  notifyOnReply         Boolean @default(true)
+  notifyOnFriendRequest Boolean @default(true)
+  notifyOnGift          Boolean @default(true)
+  notifyOnOrder         Boolean @default(true)
+
+  /// Реферальный код, показывается друзьям; генерируется при регистрации.
+  referralCode String? @unique
+  /// Id пользователя-пригласителя (мягкая ссылка).
+  referredBy   String?
+
+  /// Slug игрового сервера, где игрок был замечен последним.
+  currentServer      String?
+  currentServerId    String?
+  lastServerActivity DateTime?
+  isOnlineInGame     Boolean   @default(false)
+
+  /// Бейдж у ника в шапке; null = автоматически верхний по приоритету.
+  displayBadgeId       String?
+  selectedDecorationId String?
+
+  position           Position           @relation(fields: [positionId], references: [id])
+  displayBadge       UserBadge?         @relation("UserDisplayBadge", fields: [displayBadgeId], references: [id], onDelete: SetNull)
+  selectedDecoration ProfileDecoration? @relation(fields: [selectedDecorationId], references: [id], onDelete: SetNull)
+
+  roles UserRole[]
+
+  customPosition      UserCustomPosition?
+  departments         UserDepartment[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  promoCodeUsages     PromoCodeUsage[]
+  badges              UserBadge[]          @relation("UserBadgeOwner")
+  socialLinks         SocialLink[]
+  mediaBadges         UserMediaBadge[]
+  mediaBadgeRequests  MediaBadgeRequest[]
+  statistics          PlayerStatistics?
+  awards              UserAward[]
+  uploadedFiles       File[]               @relation("FileUploader")
+
+  profileViews     ProfileView[]     @relation("ProfileViewsReceived")
+  viewedProfiles   ProfileView[]     @relation("ProfileViewsGiven")
+  profileReactions ProfileReaction[] @relation("ProfileReactionsReceived")
+  givenReactions   ProfileReaction[] @relation("ProfileReactionsGiven")
+  profileReports   ProfileReport[]   @relation("ProfileReportsReceived")
+  sentReports      ProfileReport[]   @relation("ProfileReportsSent")
+
+  sentFriendRequests     Friendship[] @relation("FriendshipRequester")
+  receivedFriendRequests Friendship[] @relation("FriendshipAddressee")
+
+  profileComments  ProfileComment[] @relation("ProfileCommentsReceived")
+  authoredComments ProfileComment[] @relation("ProfileCommentsAuthored")
+
+  notifications     Notification[] @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationSender")
+
+  notificationSettings NotificationSettings?
+  pushSubscriptions    PushSubscription[]
+  auditLogs            AuditLog[]
+  cookieConsents       CookieConsent[]
+
+  cart        Cart?
+  wishlist    Wishlist?
+  orders      Order[]
+  giftedItems OrderItem[]
+
+  authoredMessages        ChatMessage[]
+  chatMutes               ChatMute[]
+  chatBans                ChatBan[]
+  conversationMemberships ConversationMember[]
+  createdConversations    Conversation[]
+  sentDirectMessages      DirectMessage[]
+  directMessageReactions  DirectMessageReaction[]
+  createdGroupInvites     GroupInvite[]
+
+  authoredReports      Report[]              @relation("ReportAuthor")
+  assignedReports      Report[]              @relation("ReportAssignee")
+  reportedIn           ReportTarget[]
+  reportMessages       ReportMessage[]
+  reportModeratorNotes ReportModeratorNote[]
+  reportBans           ReportBan[]
+  punishments          UserPunishment[]      @relation("UserPunishmentTarget")
+  issuedPunishments    UserPunishment[]      @relation("UserPunishmentIssuer")
+
+  authoredNews         News[]
+  newsComments         NewsComment[]
+  newsCommentReactions NewsCommentReaction[]
+  newsLikes            NewsLike[]
+  newsViews            NewsView[]
+
+  adminBookmarks   AdminBookmark[]
+  savedFilters     SavedFilter[]
+  scheduledExports ScheduledExport[]
+
+  activities           Activity[]
+  activityReactions    ActivityReaction[]
+  activityComments     ActivityComment[]
+  activityFeedSettings ActivityFeedSettings?
+
+  achievements UserAchievement[]
+
+  createdForms  Form[]
+  formResponses FormResponse[]
+
+  ownedDecorations   UserDecoration[] @relation("UserDecorationOwner")
+  grantedDecorations UserDecoration[] @relation("UserDecorationGrantedBy")
+
+  createdCalendarEvents CalendarEvent[]
+  eventParticipations   EventParticipant[]
+  streamChannels        StreamChannel[]
+  playerVotes           PlayerVote[]
+
+  @@index([email])
+  @@index([username])
+  @@index([tag])
+  @@index([shortId])
+  @@index([positionId])
+  @@index([isBanned])
+  @@index([accountType])
+  @@index([lastLoginAt])
+  @@index([lastActivityAt])
+  @@index([currentServerId])
+  @@index([isOnlineInGame])
+  @@index([displayBadgeId])
+  @@index([selectedDecorationId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+/// Одноразовая ссылка сброса пароля, живёт час.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+model PromoCode {
+  id                String        @id @default(cuid())
+  code              String        @unique
+  description       String?
+  discountType      DiscountType
+  discountValue     Decimal       @db.Decimal(10, 2)
+  /// null = неограниченно.
+  maxUses           Int?
+  usedCount         Int           @default(0)
+  validFrom         DateTime?
+  validUntil        DateTime?
+  isActive          Boolean       @default(true)
+  /// Пусто = применяется ко всем типам товаров.
+  applicableToTypes ProductType[]
+  minOrderAmount    Decimal?      @db.Decimal(10, 2)
+  firstPurchaseOnly Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  usages PromoCodeUsage[]
+  orders Order[]
+  carts  Cart[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("promo_codes")
+}
+
+model PromoCodeUsage {
+  id          String   @id @default(cuid())
+  promoCodeId String
+  userId      String
+  usedAt      DateTime @default(now())
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, userId])
+  @@index([promoCodeId])
+  @@index([userId])
+  @@map("promo_code_usages")
+}
+
+/// Выдаваемые staff-ом отметки рядом с ником.
+model UserBadge {
+  id        String        @id @default(cuid())
+  userId    String
+  type      UserBadgeType
+  grantedBy String?
+  grantedAt DateTime      @default(now())
+  expiresAt DateTime?
+  isActive  Boolean       @default(true)
+  /// Ручной порядок отображения на профиле (меньше = раньше).
+  order     Int           @default(0)
+
+  user        User   @relation("UserBadgeOwner", fields: [userId], references: [id], onDelete: Cascade)
+  displayedBy User[] @relation("UserDisplayBadge")
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([userId, order])
+  @@map("user_badges")
+}
+
+/// Один хэндл/url на платформу — платформа определяет способ отображения.
+model SocialLink {
+  id        String         @id @default(cuid())
+  userId    String
+  platform  SocialPlatform
+  value     String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("social_links")
+}
+
+/// Бейдж создателя контента, появляется после одобрения staff.
+model UserMediaBadge {
+  id         String     @id @default(cuid())
+  userId     String
+  mediaGroup MediaGroup
+  channelUrl String
+  isApproved Boolean    @default(false)
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mediaGroup])
+  @@index([userId])
+  @@map("user_media_badges")
+}
+
+model MediaBadgeRequest {
+  id          String                  @id @default(cuid())
+  userId      String
+  mediaGroup  MediaGroup
+  channelUrl  String
+  description String?
+  status      MediaBadgeRequestStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("media_badge_requests")
+}
+
+/// Готовые баннеры, которые игрок может выбрать вместо загрузки своего.
+model BannerPreset {
+  id        String   @id @default(cuid())
+  name      String
+  imageUrl  String
+  category  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("banner_presets")
+}
+
+/// Одна строка на зрителя, чтобы счётчик показывал уникальных посетителей, а не обновления страницы.
+model ProfileView {
+  id        String   @id @default(cuid())
+  profileId String
+  viewerId  String
+  viewedAt  DateTime @default(now())
+
+  profile User @relation("ProfileViewsReceived", fields: [profileId], references: [id], onDelete: Cascade)
+  viewer  User @relation("ProfileViewsGiven", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, viewerId])
+  @@index([profileId])
+  @@index([profileId, viewedAt])
+  @@map("profile_views")
+}
+
+model ProfileReaction {
+  id        String       @id @default(cuid())
+  profileId String
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  profile User @relation("ProfileReactionsReceived", fields: [profileId], references: [id], onDelete: Cascade)
+  user    User @relation("ProfileReactionsGiven", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, userId])
+  @@index([profileId])
+  @@map("profile_reactions")
+}
+
+model ProfileReport {
+  id          String              @id @default(cuid())
+  profileId   String
+  reporterId  String
+  reason      ProfileReportReason
+  description String?
+  status      ProfileReportStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime            @default(now())
+
+  profile  User @relation("ProfileReportsReceived", fields: [profileId], references: [id], onDelete: Cascade)
+  reporter User @relation("ProfileReportsSent", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, reporterId])
+  @@index([profileId])
+  @@index([status])
+  @@map("profile_reports")
+}
+
+/// Игровые счётчики, пушатся игровым сервером.
+model PlayerStatistics {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  coins          Int      @default(0)
+  /// Минуты в игре.
+  playTime       Int      @default(0)
+  kills          Int      @default(0)
+  deaths         Int      @default(0)
+  hits           Int      @default(0)
+  killDeathRatio Float    @default(0)
+  lastServer     String?
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("player_statistics")
+}
+
+model Award {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  /// Внешний url или путь внутри public-папки web.
+  iconUrl     String
+  color       String?
+  /// common, rare, epic или legendary — определяет рамку в UI.
+  rarity      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  userAwards UserAward[]
+
+  @@map("awards")
+}
+
+model UserAward {
+  id        String   @id @default(cuid())
+  userId    String
+  awardId   String
+  grantedBy String?
+  grantedAt DateTime @default(now())
+  /// Ручной порядок отображения на профиле (меньше = раньше).
+  order     Int      @default(0)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  award Award @relation(fields: [awardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, awardId])
+  @@index([userId])
+  @@index([userId, order])
+  @@map("user_awards")
+}
+
+enum AchievementCategory {
+  GAME
+  SOCIAL
+  DONATION
+  SPECIAL
+  DAILY
+  SECRET
+}
+
+enum AchievementRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum AchievementConditionType {
+  PLAYTIME_MINUTES
+  KILLS_COUNT
+  DEATHS_COUNT
+  FRIENDS_COUNT
+  COMMENTS_COUNT
+  LIKES_RECEIVED
+  PURCHASES_COUNT
+  TOTAL_SPENT
+  GIFTS_SENT
+  GIFTS_RECEIVED
+  DAYS_STREAK
+  ACCOUNT_AGE_DAYS
+  PROFILE_VIEWS
+  BADGES_COUNT
+  REGISTRATION_ORDER
+  BUG_REPORTED
+  REPORTS_RESOLVED
+  MANUAL
+  CUSTOM
+}
+
+model Achievement {
+  id              String                   @id @default(cuid())
+  slug            String                   @unique
+  name            String
+  description     String                   @db.Text
+  iconUrl         String
+  category        AchievementCategory
+  rarity          AchievementRarity
+  isSecret        Boolean                  @default(false)
+  isActive        Boolean                  @default(true)
+  order           Int                      @default(0)
+  conditionType   AchievementConditionType
+  conditionValue  Int?
+  conditionParams Json?
+  rewardRubies    Int                      @default(0)
+  rewardBadgeType String?
+  rewardTitle     String?
+  rewardMessage   String?
+  unlockedCount   Int                      @default(0)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  userAchievements UserAchievement[]
+
+  @@index([slug])
+  @@index([category, rarity])
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id              String    @id @default(cuid())
+  userId          String
+  achievementId   String
+  currentProgress Int       @default(0)
+  isCompleted     Boolean   @default(false)
+  completedAt     DateTime?
+  isShowcased     Boolean   @default(false)
+  showcaseOrder   Int       @default(0)
+  rewardsGranted  Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, isCompleted])
+  @@index([userId, isShowcased])
+  @@map("user_achievements")
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+  REJECTED
+}
+
+model Friendship {
+  id          String           @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  acceptedAt  DateTime?
+
+  requester User @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([requesterId])
+  @@index([addresseeId])
+  @@index([status])
+  @@index([addresseeId, status])
+  @@index([requesterId, status])
+  @@map("friendships")
+}
+
+model ProfileComment {
+  id            String    @id @default(cuid())
+  profileId     String
+  authorId      String
+  content       String
+  contentHtml   String
+  parentId      String?
+  isPinned      Boolean   @default(false)
+  pinnedAt      DateTime?
+  pinnedBy      String?
+  isEdited      Boolean   @default(false)
+  editedAt      DateTime?
+  isDeleted     Boolean   @default(false)
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
+  mentions      String[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profile User             @relation("ProfileCommentsReceived", fields: [profileId], references: [id], onDelete: Cascade)
+  author  User             @relation("ProfileCommentsAuthored", fields: [authorId], references: [id], onDelete: Cascade)
+  parent  ProfileComment?  @relation("ProfileCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ProfileComment[] @relation("ProfileCommentReplies")
+
+  reactions CommentReaction[]
+  reports   CommentReport[]
+
+  @@index([profileId, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([isPinned])
+  @@map("profile_comments")
+}
+
+model CommentReaction {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  comment ProfileComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@map("comment_reactions")
+}
+
+model CommentReport {
+  id          String              @id @default(cuid())
+  commentId   String
+  reporterId  String
+  reason      CommentReportReason
+  description String?
+  status      CommentReportStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+  createdAt   DateTime            @default(now())
+
+  comment ProfileComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, reporterId])
+  @@index([commentId])
+  @@index([status])
+  @@map("comment_reports")
+}
+
+// =========================================================================
+// Store
+// =========================================================================
+
+enum DiscountType {
+  PERCENT
+  FIXED
+  BONUS
+}
+
+enum ProductType {
+  PRIVILEGE
+  KEY
+  SUBSCRIPTION
+  BADGE
+  BATTLE_PASS
+  BATTLE_PASS_BOOSTER
+  UNMUTE
+  UNBAN
+  CURRENCY
+  DECORATION
+  BUNDLE
+}
+
+enum ProductDuration {
+  FOREVER
+  MONTHS_3
+  MONTH_1
+  WEEK_1
+  SEASON
+  ONE_TIME
+}
+
+enum CurrencyType {
+  RUBIES
+  COINS
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  image       String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  parentId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent        Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  subcategories Category[] @relation("CategoryHierarchy")
+  products      Product[]
+
+  @@index([slug])
+  @@index([parentId])
+  @@map("categories")
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  name            String
+  slug            String        @unique
+  description     String?
+  fullDescription String?
+  type            ProductType
+  image           String?
+  images          String[]
+  categoryId      String
+  positionId      String?
+  isGiftable      Boolean       @default(true)
+  isSelfOnly      Boolean       @default(false)
+  isUnique        Boolean       @default(false)
+  isSeasonalOnly  Boolean       @default(false)
+  maxPerPurchase  Int?
+  currencyType    CurrencyType?
+  currencyAmount  Int?
+  isActive        Boolean       @default(true)
+  isFeatured      Boolean       @default(false)
+  isNew           Boolean       @default(false)
+  isPopular       Boolean       @default(false)
+  order           Int           @default(0)
+  gameCommands    String[]
+  server          String?
+  decorationId    String?       @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  category   Category           @relation(fields: [categoryId], references: [id])
+  position   Position?          @relation(fields: [positionId], references: [id])
+  decoration ProfileDecoration? @relation(fields: [decorationId], references: [id], onDelete: SetNull)
+
+  variants      ProductVariant[]
+  bundleItems   BundleItem[]
+  wishlistItems WishlistItem[]
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  bulkDiscounts BulkDiscount[]
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([type])
+  @@index([isActive, isFeatured])
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String          @id @default(cuid())
+  productId String
+  duration  ProductDuration
+  price     Decimal         @db.Decimal(10, 2)
+  oldPrice  Decimal?        @db.Decimal(10, 2)
+  isActive  Boolean         @default(true)
+  order     Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([productId, duration])
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model Bundle {
+  id            String    @id @default(cuid())
+  name          String
+  slug          String    @unique
+  description   String?
+  image         String?
+  totalPrice    Decimal   @db.Decimal(10, 2)
+  originalPrice Decimal   @db.Decimal(10, 2)
+  isActive      Boolean   @default(true)
+  isFeatured    Boolean   @default(false)
+  validFrom     DateTime?
+  validUntil    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items      BundleItem[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@index([slug])
+  @@map("bundles")
+}
+
+model BundleItem {
+  id        String  @id @default(cuid())
+  bundleId  String
+  productId String
+  variantId String?
+  quantity  Int     @default(1)
+
+  bundle  Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([bundleId, productId, variantId])
+  @@map("bundle_items")
+}
+
+model BulkDiscount {
+  id            String       @id @default(cuid())
+  productId     String?
+  productType   ProductType?
+  minQuantity   Int          @default(0)
+  minAmount     Decimal?     @db.Decimal(10, 2)
+  discountType  DiscountType
+  discountValue Decimal      @db.Decimal(10, 2)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  product Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([productType])
+  @@map("bulk_discounts")
+}
+
+model Cart {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  promoCodeId String?
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promoCode PromoCode? @relation(fields: [promoCodeId], references: [id])
+  items     CartItem[]
+
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id           String   @id @default(cuid())
+  cartId       String
+  productId    String?
+  variantId    String?
+  bundleId     String?
+  quantity     Int      @default(1)
+  /// Мягкая ссылка на получателя подарка — не вынесена в relation в исходном проекте.
+  giftToUserId String?
+  giftMessage  String?  @db.VarChar(500)
+  addedAt      DateTime @default(now())
+
+  cart    Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product?        @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
+  bundle  Bundle?         @relation(fields: [bundleId], references: [id])
+
+  @@index([cartId])
+  @@map("cart_items")
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  isPublic  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items WishlistItem[]
+
+  @@index([userId])
+  @@map("wishlists")
+}
+
+model WishlistItem {
+  id         String   @id @default(cuid())
+  wishlistId String
+  productId  String
+  addedAt    DateTime @default(now())
+
+  wishlist Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@unique([wishlistId, productId])
+  @@index([wishlistId])
+  @@map("wishlist_items")
+}
+
+model Order {
+  id                       String      @id @default(cuid())
+  orderNumber              String      @unique
+  userId                   String?
+  guestMinecraftNick       String?     @db.VarChar(16)
+  status                   OrderStatus @default(PENDING)
+  subtotal                 Decimal     @db.Decimal(10, 2)
+  discountAmount           Decimal     @default(0) @db.Decimal(10, 2)
+  promoCodeId              String?
+  total                    Decimal     @db.Decimal(10, 2)
+  paymentMethod            String?
+  paymentId                String?
+  /// Идентификатор провайдера, обработавшего платёж (ADR-0009) — "test" вне production.
+  paymentProvider          String?
+  /// Проставляется только после проверки подписи вебхука провайдера (ADR-0009).
+  paymentWebhookVerifiedAt DateTime?
+  paidAt                   DateTime?
+  cancelledAt              DateTime?
+  refundedAt               DateTime?
+  cancelReason             String?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  user      User?       @relation(fields: [userId], references: [id])
+  promoCode PromoCode?  @relation(fields: [promoCodeId], references: [id])
+  items     OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id           String    @id @default(cuid())
+  orderId      String
+  productId    String?
+  variantId    String?
+  bundleId     String?
+  quantity     Int
+  unitPrice    Decimal   @db.Decimal(10, 2)
+  totalPrice   Decimal   @db.Decimal(10, 2)
+  giftToUserId String?
+  giftMessage  String?   @db.VarChar(500)
+  isDelivered  Boolean   @default(false)
+  deliveredAt  DateTime?
+
+  order      Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product?        @relation(fields: [productId], references: [id])
+  variant    ProductVariant? @relation(fields: [variantId], references: [id])
+  bundle     Bundle?         @relation(fields: [bundleId], references: [id])
+  giftToUser User?           @relation(fields: [giftToUserId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model LoyaltyDiscount {
+  id              String  @id @default(cuid())
+  minPurchases    Int
+  discountPercent Decimal @db.Decimal(5, 2)
+  name            String
+  description     String?
+  isActive        Boolean @default(true)
+
+  @@index([minPurchases])
+  @@map("loyalty_discounts")
+}
+
+model CurrencyRate {
+  id        String   @id @default(cuid())
+  currency  String   @unique
+  rate      Decimal  @db.Decimal(10, 4)
+  symbol    String
+  flag      String
+  isActive  Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@map("currency_rates")
+}
+
+// =========================================================================
+// Notifications
+// =========================================================================
+
+enum NotificationType {
+  COMMENT_ON_PROFILE
+  COMMENT_MENTION
+  COMMENT_REPLY
+  FRIEND_REQUEST
+  FRIEND_ACCEPTED
+  GIFT_RECEIVED
+  ORDER_STATUS_CHANGED
+  CHAT_MENTION
+  NEWS_PUBLISHED
+  NEWS_COMMENT_REPLY
+  NEWS_COMMENT_MENTION
+  REPORT_MENTION
+  NEWS_LIKED
+  ANNOUNCEMENT
+  MAINTENANCE
+  ACHIEVEMENT_UNLOCKED
+  REPORT_ASSIGNED
+  REPORT_VERDICT
+  REPORT_TARGET
+  MESSAGE_RECEIVED
+  RANK_GRANTED
+  BADGE_GRANTED
+  AWARD_GRANTED
+  PAYMENT_RECEIVED
+  DAILY_REWARD_AVAILABLE
+  EVENT_REMINDER
+  EVENT_UPDATED
+  DECORATION_GRANTED
+  SYSTEM
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum DigestMode {
+  INSTANT
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+model Notification {
+  id               String               @id @default(cuid())
+  userId           String
+  type             NotificationType
+  title            String
+  message          String?
+  link             String?
+  imageUrl         String?
+  fromUserId       String?
+  metadata         Json?
+  groupKey         String?
+  priority         NotificationPriority @default(NORMAL)
+  actionUrl        String?
+  actionLabel      String?
+  isRead           Boolean              @default(false)
+  readAt           DateTime?
+  sentViaEmail     Boolean              @default(false)
+  sentViaEmailAt   DateTime?
+  sentViaPush      Boolean              @default(false)
+  sentViaPushAt    DateTime?
+  sentViaDiscord   Boolean              @default(false)
+  sentViaDiscordAt DateTime?
+  createdAt        DateTime             @default(now())
+
+  user     User  @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  fromUser User? @relation("NotificationSender", fields: [fromUserId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([userId, isRead, createdAt])
+  @@index([groupKey])
+  @@map("notifications")
+}
+
+model NotificationSettings {
+  id                String     @id @default(cuid())
+  userId            String     @unique
+  emailEnabled      Boolean    @default(true)
+  pushEnabled       Boolean    @default(true)
+  discordEnabled    Boolean    @default(false)
+  discordWebhookUrl String?    @db.Text
+  soundEnabled      Boolean    @default(true)
+  digestMode        DigestMode @default(INSTANT)
+  digestTime        String?    @default("09:00")
+  quietHoursEnabled Boolean    @default(false)
+  quietHoursStart   String?    @default("22:00")
+  quietHoursEnd     String?    @default("08:00")
+  typeSettings      Json       @default("{}")
+  updatedAt         DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+/// Лог согласий на cookie — одна строка на сохранение (история, не перезаписывается
+/// на месте). userId проставляется, когда посетитель авторизован; anonymousId
+/// покрывает гостей через first-party cookie id. Последняя строка по user/anonymousId побеждает.
+model CookieConsent {
+  id          String   @id @default(cuid())
+  userId      String?
+  anonymousId String?
+  necessary   Boolean  @default(true)
+  analytics   Boolean  @default(false)
+  marketing   Boolean  @default(false)
+  preferences Boolean  @default(false)
+  version     String
+  ipHash      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([anonymousId])
+  @@index([userId, updatedAt])
+  @@map("cookie_consents")
+}
+
+model PushSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  endpoint   String   @db.Text
+  p256dh     String   @db.Text
+  auth       String   @db.Text
+  userAgent  String?
+  deviceName String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([endpoint])
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+model DiscordWebhook {
+  id         String   @id @default(cuid())
+  name       String
+  url        String   @db.Text
+  eventTypes String[]
+  isActive   Boolean  @default(true)
+  createdBy  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("discord_webhooks")
+}
+
+// =========================================================================
+// Minecraft servers
+// =========================================================================
+
+model ServerCategory {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  servers Server[]
+
+  @@index([slug])
+  @@index([isActive, order])
+  @@map("server_categories")
+}
+
+model Server {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  address     String
+  port        Int      @default(25565)
+  type        String
+  description String?
+  iconUrl     String?
+  maxPlayers  Int      @default(100)
+  version     String?
+  motd        String?
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  categoryId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category   ServerCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  statusLogs ServerStatusLog[]
+
+  @@index([slug])
+  @@index([isActive, order])
+  @@index([categoryId])
+  @@map("servers")
+}
+
+model ServerStatusLog {
+  id          String   @id @default(cuid())
+  serverId    String
+  online      Boolean
+  playerCount Int      @default(0)
+  maxPlayers  Int      @default(0)
+  players     String[]
+  version     String?
+  motd        String?
+  ping        Int?
+  timestamp   DateTime @default(now())
+
+  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId, timestamp])
+  @@map("server_status_logs")
+}
+
+// =========================================================================
+// Admin / System
+// =========================================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String?
+  targetId   String?
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  /// info | warning | critical
+  severity   String   @default("info")
+  /// Длительность запроса в мс, если применимо.
+  duration   Int?
+  createdAt  DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([action])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Announcement {
+  id            String    @id @default(cuid())
+  title         String
+  message       String
+  type          String    @default("info")
+  link          String?
+  isActive      Boolean   @default(true)
+  isDismissible Boolean   @default(true)
+  showFrom      DateTime?
+  showUntil     DateTime?
+  targetRole    String?
+  order         Int       @default(0)
+  createdBy     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive, showFrom, showUntil])
+  @@map("announcements")
+}
+
+model MaintenanceMode {
+  id           String    @id @default(cuid())
+  isEnabled    Boolean   @default(false)
+  title        String    @default("Технические работы")
+  message      String    @default("Сайт временно недоступен. Работы ведутся, скоро всё заработает!")
+  estimatedEnd DateTime?
+  enabledBy    String?
+  enabledAt    DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@map("maintenance_mode")
+}
+
+model ModuleStatus {
+  id         String    @id @default(cuid())
+  module     String    @unique
+  isEnabled  Boolean   @default(true)
+  reason     String?
+  disabledBy String?
+  disabledAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@index([module])
+  @@map("module_statuses")
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
+/// Структурированная глобальная конфигурация сайта (singleton row).
+model SiteSettings {
+  id                           String   @id @default(cuid())
+  siteName                     String   @default("TWOMC")
+  siteDescription              String?
+  siteLogo                     String?
+  siteFavicon                  String?
+  contactEmail                 String?
+  discordInvite                String?
+  vkGroup                      String?
+  telegramChannel              String?
+  youtubeChannel               String?
+  registrationEnabled          Boolean  @default(true)
+  registrationRequiresApproval Boolean  @default(false)
+  maxUsersLimit                Int?
+  autoModeration               Boolean  @default(true)
+  profanityFilter              Boolean  @default(true)
+  metaTitle                    String?
+  metaDescription              String?
+  metaKeywords                 String[] @default([])
+  googleAnalyticsId            String?
+  yandexMetrikaId              String?
+  chatEnabled                  Boolean  @default(true)
+  friendsEnabled               Boolean  @default(true)
+  storeEnabled                 Boolean  @default(true)
+  commentsEnabled              Boolean  @default(true)
+  newsEnabled                  Boolean  @default(true)
+  reportsEnabled               Boolean  @default(true)
+  defaultNotificationsEnabled  Boolean  @default(true)
+  requireAdmin2fa              Boolean  @default(false)
+  ipWhitelist                  String[] @default([])
+  updatedBy                    String?
+  updatedAt                    DateTime @updatedAt
+
+  @@map("site_settings_config")
+}
+
+model AdminBookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  url       String
+  title     String
+  icon      String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("admin_bookmarks")
+}
+
+model SavedFilter {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  page      String
+  filters   Json
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, page])
+  @@map("saved_filters")
+}
+
+model ScheduledExport {
+  id        String    @id @default(cuid())
+  userId    String
+  name      String
+  page      String
+  format    String
+  filters   Json?
+  schedule  String
+  email     String?
+  isActive  Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([nextRunAt, isActive])
+  @@map("scheduled_exports")
+}
+
+// =========================================================================
+// Chat & Direct Messages
+// =========================================================================
+
+enum ChatChannelType {
+  GENERAL
+  TRADE
+  HELP
+  ANNOUNCEMENTS
+  GAME
+  FLOOD
+}
+
+enum ChatMessageType {
+  MESSAGE
+  SYSTEM
+  ANNOUNCEMENT
+  MOD_ACTION
+}
+
+enum ChatMuteReason {
+  SPAM
+  TOXIC
+  ADVERTISING
+  CAPS
+  OTHER
+}
+
+enum ConversationType {
+  DIRECT
+  GROUP
+}
+
+enum ConversationRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+model ChatChannel {
+  id           String          @id @default(cuid())
+  slug         String          @unique
+  name         String
+  description  String?
+  type         ChatChannelType
+  icon         String?
+  isActive     Boolean         @default(true)
+  isReadOnly   Boolean         @default(false)
+  slowMode     Int?
+  order        Int             @default(0)
+  /// Permission key (не роль), минимально нужный для отправки в read-only канал — определяется сервисом (PHASE 11).
+  minRoleGroup String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  messages ChatMessage[]
+  mutes    ChatMute[]
+
+  @@index([slug])
+  @@index([isActive, order])
+  @@map("chat_channels")
+}
+
+model ChatMessage {
+  id            String          @id @default(cuid())
+  channelId     String
+  authorId      String?
+  type          ChatMessageType @default(MESSAGE)
+  content       String
+  contentHtml   String
+  parentId      String?
+  mentions      String[]
+  isPinned      Boolean         @default(false)
+  pinnedAt      DateTime?
+  pinnedBy      String?
+  isEdited      Boolean         @default(false)
+  editedAt      DateTime?
+  isDeleted     Boolean         @default(false)
+  deletedAt     DateTime?
+  deletedBy     String?
+  deletedReason String?
+  metadata      Json?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  channel ChatChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author  User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  parent  ChatMessage?  @relation("ChatMessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies ChatMessage[] @relation("ChatMessageReplies")
+
+  @@index([channelId, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("chat_messages")
+}
+
+model Conversation {
+  id            String           @id @default(cuid())
+  type          ConversationType
+  title         String?          @db.VarChar(80)
+  avatar        String?
+  directKey     String?          @unique
+  createdById   String?
+  lastMessageAt DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  createdBy User?                @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  members   ConversationMember[]
+  messages  DirectMessage[]
+  invites   GroupInvite[]
+
+  @@index([lastMessageAt])
+  @@index([createdById])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id                String           @id @default(cuid())
+  conversationId    String
+  userId            String
+  role              ConversationRole @default(MEMBER)
+  lastReadAt        DateTime         @default(now())
+  lastReadMessageId String?
+  isMuted           Boolean          @default(false)
+  isArchived        Boolean          @default(false)
+  joinedAt          DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId, isArchived])
+  @@index([conversationId, role])
+  @@map("conversation_members")
+}
+
+model DirectMessage {
+  id             String    @id @default(cuid())
+  conversationId String
+  senderId       String?
+  content        String    @default("") @db.VarChar(4000)
+  contentHtml    String    @default("")
+  parentId       String?
+  isEdited       Boolean   @default(false)
+  editedAt       DateTime?
+  isDeleted      Boolean   @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  conversation Conversation            @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?                   @relation(fields: [senderId], references: [id], onDelete: SetNull)
+  parent       DirectMessage?          @relation("DirectMessageReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies      DirectMessage[]         @relation("DirectMessageReplies")
+  reactions    DirectMessageReaction[]
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([parentId])
+  @@map("direct_messages")
+}
+
+model DirectMessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String   @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@index([userId])
+  @@map("direct_message_reactions")
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileUrl   String
+  fileName  String   @db.VarChar(255)
+  mimeType  String   @db.VarChar(120)
+  size      Int
+  createdAt DateTime @default(now())
+
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("message_attachments")
+}
+
+model GroupInvite {
+  id             String    @id @default(cuid())
+  conversationId String
+  code           String    @unique @db.VarChar(32)
+  createdById    String
+  maxUses        Int?
+  usedCount      Int       @default(0)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, revokedAt])
+  @@index([expiresAt])
+  @@map("group_invites")
+}
+
+model ChatMute {
+  id         String         @id @default(cuid())
+  userId     String
+  channelId  String?
+  reason     ChatMuteReason
+  reasonNote String?
+  mutedBy    String
+  mutedUntil DateTime?
+  isActive   Boolean        @default(true)
+  createdAt  DateTime       @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel ChatChannel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@index([mutedUntil])
+  @@map("chat_mutes")
+}
+
+model ChatBan {
+  id          String    @id @default(cuid())
+  userId      String
+  reason      String
+  bannedBy    String
+  bannedUntil DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("chat_bans")
+}
+
+// =========================================================================
+// Staff structure (cosmetic, не участвует в авторизации)
+// =========================================================================
+
+/// Свободный staff-титул (например, «Технический директор»), отдельно от Position.
+model CustomPosition {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  color       String?
+  icon        String?
+  description String?
+  isActive    Boolean  @default(true)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users UserCustomPosition[]
+
+  @@index([slug])
+  @@map("custom_positions")
+}
+
+model UserCustomPosition {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  customPositionId String
+  assignedBy       String?
+  assignedAt       DateTime @default(now())
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customPosition CustomPosition @relation(fields: [customPositionId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([customPositionId])
+  @@map("user_custom_positions")
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  color       String?
+  icon        String?
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members UserDepartment[]
+
+  @@index([slug])
+  @@map("departments")
+}
+
+model UserDepartment {
+  id           String   @id @default(cuid())
+  userId       String
+  departmentId String
+  order        Int      @default(0)
+  assignedBy   String?
+  assignedAt   DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, departmentId])
+  @@index([userId])
+  @@index([departmentId])
+  @@map("user_departments")
+}
+
+// =========================================================================
+// Topics (статические страницы: правила, документы, FAQ)
+// =========================================================================
+
+enum TopicCategory {
+  RULES
+  DOCUMENTS
+  INFORMATION
+  ADMIN_INTERNAL
+  FAQ
+  ANNOUNCEMENT
+  OTHER
+}
+
+enum TopicVisibility {
+  PUBLIC
+  AUTHENTICATED
+  HELPER_ONLY
+  MODERATOR_ONLY
+  ADMIN_ONLY
+  OWNER_ONLY
+}
+
+model Topic {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  title       String
+  category    TopicCategory
+  visibility  TopicVisibility @default(PUBLIC)
+  icon        String?
+  color       String?
+  description String?
+  content     String          @db.Text
+  contentHtml String?         @db.Text
+  order       Int             @default(0)
+  isActive    Boolean         @default(true)
+  isPinned    Boolean         @default(false)
+  views       Int             @default(0)
+  createdBy   String
+  updatedBy   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  attachments TopicAttachment[]
+
+  @@index([slug])
+  @@index([category, visibility])
+  @@index([isActive, isPinned, order])
+  @@map("topics")
+}
+
+model TopicAttachment {
+  id         String   @id @default(cuid())
+  topicId    String
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+  @@map("topic_attachments")
+}
+
+// =========================================================================
+// Reports & Moderation
+// =========================================================================
+
+enum ReportType {
+  PLAYER_COMPLAINT
+  ADMIN_COMPLAINT
+  PUNISHMENT_APPEAL
+  TECHNICAL_ISSUE
+  DONATION_PROBLEM
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  IN_REVIEW
+  WAITING_RESPONSE
+  RESOLVED
+  REJECTED
+  CLOSED
+}
+
+enum PunishmentType {
+  WARN
+  MUTE
+  KICK
+  TEMPBAN
+  PERMBAN
+}
+
+model Report {
+  id                   String          @id @default(cuid())
+  reportNumber         String          @unique
+  type                 ReportType
+  status               ReportStatus    @default(PENDING)
+  authorId             String
+  server               String?
+  incidentDate         DateTime?
+  description          String          @db.Text
+  descriptionHtml      String?         @db.Text
+  additionalText       String?         @db.Text
+  contactEmail         String?
+  contactPhone         String?
+  paymentDate          DateTime?
+  appealedPunishmentId String?
+  assignedToId         String?
+  verdict              String?         @db.Text
+  verdictHtml          String?         @db.Text
+  internalNote         String?         @db.Text
+  /// @deprecated используйте отдельные инструменты наказаний; поле оставлено для legacy-данных.
+  punishmentType       PunishmentType?
+  /// @deprecated используйте отдельные инструменты наказаний; поле оставлено для legacy-данных.
+  punishmentDuration   String?
+  /// @deprecated используйте отдельные инструменты наказаний; поле оставлено для legacy-данных.
+  punishmentReason     String?
+  isArchived           Boolean         @default(false)
+  archivedAt           DateTime?
+  archivedBy           String?
+  archiveReason        String?
+  isLocked             Boolean         @default(false)
+  lockedBy             String?
+  lockedReason         String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  resolvedAt           DateTime?
+
+  author             User            @relation("ReportAuthor", fields: [authorId], references: [id])
+  appealedPunishment UserPunishment? @relation(fields: [appealedPunishmentId], references: [id])
+  assignedTo         User?           @relation("ReportAssignee", fields: [assignedToId], references: [id])
+
+  targets        ReportTarget[]
+  evidenceLinks  ReportEvidenceLink[]
+  messages       ReportMessage[]
+  moderatorNotes ReportModeratorNote[]
+  attachments    ReportAttachment[]
+
+  @@index([authorId])
+  @@index([type, status])
+  @@index([reportNumber])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([appealedPunishmentId])
+  @@map("reports")
+}
+
+/// Несколько ников нарушителей на один репорт (зарегистрированных или нет).
+model ReportTarget {
+  id        String   @id @default(cuid())
+  reportId  String
+  username  String
+  userId    String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([reportId])
+  @@index([userId])
+  @@index([username])
+  @@map("report_targets")
+}
+
+/// Несколько ссылок-доказательств с опциональным заголовком и определённым типом.
+model ReportEvidenceLink {
+  id        String   @id @default(cuid())
+  reportId  String
+  url       String
+  title     String?
+  type      String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("report_evidence_links")
+}
+
+model ReportMessage {
+  id           String    @id @default(cuid())
+  reportId     String
+  authorId     String
+  content      String    @db.Text
+  contentHtml  String?   @db.Text
+  isStaff      Boolean   @default(false)
+  isSystem     Boolean   @default(false)
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+  deletedBy    String?
+  deleteReason String?
+  isPinned     Boolean   @default(false)
+  pinnedAt     DateTime?
+  pinnedBy     String?
+  createdAt    DateTime  @default(now())
+
+  report      Report                    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  author      User                      @relation(fields: [authorId], references: [id])
+  attachments ReportMessageAttachment[]
+
+  @@index([reportId, createdAt])
+  @@map("report_messages")
+}
+
+model ReportMessageAttachment {
+  id         String   @id @default(cuid())
+  messageId  String
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  message ReportMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("report_message_attachments")
+}
+
+/// Заметки только для staff по репорту, отдельно от публичной переписки.
+model ReportModeratorNote {
+  id          String   @id @default(cuid())
+  reportId    String
+  authorId    String
+  content     String   @db.Text
+  contentHtml String?  @db.Text
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id])
+
+  @@index([reportId])
+  @@map("report_moderator_notes")
+}
+
+model ReportAttachment {
+  id         String   @id @default(cuid())
+  reportId   String
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("report_attachments")
+}
+
+model ReportBan {
+  id          String    @id @default(cuid())
+  userId      String
+  reason      String
+  bannedBy    String
+  bannedUntil DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("report_bans")
+}
+
+/// История наказаний игрока (можно обжаловать через reports).
+model UserPunishment {
+  id             String         @id @default(cuid())
+  userId         String
+  punishmentType PunishmentType
+  reason         String
+  duration       String?
+  server         String?
+  issuedBy       String
+  issuedAt       DateTime       @default(now())
+  expiresAt      DateTime?
+  isActive       Boolean        @default(true)
+  isAppealable   Boolean        @default(true)
+
+  user         User     @relation("UserPunishmentTarget", fields: [userId], references: [id])
+  issuedByUser User     @relation("UserPunishmentIssuer", fields: [issuedBy], references: [id])
+  reports      Report[]
+
+  @@index([userId, isActive])
+  @@index([issuedBy])
+  @@map("user_punishments")
+}
+
+// =========================================================================
+// News
+// =========================================================================
+
+enum NewsCategory {
+  UPDATE
+  EVENT
+  GUIDE
+  ANNOUNCEMENT
+  PATCH_NOTES
+  COMMUNITY
+  OTHER
+}
+
+enum NewsStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+model News {
+  id              String       @id @default(cuid())
+  slug            String       @unique
+  title           String
+  excerpt         String?      @db.Text
+  content         String       @db.Text
+  contentHtml     String?      @db.Text
+  coverImage      String?
+  category        NewsCategory
+  status          NewsStatus   @default(DRAFT)
+  authorId        String
+  metaTitle       String?
+  metaDescription String?      @db.Text
+  metaKeywords    String[]
+  ogImage         String?
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
+  viewsCount      Int          @default(0)
+  likesCount      Int          @default(0)
+  commentsCount   Int          @default(0)
+  allowComments   Boolean      @default(true)
+  isPinned        Boolean      @default(false)
+  isFeatured      Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  author   User          @relation(fields: [authorId], references: [id])
+  comments NewsComment[]
+  likes    NewsLike[]
+  views    NewsView[]
+  tags     NewsTag[]
+
+  @@index([slug])
+  @@index([status, publishedAt])
+  @@index([category])
+  @@index([isPinned, isFeatured])
+  @@map("news")
+}
+
+model NewsTag {
+  id     String @id @default(cuid())
+  newsId String
+  tag    String
+
+  news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@unique([newsId, tag])
+  @@index([tag])
+  @@map("news_tags")
+}
+
+model NewsComment {
+  id          String    @id @default(cuid())
+  newsId      String
+  authorId    String
+  content     String    @db.Text
+  contentHtml String?   @db.Text
+  parentId    String?
+  isPinned    Boolean   @default(false)
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedBy   String?
+  isEdited    Boolean   @default(false)
+  editedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  news    News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  author  User          @relation(fields: [authorId], references: [id])
+  parent  NewsComment?  @relation("NewsCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies NewsComment[] @relation("NewsCommentReplies")
+
+  reactions NewsCommentReaction[]
+
+  @@index([newsId, createdAt])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("news_comments")
+}
+
+model NewsCommentReaction {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  comment NewsComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id])
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+  @@map("news_comment_reactions")
+}
+
+model NewsLike {
+  id        String   @id @default(cuid())
+  newsId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  news News @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([newsId, userId])
+  @@index([newsId])
+  @@map("news_likes")
+}
+
+model NewsView {
+  id        String   @id @default(cuid())
+  newsId    String
+  userId    String?
+  ipAddress String?
+  userAgent String?
+  viewedAt  DateTime @default(now())
+
+  news News  @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([newsId, viewedAt])
+  @@index([userId])
+  @@map("news_views")
+}
+
+// =========================================================================
+// Activity feed
+// =========================================================================
+
+enum ActivityType {
+  PURCHASE_MADE
+  RANK_ACHIEVED
+  ACHIEVEMENT_UNLOCKED
+  BADGE_GRANTED
+  AWARD_GRANTED
+  GIFT_SENT
+  GIFT_RECEIVED
+  FRIENDSHIP_STARTED
+  PROFILE_UPDATED
+  NEWS_POSTED
+  EVENT_ANNOUNCED
+  MILESTONE_REACHED
+  JOINED_SERVER
+  TOP_ACHIEVED
+  MEDIA_APPROVED
+  DONATOR_UPGRADED
+  BIRTHDAY
+  CUSTOM
+}
+
+enum ActivityVisibility {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+model Activity {
+  id           String             @id @default(cuid())
+  userId       String
+  type         ActivityType
+  visibility   ActivityVisibility @default(PUBLIC)
+  title        String
+  description  String?
+  imageUrl     String?
+  actionUrl    String?
+  metadata     Json?
+  isPinned     Boolean            @default(false)
+  isHidden     Boolean            @default(false)
+  hiddenReason String?
+  hiddenBy     String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions ActivityReaction[]
+  comments  ActivityComment[]
+
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+  @@index([visibility, createdAt])
+  @@index([isPinned, createdAt])
+  @@map("activities")
+}
+
+model ActivityReaction {
+  id         String   @id @default(cuid())
+  activityId String
+  userId     String
+  emoji      String
+  createdAt  DateTime @default(now())
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([activityId, userId])
+  @@index([activityId])
+  @@map("activity_reactions")
+}
+
+model ActivityComment {
+  id          String    @id @default(cuid())
+  activityId  String
+  authorId    String
+  content     String    @db.Text
+  contentHtml String?   @db.Text
+  isDeleted   Boolean   @default(false)
+  deletedAt   DateTime?
+  deletedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id])
+
+  @@index([activityId, createdAt])
+  @@map("activity_comments")
+}
+
+model ActivityFeedSettings {
+  id                       String             @id @default(cuid())
+  userId                   String             @unique
+  showPurchases            Boolean            @default(true)
+  showAchievements         Boolean            @default(true)
+  showBadges               Boolean            @default(true)
+  showAwards               Boolean            @default(true)
+  showGifts                Boolean            @default(true)
+  showFriendships          Boolean            @default(true)
+  showProfileUpdates       Boolean            @default(false)
+  showMilestones           Boolean            @default(true)
+  showServerActivity       Boolean            @default(true)
+  purchasesVisibility      ActivityVisibility @default(FRIENDS)
+  achievementsVisibility   ActivityVisibility @default(PUBLIC)
+  badgesVisibility         ActivityVisibility @default(PUBLIC)
+  giftsVisibility          ActivityVisibility @default(FRIENDS)
+  friendshipsVisibility    ActivityVisibility @default(FRIENDS)
+  profileUpdatesVisibility ActivityVisibility @default(FRIENDS)
+  notifyOnComment          Boolean            @default(true)
+  notifyOnReaction         Boolean            @default(false)
+  updatedAt                DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_feed_settings")
+}
+
+// =========================================================================
+// Emojis & Decorations
+// =========================================================================
+
+/// Кастомные shortcode-эмодзи для markdown (:name:).
+model CustomEmoji {
+  id         String   @id @default(cuid())
+  name       String   @unique @db.VarChar(32)
+  imageUrl   String
+  category   String?
+  isAnimated Boolean  @default(false)
+  isPremium  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdBy  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([name])
+  @@index([category])
+  @@index([isActive])
+  @@map("custom_emojis")
+}
+
+enum DecorationAvailability {
+  STORE
+  ADMIN_ONLY
+  UNAVAILABLE
+}
+
+enum DecorationGrantSource {
+  PURCHASE
+  ADMIN
+  LEGACY
+}
+
+model ProfileDecoration {
+  id           String                 @id @default(cuid())
+  slug         String                 @unique @db.VarChar(64)
+  name         String                 @db.VarChar(100)
+  imageUrl     String
+  availability DecorationAvailability @default(UNAVAILABLE)
+  isActive     Boolean                @default(true)
+  order        Int                    @default(0)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  owners     UserDecoration[]
+  selectedBy User[]
+  product    Product?
+
+  @@index([availability, isActive])
+  @@index([order])
+  @@map("profile_decorations")
+}
+
+model UserDecoration {
+  id           String                @id @default(cuid())
+  userId       String
+  decorationId String
+  source       DecorationGrantSource
+  grantedById  String?
+  orderId      String?
+  acquiredAt   DateTime              @default(now())
+
+  user       User              @relation("UserDecorationOwner", fields: [userId], references: [id], onDelete: Cascade)
+  decoration ProfileDecoration @relation(fields: [decorationId], references: [id], onDelete: Cascade)
+  grantedBy  User?             @relation("UserDecorationGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, decorationId])
+  @@index([userId, acquiredAt])
+  @@index([decorationId])
+  @@index([grantedById])
+  @@map("user_decorations")
+}
+
+// =========================================================================
+// Events
+// =========================================================================
+
+enum CalendarEventCategory {
+  COMMUNITY
+  TOURNAMENT
+  UPDATE
+  MAINTENANCE
+  HOLIDAY
+  OTHER
+}
+
+enum CalendarEventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum CalendarEventVisibility {
+  PUBLIC
+  AUTHENTICATED
+  STAFF
+}
+
+enum EventAttendanceStatus {
+  GOING
+  INTERESTED
+  DECLINED
+}
+
+model CalendarEvent {
+  id                   String                  @id @default(cuid())
+  slug                 String                  @unique @db.VarChar(100)
+  title                String                  @db.VarChar(160)
+  description          String                  @db.Text
+  descriptionHtml      String                  @db.Text
+  coverImage           String?
+  category             CalendarEventCategory
+  status               CalendarEventStatus     @default(DRAFT)
+  visibility           CalendarEventVisibility @default(PUBLIC)
+  startsAt             DateTime
+  endsAt               DateTime?
+  isAllDay             Boolean                 @default(false)
+  timezone             String                  @default("Europe/Moscow") @db.VarChar(64)
+  location             String?                 @db.VarChar(160)
+  server               String?                 @db.VarChar(100)
+  maxParticipants      Int?
+  registrationDeadline DateTime?
+  isFeatured           Boolean                 @default(false)
+  createdById          String
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  createdBy    User               @relation(fields: [createdById], references: [id])
+  participants EventParticipant[]
+
+  @@index([status, startsAt])
+  @@index([visibility, startsAt])
+  @@index([category, startsAt])
+  @@index([createdById])
+  @@map("calendar_events")
+}
+
+model EventParticipant {
+  id         String                @id @default(cuid())
+  eventId    String
+  userId     String
+  status     EventAttendanceStatus @default(GOING)
+  remindedAt DateTime?
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId, status])
+  @@index([userId, status])
+  @@map("event_participants")
+}
+
+// =========================================================================
+// Forms engine
+// =========================================================================
+
+enum FormFieldType {
+  TEXT
+  TEXTAREA
+  RADIO
+  CHECKBOX
+  SELECT
+  NUMBER
+  DATE
+  TIME
+  EMAIL
+  PHONE
+  URL
+  FILE_UPLOAD
+  RATING
+  COLOR_PICKER
+  CODE_EDITOR
+  MARKDOWN_EDITOR
+  IMAGE_GALLERY
+  VIDEO_URL
+  SCHEDULE_PICKER
+  AGREEMENT_CHECKLIST
+  PLAYER_SELECTOR
+  SERVER_SELECTOR
+  RANK_SELECTOR
+  FRIENDS_SELECTOR
+  PRODUCT_SELECTOR
+  ORDER_SELECTOR
+  REPORT_REFERENCE
+  NEWS_REFERENCE
+  TOPIC_REFERENCE
+  PUNISHMENT_REFERENCE
+  SIGNATURE
+  DATE_RANGE
+  CURRENCY_AMOUNT
+  STATS_DISPLAY
+  ACHIEVEMENT_SELECTOR
+}
+
+enum FormVisibility {
+  PUBLIC
+  AUTHENTICATED
+  HELPER_ONLY
+  MODERATOR_ONLY
+  ADMIN_ONLY
+  OWNER_ONLY
+  INVITE_ONLY
+}
+
+enum FormStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+model Form {
+  id              String         @id @default(cuid())
+  slug            String         @unique
+  title           String
+  description     String?        @db.Text
+  descriptionHtml String?        @db.Text
+  coverImage      String?
+  status          FormStatus     @default(DRAFT)
+  visibility      FormVisibility @default(PUBLIC)
+  createdById     String
+  maxResponses    Int?
+  responsesCount  Int            @default(0)
+  onePerUser      Boolean        @default(true)
+  isAnonymous     Boolean        @default(false)
+  showResults     Boolean        @default(false)
+  requiresAuth    Boolean        @default(false)
+  requiresCaptcha Boolean        @default(true)
+  opensAt         DateTime?
+  closesAt        DateTime?
+  timeLimit       Int?
+  multiStep       Boolean        @default(false)
+  stepsConfig     Json?
+  customCss       String?        @db.Text
+  thankYouMessage String?        @db.Text
+  redirectUrl     String?
+  /// Soft-delete через статус ARCHIVED; поле оставлено для фильтрации удалённых черновиков.
+  deletedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  createdBy User           @relation(fields: [createdById], references: [id])
+  fields    FormField[]
+  responses FormResponse[]
+  invites   FormInvite[]
+
+  @@index([slug])
+  @@index([status, visibility])
+  @@index([createdById])
+  @@map("forms")
+}
+
+model FormField {
+  id               String        @id @default(cuid())
+  formId           String
+  type             FormFieldType
+  label            String
+  description      String?       @db.Text
+  placeholder      String?
+  isRequired       Boolean       @default(false)
+  order            Int           @default(0)
+  stepIndex        Int?
+  options          Json?
+  validation       Json?
+  conditionalLogic Json?
+  defaultValue     String?
+  minValue         Int?
+  maxValue         Int?
+  minLength        Int?
+  maxLength        Int?
+  maxFiles         Int?
+  maxFileSize      Int?
+  allowedMimes     String[]
+  metadata         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  form    Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  answers FormFieldAnswer[]
+
+  @@index([formId, order])
+  @@map("form_fields")
+}
+
+model FormResponse {
+  id           String    @id @default(cuid())
+  formId       String
+  respondentId String?
+  isAnonymous  Boolean   @default(false)
+  ipHash       String?
+  userAgent    String?
+  isComplete   Boolean   @default(false)
+  completedAt  DateTime?
+  startedAt    DateTime  @default(now())
+  currentStep  Int       @default(0)
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  form       Form              @relation(fields: [formId], references: [id], onDelete: Cascade)
+  respondent User?             @relation(fields: [respondentId], references: [id])
+  answers    FormFieldAnswer[]
+
+  @@index([formId, respondentId])
+  @@index([formId, isComplete])
+  @@map("form_responses")
+}
+
+model FormFieldAnswer {
+  id           String    @id @default(cuid())
+  responseId   String
+  fieldId      String
+  textValue    String?   @db.Text
+  numberValue  Decimal?  @db.Decimal(12, 2)
+  booleanValue Boolean?
+  dateValue    DateTime?
+  jsonValue    Json?
+  fileUrls     String[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  response FormResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  field    FormField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@index([responseId])
+  @@index([fieldId])
+  @@map("form_field_answers")
+}
+
+model FormInvite {
+  id        String    @id @default(cuid())
+  formId    String
+  code      String    @unique
+  maxUses   Int?
+  usedCount Int       @default(0)
+  expiresAt DateTime?
+  createdBy String
+  createdAt DateTime  @default(now())
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([formId])
+  @@map("form_invites")
+}
+
+// =========================================================================
+// Streaming
+// =========================================================================
+
+enum StreamPlatform {
+  TWITCH
+  YOUTUBE
+}
+
+model StreamChannel {
+  id            String         @id @default(cuid())
+  platform      StreamPlatform
+  channelKey    String
+  channelUrl    String
+  displayName   String
+  avatarUrl     String?
+  userId        String?
+  isPartner     Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  isLive        Boolean        @default(false)
+  title         String?
+  thumbnailUrl  String?
+  liveUrl       String?
+  viewerCount   Int            @default(0)
+  startedAt     DateTime?
+  lastCheckedAt DateTime?
+  checkError    String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([platform, channelKey])
+  @@index([isActive, isLive])
+  @@index([isPartner])
+  @@index([userId])
+  @@map("stream_channels")
+}
+
+// =========================================================================
+// Voting
+// =========================================================================
+
+model VoteSite {
+  id                String   @id @default(cuid())
+  slug              String   @unique
+  name              String
+  description       String?
+  url               String
+  logoUrl           String?
+  rewardCoins       Int      @default(10)
+  cooldownHours     Int      @default(24)
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  webhookSecretHash String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  votes PlayerVote[]
+
+  @@index([isActive, sortOrder])
+  @@map("vote_sites")
+}
+
+model PlayerVote {
+  id          String   @id @default(cuid())
+  siteId      String
+  userId      String
+  externalId  String?
+  rewardCoins Int
+  votedAt     DateTime @default(now())
+
+  site VoteSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, externalId])
+  @@index([userId, votedAt])
+  @@index([siteId, votedAt])
+  @@map("player_votes")
+}
+
+// =========================================================================
+// CDN / Files (ADR-0008)
+// =========================================================================
+
+enum FileStatus {
+  TEMP
+  ATTACHED
+  DELETED
+}
+
+/// Учёт владения загруженными файлами для orphan cleanup. В полях сущностей
+/// (User.avatar, News.coverImage и т.п.) хранится storage key, не эта модель
+/// напрямую — см. ADR-0008. ownerType/ownerId — свободная полиморфная ссылка
+/// (не foreign key), т.к. владельцем может быть любая из десятков сущностей.
+model File {
+  id         String     @id @default(cuid())
+  key        String     @unique
+  mime       String
+  size       Int
+  uploaderId String
+  ownerType  String?
+  ownerId    String?
+  status     FileStatus @default(TEMP)
+  createdAt  DateTime   @default(now())
+  attachedAt DateTime?
+
+  uploader User @relation("FileUploader", fields: [uploaderId], references: [id])
+
+  @@index([status])
+  @@index([ownerType, ownerId])
+  @@map("files")
+}

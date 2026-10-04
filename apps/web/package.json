@@ -1,0 +1,41 @@
+{
+  "name": "@twomc/web",
+  "version": "0.1.0",
+  "description": "twomc.su — frontend (Next.js)",
+  "author": {
+    "name": "younaxo",
+    "email": "menidan78.offical@gmail.com"
+  },
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/younaxo/twomcsu-wsite.git",
+    "directory": "apps/web"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@twomc/shared": "workspace:*",
+    "react": "^18",
+    "react-dom": "^18",
+    "next": "14.2.35"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "prettier": "^3.0.0"
+  }
+}

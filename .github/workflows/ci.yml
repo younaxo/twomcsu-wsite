@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PNPM_VERSION: "9.15.9"
+  NODE_VERSION: "20"
+
+jobs:
+  quality:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: twomc
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: twomc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U twomc -d twomc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://twomc:ci_password@localhost:5432/twomc
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci
+      JWT_REFRESH_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci-2
+      HCAPTCHA_DISABLED: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Prisma validate
+        working-directory: apps/api
+        run: |
+          if [ -f prisma/schema.prisma ]; then
+            pnpm exec prisma validate
+          else
+            echo "::notice::prisma/schema.prisma ещё не создан (PHASE 04) — шаг пропущен"
+          fi
+
+      - name: Prisma migrate deploy
+        working-directory: apps/api
+        run: |
+          if [ -f prisma/schema.prisma ]; then
+            pnpm exec prisma migrate deploy
+          else
+            echo "::notice::prisma/schema.prisma ещё не создан (PHASE 04) — шаг пропущен"
+          fi
+
+      - name: Prisma seed (roles/permissions)
+        working-directory: apps/api
+        run: |
+          if [ -d prisma/seed ]; then
+            pnpm exec prisma db seed
+          else
+            echo "::notice::prisma/seed ещё не создан (PHASE 06) — шаг пропущен"
+          fi
+
+      - name: Test
+        run: pnpm test
+
+      - name: Test (e2e)
+        run: pnpm test:e2e
+
+      - name: Build
+        run: pnpm build
+
+  dependency-audit:
+    name: Dependency security audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm audit (high/critical)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true # информативно на старте проекта, см. ADR-0014 — ужесточается в PHASE 26

@@ -1,0 +1,66 @@
+name: twomc-su
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: twomc-su-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-twomc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-twomc}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+      # Явная настройка autovacuum вместо дефолтов — старый проект оставлял это
+      # как TODO (docs/technical/42-TECH-DEBT.md, LOW), здесь решено сразу.
+      - -c
+      - autovacuum_vacuum_scale_factor=0.1
+      - -c
+      - autovacuum_analyze_scale_factor=0.05
+      - -c
+      - autovacuum_naptime=30s
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-twomc} -d ${POSTGRES_DB:-twomc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - twomc
+
+  redis:
+    image: redis:7-alpine
+    container_name: twomc-su-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Укажите REDIS_PASSWORD в .env}
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:?Укажите REDIS_PASSWORD в .env}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - twomc
+
+networks:
+  twomc:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
