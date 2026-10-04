@@ -1,16 +1,22 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserBadgeType } from '@prisma/client';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
+import { GrantBadgeDto } from './dto/grant-badge.dto';
 import { ListUsersDto } from './dto/list-users.dto';
 
 const SAFE_USER_SELECT = {
@@ -76,5 +82,58 @@ export class UsersController {
       throw new NotFoundException('Пользователь не найден');
     }
     return user;
+  }
+
+  @Get(':userId/badges')
+  @RequirePermissions('users.badges')
+  async listBadges(@Param('userId') userId: string) {
+    return this.prisma.userBadge.findMany({
+      where: { userId },
+      orderBy: { order: 'asc' },
+    });
+  }
+
+  @Post(':userId/badges')
+  @RequirePermissions('users.badges')
+  async grantBadge(
+    @Param('userId') userId: string,
+    @Body() dto: GrantBadgeDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    return this.prisma.userBadge.upsert({
+      where: { userId_type: { userId, type: dto.type } },
+      create: {
+        userId,
+        type: dto.type,
+        grantedBy: admin.id,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      },
+      update: {
+        isActive: true,
+        grantedBy: admin.id,
+        grantedAt: new Date(),
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+      },
+    });
+  }
+
+  @Delete(':userId/badges/:type')
+  @RequirePermissions('users.badges')
+  async revokeBadge(
+    @Param('userId') userId: string,
+    @Param('type') type: UserBadgeType,
+  ) {
+    const badge = await this.prisma.userBadge.findUnique({
+      where: { userId_type: { userId, type } },
+    });
+    if (!badge) {
+      throw new NotFoundException('Бейдж не найден у этого пользователя');
+    }
+    await this.prisma.userBadge.delete({ where: { id: badge.id } });
+    return { success: true };
   }
 }

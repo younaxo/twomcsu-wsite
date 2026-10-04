@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, SocialPlatform } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -226,5 +227,22 @@ export class ProfilesService {
       update: { reason: dto.reason, description: dto.description },
     });
     return { success: true };
+  }
+
+  async createMediaRequest(userId: string, dto: CreateMediaRequestDto) {
+    const existing = await this.prisma.userMediaBadge.findUnique({
+      where: { userId_mediaGroup: { userId, mediaGroup: dto.mediaGroup } },
+    });
+    if (existing?.isApproved) {
+      throw new ForbiddenException('Бейдж для этой платформы уже подтверждён');
+    }
+    return this.prisma.mediaBadgeRequest.create({ data: { userId, ...dto } });
+  }
+
+  async listMyMediaRequests(userId: string) {
+    return this.prisma.mediaBadgeRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 }

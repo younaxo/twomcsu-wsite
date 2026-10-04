@@ -33,7 +33,7 @@
 - [x] PHASE 16 — Reports / Moderation (жалобы, наказания; audit log — отдельно PHASE 22)
 - [x] PHASE 17 — Store (каталог, корзина, заказы, промокоды; реальный провайдер — RISKS.md R2; доставка на сервер не предусмотрена схемой — ADR-0041)
 - [x] PHASE 18 — Minecraft servers (реальный Server List Ping, мониторинг, статус, история; RCON не предусмотрен схемой — ADR-0041)
-- [ ] PHASE 19 — Gamification (achievements, awards, badges, leaderboards)
+- [x] PHASE 19 — Gamification (achievements с реальным пересчётом прогресса, awards, badges, leaderboards; admin-дашборд — PHASE 20)
 - [ ] PHASE 20 — Admin backend (административные API, hierarchy, audit)
 - [ ] PHASE 21 — Admin panel (frontend, permission-driven меню)
 - [ ] PHASE 22 — Audit log (обязательные события, retention)
