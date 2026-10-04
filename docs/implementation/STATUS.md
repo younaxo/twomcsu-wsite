@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 13 — News
-Current branch: feature/news
+Current phase: PHASE 14 — Events / Topics / Voting / Streaming
+Current branch: feature/events
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -38,8 +38,7 @@ Completed:
   модерация, интеграция с уведомлениями — 11 e2e-тестов)
 
 In progress:
-none (PHASE 13 завершена и ждёт merge PR; следующая — PHASE 14, Events/
-Topics/Voting/Streaming)
+- PHASE 14 — Events / Topics / Voting / Streaming
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -66,7 +65,8 @@ PHASE 04/05).
 | PHASE 10 — Direct Messages | `feature/direct-messages` | merged (PR #20, `2c9ddba`) | completed |
 | PHASE 11 — Chat | `feature/chat` | merged (PR #21, `5b25b80`) | completed |
 | PHASE 12 — Notifications | `feature/notifications` | merged (PR #22, `b49866d`) | completed |
-| PHASE 13 — News | `feature/news` | *(PR на проверке)* | in progress |
+| PHASE 13 — News | `feature/news` | merged (PR #23, `e3d8035`) | completed |
+| PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
