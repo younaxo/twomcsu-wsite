@@ -15,14 +15,14 @@
 | auth | PARTIAL | PHASE 05 — register/login/refresh/sessions/change-reset-password готовы и покрыты e2e-тестами; email verification (`User.isVerified`) не реализована (как и в старом проекте — не было явного требования) |
 | awards | MISSING | PHASE 19 |
 | cache | MISSING | PHASE 24 |
-| chat | MISSING | PHASE 11 |
+| chat | IMPLEMENTED | PHASE 11 — публичные/admin REST, WebSocket-гейтвей (каналы, мут/бан, pin), покрыто e2e; rate-limit/anti-spam — PHASE 26 |
 | comments | PARTIAL | PHASE 09 — CRUD + реакции + жалобы готовы и покрыты e2e; рассмотрение жалоб модератором — PHASE 16 |
 | consent | MISSING | PHASE 25 |
 | custom-positions | PARTIAL | PHASE 07 — CRUD + assign (1:1 на пользователя) готовы, покрыты e2e |
 | decorations | PARTIAL | PHASE 08 — выбор из принадлежащих готов и покрыт e2e; выдача декораций (покупка/admin grant) — PHASE 17/20 |
 | departments | PARTIAL | PHASE 07 — CRUD + assign/reorder готовы, покрыты e2e |
-| direct-messages | MISSING | PHASE 10 |
-| emojis | MISSING | PHASE 11 |
+| direct-messages | IMPLEMENTED | PHASE 10 — личные/групповые беседы, WebSocket-гейтвей, покрыто e2e |
+| emojis | MISSING | кастомные emoji не описаны требованиями этой фазы; свободные emoji-реакции уже работают в comments/activity/direct-messages (PHASE 09/10) |
 | events | MISSING | PHASE 14 |
 | export | MISSING | PHASE 20 |
 | forms | MISSING | PHASE 15 |
@@ -35,7 +35,7 @@
 | notifications | MISSING | PHASE 12 |
 | positions | PARTIAL | PHASE 07 — CRUD + assign готовы, покрыты e2e; donor-тиры/staff-позиции — по мере необходимости |
 | prisma | IMPLEMENTED | PHASE 04 — схема (108 моделей/53 enum) + миграция + PrismaModule |
-| redis | PARTIAL | Базовый клиент (`RedisService`) подключён в PHASE 05 для brute-force; централизованные cache keys/инвалидация — PHASE 24 |
+| redis | PARTIAL | `RedisService` используется для brute-force (PHASE 05), RBAC permission-кеша (PHASE 06), chat presence (PHASE 11); централизованные cache keys/инвалидация — PHASE 24 |
 | reports | MISSING | PHASE 16 |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
 | statistics | MISSING | PHASE 19 |

@@ -70,9 +70,9 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 8 suite / 45 тестов — auth + RBAC + users-domain +
-profiles + social + direct-messages, против реального Postgres+Redis, полный
-параллельный прогон всего сьюта)
+tests: pass (unit 1/1, e2e 9 suite / 57 тестов — auth + RBAC + users-domain +
+profiles + social + direct-messages + chat, против реального Postgres+Redis,
+полный параллельный прогон всего сьюта)
 build: pass
 
 Last updated: 2026-10-04
