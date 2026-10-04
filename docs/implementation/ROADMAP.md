@@ -24,7 +24,7 @@
 - [x] PHASE 07 — Users (учётные записи, статусы, departments/positions)
 - [x] PHASE 08 — Profiles (публичный профиль, приватность, декорации)
 - [x] PHASE 09 — Social system (друзья, комментарии, реакции, activity feed)
-- [ ] PHASE 10 — Direct Messages (беседы, WebSocket, непрочитанные)
+- [x] PHASE 10 — Direct Messages (беседы, WebSocket, непрочитанные)
 - [ ] PHASE 11 — Chat (каналы, модерация, anti-spam, WebSocket)
 - [ ] PHASE 12 — Notifications (website/WS/email/push, digest)
 - [ ] PHASE 13 — News (черновики, публикация, комментарии, медиа)

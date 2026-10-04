@@ -70,3 +70,21 @@
   `FRIENDS`/`PRIVATE`), реакции и комментарии к активности, персональные
   настройки (`ActivityFeedSettings`). Принятие заявки в друзья создаёт первую
   реальную запись активности (`FRIENDSHIP_STARTED`).
+
+### Direct Messages
+- Личные и групповые беседы (`/messages/conversations/*`), идемпотентное
+  создание личной беседы (`directKey`), сообщения (отправка/редактирование/
+  soft-delete/реакции с несколькими emoji на пользователя), `markRead` с
+  unread count, выход из беседы, инвайты в группы (код/`maxUses`/`expiresAt`).
+  `directMessagePolicy` (`EVERYONE`/`FRIENDS`/`FRIENDS_OF_FRIENDS`/`NOBODY`)
+  соблюдается полностью.
+- `DirectMessagesGateway` (Socket.IO, namespace `/messages`): auto-join комнат
+  участника при подключении, `conversation:join/leave`, `message:send`
+  (ack + broadcast), `message:edit/delete/react` → `message:updated`,
+  `conversation:read` → receipt, `typing:start/stop`. Аутентификация — через
+  Socket.IO namespace-middleware (не `handleConnection`) — иначе возможна
+  гонка между подключением и первым событием клиента (поймано e2e-тестом).
+- `ConfigurableIoAdapter`: CORS для всех WS namespace настраивается централизованно
+  через `ConfigService`, а не статической опцией в `@WebSocketGateway` —
+  устраняет для всего приложения проблему старого проекта (S11:
+  `/messages` с `cors.origin=true`).

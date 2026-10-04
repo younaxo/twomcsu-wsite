@@ -220,3 +220,43 @@ PHASE 05 Authentication), а не заранее списком из `.env.examp
 см. ADR-0005/ADR-0006). Staff-роли уровня Admin/Moderator/Helper создаются в
 PHASE 32 вместе с bootstrap-аккаунтами, когда уже есть реальные permissions
 доменных модулей, которые им имеет смысл назначать.
+
+## ADR-0017 — WebSocket CORS: единый адаптер вместо опции `cors` в `@WebSocketGateway`
+
+**Context.** `docs/technical/06-WEBSOCKET.md` и `29-SECURITY.md` (S11, LOW)
+фиксируют, что в старом проекте namespace `/messages` был настроен с
+`cors.origin = true` (разрешён любой origin), в то время как `/chat` и
+`/notifications` использовали origin из конфигурации — рассинхронизация
+между гейтвеями, заведёнными в разное время разными людьми. Технически
+опция `cors` в декораторе `@WebSocketGateway({ cors: {...} })` вычисляется
+при импорте модуля гейтвея — раньше, чем `AppModule` успевает выполнить
+`ConfigModule.forRoot()` и заполнить `process.env` из `.env`, поэтому чтение
+`ConfigService`/`process.env` прямо в декораторе ненадёжно (значение ещё не
+загружено на момент вычисления decorator-metadata).
+
+**Decision.** CORS для всех Socket.IO namespace (включая будущие `/chat` и
+`/notifications`, PHASE 11/12) настраивается в одном месте —
+`apps/api/src/websocket-adapter.ts` (`ConfigurableIoAdapter extends IoAdapter`),
+который переопределяет `createIOServer` и подставляет `cors: { origin: WEB_ORIGIN,
+credentials: true }` уже после того, как Nest создал application context (когда
+`ConfigService` гарантированно доступен). Адаптер регистрируется в
+`configureApp()` (`apps/api/src/configure-app.ts`) — общей точке bootstrap для
+`main.ts` и всех e2e-тестов, так что production и тесты ведут себя одинаково.
+Это одновременно устраняет S11 для всего приложения разом, а не только для
+`/messages`, и не допускает повторения той же рассинхронизации для будущих
+namespace.
+
+## ADR-0018 — Socket-события Direct Messages: собственные DTO поверх REST DTO
+
+**Decision.** REST-эндпоинты `/messages/*` (PHASE 10) переиспользуют один
+набор DTO (`SendMessageDto`, `EditMessageDto`, `ReactMessageDto` и т.д.) с
+`conversationId`/`messageId` в URL. WebSocket-события `/messages` namespace
+принимают `conversationId`/`messageId` в теле сообщения (payload), поэтому
+заведены отдельные socket-DTO (`apps/api/src/modules/direct-messages/dto/socket/*`),
+которые **расширяют** (`extends`) соответствующий REST DTO и добавляют только
+недостающее поле идентификатора — чтобы правила валидации контента (`@Length`,
+`@IsString`) не дублировались и не могли разойтись между REST и WS путями.
+Валидация на WS-слое подключена тем же `ValidationPipe({ whitelist: true,
+forbidNonWhitelisted: true, transform: true })`, что и глобально на HTTP
+(`@UsePipes` на уровне класса гейтвея), — WS-клиент получает те же гарантии
+против mass assignment, что и REST-клиент.
