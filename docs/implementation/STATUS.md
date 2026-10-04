@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 08 — Profiles
-Current branch: feature/project-bootstrap
+Current phase: PHASE 09 — Social system
+Current branch: feature/profiles
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -22,9 +22,15 @@ Completed:
 - PHASE 07 — Users (positions/departments/custom-positions CRUD+assign,
   admin users list+full detail, seed default-позиции — без неё регистрация
   не работала на чистой БД — 5 e2e-тестов)
+- PHASE 08 — Profiles (публичный профиль с фильтрацией приватности,
+  редактирование профиля, социальные ссылки, выбор декораций — 5 e2e-тестов)
 
 In progress:
-- PHASE 08 — Profiles
+- PHASE 09 — Social system
+
+Blocked:
+none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
+R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
 
 ## История веток (normalized, см. RISKS.md R12)
 
@@ -42,29 +48,22 @@ PHASE 04/05).
 | PHASE 05 — Authentication | `feature/authentication` | `d5e05b8` | completed |
 | PHASE 06 — RBAC / Permissions | `feature/rbac-permissions` | `81699a7` | completed |
 | PHASE 07 — Users | `feature/users` | `4bee251` | completed |
+| PHASE 08 — Profiles | `feature/profiles` | *(в работе)* | in progress |
 
-`feature/project-bootstrap` — действующая ветка открытого PR #5, по факту
-указывает на HEAD (все коммиты PHASE 00–07 до нормализации). Historical
-branches выше созданы дополнительно, как точки навигации по истории; ветку
-PR не меняли и не удаляли. Новые этапы (начиная с PHASE 08) идут через
-отдельные feature-ветки по стандартному workflow.
-
-Blocked:
-none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
-R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
+`feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
+коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
+и не менять её при нормализации. PR #5 (PHASE 00-07) и PR #6 (эта
+нормализация) смержены в `main` (коммиты `56cb288`, `fc2d892`). Начиная с
+PHASE 08 каждая фаза ведётся в собственной ветке от актуального `main`, по
+нормальному workflow (branch → commits → push → PR → CI → merge), без
+накопления нескольких фаз в одной ветке.
 
 Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 5 suite / 22 теста — auth + RBAC + users-domain,
-против реального Postgres+Redis)
+tests: pass (unit 1/1, e2e 6 suite / 27 тестов — auth + RBAC + users-domain +
+profiles, против реального Postgres+Redis)
 build: pass
-
-CI (GitHub Actions, PR #5): гонка ложных срабатываний gitleaks (шаблонный
-README, тестовый пароль) исправлена через .gitleaksignore + .gitleaks.toml
-allowlist. CI дополнен сервисами postgres/redis, JWT-секретами и шагами
-migrate deploy + db seed. Статус прогона — отслеживается автоматически
-(auto-fix monitor), не опрашивается вручную.
 
 Last updated: 2026-10-04
