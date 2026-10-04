@@ -15,7 +15,7 @@
 - [x] PHASE 01 — Project bootstrap (monorepo, tsconfig, lint, prettier, env)
 - [x] PHASE 02 — CI / development infrastructure (GitHub Actions)
 - [x] PHASE 03 — Local infrastructure (Docker Compose: Postgres, Redis)
-- [ ] PHASE 04 — Database foundation (Prisma schema, migrations)
+- [x] PHASE 04 — Database foundation (Prisma schema, migrations)
 
 ## Платформа и безопасность
 

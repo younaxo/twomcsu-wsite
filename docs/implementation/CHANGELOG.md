@@ -14,3 +14,11 @@
   actionlint, dependabot.
 - `infrastructure/docker-compose.yml`: Postgres 16 + Redis 7 с healthcheck —
   проверено реальным запуском (`pnpm db:up`), оба сервиса `healthy`.
+
+### Database
+- Prisma-схема (`apps/api/prisma/schema.prisma`): 108 моделей, 53 enum, первая
+  миграция (`20261004115235_init`) применена к реальной БД (проверено: 109
+  таблиц, включая `_prisma_migrations`).
+- `PrismaModule`/`PrismaService`, `GET /health` (реальная проверка БД через
+  Prisma), `ConfigModule` с валидацией env (`DATABASE_URL`, `API_PORT`,
+  `NODE_ENV`).

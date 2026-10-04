@@ -56,6 +56,14 @@
 | Хардкод OWNER-паролей в seed | CRITICAL (S1); заменено ADR-0006 |
 | `GameReport`/`GamePunishment` (TigerReports/LiteBans STUB) | Внешняя интеграция не описана в задании — остаётся вне scope, пока не появится отдельное требование |
 
+## Database (PHASE 04 — IMPLEMENTED: схема и миграции; сервисы — по доменным фазам)
+
+| Показатель | Старый проект | Новый проект |
+|---|---|---|
+| Prisma models | 105 | 108 (102 перенесено + Role/Permission/RolePermission/UserRole/RoleAssignmentLog + File) |
+| Prisma enums | 51 | 53 (50 перенесено − RoleGroup + PermissionEffect/AccountType/FileStatus) |
+| Миграции | 41 | 1 (`20261004115235_init`) |
+
 ## API / Database / Pages — считается при завершении фаз
 
 Числа старого проекта (ориентир масштаба, не цель): 497 HTTP endpoints, 105 Prisma
