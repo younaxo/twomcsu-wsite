@@ -22,3 +22,17 @@
 - `PrismaModule`/`PrismaService`, `GET /health` (реальная проверка БД через
   Prisma), `ConfigModule` с валидацией env (`DATABASE_URL`, `API_PORT`,
   `NODE_ENV`).
+
+### Authentication
+- `POST /auth/register|login|refresh|logout`, `GET/DELETE /auth/sessions`,
+  `DELETE /auth/sessions/:id`, `POST /auth/change-password`, `GET /auth/me`,
+  `POST /auth/forgot-password|reset-password`.
+- JWT access-token (15 мин, payload только `sub`), refresh-token с ротацией и
+  reuse detection (повторное использование отозванного токена → отзыв всех
+  сессий пользователя). Бан блокирует доступ и refresh немедленно.
+- Brute-force (Redis, по IP): captcha после 3 неудачных попыток, блокировка
+  на 15 минут (429) после 10.
+- `RedisService`, `EmailService` (SMTP, опционально — без `SMTP_HOST` письма
+  только логируются).
+- helmet, cookie-parser, глобальный `ValidationPipe`, CORS, `ThrottlerModule`
+  (100/60с глобально, 10/мин на login).

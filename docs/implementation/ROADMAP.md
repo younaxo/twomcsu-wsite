@@ -19,7 +19,7 @@
 
 ## Платформа и безопасность
 
-- [ ] PHASE 05 — Authentication (регистрация, вход, refresh rotation, сессии)
+- [x] PHASE 05 — Authentication (регистрация, вход, refresh rotation, сессии)
 - [ ] PHASE 06 — RBAC / Permissions (Role/Permission/RolePermission/UserRole)
 - [ ] PHASE 07 — Users (учётные записи, статусы, departments/positions)
 - [ ] PHASE 08 — Profiles (публичный профиль, приватность, декорации)

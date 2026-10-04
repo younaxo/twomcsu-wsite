@@ -12,7 +12,7 @@
 | achievements | MISSING | PHASE 19 |
 | activity | MISSING | PHASE 09 |
 | admin | MISSING | PHASE 20/21 |
-| auth | MISSING | PHASE 05 |
+| auth | PARTIAL | PHASE 05 — register/login/refresh/sessions/change-reset-password готовы и покрыты e2e-тестами; email verification (`User.isVerified`) не реализована (как и в старом проекте — не было явного требования) |
 | awards | MISSING | PHASE 19 |
 | cache | MISSING | PHASE 24 |
 | chat | MISSING | PHASE 11 |
@@ -35,7 +35,7 @@
 | notifications | MISSING | PHASE 12 |
 | positions | MISSING | PHASE 07 |
 | prisma | MISSING | PHASE 04 |
-| redis | MISSING | PHASE 24 |
+| redis | PARTIAL | Базовый клиент (`RedisService`) подключён в PHASE 05 для brute-force; централизованные cache keys/инвалидация — PHASE 24 |
 | reports | MISSING | PHASE 16 |
 | statistics | MISSING | PHASE 19 |
 | store | MISSING | PHASE 17 |
