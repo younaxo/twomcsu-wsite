@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 09 — Social system
-Current branch: feature/profiles
+Current phase: PHASE 10 — Direct Messages
+Current branch: feature/social-system
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -24,9 +24,12 @@ Completed:
   не работала на чистой БД — 5 e2e-тестов)
 - PHASE 08 — Profiles (публичный профиль с фильтрацией приватности,
   редактирование профиля, социальные ссылки, выбор декораций — 5 e2e-тестов)
+- PHASE 09 — Social system (друзья с полной проверкой policy/блокировок,
+  комментарии профиля с реакциями, лента активности с учётом видимости —
+  6 e2e-тестов)
 
 In progress:
-- PHASE 09 — Social system
+- PHASE 10 — Direct Messages
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -48,22 +51,22 @@ PHASE 04/05).
 | PHASE 05 — Authentication | `feature/authentication` | `d5e05b8` | completed |
 | PHASE 06 — RBAC / Permissions | `feature/rbac-permissions` | `81699a7` | completed |
 | PHASE 07 — Users | `feature/users` | `4bee251` | completed |
-| PHASE 08 — Profiles | `feature/profiles` | *(в работе)* | in progress |
+| PHASE 08 — Profiles | `feature/profiles` | merged (PR #18) | completed |
+| PHASE 09 — Social system | `feature/social-system` | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
-и не менять её при нормализации. PR #5 (PHASE 00-07) и PR #6 (эта
-нормализация) смержены в `main` (коммиты `56cb288`, `fc2d892`). Начиная с
-PHASE 08 каждая фаза ведётся в собственной ветке от актуального `main`, по
-нормальному workflow (branch → commits → push → PR → CI → merge), без
-накопления нескольких фаз в одной ветке.
+и не менять её при нормализации. Начиная с PHASE 08 каждая фаза ведётся в
+собственной ветке от актуального `main`, по нормальному workflow (branch →
+commits → push → PR → CI → merge), без накопления нескольких фаз в одной
+ветке; ни одна feature-ветка после merge не удаляется.
 
 Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 6 suite / 27 тестов — auth + RBAC + users-domain +
-profiles, против реального Postgres+Redis)
+tests: pass (unit 1/1, e2e 7 suite / 33 теста — auth + RBAC + users-domain +
+profiles + social, против реального Postgres+Redis)
 build: pass
 
 Last updated: 2026-10-04

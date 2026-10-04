@@ -10,23 +10,23 @@
 | Модуль | Статус | Примечание |
 |---|---|---|
 | achievements | MISSING | PHASE 19 |
-| activity | MISSING | PHASE 09 |
+| activity | PARTIAL | PHASE 09 — лента (глобальная+персональная с учётом видимости), реакции, комментарии, настройки готовы и покрыты e2e; создание записей для событий других модулей (покупки, достижения и т.п.) — по мере появления этих модулей |
 | admin | MISSING | PHASE 20/21 |
 | auth | PARTIAL | PHASE 05 — register/login/refresh/sessions/change-reset-password готовы и покрыты e2e-тестами; email verification (`User.isVerified`) не реализована (как и в старом проекте — не было явного требования) |
 | awards | MISSING | PHASE 19 |
 | cache | MISSING | PHASE 24 |
 | chat | MISSING | PHASE 11 |
-| comments | MISSING | PHASE 09 |
+| comments | PARTIAL | PHASE 09 — CRUD + реакции + жалобы готовы и покрыты e2e; рассмотрение жалоб модератором — PHASE 16 |
 | consent | MISSING | PHASE 25 |
 | custom-positions | PARTIAL | PHASE 07 — CRUD + assign (1:1 на пользователя) готовы, покрыты e2e |
-| decorations | MISSING | PHASE 08 |
+| decorations | PARTIAL | PHASE 08 — выбор из принадлежащих готов и покрыт e2e; выдача декораций (покупка/admin grant) — PHASE 17/20 |
 | departments | PARTIAL | PHASE 07 — CRUD + assign/reorder готовы, покрыты e2e |
 | direct-messages | MISSING | PHASE 10 |
 | emojis | MISSING | PHASE 11 |
 | events | MISSING | PHASE 14 |
 | export | MISSING | PHASE 20 |
 | forms | MISSING | PHASE 15 |
-| friends | MISSING | PHASE 09 |
+| friends | IMPLEMENTED | PHASE 09 — заявки/приём/отклонение/отмена/блокировка, все friendRequestPolicy, покрыты e2e |
 | health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
 | leaderboards | MISSING | PHASE 19 |
 | minecraft | MISSING | PHASE 18 |

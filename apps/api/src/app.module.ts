@@ -5,10 +5,13 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { envValidationSchema } from './config/env.validation';
+import { ActivityModule } from './modules/activity/activity.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CommentsModule } from './modules/comments/comments.module';
 import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { EmailModule } from './modules/email/email.module';
+import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
@@ -36,6 +39,9 @@ import { UsersModule } from './modules/users/users.module';
     CustomPositionsModule,
     UsersModule,
     ProfilesModule,
+    FriendsModule,
+    CommentsModule,
+    ActivityModule,
   ],
   controllers: [AppController],
   providers: [
