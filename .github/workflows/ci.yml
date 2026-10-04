@@ -31,8 +31,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://twomc:ci_password@localhost:5432/twomc
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci
+      JWT_REFRESH_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci-2
+      HCAPTCHA_DISABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
