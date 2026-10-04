@@ -21,7 +21,7 @@
 
 - [x] PHASE 05 — Authentication (регистрация, вход, refresh rotation, сессии)
 - [x] PHASE 06 — RBAC / Permissions (Role/Permission/RolePermission/UserRole)
-- [ ] PHASE 07 — Users (учётные записи, статусы, departments/positions)
+- [x] PHASE 07 — Users (учётные записи, статусы, departments/positions)
 - [ ] PHASE 08 — Profiles (публичный профиль, приватность, декорации)
 - [ ] PHASE 09 — Social system (друзья, комментарии, реакции, activity feed)
 - [ ] PHASE 10 — Direct Messages (беседы, WebSocket, непрочитанные)

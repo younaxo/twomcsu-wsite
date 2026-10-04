@@ -47,3 +47,11 @@
   `GET /admin/users/:id/effective-permissions`.
 - Seed: 3 superuser-роли (`Owner`, `Chief Curator`, `Chief Developer`), 7
   permission keys модуля `roles`.
+
+### Users
+- Позиции (`/positions`, `/positions/manage`, CRUD + assign), отделы
+  (`/admin/departments`, CRUD + assign/reorder), кастомные должности
+  (`/admin/custom-positions`, CRUD + assign 1:1), админский список и карточка
+  пользователя (`/admin/users`, `/admin/users/:id/full`).
+- Seed: базовая позиция `Default` — без неё регистрация не работала на
+  чистой БД.

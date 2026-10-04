@@ -18,23 +18,23 @@
 | chat | MISSING | PHASE 11 |
 | comments | MISSING | PHASE 09 |
 | consent | MISSING | PHASE 25 |
-| custom-positions | MISSING | PHASE 07 |
+| custom-positions | PARTIAL | PHASE 07 — CRUD + assign (1:1 на пользователя) готовы, покрыты e2e |
 | decorations | MISSING | PHASE 08 |
-| departments | MISSING | PHASE 07 |
+| departments | PARTIAL | PHASE 07 — CRUD + assign/reorder готовы, покрыты e2e |
 | direct-messages | MISSING | PHASE 10 |
 | emojis | MISSING | PHASE 11 |
 | events | MISSING | PHASE 14 |
 | export | MISSING | PHASE 20 |
 | forms | MISSING | PHASE 15 |
 | friends | MISSING | PHASE 09 |
-| health | MISSING | PHASE 28 |
+| health | PARTIAL | PHASE 04 — `GET /health` (реальная проверка БД через Prisma); структурные логи/метрики — PHASE 28 |
 | leaderboards | MISSING | PHASE 19 |
 | minecraft | MISSING | PHASE 18 |
 | moderation | MISSING | PHASE 16 |
 | news | MISSING | PHASE 13 |
 | notifications | MISSING | PHASE 12 |
-| positions | MISSING | PHASE 07 |
-| prisma | MISSING | PHASE 04 |
+| positions | PARTIAL | PHASE 07 — CRUD + assign готовы, покрыты e2e; donor-тиры/staff-позиции — по мере необходимости |
+| prisma | IMPLEMENTED | PHASE 04 — схема (108 моделей/53 enum) + миграция + PrismaModule |
 | redis | PARTIAL | Базовый клиент (`RedisService`) подключён в PHASE 05 для brute-force; централизованные cache keys/инвалидация — PHASE 24 |
 | reports | MISSING | PHASE 16 |
 | roles (новый модуль, в старом проекте — `RoleGroup`, см. NOT_APPLICABLE) | PARTIAL | PHASE 06 — ядро RBAC и role-management API готовы и покрыты e2e; полный реестр 246 permission keys и staff-роли — по мере доменных фаз и PHASE 32 (ADR-0016) |
@@ -44,7 +44,7 @@
 | system | MISSING | PHASE 25 |
 | topics | MISSING | PHASE 14 |
 | uploads (→ CDN) | MISSING | PHASE 23 |
-| users | MISSING | PHASE 07 |
+| users | PARTIAL | PHASE 07 — admin список/поиск/пагинация + детальная карточка готовы, покрыты e2e; ban/kick/mute/warn — PHASE 16, badges/awards — PHASE 19 |
 | voting | MISSING | PHASE 14 |
 
 ## Сознательно не переносится (NOT_APPLICABLE)

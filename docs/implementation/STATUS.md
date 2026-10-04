@@ -3,7 +3,7 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 07 — Users
+Current phase: PHASE 08 — Profiles
 Current branch: feature/project-bootstrap
 
 Completed:
@@ -19,9 +19,12 @@ Completed:
 - PHASE 06 — RBAC / Permissions (PermissionService, PermissionsGuard, Role/
   Permission CRUD API, priority-иерархия, Redis-кеш effective permissions с
   немедленной инвалидацией, seed 3 superuser-ролей — 7 e2e-тестов)
+- PHASE 07 — Users (positions/departments/custom-positions CRUD+assign,
+  admin users list+full detail, seed default-позиции — без неё регистрация
+  не работала на чистой БД — 5 e2e-тестов)
 
 In progress:
-- PHASE 07 — Users
+- PHASE 08 — Profiles
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -31,16 +34,14 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 4 suite / 17 тестов — auth + RBAC, против реального
-Postgres+Redis)
+tests: pass (unit 1/1, e2e 5 suite / 22 теста — auth + RBAC + users-domain,
+против реального Postgres+Redis)
 build: pass
 
-CI (GitHub Actions, PR #5): первый прогон — gitleaks зафейлился на плейсхолдер-
-токене в шаблонном README NestJS CLI, затем на тестовом фикстурном пароле
-(оба — ложные срабатывания, не секреты проекта); исправлено (.gitleaksignore +
-.gitleaks.toml allowlist для *.e2e-spec.ts/*.spec.ts + убран шаблонный README).
-CI дополнен сервисами redis/postgres, JWT-секретами и шагом prisma db seed.
-Статус прогона — отслеживается автоматически (auto-fix monitor), не
-опрашивается вручную.
+CI (GitHub Actions, PR #5): гонка ложных срабатываний gitleaks (шаблонный
+README, тестовый пароль) исправлена через .gitleaksignore + .gitleaks.toml
+allowlist. CI дополнен сервисами postgres/redis, JWT-секретами и шагами
+migrate deploy + db seed. Статус прогона — отслеживается автоматически
+(auto-fix monitor), не опрашивается вручную.
 
 Last updated: 2026-10-04
