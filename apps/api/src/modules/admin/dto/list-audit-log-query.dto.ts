@@ -1,8 +1,7 @@
-import { OrderStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
-  IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,7 +9,10 @@ import {
   Min,
 } from 'class-validator';
 
-export class ListAdminOrdersQueryDto {
+export const AUDIT_LOG_SEVERITIES = ['info', 'warning', 'critical'] as const;
+export type AuditLogSeverity = (typeof AUDIT_LOG_SEVERITIES)[number];
+
+export class ListAuditLogQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -25,24 +27,30 @@ export class ListAdminOrdersQueryDto {
   limit?: number = 30;
 
   @IsOptional()
-  @IsEnum(OrderStatus)
-  status?: OrderStatus;
+  @IsString()
+  actorId?: string;
 
   @IsOptional()
   @IsString()
-  search?: string;
+  action?: string;
+
+  @IsOptional()
+  @IsIn(AUDIT_LOG_SEVERITIES)
+  severity?: AuditLogSeverity;
 
   @IsOptional()
   @IsString()
-  userId?: string;
+  targetType?: string;
 
-  /// Фильтр по `createdAt >=` (используется также `/admin/finance/transactions`).
+  @IsOptional()
+  @IsString()
+  q?: string;
+
   @IsOptional()
   @IsDateString()
-  dateFrom?: string;
+  from?: string;
 
-  /// Фильтр по `createdAt <=`.
   @IsOptional()
   @IsDateString()
-  dateTo?: string;
+  to?: string;
 }

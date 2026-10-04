@@ -473,4 +473,47 @@ export const PERMISSIONS: PermissionDefinition[] = [
   },
   { key: 'users.awards', module: 'users', description: 'Выдача/отзыв награды пользователю' },
   { key: 'users.badges', module: 'users', description: 'Выдача/отзыв бейджа пользователю' },
+
+  { key: 'dashboard.view', module: 'dashboard', description: 'Просмотр главного дашборда админки' },
+  { key: 'audit_log.view', module: 'audit_log', description: 'Просмотр журнала аудита' },
+  { key: 'audit_log.stats', module: 'audit_log', description: 'Сводная статистика по журналу аудита' },
+  { key: 'audit_log.export', module: 'audit_log', description: 'Экспорт журнала аудита в CSV' },
+  { key: 'broadcast.create', module: 'broadcast', description: 'Рассылка объявления всем/части пользователей' },
+  { key: 'settings.view', module: 'settings', description: 'Просмотр простых KV-настроек сайта' },
+  { key: 'settings.edit', module: 'settings', description: 'Редактирование простых KV-настроек сайта' },
+  { key: 'settings.site.view', module: 'settings', description: 'Просмотр структурированных настроек сайта' },
+  { key: 'settings.site.edit', module: 'settings', description: 'Редактирование структурированных настроек сайта' },
+
+  { key: 'saved_filters.view', module: 'saved_filters', description: 'Просмотр своих сохранённых фильтров админки' },
+  { key: 'saved_filters.create', module: 'saved_filters', description: 'Создание сохранённого фильтра' },
+  { key: 'saved_filters.edit', module: 'saved_filters', description: 'Редактирование сохранённого фильтра' },
+  { key: 'saved_filters.delete', module: 'saved_filters', description: 'Удаление сохранённого фильтра' },
+
+  { key: 'bookmarks.view', module: 'bookmarks', description: 'Просмотр своих закладок админки' },
+  { key: 'bookmarks.create', module: 'bookmarks', description: 'Создание закладки' },
+  { key: 'bookmarks.edit', module: 'bookmarks', description: 'Редактирование закладки' },
+  { key: 'bookmarks.delete', module: 'bookmarks', description: 'Удаление закладки' },
+  { key: 'bookmarks.reorder', module: 'bookmarks', description: 'Изменение порядка закладок' },
+
+  { key: 'exports.scheduled.view', module: 'exports', description: 'Просмотр своих запланированных экспортов' },
+  { key: 'exports.scheduled.create', module: 'exports', description: 'Создание запланированного экспорта' },
+  { key: 'exports.scheduled.edit', module: 'exports', description: 'Редактирование запланированного экспорта' },
+  { key: 'exports.scheduled.delete', module: 'exports', description: 'Удаление запланированного экспорта' },
+
+  { key: 'security.sessions.view', module: 'security', description: 'Просмотр активных сессий пользователей' },
+  { key: 'security.suspicious.view', module: 'security', description: 'Просмотр подозрительной активности (brute-force)' },
+  { key: 'security.logins.view', module: 'security', description: 'Просмотр истории входов' },
+  { key: 'security.ip_whitelist.create', module: 'security', description: 'Изменение IP-белого списка' },
+
+  { key: 'content.view', module: 'content', description: 'Просмотр дашборда контент-модерации' },
+  { key: 'finance.overview.view', module: 'finance', description: 'Просмотр финансового обзора магазина' },
+  { key: 'finance.transactions.view', module: 'finance', description: 'Просмотр списка транзакций (заказов)' },
+  { key: 'finance.refunds.view', module: 'finance', description: 'Просмотр списка возвратов' },
+  { key: 'finance.export', module: 'finance', description: 'Экспорт транзакций в CSV из раздела Finance' },
+
+  { key: 'users.bulk.edit', module: 'users', description: 'Массовые операции над пользователями (бан/разбан)' },
+  { key: 'users.export', module: 'users', description: 'Экспорт списка пользователей в CSV' },
+  { key: 'orders.export', module: 'orders', description: 'Экспорт списка заказов в CSV' },
+  { key: 'reports.export', module: 'reports', description: 'Экспорт списка обращений в CSV' },
+  { key: 'news.export', module: 'news', description: 'Экспорт списка новостей в CSV' },
 ];

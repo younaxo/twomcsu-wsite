@@ -354,6 +354,15 @@ export class OrdersService {
     const limit = query.limit ?? 30;
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
+      ...(query.userId ? { userId: query.userId } : {}),
+      ...(query.dateFrom || query.dateTo
+        ? {
+            createdAt: {
+              ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
+              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+            },
+          }
+        : {}),
       ...(query.search
         ? {
             OR: [

@@ -11,5 +11,6 @@ import { QuickModerationService } from './quick-moderation.service';
   imports: [AuthModule, ChatModule, CommentsModule],
   controllers: [QuickModerationController, ContentReportsController],
   providers: [QuickModerationService, ContentReportsService],
+  exports: [QuickModerationService],
 })
 export class ModerationModule {}
