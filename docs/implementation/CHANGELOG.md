@@ -88,3 +88,13 @@
   через `ConfigService`, а не статической опцией в `@WebSocketGateway` —
   устраняет для всего приложения проблему старого проекта (S11:
   `/messages` с `cors.origin=true`).
+
+### Chat
+- Публичный `/chat/*` (список каналов, история, онлайн, закреплённые) и
+  `/admin/chat/*` под permissions (CRUD каналов, мут/бан листинг-снятие,
+  поиск по сообщениям). Отправка сообщений — только через WebSocket.
+- `ChatGateway` (Socket.IO, namespace `/chat`): `join/leave_channel` с
+  presence в Redis, `send/edit/delete_message`, `typing_start/stop`,
+  `pin_message`, `mute_user`/`ban_user` — публично без причины, причина и
+  детали уходят только в личную комнату цели (в отличие от старого проекта,
+  S12). Чат-бан проверяется при подключении и блокирует весь namespace.
