@@ -11,10 +11,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: token('background'),
-        foreground: token('foreground'),
+        background: {
+          DEFAULT: token('background'),
+          subtle: token('background-subtle'),
+        },
+        foreground: {
+          DEFAULT: token('foreground'),
+          secondary: token('foreground-secondary'),
+          muted: token('foreground-muted'),
+        },
         surface: {
           DEFAULT: token('surface'),
+          hover: token('surface-hover'),
+          active: token('surface-active'),
           raised: token('surface-raised'),
           overlay: token('surface-overlay'),
           sunken: token('surface-sunken'),
@@ -40,6 +49,9 @@ const config: Config = {
           subtle: token('border-subtle'),
         },
         ring: token('ring'),
+        'focus-ring': token('focus-ring'),
+        error: token('error'),
+        glass: token('glass'),
         success: {
           DEFAULT: token('success'),
           foreground: token('success-foreground'),

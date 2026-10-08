@@ -8,15 +8,11 @@ export const dynamic = 'force-dynamic';
 
 /// /design-lab — НЕ production-страница. В production доступна только при
 /// NEXT_PUBLIC_DESIGN_LAB=1 (для staging-показа), иначе 404.
-export default function DesignLabPage({
-  searchParams,
-}: {
-  searchParams: { d?: string; theme?: string };
-}) {
+export default function DesignLabPage({ searchParams }: { searchParams: { d?: string } }) {
   if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_DESIGN_LAB !== '1') {
     notFound();
   }
-  const direction: DirectionId = isDirectionId(searchParams.d) ? searchParams.d : 'ember';
-  const theme = searchParams.theme === 'dark' ? 'dark' : 'light';
-  return <DesignLab initialDirection={direction} initialTheme={theme} />;
+  const direction: DirectionId = isDirectionId(searchParams.d) ? searchParams.d : 'daylight';
+
+  return <DesignLab initialDirection={direction} />;
 }
