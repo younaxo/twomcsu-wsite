@@ -5,6 +5,26 @@
 
 ## [Unreleased]
 
+### Frontend foundation (PHASE 21, часть 1)
+- `packages/shared` — API-контракт frontend ↔ backend (ADR-0051): типы
+  ответов/запросов auth/users/roles/moderation/admin (dashboard, audit log,
+  broadcast, settings, saved-filters/bookmarks/scheduled-exports, security,
+  content/finance, orders, CSV-экспорт), `Paginated<T>`, `ApiErrorBody`;
+  реестр permission keys (`PERMISSIONS`, `PermissionKey`) перенесён сюда из
+  seed api — один источник для обеих сторон.
+- `apps/web` — fetch-клиент (`Bearer` из памяти, `credentials: include`,
+  401 → single-flight refresh → один повтор, `ApiError`/`NetworkError`,
+  скачивание CSV), auth-store (Zustand: bootstrap по refresh-cookie,
+  login с обработкой `requiresCaptcha`, logout, истёкшая сессия),
+  permission-хелперы (`PermissionRequirement`, superuser-wildcard —
+  только для UX, авторизация остаётся на backend), TanStack Query
+  (QueryClient без retry на 4xx, фабрика ключей), Vitest + Testing Library
+  — 21 unit-тест (ADR-0052).
+- `GET /auth/me` отдаёт `roles[]` и `permissions` (effective permissions из
+  `PermissionService`, `maxPriority: null` без ролей) — покрыто e2e.
+- `nest build` больше не компилирует `prisma/seed` — `dist/main.js` снова в
+  корне `dist/`, `start:prod` работает.
+
 ### Infrastructure
 - Инициализирован pnpm monorepo: `apps/api` (NestJS 10), `apps/web` (Next.js 14 +
   Tailwind CSS), `packages/shared` (`@twomc/shared`).

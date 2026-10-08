@@ -915,3 +915,73 @@ docs/technical/25-AUDIT-LOG.md: "Массовый бан — проверить,
 `AchievementProgressService.checkAllUsers` (PHASE 19). Ретроактивное
 добавление той же проверки в PHASE 16 single-user эндпоинты — вне scope
 этой фазы (зафиксировано как техдолг, не баг).
+
+## ADR-0051 — API-контракт frontend ↔ backend живёт в `packages/shared`, реестр permissions — там же
+
+**Context.** PHASE 21 — первая фаза с реальным frontend. MASTER PROMPT §9:
+frontend не должен зависеть от внутренних классов NestJS, общение — через
+нормальный API-контракт, потому что позже backend планируется вынести в
+отдельный репозиторий `twomcsu-api`. В `apps/api` DTO описаны классами
+class-validator (runtime-декораторы, зависимость от `@prisma/client` для
+enum-ов) — импортировать их во frontend нельзя. Swagger/OpenAPI в backend
+нет (типизированный генерируемый клиент — PHASE 30 по ROADMAP).
+
+**Decision.** `packages/shared/src/api/*` — ручные TypeScript-интерфейсы
+ответов и запросов (`MeResponse`, `Paginated<T>`, `AdminUserFull`,
+`RoleWithPermissions`, `AuditLogEntry`, `SiteSettingsDto`…), зеркалящие
+фактическое поведение контроллеров PHASE 05–20: даты как ISO-строки,
+Prisma `Decimal` как строки. Пакет содержит только типы и чистые
+константы (enum-литералы `as const`), без зависимостей от NestJS/Prisma/
+Next. Backend на них **не** завязан (его DTO остаются источником истины
+валидации) — контракт проверяется e2e-тестами backend + unit-тестами
+frontend; при расхождении правится контракт. Генерация из OpenAPI
+(PHASE 30) заменит ручные типы, не меняя импортов frontend.
+
+Реестр permission keys (`PERMISSIONS`, `PermissionKey`) перенесён из
+`apps/api/prisma/seed/permissions.ts` в `packages/shared/src/permissions.ts`:
+seed импортирует его из `@twomc/shared` (единственный runtime-импорт
+shared в api, выполняется через ts-node, в `nest build` не попадает —
+`prisma/` исключён из `tsconfig.build.json`, что заодно починило layout
+`dist/` для `start:prod`), а frontend получает строковый литерал всех
+ключей — опечатка в навигации/гейтах ловится на typecheck.
+`@RequirePermissions(...)` на backend остаётся единственной точкой
+авторизации; frontend-проверки — только UX.
+
+**Consequences.** Любое изменение формы ответа backend требует правки
+контракта (ловится e2e/типами). Добавление permission-ключа — только через
+`packages/shared` (один файл для обеих сторон).
+
+## ADR-0052 — Сессия во frontend: access-token в памяти, single-flight refresh, `GET /auth/me` как источник permissions
+
+**Context.** Backend (PHASE 05): access-token 15 мин в теле ответа,
+refresh-token в httpOnly-cookie с ротацией и reuse detection — повторное
+использование отозванного cookie отзывает ВСЕ сессии пользователя.
+Frontend-меню должно строиться из effective permissions
+(44-TARGET-ARCHITECTURE.md §2), но `GET /auth/me` их не отдавал.
+
+**Decision.**
+1. `GET /auth/me` расширен полями `roles[]` и `permissions`
+   (`EffectivePermissions` из `PermissionService` — тот же Redis-кеш с
+   немедленной инвалидацией, что и у `PermissionsGuard`; `maxPriority`
+   отдаётся как `null` при отсутствии ролей вместо несериализуемого
+   `-Infinity`). Отдельный endpoint не вводился: один запрос при загрузке
+   приложения вместо двух.
+2. Access-token хранится только в памяти (`lib/api/token-store.ts`), не в
+   localStorage/cookie. Восстановление сессии при загрузке — `POST
+   /auth/refresh` по cookie, затем `/auth/me`.
+3. `refreshAccessToken()` и `bootstrap()` — single-flight (один промис на
+   модуль): параллельные 401 и двойной вызов эффектов в React StrictMode
+   не порождают два refresh с одним cookie (иначе reuse detection отозвал
+   бы все сессии). Покрыто unit-тестами.
+4. 401 на любом запросе → один refresh → повтор; при неудаче — локальная
+   очистка сессии (`status: anonymous`) без принудительного редиректа из
+   HTTP-слоя: редирект на `/login` делает guard маршрута, где известен
+   `next`-путь.
+5. hCaptcha-виджет во frontend не подключён (RISKS.md R5, ключей нет):
+   ответ `{ requiresCaptcha: true }` показывается как явная ошибка входа,
+   а не как «неверный пароль».
+
+**Consequences.** Нет cookie-гейта в Next.js middleware (как было в старом
+проекте): refresh-cookie выставляется API-доменом и в production может быть
+недоступна web-домену — защита маршрутов выполняется на клиенте после
+восстановления сессии, настоящая защита остаётся на backend.

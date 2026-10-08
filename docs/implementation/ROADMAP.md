@@ -35,7 +35,7 @@
 - [x] PHASE 18 — Minecraft servers (реальный Server List Ping, мониторинг, статус, история; RCON не предусмотрен схемой — ADR-0041)
 - [x] PHASE 19 — Gamification (achievements с реальным пересчётом прогресса, awards, badges, leaderboards; admin-дашборд — PHASE 20)
 - [x] PHASE 20 — Admin backend (dashboard, audit log read/stats, saved-filters/bookmarks/scheduled-exports, security, content/finance, bulk users, CSV export; полное ретроактивное покрытие audit log — PHASE 22, cron для scheduled-exports — PHASE 29)
-- [ ] PHASE 21 — Admin panel (frontend, permission-driven меню)
+- [~] PHASE 21 — Admin panel (frontend, permission-driven меню; часть 1 — фундамент: `/auth/me` permissions, контракт `packages/shared`, fetch-клиент/auth/TanStack Query/Vitest; часть 2 — UI-слой и экраны после дизайн-направлений)
 - [ ] PHASE 22 — Audit log (обязательные события, retention)
 - [ ] PHASE 23 — CDN / file storage (cdn-files.twomc.su, AVIF pipeline)
 - [ ] PHASE 24 — Redis / cache (централизованные ключи, инвалидация)

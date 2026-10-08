@@ -14,6 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { PermissionService } from '../roles/permission.service';
 import { AuthService, RequestContext } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -38,6 +39,7 @@ function requestContext(req: Request): RequestContext {
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly permissions: PermissionService,
     private readonly config: ConfigService,
   ) {}
 
@@ -128,9 +130,17 @@ export class AuthController {
     return { success: true };
   }
 
+  /// Единственный источник effective permissions для frontend
+  /// (44-TARGET-ARCHITECTURE.md §2: «frontend-меню строится из permissions,
+  /// endpoint GET /auth/me возвращает effective permissions»). Frontend
+  /// использует их только для UX (скрыть разделы/кнопки) — каждый API-вызов
+  /// независимо проверяется PermissionsGuard на backend.
   @Get('me')
   async me(@CurrentUser() user: AuthenticatedUser) {
-    const fullUser = await this.authService.getMe(user.id);
+    const [fullUser, effective] = await Promise.all([
+      this.authService.getMe(user.id),
+      this.permissions.getEffectivePermissions(user.id),
+    ]);
     return {
       id: fullUser.id,
       shortId: fullUser.shortId,
@@ -139,6 +149,23 @@ export class AuthController {
       username: fullUser.username,
       accountType: fullUser.accountType,
       mustChangePassword: fullUser.mustChangePassword,
+      roles: fullUser.roles.map(({ role }) => ({
+        id: role.id,
+        name: role.name,
+        slug: role.slug,
+        displayName: role.displayName,
+        color: role.color,
+        priority: role.priority,
+        isSuperuser: role.isSuperuser,
+      })),
+      permissions: {
+        superuser: effective.superuser,
+        permissions: effective.permissions,
+        // -Infinity не сериализуется в JSON (становится null) — отдаём null явно.
+        maxPriority: Number.isFinite(effective.maxPriority)
+          ? effective.maxPriority
+          : null,
+      },
     };
   }
 

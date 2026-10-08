@@ -244,4 +244,41 @@ describe('RBAC (e2e)', () => {
       .send({ permissionKeys: ['roles.view'] })
       .expect(200);
   });
+
+  it('GET /auth/me отдаёт effective permissions и роли для frontend-меню', async () => {
+    const actor = await createUser('me-perms');
+    const role = await createRole(`me-perms-${unique}`, 10);
+    await grantPermissions(role.id, ['roles.view', 'users.view']);
+
+    const before = await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${actor.accessToken}`)
+      .expect(200);
+    expect(before.body.permissions).toEqual({
+      superuser: false,
+      permissions: [],
+      maxPriority: null,
+    });
+    expect(before.body.roles).toEqual([]);
+
+    await grantRole(actor.id, role.id);
+
+    const after = await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${actor.accessToken}`)
+      .expect(200);
+    expect(after.body.permissions.superuser).toBe(false);
+    expect(after.body.permissions.maxPriority).toBe(10);
+    expect([...after.body.permissions.permissions].sort()).toEqual([
+      'roles.view',
+      'users.view',
+    ]);
+    expect(after.body.roles).toHaveLength(1);
+    expect(after.body.roles[0]).toMatchObject({
+      id: role.id,
+      slug: role.slug,
+      priority: 10,
+      isSuperuser: false,
+    });
+  });
 });

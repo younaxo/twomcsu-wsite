@@ -1,13 +1,18 @@
-/// Реестр permission keys. Пополняется каждой доменной фазой вместе с её
-/// защищёнными endpoints (а не весь список 11-PERMISSION-MATRIX.md сразу —
-/// большинство модулей оттуда ещё не реализованы, см. DECISIONS.md PHASE 06).
+/// Реестр permission keys — единый контракт backend и frontend (ADR-0051).
+/// Backend: seed (`apps/api/prisma/seed`) синхронизирует реестр в таблицу
+/// `permissions`; `@RequirePermissions(...)` остаётся единственной точкой
+/// проверки доступа. Frontend: ключи используются только для UX (скрыть
+/// разделы/кнопки), типизированы через `PermissionKey`, чтобы опечатка в
+/// навигации ловилась на typecheck, а не в рантайме.
+/// Пополняется каждой доменной фазой вместе с её защищёнными endpoints
+/// (а не весь список 11-PERMISSION-MATRIX.md сразу, см. DECISIONS.md PHASE 06).
 export interface PermissionDefinition {
   key: string;
   module: string;
   description: string;
 }
 
-export const PERMISSIONS: PermissionDefinition[] = [
+export const PERMISSIONS = [
   { key: 'roles.view', module: 'roles', description: 'Просмотр ролей и их прав' },
   { key: 'roles.create', module: 'roles', description: 'Создание роли' },
   { key: 'roles.edit', module: 'roles', description: 'Редактирование роли (кроме прав)' },
@@ -77,8 +82,16 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'chat',
     description: 'Удаление чужого сообщения в чате (soft-delete с причиной)',
   },
-  { key: 'chat.messages.pin', module: 'chat', description: 'Закрепление/открепление сообщения в чате' },
-  { key: 'chat.messages.view', module: 'chat', description: 'Просмотр любого сообщения чата по id (админ)' },
+  {
+    key: 'chat.messages.pin',
+    module: 'chat',
+    description: 'Закрепление/открепление сообщения в чате',
+  },
+  {
+    key: 'chat.messages.view',
+    module: 'chat',
+    description: 'Просмотр любого сообщения чата по id (админ)',
+  },
   {
     key: 'chat.messages.search.view',
     module: 'chat',
@@ -122,7 +135,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Просмотр агрегированной статистики уведомлений',
   },
 
-  { key: 'news.view', module: 'news', description: 'Просмотр черновиков/архива и статистики новостей' },
+  {
+    key: 'news.view',
+    module: 'news',
+    description: 'Просмотр черновиков/архива и статистики новостей',
+  },
   { key: 'news.create', module: 'news', description: 'Создание новости' },
   { key: 'news.edit', module: 'news', description: 'Редактирование новости' },
   { key: 'news.delete', module: 'news', description: 'Архивация новости' },
@@ -178,7 +195,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Просмотр тем с видимостью OWNER_ONLY',
   },
 
-  { key: 'voting.sites.view', module: 'voting', description: 'Просмотр списка vote-сайтов в админке' },
+  {
+    key: 'voting.sites.view',
+    module: 'voting',
+    description: 'Просмотр списка vote-сайтов в админке',
+  },
   { key: 'voting.sites.create', module: 'voting', description: 'Добавление vote-сайта' },
   { key: 'voting.sites.edit', module: 'voting', description: 'Редактирование vote-сайта' },
   { key: 'voting.sites.delete', module: 'voting', description: 'Удаление vote-сайта' },
@@ -188,7 +209,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Перевыпуск webhook-секрета vote-сайта',
   },
 
-  { key: 'streams.view', module: 'streams', description: 'Просмотр списка стрим-каналов в админке' },
+  {
+    key: 'streams.view',
+    module: 'streams',
+    description: 'Просмотр списка стрим-каналов в админке',
+  },
   { key: 'streams.create', module: 'streams', description: 'Добавление стрим-канала' },
   { key: 'streams.edit', module: 'streams', description: 'Редактирование стрим-канала' },
   { key: 'streams.delete', module: 'streams', description: 'Удаление стрим-канала' },
@@ -237,10 +262,18 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Просмотр форм с видимостью OWNER_ONLY',
   },
 
-  { key: 'users.mute', module: 'users', description: 'Быстрый mute пользователя (quick moderation)' },
+  {
+    key: 'users.mute',
+    module: 'users',
+    description: 'Быстрый mute пользователя (quick moderation)',
+  },
   { key: 'users.warn', module: 'users', description: 'Выдача предупреждения пользователю' },
   { key: 'users.kick', module: 'users', description: 'Принудительный разрыв сессий пользователя' },
-  { key: 'users.ban', module: 'users', description: 'Бан пользователя (временный или перманентный)' },
+  {
+    key: 'users.ban',
+    module: 'users',
+    description: 'Бан пользователя (временный или перманентный)',
+  },
   {
     key: 'users.punishments',
     module: 'users',
@@ -307,7 +340,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     module: 'reports',
     description: 'Закрепление заметки модератора',
   },
-  { key: 'reports.lock', module: 'reports', description: 'Блокировка обращения для новых сообщений' },
+  {
+    key: 'reports.lock',
+    module: 'reports',
+    description: 'Блокировка обращения для новых сообщений',
+  },
   { key: 'reports.stats', module: 'reports', description: 'Просмотр статистики по обращениям' },
   {
     key: 'reports.archived.view',
@@ -315,7 +352,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
     description: 'Просмотр архива обращений',
   },
   { key: 'reports.archive', module: 'reports', description: 'Архивация обращения' },
-  { key: 'reports.unarchive', module: 'reports', description: 'Восстановление обращения из архива' },
+  {
+    key: 'reports.unarchive',
+    module: 'reports',
+    description: 'Восстановление обращения из архива',
+  },
   { key: 'reports.delete', module: 'reports', description: 'Безвозвратное удаление обращения' },
   {
     key: 'reports.ban',
@@ -438,7 +479,11 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'servers.delete', module: 'servers', description: 'Удаление сервера' },
   { key: 'servers.logs', module: 'servers', description: 'Просмотр истории статуса сервера' },
 
-  { key: 'achievements.view', module: 'achievements', description: 'Просмотр списка достижений в админке' },
+  {
+    key: 'achievements.view',
+    module: 'achievements',
+    description: 'Просмотр списка достижений в админке',
+  },
   { key: 'achievements.create', module: 'achievements', description: 'Создание достижения' },
   { key: 'achievements.edit', module: 'achievements', description: 'Редактирование достижения' },
   { key: 'achievements.delete', module: 'achievements', description: 'Удаление достижения' },
@@ -476,18 +521,54 @@ export const PERMISSIONS: PermissionDefinition[] = [
 
   { key: 'dashboard.view', module: 'dashboard', description: 'Просмотр главного дашборда админки' },
   { key: 'audit_log.view', module: 'audit_log', description: 'Просмотр журнала аудита' },
-  { key: 'audit_log.stats', module: 'audit_log', description: 'Сводная статистика по журналу аудита' },
+  {
+    key: 'audit_log.stats',
+    module: 'audit_log',
+    description: 'Сводная статистика по журналу аудита',
+  },
   { key: 'audit_log.export', module: 'audit_log', description: 'Экспорт журнала аудита в CSV' },
-  { key: 'broadcast.create', module: 'broadcast', description: 'Рассылка объявления всем/части пользователей' },
+  {
+    key: 'broadcast.create',
+    module: 'broadcast',
+    description: 'Рассылка объявления всем/части пользователей',
+  },
   { key: 'settings.view', module: 'settings', description: 'Просмотр простых KV-настроек сайта' },
-  { key: 'settings.edit', module: 'settings', description: 'Редактирование простых KV-настроек сайта' },
-  { key: 'settings.site.view', module: 'settings', description: 'Просмотр структурированных настроек сайта' },
-  { key: 'settings.site.edit', module: 'settings', description: 'Редактирование структурированных настроек сайта' },
+  {
+    key: 'settings.edit',
+    module: 'settings',
+    description: 'Редактирование простых KV-настроек сайта',
+  },
+  {
+    key: 'settings.site.view',
+    module: 'settings',
+    description: 'Просмотр структурированных настроек сайта',
+  },
+  {
+    key: 'settings.site.edit',
+    module: 'settings',
+    description: 'Редактирование структурированных настроек сайта',
+  },
 
-  { key: 'saved_filters.view', module: 'saved_filters', description: 'Просмотр своих сохранённых фильтров админки' },
-  { key: 'saved_filters.create', module: 'saved_filters', description: 'Создание сохранённого фильтра' },
-  { key: 'saved_filters.edit', module: 'saved_filters', description: 'Редактирование сохранённого фильтра' },
-  { key: 'saved_filters.delete', module: 'saved_filters', description: 'Удаление сохранённого фильтра' },
+  {
+    key: 'saved_filters.view',
+    module: 'saved_filters',
+    description: 'Просмотр своих сохранённых фильтров админки',
+  },
+  {
+    key: 'saved_filters.create',
+    module: 'saved_filters',
+    description: 'Создание сохранённого фильтра',
+  },
+  {
+    key: 'saved_filters.edit',
+    module: 'saved_filters',
+    description: 'Редактирование сохранённого фильтра',
+  },
+  {
+    key: 'saved_filters.delete',
+    module: 'saved_filters',
+    description: 'Удаление сохранённого фильтра',
+  },
 
   { key: 'bookmarks.view', module: 'bookmarks', description: 'Просмотр своих закладок админки' },
   { key: 'bookmarks.create', module: 'bookmarks', description: 'Создание закладки' },
@@ -495,25 +576,78 @@ export const PERMISSIONS: PermissionDefinition[] = [
   { key: 'bookmarks.delete', module: 'bookmarks', description: 'Удаление закладки' },
   { key: 'bookmarks.reorder', module: 'bookmarks', description: 'Изменение порядка закладок' },
 
-  { key: 'exports.scheduled.view', module: 'exports', description: 'Просмотр своих запланированных экспортов' },
-  { key: 'exports.scheduled.create', module: 'exports', description: 'Создание запланированного экспорта' },
-  { key: 'exports.scheduled.edit', module: 'exports', description: 'Редактирование запланированного экспорта' },
-  { key: 'exports.scheduled.delete', module: 'exports', description: 'Удаление запланированного экспорта' },
+  {
+    key: 'exports.scheduled.view',
+    module: 'exports',
+    description: 'Просмотр своих запланированных экспортов',
+  },
+  {
+    key: 'exports.scheduled.create',
+    module: 'exports',
+    description: 'Создание запланированного экспорта',
+  },
+  {
+    key: 'exports.scheduled.edit',
+    module: 'exports',
+    description: 'Редактирование запланированного экспорта',
+  },
+  {
+    key: 'exports.scheduled.delete',
+    module: 'exports',
+    description: 'Удаление запланированного экспорта',
+  },
 
-  { key: 'security.sessions.view', module: 'security', description: 'Просмотр активных сессий пользователей' },
-  { key: 'security.suspicious.view', module: 'security', description: 'Просмотр подозрительной активности (brute-force)' },
+  {
+    key: 'security.sessions.view',
+    module: 'security',
+    description: 'Просмотр активных сессий пользователей',
+  },
+  {
+    key: 'security.suspicious.view',
+    module: 'security',
+    description: 'Просмотр подозрительной активности (brute-force)',
+  },
   { key: 'security.logins.view', module: 'security', description: 'Просмотр истории входов' },
-  { key: 'security.ip_whitelist.create', module: 'security', description: 'Изменение IP-белого списка' },
+  {
+    key: 'security.ip_whitelist.create',
+    module: 'security',
+    description: 'Изменение IP-белого списка',
+  },
 
   { key: 'content.view', module: 'content', description: 'Просмотр дашборда контент-модерации' },
-  { key: 'finance.overview.view', module: 'finance', description: 'Просмотр финансового обзора магазина' },
-  { key: 'finance.transactions.view', module: 'finance', description: 'Просмотр списка транзакций (заказов)' },
+  {
+    key: 'finance.overview.view',
+    module: 'finance',
+    description: 'Просмотр финансового обзора магазина',
+  },
+  {
+    key: 'finance.transactions.view',
+    module: 'finance',
+    description: 'Просмотр списка транзакций (заказов)',
+  },
   { key: 'finance.refunds.view', module: 'finance', description: 'Просмотр списка возвратов' },
-  { key: 'finance.export', module: 'finance', description: 'Экспорт транзакций в CSV из раздела Finance' },
+  {
+    key: 'finance.export',
+    module: 'finance',
+    description: 'Экспорт транзакций в CSV из раздела Finance',
+  },
 
-  { key: 'users.bulk.edit', module: 'users', description: 'Массовые операции над пользователями (бан/разбан)' },
+  {
+    key: 'users.bulk.edit',
+    module: 'users',
+    description: 'Массовые операции над пользователями (бан/разбан)',
+  },
   { key: 'users.export', module: 'users', description: 'Экспорт списка пользователей в CSV' },
   { key: 'orders.export', module: 'orders', description: 'Экспорт списка заказов в CSV' },
   { key: 'reports.export', module: 'reports', description: 'Экспорт списка обращений в CSV' },
   { key: 'news.export', module: 'news', description: 'Экспорт списка новостей в CSV' },
-];
+] as const satisfies readonly PermissionDefinition[];
+
+/// Строковый литерал всех зарегистрированных ключей.
+export type PermissionKey = (typeof PERMISSIONS)[number]['key'];
+
+export const PERMISSION_KEYS: readonly PermissionKey[] = PERMISSIONS.map((p) => p.key);
+
+export function isPermissionKey(value: string): value is PermissionKey {
+  return (PERMISSION_KEYS as readonly string[]).includes(value);
+}
