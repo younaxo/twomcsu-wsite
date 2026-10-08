@@ -122,7 +122,7 @@ export function QuickView({
       <DialogContent
         size="lg"
         // Центрирование через `translate`: keyframes pop-in переопределяют `transform`.
-        className={cn('translate-x-0 translate-y-0 [translate:-50%_-50%]', className)}
+        className={cn('glass-liquid translate-x-0 translate-y-0 [translate:-50%_-50%]', className)}
         {...describedBy}
       >
         <DialogHeader>

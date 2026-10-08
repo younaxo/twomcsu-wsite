@@ -18,7 +18,7 @@ export const TooltipRoot = RadixTooltip.Root;
 export const TooltipTrigger = RadixTooltip.Trigger;
 
 export const tooltipContentClassName = cn(
-  'z-50 max-w-[min(20rem,calc(100vw-2rem))] rounded-sm bg-foreground px-2.5 py-1.5 text-xs leading-snug text-background shadow-lg',
+  'z-50 max-w-[min(20rem,calc(100vw-2rem))] rounded-sm glass-frosted-strong px-2.5 py-1.5 text-xs leading-snug text-foreground',
   'data-[state=delayed-open]:animate-fade-in data-[state=closed]:animate-fade-out',
   '[--pop-y:2px] data-[side=top]:[--pop-y:2px] data-[side=bottom]:[--pop-y:-2px]',
 );
@@ -36,7 +36,13 @@ export const TooltipContent = forwardRef<
       {...props}
     >
       {children}
-      {arrow ? <RadixTooltip.Arrow className="fill-foreground" width={10} height={5} /> : null}
+      {arrow ? (
+        <RadixTooltip.Arrow
+          className="[fill:rgb(var(--glass-surface)/0.92)]"
+          width={10}
+          height={5}
+        />
+      ) : null}
     </RadixTooltip.Content>
   </RadixTooltip.Portal>
 ));

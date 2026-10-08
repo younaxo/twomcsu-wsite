@@ -58,7 +58,7 @@ export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, 
           // Центрирование через CSS-свойство `translate` (не `transform`): keyframes
           // pop-in/pop-out задают свой transform и не должны сбивать позицию.
           'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
-          'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          'rounded-lg glass-frosted-strong text-foreground',
           'overscroll-contain focus:outline-none',
           'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
           sizeClass[size],

@@ -66,7 +66,7 @@ export const commandItemClassName = cn(
 /// Общие классы выпадающего списка (overlay-поверхность, анимация, z-index).
 export const commandPopoverClassName = cn(
   'z-50 w-[var(--radix-popover-trigger-width)] min-w-56 max-w-[calc(100vw-2rem)] overflow-hidden p-0',
-  'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+  'rounded-lg glass-frosted text-foreground',
   'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
   'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',
 );

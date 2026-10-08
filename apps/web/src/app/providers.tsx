@@ -2,6 +2,7 @@
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import { GlassFilterDefs } from '@/components/ui/glass';
 import { Toaster } from '@/components/ui/toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { createQueryClient } from '@/lib/query/client';
@@ -17,6 +18,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <TooltipProvider delayDuration={400} skipDelayDuration={300}>
           {children}
           <Toaster />
+          <GlassFilterDefs />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

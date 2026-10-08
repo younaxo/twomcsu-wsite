@@ -114,7 +114,7 @@ const buttonClassName = cn(
 const toastClassNames: NonNullable<SonnerToasterProps['toastOptions']>['classNames'] = {
   toast: cn(
     'relative flex w-[var(--width)] items-start gap-3 p-4 pr-10 font-sans text-sm',
-    'rounded-lg border border-border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+    'rounded-lg glass-frosted-strong text-foreground',
     // В свёрнутой стопке задние тосты показывают только «корешок» без контента —
     // в режиме unstyled это правило sonner не применяется, повторяем его.
     '[&[data-expanded=false][data-front=false]>*]:opacity-0',

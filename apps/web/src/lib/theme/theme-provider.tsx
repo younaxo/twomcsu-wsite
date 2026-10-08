@@ -10,11 +10,14 @@ import {
   type ResolvedTheme,
   type ThemePreference,
 } from './theme';
+import { detectGlassEnvironment, GLASS_ATTRIBUTE, resolveGlassMode, type GlassMode } from './glass';
 
 interface ThemeContextValue {
   preference: ThemePreference;
   resolved: ResolvedTheme;
   setPreference: (next: ThemePreference) => void;
+  /// Режим стекла, выбранный по возможностям устройства (null до монтирования).
+  glass: GlassMode | null;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -51,6 +54,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const resolved = resolveTheme(preference, systemDark);
 
+  // Режим стекла: один раз по возможностям устройства, на <html data-glass>.
+  // Меняется только вслед за prefers-reduced-motion / -transparency.
+  const [glass, setGlass] = useState<GlassMode | null>(null);
+  useEffect(() => {
+    const apply = () => {
+      const mode = resolveGlassMode(detectGlassEnvironment());
+      setGlass(mode);
+      document.documentElement.setAttribute(GLASS_ATTRIBUTE, mode);
+    };
+    apply();
+    const queries = [
+      window.matchMedia('(prefers-reduced-motion: reduce)'),
+      window.matchMedia('(prefers-reduced-transparency: reduce)'),
+    ];
+    queries.forEach((mql) => mql.addEventListener('change', apply));
+    return () => queries.forEach((mql) => mql.removeEventListener('change', apply));
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute(THEME_ATTRIBUTE, resolved);
   }, [resolved]);
@@ -65,8 +86,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ preference, resolved, setPreference }),
-    [preference, resolved, setPreference],
+    () => ({ preference, resolved, setPreference, glass }),
+    [preference, resolved, setPreference, glass],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

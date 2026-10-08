@@ -46,7 +46,7 @@ export function FloatingDock({
       aria-label={label}
       className={cn(
         'fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-40 max-w-[calc(100vw-2rem)] -translate-x-1/2',
-        'rounded-lg border bg-surface-overlay p-1 shadow-lg edge-highlight',
+        'rounded-lg glass-liquid p-1',
         className,
       )}
       {...props}
@@ -74,7 +74,7 @@ export function FloatingDock({
                 aria-hidden
                 className={cn(
                   'pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap',
-                  'rounded-sm bg-foreground px-2 py-1 text-xs text-background shadow-lg',
+                  'rounded-sm glass-frosted-strong px-2 py-1 text-xs text-foreground',
                   'opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100',
                 )}
               >

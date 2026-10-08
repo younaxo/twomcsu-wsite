@@ -27,7 +27,7 @@ export const Command = forwardRef<ElementRef<typeof Cmdk>, CommandProps>(
     <Cmdk
       ref={ref}
       className={cn(
-        'flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface-overlay text-foreground',
+        'flex h-full w-full flex-col overflow-hidden rounded-lg text-foreground',
         className,
       )}
       {...props}
