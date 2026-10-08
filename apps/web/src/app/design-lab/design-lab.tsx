@@ -1,20 +1,19 @@
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { cn } from '@/lib/cn';
-import { useTheme } from '@/lib/theme/theme-provider';
-import { DIRECTIONS, DIRECTION_BY_ID, type DirectionId } from './directions';
-import { ComponentLab, SHOWCASES } from './directions/registry';
-import { labFontVariables } from './fonts';
+import { DIRECTION } from './direction';
+import { ComponentLab } from './sections/component-lab';
+import { GlassSection } from './sections/glass-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
+import { Showcase } from './showcase/showcase';
 
 const SECTIONS = [
   { id: 'direction', label: 'О направлении' },
   { id: 'showcase', label: 'Витрина' },
   { id: 'lab', label: 'Interactions / Component lab' },
+  { id: 'glass', label: 'Glass materials' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -29,89 +28,22 @@ function useViewportWidth(): number | null {
   return width;
 }
 
-export function DesignLab({ initialDirection }: { initialDirection: DirectionId }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const { resolved: theme } = useTheme();
-  const [direction, setDirection] = useState<DirectionId>(initialDirection);
-  const spec = DIRECTION_BY_ID[direction];
+/// /design-lab — внутренняя лаборатория production-направления «Полдень»:
+/// витрина, Interactions / Component lab, Glass materials, Role prefixes.
+/// Тема — глобальный ThemeProvider (тёмная по умолчанию), overlay-порталы
+/// получают токены с <html>.
+export function DesignLab() {
   const viewport = useViewportWidth();
-  /// Тема берётся из глобального переключателя; архивный ember — только тёмный.
-  const effectiveTheme = spec.themes.includes(theme) ? theme : spec.themes[0];
-
-  const selectDirection = useCallback(
-    (id: DirectionId) => {
-      setDirection(id);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set('d', id);
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    },
-    [pathname, router, searchParams],
-  );
-
-  // Overlay-примитивы рендерятся порталом в <body>, вне корня лаборатории —
-  // зеркалим направление и шрифты архивных кандидатов на <html>. Тема на
-  // <html> принадлежит ThemeProvider; для ember временно форсируем тёмную.
-  useEffect(() => {
-    const root = document.documentElement;
-    const fontClasses = labFontVariables.split(' ').filter(Boolean);
-    root.setAttribute('data-direction', direction);
-    root.classList.add(...fontClasses);
-    if (effectiveTheme !== theme) {
-      root.setAttribute('data-theme', effectiveTheme);
-    }
-    return () => {
-      root.removeAttribute('data-direction');
-      root.classList.remove(...fontClasses);
-      root.setAttribute('data-theme', theme);
-    };
-  }, [direction, effectiveTheme, theme]);
-
-  const Showcase = SHOWCASES[direction];
 
   return (
-    <div
-      data-direction={direction}
-      data-theme={effectiveTheme}
-      className="min-h-screen bg-background font-sans text-foreground"
-    >
-      {/* Панель лаборатории — нейтральная, НЕ часть направления */}
-      <header className="sticky top-0 z-40 border-b bg-surface/95 backdrop-blur-sm">
+    <div className="min-h-screen bg-background font-sans text-foreground">
+      <header className="sticky top-0 z-40 border-b glass-frosted-strong rounded-none border-x-0 border-t-0">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           <p className="mr-2 text-sm font-semibold">
             TwoMC <span className="text-muted-foreground">· Design lab</span>
           </p>
-          <div
-            role="radiogroup"
-            aria-label="Направление дизайна"
-            className="flex rounded bg-surface-sunken p-0.5"
-          >
-            {DIRECTIONS.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                role="radio"
-                aria-checked={d.id === direction}
-                onClick={() => selectDirection(d.id)}
-                className={cn(
-                  'inline-flex h-control-sm items-center gap-1.5 rounded-sm px-3 text-sm transition-colors duration-fast',
-                  d.id === direction
-                    ? 'bg-surface font-medium text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {d.name}
-                {d.status === 'selected' ? (
-                  <span
-                    aria-label="production-направление"
-                    className="size-1.5 rounded-full bg-primary"
-                  />
-                ) : null}
-              </button>
-            ))}
-          </div>
-          {spec.themes.length > 1 ? <ThemeToggle /> : null}
+          <Badge tone="primary">{DIRECTION.name} · production</Badge>
+          <ThemeToggle />
           <nav aria-label="Разделы лаборатории" className="flex flex-wrap gap-1 text-sm">
             {SECTIONS.map((s) => (
               <a
@@ -131,23 +63,31 @@ export function DesignLab({ initialDirection }: { initialDirection: DirectionId 
 
       <main className="mx-auto flex max-w-[1440px] flex-col gap-16 px-4 py-8">
         <section id="direction" className="scroll-mt-20">
-          <DirectionCard direction={direction} />
+          <DirectionCard />
         </section>
 
         <section id="showcase" className="scroll-mt-20">
           <SectionHeading
             title="Витрина"
-            description="Один набор элементов — navbar, hero, sidebar, кнопки, поля, табы, карточка, таблица, профиль, статус сервера, уведомление, overlay, состояния — в языке выбранного направления."
+            description="Один набор элементов — navbar, hero, sidebar, кнопки, поля, табы, карточка, таблица, профиль, статус сервера, уведомление, overlay, состояния — в языке «Полдня». Переключайте тему в панели сверху."
           />
-          <Showcase theme={effectiveTheme} />
+          <Showcase />
         </section>
 
         <section id="lab" className="scroll-mt-20">
           <SectionHeading
             title="Interactions / Component lab"
-            description="Ручная проверка floating UI, overlay, форм и данных. Общие функциональные примитивы, оформление — по токенам направления и темы."
+            description="Ручная проверка floating UI, overlay, форм и данных. Общие функциональные примитивы, оформление — по токенам темы."
           />
           <ComponentLab />
+        </section>
+
+        <section id="glass" className="scroll-mt-20">
+          <SectionHeading
+            title="Glass materials"
+            description="Frosted Glass для overlay с текстом, Liquid Glass — точечно для премиальных плавающих контролов. Тёмная и светлая тема, состояния, fallback и сравнение Solid / Frosted / Liquid."
+          />
+          <GlassSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">
@@ -171,18 +111,14 @@ function SectionHeading({ title, description }: { title: string; description: st
   );
 }
 
-function DirectionCard({ direction }: { direction: DirectionId }) {
-  const spec = DIRECTION_BY_ID[direction];
+function DirectionCard() {
+  const spec = DIRECTION;
   return (
     <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
       <div>
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm text-muted-foreground">Направление</p>
-          {spec.status === 'selected' ? (
-            <Badge tone="primary">Selected · production direction</Badge>
-          ) : (
-            <Badge tone="neutral">Archived · alternative</Badge>
-          )}
+          <Badge tone="primary">Production · dark-first</Badge>
         </div>
         <h1 className="mt-1 text-4xl leading-tight md:text-5xl">{spec.name}</h1>
         <p className="mt-2 text-lg text-muted-foreground">{spec.tagline}</p>
@@ -211,6 +147,10 @@ function DirectionCard({ direction }: { direction: DirectionId }) {
           <p className="mt-1 text-muted-foreground">{spec.color.usage}</p>
         </Row>
         <Row term="Нейтрали">{spec.color.neutrals}</Row>
+        <Row term="Темы">
+          Тёмная — основная (по умолчанию), светлая — вторичная; одни компоненты, разные
+          семантические токены.
+        </Row>
         <Row term="Поверхности">{spec.surfaces}</Row>
         <Row term="Форма">{spec.shape}</Row>
         <Row term="Плотность">{spec.density}</Row>

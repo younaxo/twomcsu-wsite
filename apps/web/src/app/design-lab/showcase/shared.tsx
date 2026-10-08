@@ -36,7 +36,7 @@ import {
   type DemoEvent,
   type DemoNotification,
   type DemoUser,
-} from '../../demo-data';
+} from '../demo-data';
 
 /* ------------------------------------------------------------------ */
 /* Роли                                                                */

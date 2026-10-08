@@ -78,7 +78,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { formatDate, formatNumber } from '@/lib/format';
 import { useIsMobile } from '@/lib/use-media-query';
-import { demoServers, demoStats, demoUsers, type DemoUser } from '../../demo-data';
+import { demoServers, demoStats, demoUsers, type DemoUser } from '../demo-data';
 import { AccountMenu, isStaff, NotificationBell, plural, UserName, wait } from './shared';
 
 /* ------------------------------------------------------------------ */

@@ -6,17 +6,23 @@
   hex-значения. Цвета хранятся как RGB-каналы («255 106 26»), чтобы Tailwind
   мог применять alpha: rgb(var(--primary) / 0.5).
 
-  :root                 — «Полдень», светлая тема (вторичная).
+  :root / [data-theme='light'] — «Полдень», светлая тема (вторичная);
+                          селектор атрибута нужен для вложенных превью.
   [data-theme='dark']   — «Полдень», тёмная тема (ОСНОВНАЯ): не инверсия
                           светлой, а отдельно подобранная палитра с глубиной
                           слоёв, тёплым графитом и ярче взятым оранжевым.
-  [data-direction=…]    — архивные кандидаты из /design-lab (ember / signal),
-                          оставлены для сравнения; production их не использует.
 
-  Любая тема/направление обязаны определить ВСЕ токены, перечисленные в :root.
+  Другой системы нет: альтернативные кандидаты (2026-10-08) удалены.
+  Тёмная тема обязана переопределить ВСЕ цветовые токены из :root.
+
+  Glass (материалы для overlay, см. globals.css):
+  --glass-*              — Frosted (спокойное матовое стекло) и Liquid
+                           (преломление, specular-кромка) — только для
+                           плавающих слоёв, не для карточек и страниц.
 */
 
-:root {
+:root,
+[data-theme='light'] {
   color-scheme: light;
 
   /* Поверхности: бумага на прохладном сером */
@@ -77,13 +83,28 @@
   --shadow: 0 1px 2px rgb(40 30 20 / 0.08), 0 0 0 1px rgb(40 30 20 / 0.05);
   --shadow-lg: 0 8px 24px rgb(40 30 20 / 0.12), 0 0 0 1px rgb(40 30 20 / 0.06);
   --edge-highlight: transparent;
-  /* Стекло overlay: подложка + размытие; на светлой теме — почти белое */
-  --glass: 255 255 255;
-  --glass-alpha: 0.82;
+
+  /* Стекло (светлая тема): почти белая подложка, тёмная тонкая граница,
+     сильная верхняя белая кромка; размытие слабее, чем на тёмной */
+  --glass-surface: 255 255 255;
+  --glass-surface-alpha: 0.72;
+  --glass-surface-strong-alpha: 0.88;
+  --glass-border: rgb(28 27 25 / 0.12);
+  --glass-border-highlight: rgb(255 255 255 / 0.95);
+  --glass-shadow: 0 12px 32px rgb(40 30 20 / 0.14), 0 2px 6px rgb(40 30 20 / 0.06);
+  --glass-inner-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.95);
   --glass-blur: 14px;
+  --glass-saturation: 1.3;
+  --glass-refraction-strength: 6;
+  --glass-distortion-strength: 0.003;
+  --glass-specular: rgb(255 255 255 / 0.9);
+  --glass-tint: rgb(242 106 27 / 0.05);
 
   /* Типографика: Onest для всего UI, Literata для редакционного текста */
   --font-sans-fallback: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-onest: 'Onest Variable';
+  --font-literata: 'Literata Variable';
+  --font-jetbrains: 'JetBrains Mono Variable';
   --font-sans: var(--font-onest), var(--font-sans-fallback);
   --font-display: var(--font-onest), var(--font-sans-fallback);
   --font-serif: var(--font-literata), Georgia, 'Times New Roman', serif;
@@ -166,227 +187,21 @@
   --shadow: 0 2px 6px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.05);
   --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.07);
   --edge-highlight: rgb(255 255 255 / 0.06);
-  --glass: 40 40 38;
-  --glass-alpha: 0.78;
-  --glass-blur: 16px;
-}
 
-/* =========================================================================
-   АРХИВ — «Раскалённое» / EMBER (кандидат A, не выбран). Только тёмный.
-   ========================================================================= */
-[data-direction='ember'],
-[data-direction='ember'][data-theme='dark'],
-[data-direction='ember'][data-theme='light'] {
-  color-scheme: dark;
-
-  --background: 23 18 15;
-  --background-subtle: 27 22 18;
-  --foreground: 244 236 228;
-  --foreground-secondary: 200 188 176;
-  --foreground-muted: 150 138 126;
-  --surface: 30 24 20;
-  --surface-hover: 36 29 24;
-  --surface-active: 42 34 28;
-  --surface-raised: 38 31 26;
-  --surface-overlay: 44 36 30;
-  --surface-sunken: 18 14 12;
-  --muted: 38 31 26;
-  --muted-foreground: 170 156 144;
-  --subtle-foreground: 122 110 100;
-
-  --primary: 255 106 26;
-  --primary-hover: 255 128 58;
-  --primary-active: 232 90 14;
-  --primary-foreground: 26 14 7;
-  --primary-soft: 58 34 20;
-  --primary-soft-foreground: 255 150 92;
-
-  --border: 52 43 37;
-  --border-strong: 82 68 58;
-  --border-subtle: 40 33 28;
-  --ring: 255 138 61;
-  --focus-ring: var(--ring);
-
-  --success: 76 196 122;
-  --success-foreground: 10 24 14;
-  --success-soft: 24 46 32;
-  --warning: 255 190 61;
-  --warning-foreground: 36 24 4;
-  --warning-soft: 58 44 14;
-  --destructive: 255 96 96;
-  --destructive-foreground: 34 10 10;
-  --destructive-soft: 66 26 26;
-  --error: var(--destructive);
-  --info: 110 170 255;
-  --info-foreground: 10 20 36;
-  --info-soft: 26 40 64;
-
-  --radius-sm: 3px;
-  --radius: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
-  --avatar-radius: 3px;
-
-  --shadow-sm: none;
-  --shadow: 0 0 0 1px rgb(0 0 0 / 0.4);
-  --shadow-lg: 0 0 0 1px rgb(0 0 0 / 0.5), 0 24px 48px rgb(0 0 0 / 0.5);
-  --edge-highlight: rgb(255 255 255 / 0.06);
-  --glass: 38 30 25;
-  --glass-alpha: 0.85;
-  --glass-blur: 12px;
-
-  --font-sans: var(--font-golos), var(--font-sans-fallback);
-  --font-display: var(--font-unbounded), var(--font-sans);
-  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
-  --text-base: 15px;
-  --leading-base: 1.5;
-  --tracking-display: -0.01em;
-  --weight-display: 600;
-
-  --control-h-sm: 32px;
-  --control-h: 38px;
-  --control-h-lg: 46px;
-  --control-px: 14px;
-  --card-p: 20px;
-  --gap: 16px;
-  --row-h: 42px;
-
-  --motion-fast: 100ms;
-  --motion: 150ms;
-  --motion-slow: 220ms;
-  --ease: cubic-bezier(0.3, 0, 0, 1);
-}
-
-/* =========================================================================
-   АРХИВ — «Пульт» / SIGNAL (кандидат C, не выбран). Светлая и тёмная.
-   ========================================================================= */
-[data-direction='signal'] {
-  color-scheme: light;
-
-  --background: 243 244 246;
-  --background-subtle: 238 239 242;
-  --foreground: 20 22 26;
-  --foreground-secondary: 70 76 86;
-  --foreground-muted: 110 116 126;
-  --surface: 255 255 255;
-  --surface-hover: 249 250 251;
-  --surface-active: 242 243 245;
-  --surface-raised: 255 255 255;
-  --surface-overlay: 255 255 255;
-  --surface-sunken: 235 237 240;
-  --muted: 235 237 240;
-  --muted-foreground: 88 94 104;
-  --subtle-foreground: 128 134 144;
-
-  --primary: 255 90 0;
-  --primary-hover: 232 80 0;
-  --primary-active: 208 70 0;
-  --primary-foreground: 20 22 26;
-  --primary-soft: 255 234 220;
-  --primary-soft-foreground: 184 62 0;
-
-  --border: 216 220 226;
-  --border-strong: 170 177 188;
-  --border-subtle: 230 233 238;
-  --ring: 255 90 0;
-  --focus-ring: var(--ring);
-
-  --success: 18 136 86;
-  --success-foreground: 255 255 255;
-  --success-soft: 218 242 229;
-  --warning: 184 118 0;
-  --warning-foreground: 20 22 26;
-  --warning-soft: 255 240 204;
-  --destructive: 200 38 38;
-  --destructive-foreground: 255 255 255;
-  --destructive-soft: 251 224 224;
-  --error: var(--destructive);
-  --info: 28 102 178;
-  --info-foreground: 255 255 255;
-  --info-soft: 220 233 248;
-
-  --radius-sm: 2px;
-  --radius: 2px;
-  --radius-lg: 4px;
-  --radius-xl: 6px;
-  --avatar-radius: 2px;
-
-  --shadow-sm: none;
-  --shadow: 0 0 0 1px rgb(20 22 26 / 0.1);
-  --shadow-lg: 0 0 0 1px rgb(20 22 26 / 0.12), 0 12px 32px rgb(20 22 26 / 0.16);
-  --edge-highlight: transparent;
-  --glass: 255 255 255;
-  --glass-alpha: 0.9;
-  --glass-blur: 10px;
-
-  --font-sans: var(--font-commissioner), var(--font-sans-fallback);
-  --font-display: var(--font-commissioner), var(--font-sans);
-  --font-mono: var(--font-martian), ui-monospace, monospace;
-  --text-base: 14px;
-  --leading-base: 1.45;
-  --tracking-display: -0.01em;
-  --weight-display: 600;
-
-  --control-h-sm: 26px;
-  --control-h: 32px;
-  --control-h-lg: 38px;
-  --control-px: 10px;
-  --card-p: 16px;
-  --gap: 12px;
-  --row-h: 36px;
-
-  --motion-fast: 80ms;
-  --motion: 120ms;
-  --motion-slow: 180ms;
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-[data-direction='signal'][data-theme='dark'] {
-  color-scheme: dark;
-
-  --background: 21 23 27;
-  --background-subtle: 25 27 32;
-  --foreground: 232 234 238;
-  --foreground-secondary: 186 190 198;
-  --foreground-muted: 140 146 156;
-  --surface: 27 30 35;
-  --surface-hover: 32 35 41;
-  --surface-active: 38 42 49;
-  --surface-raised: 33 36 42;
-  --surface-overlay: 38 42 49;
-  --surface-sunken: 16 18 21;
-  --muted: 33 36 42;
-  --muted-foreground: 156 162 172;
-  --subtle-foreground: 108 114 124;
-
-  --primary: 255 106 26;
-  --primary-hover: 255 126 54;
-  --primary-active: 236 92 14;
-  --primary-foreground: 20 14 10;
-  --primary-soft: 58 34 18;
-  --primary-soft-foreground: 255 150 92;
-
-  --border: 46 50 58;
-  --border-strong: 74 80 92;
-  --border-subtle: 36 40 46;
-  --ring: 255 126 54;
-
-  --success: 68 190 120;
-  --success-foreground: 8 24 14;
-  --success-soft: 22 44 32;
-  --warning: 240 180 48;
-  --warning-foreground: 30 22 4;
-  --warning-soft: 56 44 14;
-  --destructive: 240 90 90;
-  --destructive-foreground: 30 8 8;
-  --destructive-soft: 60 24 24;
-  --info: 100 160 240;
-  --info-foreground: 8 18 34;
-  --info-soft: 24 38 60;
-
-  --shadow: 0 0 0 1px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 0 0 1px rgb(0 0 0 / 0.6), 0 12px 32px rgb(0 0 0 / 0.5);
-  --edge-highlight: rgb(255 255 255 / 0.05);
-  --glass: 34 38 44;
-  --glass-alpha: 0.85;
+  /* Стекло (тёмная тема): тёмная глубина, а не серый прямоугольник —
+     подложка темнее листа, слабая белая граница с яркой верхней кромкой,
+     лёгкий оранжевый отблеск сверху слева, сильнее размытие и насыщение */
+  --glass-surface: 36 36 34;
+  --glass-surface-alpha: 0.66;
+  --glass-surface-strong-alpha: 0.84;
+  --glass-border: rgb(255 255 255 / 0.1);
+  --glass-border-highlight: rgb(255 255 255 / 0.28);
+  --glass-shadow: 0 20px 48px rgb(0 0 0 / 0.55), 0 2px 8px rgb(0 0 0 / 0.35);
+  --glass-inner-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.12), inset 0 -1px 0 0 rgb(0 0 0 / 0.25);
+  --glass-blur: 20px;
+  --glass-saturation: 1.5;
+  --glass-refraction-strength: 10;
+  --glass-distortion-strength: 0.004;
+  --glass-specular: rgb(255 255 255 / 0.22);
+  --glass-tint: rgb(248 122 48 / 0.07);
 }

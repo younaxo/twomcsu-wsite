@@ -29,15 +29,13 @@
   +--------+--------------------------------------------------+   +--------------------+
 */
 
-import type { ComponentType } from 'react';
-import type { ShowcaseProps } from '../registry';
 import { AdminScene } from './admin-scene';
 import { PublicScene } from './public-scene';
 
-/// Направление задаётся токенами через data-direction; здесь — только
-/// композиция. Круглые аватары — хук `--avatar-radius` из `Avatar`
+/// Витрина «Полдня»: оформление — токенами темы (data-theme на <html>),
+/// здесь — только композиция. Круглые аватары — хук `--avatar-radius` из `Avatar`
 /// (стопка `AvatarStack` не принимает `shape`, поэтому переменная на корне).
-export const Showcase: ComponentType<ShowcaseProps> = () => (
+export const Showcase = () => (
   <div className="flex flex-col gap-12 [--avatar-radius:9999px]">
     <section aria-labelledby="daylight-public-title" className="flex flex-col gap-6">
       <h3 id="daylight-public-title" className="scroll-mt-24 text-xl">

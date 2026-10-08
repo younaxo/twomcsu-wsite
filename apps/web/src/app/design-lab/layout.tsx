@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { labFontVariables } from './fonts';
 
 export const metadata: Metadata = {
   title: 'Design lab',
@@ -7,7 +6,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/// Внутренний маршрут: шрифты трёх кандидатов подключаются только здесь.
+/// Внутренний маршрут: noindex; оформление — глобальные токены «Полдня».
 export default function DesignLabLayout({ children }: { children: React.ReactNode }) {
-  return <div className={labFontVariables}>{children}</div>;
+  return children;
 }

@@ -26,7 +26,7 @@ import {
   type DemoProduct,
   type DemoServer,
   type DemoUser,
-} from '../../demo-data';
+} from '../demo-data';
 import {
   AccountMenu,
   EventCard,
