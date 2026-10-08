@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { DEFAULT_THEME, THEME_INIT_SCRIPT } from '@/lib/theme/theme';
-import { appFontVariables } from './fonts';
+import './fonts';
 import './globals.css';
 import { Providers } from './providers';
 
@@ -27,12 +27,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     // data-theme выставляется на сервере (default dark) и уточняется inline-
     // скриптом из сохранённого выбора ДО первой отрисовки — без theme flash.
     // suppressHydrationWarning — атрибут может отличаться от SSR-значения.
-    <html
-      lang="ru"
-      data-theme={DEFAULT_THEME}
-      className={appFontVariables}
-      suppressHydrationWarning
-    >
+    <html lang="ru" data-theme={DEFAULT_THEME} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
