@@ -65,6 +65,7 @@ export function RolePrefix({
   const image = (
     <span className={cn('inline-flex shrink-0 items-center align-middle', className)} {...props}>
       {/* Обычный <img>, не next/image: pixel-art 7px нельзя ресемплить. */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- pixel-art с CDN, фиксированные width/height, lazy */}
       <img
         src={asset.url}
         alt={label}
