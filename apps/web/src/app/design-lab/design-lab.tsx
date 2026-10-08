@@ -8,6 +8,7 @@ import { Toaster } from '@/components/ui/toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { DIRECTIONS, DIRECTION_BY_ID, type DirectionId } from './directions';
+import { labFontVariables } from './fonts';
 import { ComponentLab, SHOWCASES } from './directions/registry';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 
@@ -73,6 +74,22 @@ export function DesignLab({
   };
 
   const Showcase = SHOWCASES[direction];
+
+  // Overlay-примитивы рендерятся порталом в <body>, вне корня лаборатории —
+  // зеркалим направление/тему и CSS-переменные шрифтов на <html>, иначе
+  // tooltip/dialog/menu получат нейтральные :root-токены и системный шрифт.
+  useEffect(() => {
+    const root = document.documentElement;
+    const fontClasses = labFontVariables.split(' ').filter(Boolean);
+    root.setAttribute('data-direction', direction);
+    root.setAttribute('data-theme', effectiveTheme);
+    root.classList.add(...fontClasses);
+    return () => {
+      root.removeAttribute('data-direction');
+      root.removeAttribute('data-theme');
+      root.classList.remove(...fontClasses);
+    };
+  }, [direction, effectiveTheme]);
 
   return (
     <div
