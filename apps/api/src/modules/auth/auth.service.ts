@@ -382,8 +382,16 @@ export class AuthService {
     await this.revokeAllSessions(resetToken.userId);
   }
 
-  async getMe(userId: string): Promise<User> {
-    return this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  async getMe(userId: string) {
+    return this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: { role: true },
+          orderBy: { role: { priority: 'desc' } },
+        },
+      },
+    });
   }
 }
 
