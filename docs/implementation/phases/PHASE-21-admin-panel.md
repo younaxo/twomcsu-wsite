@@ -51,7 +51,15 @@ frontend + ~20 экранов core-админки). Статус по частя
 - `apps/api`: e2e `roles` + `auth` — 16 тестов зелёные локально.
 - `lint`/`format:check`/`typecheck`/`build` — зелёные во всех пакетах.
 
-## Часть 2 — UI-слой и экраны — в работе, см. STATUS.md
+## Часть 2 — дизайн-система и UI-слой (`feature/frontend-design-system`) — выполнено, экраны ждут решения
+
+- Семантические токены с тремя направлениями, TwoMC UI-слой (~60
+  примитивов), `/design-lab` с витринами, Interactions / Component lab и
+  Role prefixes, графические префиксы ролей, 61 unit-тест — ADR-0053/0054,
+  `docs/design/VISUAL-DIRECTION.md`, `docs/design/DESIGN-CRITIQUE.md`.
+- Admin-shell и экраны — после выбора направления владельцем (RISKS.md R14).
+
+## Часть 3 — admin-shell и экраны — ожидает решения, см. STATUS.md
 
 Порядок по указанию владельца (2026-10-08): сначала дизайн-направления
 (`/design-lab`, `docs/design/VISUAL-DIRECTION.md`, tokens, TwoMC

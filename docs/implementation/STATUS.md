@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/admin-panel (часть 1 — фундамент); далее feature/frontend-design-system
+Current branch: feature/frontend-design-system (дизайн-система и /design-lab); часть 1 PHASE 21 слита (PR #32)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,13 +71,15 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
-- PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) готова: `GET /auth/me`
-  с effective permissions + роли (e2e), API-контракт `packages/shared`
-  (ADR-0051), реестр permissions перенесён в shared, web: fetch-клиент с
-  single-flight refresh, auth-store, permission-хелперы, TanStack Query,
-  Vitest (21 тест) — ADR-0052. Часть 2 (UI-слой, admin-shell, экраны) —
-  после дизайн-направлений (`feature/frontend-design-system`, /design-lab,
-  решение владельца по направлению — см. phases/PHASE-21-admin-panel.md).
+- PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) слита в main (PR #32):
+  `GET /auth/me` с effective permissions, контракт `packages/shared`,
+  fetch-клиент/auth-store/permission-хелперы/TanStack Query (ADR-0051/0052).
+  Дизайн-система (`feature/frontend-design-system`, ADR-0053): семантические
+  токены, TwoMC UI-слой (~60 примитивов поверх Radix/vaul/sonner/cmdk), три
+  направления в `/design-lab` (витрины + Interactions/Component lab + Role
+  prefixes), графические префиксы ролей (ADR-0054), 61 unit-тест. **Ожидает
+  решения владельца по направлению** (RISKS.md R14) — до этого admin-экраны
+  (часть 2) не верстаются.
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -125,7 +127,7 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (api unit 1/1, web unit 21/21 — Vitest; e2e 23 suite / 195 тестов — auth + RBAC + users-domain +
+tests: pass (api unit 1/1, web unit 61/61 — Vitest; e2e 23 suite / 195 тестов — auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
 store-checkout + minecraft + gamification + admin — roles+auth перепроверены локально

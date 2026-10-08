@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+### Design system и /design-lab (PHASE 21, дизайн)
+- Семантические design-токены (`apps/web/src/styles/tokens.css`) с тремя
+  кандидатами направления (`data-direction=ember|daylight|signal`, темы) и
+  Tailwind-маппингом — компоненты не знают hex (ADR-0053).
+- TwoMC UI-слой `components/ui` (~60 примитивов поверх radix-ui/vaul/sonner/
+  cmdk/lucide): floating (Tooltip simple/rich/shortcut/help/validation,
+  Toggletip, Hint, Popover, HoverCard, DropdownMenu, ContextMenu), overlays
+  (Dialog, AlertDialog/ConfirmDialog, Sheet, Drawer/BottomSheet/ActionSheet,
+  QuickView, FloatingPanel, DynamicIsland, Command/⌘K, toast/snackbar),
+  формы (Button, Input, Field, Select, Checkbox, RadioGroup/RadioCards,
+  Switch, Slider, SegmentedControl, Tabs, Accordion, NumberStepper/Steps,
+  OtpInput, Combobox, MultiSelect, DatePicker, FileDropzone, ColorPicker),
+  данные (Table, DataGrid, Pagination, TreeView, Resizable, AnimatedCounter,
+  Marquee, Carousel, FloatingDock, Lightbox, Wizard, MegaMenu, Badge/
+  StatusBadge, Avatar/AvatarStack, Skeleton, Progress/ProgressRing,
+  EmptyState, ErrorState/ForbiddenState, Breadcrumbs, Timeline, Kbd, Card).
+- `/design-lab` (internal, 404 в production без флага): карточка
+  направления, витрины «Раскалённое»/«Полдень»/«Пульт» на одном наборе
+  элементов, Interactions / Component lab, секция Role prefixes;
+  critique и рекомендация — `docs/design/DESIGN-CRITIQUE.md`, контракт —
+  `docs/design/VISUAL-DIRECTION.md`.
+- Графические префиксы ролей (ADR-0054): реестр 29 PNG по `Role.slug` в
+  `packages/shared`, `NEXT_PUBLIC_CDN_BASE_URL`, `RolePrefix`/
+  `UserRolesInline`, выбор основной роли по priority — только
+  визуализация, права решает backend.
+- 40 новых unit-тестов (примитивы, префиксы ролей), заглушки browser API
+  для Radix в jsdom.
+
 ### Frontend foundation (PHASE 21, часть 1)
 - `packages/shared` — API-контракт frontend ↔ backend (ADR-0051): типы
   ответов/запросов auth/users/roles/moderation/admin (dashboard, audit log,
