@@ -111,6 +111,21 @@ export class QuickModerationService {
     return punishment;
   }
 
+  /// UNBAN — снимает account-level бан (отдельно от ReportBan, см.
+  /// ReportsAdminService.unbanUser). Сессии не восстанавливаются — после
+  /// разбана пользователь просто снова может пройти login.
+  async unban(targetId: string): Promise<{ success: true }> {
+    const target = await this.requireUser(targetId);
+    if (!target.isBanned) {
+      throw new ForbiddenException('Пользователь не забанен');
+    }
+    await this.prisma.user.update({
+      where: { id: targetId },
+      data: { isBanned: false, banReason: null, bannedUntil: null },
+    });
+    return { success: true };
+  }
+
   async hardDeleteMessage(messageId: string): Promise<{ success: true }> {
     await this.chat.hardDeleteMessage(messageId);
     return { success: true };

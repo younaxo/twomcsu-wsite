@@ -258,3 +258,38 @@
 - 15 новых permission-ключей (`achievements.*`, `awards.*`,
   `media_requests.*`, `users.achievements`/`.achievements.grant`/
   `.awards`/`.badges`).
+
+### Admin backend
+- `modules/admin/` — `/admin/dashboard` (реальные агрегаты: пользователи
+  online/забанены/новые сегодня, pending-жалобы, последние 10 записей
+  audit log), `/admin/audit-log` + `/audit-log/stats` (`AuditService`:
+  запись не гарантирована для info/warning, падает для critical, 90 дней
+  retention — `cleanupOld()` реализован, периодический вызов PHASE 29),
+  `/admin/broadcast` (реальная рассылка `Announcement` + fan-out
+  `Notification` по `targetRole`), KV- (`/admin/settings`) и
+  структурированные (`/admin/settings/site`, singleton) настройки сайта.
+- Персональные (per-admin) saved-filters/bookmarks (+ reorder)/
+  scheduled-exports — полный CRUD; фактическое выполнение экспортов по
+  расписанию — PHASE 29 (нет cron-инфраструктуры).
+- Security: `/admin/security/sessions`/`logins` — реальные
+  `RefreshToken`; `/admin/security/suspicious` — реальное чтение Redis
+  brute-force счётчиков через `SCAN`; `/admin/security/ip-whitelist` —
+  пишет в `SiteSettings.ipWhitelist`.
+- `/admin/content/dashboard` (News/Form/жалобы/пользователи) и
+  `/admin/finance/overview|transactions|refunds|export` — overview и
+  export делегируют в уже существующие `StoreStatsService`/
+  `OrdersService` (PHASE 17), не дублируют агрегацию заказов.
+- `PATCH /admin/users/bulk` (BAN/UNBAN) — первое место в проекте, где
+  массовое действие над пользователями проверяет priority-иерархию через
+  `PermissionService.canActOn`, с отдельной audit-записью на каждого
+  пользователя; один отклонённый/упавший target не валит весь batch.
+  `QuickModerationService.unban()` — новый account-level метод,
+  симметричный `ban()` (PHASE 16).
+- `ExportController` — CSV напрямую в HTTP-ответ (без файлового
+  хранилища, PHASE 23) для users/orders/reports/news/audit-log,
+  hand-rolled RFC4180-сериализатор.
+- 35 новых permission-ключей (`dashboard.*`, `audit_log.*`,
+  `broadcast.create`, `settings.*`, `saved_filters.*`, `bookmarks.*`,
+  `exports.scheduled.*`, `security.*`, `content.view`, `finance.*`,
+  `users.bulk.edit`, `users.export`, `orders.export`, `reports.export`,
+  `news.export`).

@@ -829,3 +829,89 @@ check-all-users или при следующем визите пользоват
 таблиц не добавлено — это не "временная заглушка до полноценного
 рейтинга", а полный, работающий набор на основе того, что реально
 трекается на сегодняшний день в проекте.
+
+## ADR-0047 — Admin backend: полное ретроактивное покрытие audit log — PHASE 22, не PHASE 20
+
+**Context.** `docs/technical/25-AUDIT-LOG.md` фиксирует: из 186 staff-
+мутаций старого проекта только 21 вызов писал в audit log, и отдельно
+перечисляет "обязательные новые действия" (`role.*`, `order.refund`,
+`store.*`, `server.*`, `moderation.*` и т.д.) — это охватывает ВСЕ уже
+реализованные домены PHASE 05–19. Ретроактивно добавлять `audit.log()`
+вызовы во все эти модули прямо в PHASE 20 означало бы правки в десятке
+уже смёрженных PR вне заявленного scope фазы (admin backend), по тому
+же принципу, что и ADR-0027 (retroactive-улучшения — только точечно,
+не бесконтрольно).
+
+**Decision.** В PHASE 20 реализован сам `AuditService` (`log/list/
+getStats/cleanupOld`) и read-эндпоинты (`/admin/audit-log*`), плюс
+логирование добавлено ТОЛЬКО для действий, появляющихся в этой фазе:
+`settings.update`, `settings.site.update`, `security.ip_whitelist.update`,
+`notification.broadcast`, `user.ban`/`user.unban` (bulk). Полное
+ретроактивное покрытие остальных 15+ доменов — явно отдельная PHASE 22
+("Audit log — обязательные события, retention"), как и зафиксировано в
+ROADMAP.md с момента PHASE 00.
+
+## ADR-0048 — Admin backend: scheduled exports — только CRUD-хранение, выполнение по расписанию — PHASE 29
+
+**Context.** `ScheduledExport.schedule` — cron-подобная строка,
+`nextRunAt`/`lastRunAt` — поля под фактическое выполнение. В проекте
+по-прежнему нет cron/очереди (см. ADR-0043, ADR-0042) — background jobs
+заявлены отдельной PHASE 29.
+
+**Decision.** `AdminToolsService` реализует только CRUD над
+`ScheduledExport` (per-admin, персональные записи). `nextRunAt`/
+`lastRunAt` не вычисляются и не проставляются при создании — честно
+оставлены `null` до появления реального планировщика в PHASE 29, вместо
+того чтобы городить одноразовый cron-парсер ради поля, которое пока
+никто не читает.
+
+## ADR-0049 — Admin backend: `security/suspicious` и `security/logins` — честные прокси, без новых моделей
+
+**Context.** `GET /admin/security/suspicious` в старом API не имеет
+backing-модели `SuspiciousActivity` — только Redis-счётчики
+`BruteForceService` (PHASE 05: `bruteforce:login:*`/`bruteforce:blocked:*`
+по IP, TTL 900s). `GET /admin/security/logins` тоже не имеет отдельной
+модели истории входов — только `RefreshToken`, создаваемый при каждом
+успешном `/auth/login`.
+
+**Decision.** `listSuspiciousActivity()` читает реальное состояние Redis
+через `SCAN` (не блокирующий `KEYS`) по обоим паттернам ключей и
+возвращает `{ip, failedAttempts, isBlocked, blockedTtlSeconds}` —
+честные данные о текущем рантайм-состоянии brute-force защиты, не
+персистентная история (сбрасывается вместе с TTL). `listLoginHistory()`
+использует `RefreshToken.createdAt` как прокси момента входа — каждый
+новый токен создаётся именно при успешном логине (`AuthService.login`),
+это не фиктивные данные, но и не отдельный полноценный лог входов
+(переиспользованные/протухшие токены не отличить от "вход, из которого
+не разлогинились" без отдельной модели — за рамками этой фазы).
+
+## ADR-0050 — Admin backend: `requireAdmin2fa` — поле без механизма; `users/bulk` проверяет priority-иерархию
+
+**Context 1.** `SiteSettings.requireAdmin2fa` — поле из исходной схемы
+БД (PHASE 04), но ни одной TOTP/OTP-модели в схеме нет и 2FA нигде не
+реализован (ни при login, ни где-либо ещё).
+
+**Decision 1.** Поле сохраняется и редактируется через
+`UpdateSiteSettingsDto` как есть (переключатель персистентен), но
+ничего в коде его не читает/не обеспечивает — честно задокументировано,
+а не тихо проигнорировано. Реализация 2FA — отдельный незаявленный
+scope (нет в ROADMAP ни одной фазой), будет оценена отдельно при явном
+запросе.
+
+**Context 2.** `PATCH /admin/users/bulk` — первое место в проекте, где
+массовое действие над пользователями (бан/разбан) инициируется другим
+пользователем; `QuickModerationService.ban()`/`kick()`/`mute()`/`warn()`
+(PHASE 16) priority-иерархию не проверяют вообще (только
+`RolesGuard`/`RoleGroup`-уровень на контроллере).
+
+**Decision 2.** `AdminUsersBulkService` вызывает
+`PermissionService.canActOn(actorId, targetId)` (уже существующий метод,
+ранее использовавшийся только для role assign/revoke, см.
+`UserRolesController`) перед каждым BAN/UNBAN в batch — по одному target
+за раз, с отдельной audit-записью на каждого (см. ADR-0047 и
+docs/technical/25-AUDIT-LOG.md: "Массовый бан — проверить, что
+логируется на каждого"). Один отклонённый/упавший target возвращается в
+`failed[]`, не валит весь batch — тот же принцип устойчивости, что и
+`AchievementProgressService.checkAllUsers` (PHASE 19). Ретроактивное
+добавление той же проверки в PHASE 16 single-user эндпоинты — вне scope
+этой фазы (зафиксировано как техдолг, не баг).

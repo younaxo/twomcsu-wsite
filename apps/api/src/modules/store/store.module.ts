@@ -68,5 +68,6 @@ import { WishlistService } from './wishlist.service';
     PaymentProviderRegistry,
     TestPaymentProvider,
   ],
+  exports: [OrdersService, StoreStatsService],
 })
 export class StoreModule {}

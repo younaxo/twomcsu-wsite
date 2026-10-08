@@ -34,7 +34,7 @@
 - [x] PHASE 17 — Store (каталог, корзина, заказы, промокоды; реальный провайдер — RISKS.md R2; доставка на сервер не предусмотрена схемой — ADR-0041)
 - [x] PHASE 18 — Minecraft servers (реальный Server List Ping, мониторинг, статус, история; RCON не предусмотрен схемой — ADR-0041)
 - [x] PHASE 19 — Gamification (achievements с реальным пересчётом прогресса, awards, badges, leaderboards; admin-дашборд — PHASE 20)
-- [ ] PHASE 20 — Admin backend (административные API, hierarchy, audit)
+- [x] PHASE 20 — Admin backend (dashboard, audit log read/stats, saved-filters/bookmarks/scheduled-exports, security, content/finance, bulk users, CSV export; полное ретроактивное покрытие audit log — PHASE 22, cron для scheduled-exports — PHASE 29)
 - [ ] PHASE 21 — Admin panel (frontend, permission-driven меню)
 - [ ] PHASE 22 — Audit log (обязательные события, retention)
 - [ ] PHASE 23 — CDN / file storage (cdn-files.twomc.su, AVIF pipeline)
