@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { PERMISSIONS } from './permissions';
+import { PERMISSIONS } from '@twomc/shared';
 import { DEFAULT_POSITIONS } from './positions';
 import { SUPERUSER_ROLES } from './roles';
 
