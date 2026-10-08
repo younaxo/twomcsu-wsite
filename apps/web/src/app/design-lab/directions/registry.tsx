@@ -2,6 +2,8 @@
 
 import type { ComponentType } from 'react';
 import type { DirectionId } from '../directions';
+import { Showcase as DaylightShowcase } from './daylight/showcase';
+import { Showcase as SignalShowcase } from './signal/showcase';
 
 export interface ShowcaseProps {
   /// Активная тема (для направлений с переключателем).
@@ -17,8 +19,6 @@ function Pending({ label }: { label: string }) {
 }
 
 const EmberShowcase: ComponentType<ShowcaseProps> = () => <Pending label="Витрина «Раскалённое»" />;
-const DaylightShowcase: ComponentType<ShowcaseProps> = () => <Pending label="Витрина «Полдень»" />;
-const SignalShowcase: ComponentType<ShowcaseProps> = () => <Pending label="Витрина «Пульт»" />;
 
 /// Реестр витрин направлений. Каждая витрина — композиция одного и того же
 /// набора элементов (navbar, hero, sidebar, card, table, profile, server
@@ -29,4 +29,4 @@ export const SHOWCASES: Record<DirectionId, ComponentType<ShowcaseProps>> = {
   signal: SignalShowcase,
 };
 
-export const ComponentLab: ComponentType = () => <Pending label="Interactions / Component lab" />;
+export { ComponentLab } from '../sections/component-lab';

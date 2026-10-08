@@ -46,11 +46,11 @@ const sideClass: Record<SheetSide, string> = {
   ),
   top: cn(
     'inset-x-0 top-0 rounded-b-lg border-b',
-    'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:-12px]',
+    'data-[state=open]:animate-slide-in-top data-[state=closed]:animate-slide-out-top',
   ),
   bottom: cn(
     'inset-x-0 bottom-0 rounded-t-lg border-t',
-    'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:12px]',
+    'data-[state=open]:animate-slide-in-bottom data-[state=closed]:animate-slide-out-bottom',
   ),
 };
 

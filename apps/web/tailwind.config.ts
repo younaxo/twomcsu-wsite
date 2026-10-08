@@ -136,6 +136,22 @@ const config: Config = {
           from: { transform: 'translateX(0)' },
           to: { transform: 'translateX(-100%)' },
         },
+        'slide-in-top': {
+          from: { transform: 'translateY(-100%)' },
+          to: { transform: 'translateY(0)' },
+        },
+        'slide-out-top': {
+          from: { transform: 'translateY(0)' },
+          to: { transform: 'translateY(-100%)' },
+        },
+        'slide-in-bottom': {
+          from: { transform: 'translateY(100%)' },
+          to: { transform: 'translateY(0)' },
+        },
+        'slide-out-bottom': {
+          from: { transform: 'translateY(0)' },
+          to: { transform: 'translateY(100%)' },
+        },
         shimmer: {
           from: { backgroundPosition: '200% 0' },
           to: { backgroundPosition: '-200% 0' },
@@ -150,6 +166,10 @@ const config: Config = {
         'slide-out-right': 'slide-out-right var(--motion) var(--ease)',
         'slide-in-left': 'slide-in-left var(--motion-slow) var(--ease-out)',
         'slide-out-left': 'slide-out-left var(--motion) var(--ease)',
+        'slide-in-top': 'slide-in-top var(--motion-slow) var(--ease-out)',
+        'slide-out-top': 'slide-out-top var(--motion) var(--ease)',
+        'slide-in-bottom': 'slide-in-bottom var(--motion-slow) var(--ease-out)',
+        'slide-out-bottom': 'slide-out-bottom var(--motion) var(--ease)',
         shimmer: 'shimmer 1.6s linear infinite',
       },
     },
