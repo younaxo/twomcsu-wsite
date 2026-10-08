@@ -68,8 +68,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         type={asChild ? undefined : (props.type ?? 'button')}
         {...props}
       >
-        {loading ? <Loader2 aria-hidden className="animate-spin" /> : null}
-        {children}
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading ? <Loader2 aria-hidden className="animate-spin" /> : null}
+            {children}
+          </>
+        )}
       </Comp>
     );
   },
