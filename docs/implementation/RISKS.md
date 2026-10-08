@@ -53,6 +53,10 @@ password reset, email-дайджесты.
 
 Нужны `HCAPTCHA_SECRET` (server) и `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` (client) для
 production. В dev/test работает `HCAPTCHA_DISABLED=true`.
+PHASE 21: hCaptcha-виджет на странице входа не подключён (без site key его
+нечем проверить) — ответ backend `{ requiresCaptcha: true }` показывается как
+явная ошибка «требуется проверка captcha» (ADR-0052), не как «неверный пароль»;
+виджет добавляется вместе с ключами.
 **Нужно от владельца:** регистрация сайта в hCaptcha, получение ключей.
 
 ## R6 — Внешние интеграции стриминга (Twitch/YouTube) — OPEN

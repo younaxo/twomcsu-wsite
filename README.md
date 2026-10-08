@@ -45,7 +45,8 @@ pnpm build         # production-сборка всех пакетов
 ## Тестирование
 
 - `apps/api` — Jest + Supertest (unit/integration), отдельная тестовая БД.
-- `apps/web` — Vitest + Testing Library (появится вместе с первыми компонентами).
+- `apps/web` — Vitest + Testing Library (`pnpm --filter @twomc/web test`), unit-тесты
+  API-клиента/auth/permissions; компонентные тесты — по мере появления UI.
 - E2E — Playwright (появится в PHASE 33).
 
 Подробнее — [`docs/implementation/DECISIONS.md`](docs/implementation/DECISIONS.md)

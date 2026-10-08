@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 20 — Admin backend
-Current branch: feature/admin-backend
+Current phase: PHASE 21 — Admin panel (frontend)
+Current branch: feature/admin-panel (часть 1 — фундамент); далее feature/frontend-design-system
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,7 +71,13 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
-none (PHASE 20 завершена и ждёт merge PR; следующая — PHASE 21, Admin panel frontend)
+- PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) готова: `GET /auth/me`
+  с effective permissions + роли (e2e), API-контракт `packages/shared`
+  (ADR-0051), реестр permissions перенесён в shared, web: fetch-клиент с
+  single-flight refresh, auth-store, permission-хелперы, TanStack Query,
+  Vitest (21 тест) — ADR-0052. Часть 2 (UI-слой, admin-shell, экраны) —
+  после дизайн-направлений (`feature/frontend-design-system`, /design-lab,
+  решение владельца по направлению — см. phases/PHASE-21-admin-panel.md).
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -105,7 +111,8 @@ PHASE 04/05).
 | PHASE 17 — Store | `feature/store` | merged (PR #27, `20b2dac`) | completed |
 | PHASE 18 — Minecraft servers | `feature/minecraft` | merged (PR #28, `289363a`) | completed |
 | PHASE 19 — Gamification | `feature/gamification` | merged (PR #29, `79bf5bb`) | completed |
-| PHASE 20 — Admin backend | `feature/admin-backend` | *(в работе)* | in progress |
+| PHASE 20 — Admin backend | `feature/admin-backend` | merged (PR #30, `5f8f59d`) | completed |
+| PHASE 21 — Admin panel (frontend) | `feature/admin-panel` (часть 1), `feature/frontend-design-system` (дизайн) | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -118,12 +125,13 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (unit 1/1, e2e 23 suite / 194 теста — auth + RBAC + users-domain +
+tests: pass (api unit 1/1, web unit 21/21 — Vitest; e2e 23 suite / 195 тестов — auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
-store-checkout + minecraft + gamification + admin, против реального
+store-checkout + minecraft + gamification + admin — roles+auth перепроверены локально
+после расширения `/auth/me`, полный прогон — CI, против реального
 Postgres+Redis (и настоящего TCP-сервера в minecraft-тестах), полный
 параллельный прогон всего сьюта)
 build: pass
 
-Last updated: 2026-10-04
+Last updated: 2026-10-08
