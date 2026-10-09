@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
+import { BrandSection } from './sections/brand-section';
 import { GlobalShellSection } from './sections/global-shell-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
@@ -14,6 +15,7 @@ const SECTIONS = [
   { id: 'showcase', label: 'Витрина' },
   { id: 'lab', label: 'Interactions / Component lab' },
   { id: 'shell', label: 'Global shell' },
+  { id: 'brand', label: 'Бренд и плашка' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -88,6 +90,14 @@ export function DesignLab() {
             description="Межстраничная оболочка twomc.su теми же production-компонентами: rail, header, footer, уведомления, профиль, корзина, чат, язык/валюта, статус серверов, оплата. Desktop / tablet / mobile."
           />
           <GlobalShellSection />
+        </section>
+
+        <section id="brand" className="scroll-mt-20">
+          <SectionHeading
+            title="Бренд, плашка и окна"
+            description="Основной логотип и wordmark (базовая и сезонная «o», размеры sm–xl), глобальная плашка outline/filled для info, warning, danger и production-диалог — те же компоненты, что на сайте."
+          />
+          <BrandSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">

@@ -16,11 +16,14 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequirePermissions } from './decorators/require-permissions.decorator';
+import { SkipAudit } from '../audit/skip-audit.decorator';
+import { BulkRolePermissionsDto } from './dto/bulk-role-permissions.dto';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { SetRolePermissionsDto } from './dto/set-role-permissions.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { PermissionService } from './permission.service';
+import { RoleBulkService } from './role-bulk.service';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -28,7 +31,20 @@ export class RolesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionService,
+    private readonly bulk: RoleBulkService,
   ) {}
+
+  /// Массовое изменение прав ролей (ADR-0068): add/remove, replace — с
+  /// подтверждением; атомарно; audit родитель + по роли.
+  @Post('roles/bulk/permissions')
+  @RequirePermissions('permissions.manage', 'roles.bulk.edit')
+  @SkipAudit()
+  async bulkPermissions(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() dto: BulkRolePermissionsDto,
+  ) {
+    return this.bulk.editPermissions(dto, actor.id);
+  }
 
   @Get('roles')
   @RequirePermissions('roles.view')

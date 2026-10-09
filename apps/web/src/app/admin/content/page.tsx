@@ -4,17 +4,10 @@ import { Flag, Newspaper, Users } from 'lucide-react';
 import { PageHeader, PageSection, StatCard, StatGrid } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
-import { Card } from '@/components/ui/card';
+import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { useContentDashboard } from '@/lib/admin/hooks';
+import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 
 const NEWS_STATUS: Record<string, string> = {
@@ -23,6 +16,14 @@ const NEWS_STATUS: Record<string, string> = {
   PUBLISHED: 'Опубликованы',
   ARCHIVED: 'В архиве',
 };
+
+interface StatusRow {
+  key: string;
+  label: string;
+  count: number;
+  /// Итоговая строка «Всего» — выделяется жирным.
+  total?: boolean;
+}
 
 function StatusTable({
   title,
@@ -35,39 +36,41 @@ function StatusTable({
 }) {
   const entries = Object.entries(rows);
   const total = entries.reduce((sum, [, n]) => sum + n, 0);
+  /// Пустой набор → empty state DataGrid; иначе статусы + строка «Всего».
+  const data: StatusRow[] =
+    entries.length === 0
+      ? []
+      : [
+          ...entries.map(([status, n]) => ({
+            key: status,
+            label: labels?.[status] ?? status,
+            count: n,
+          })),
+          { key: '__total', label: 'Всего', count: total, total: true },
+        ];
+  const columns: DataGridColumn<StatusRow>[] = [
+    {
+      key: 'status',
+      header: title,
+      cell: (row) => <span className={cn(row.total && 'font-medium')}>{row.label}</span>,
+    },
+    {
+      key: 'count',
+      header: 'Кол-во',
+      align: 'right',
+      cell: (row) => (
+        <span className={cn(row.total && 'font-medium')}>{formatNumber(row.count)}</span>
+      ),
+    },
+  ];
   return (
-    <Card flush>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{title}</TableHead>
-            <TableHead numeric>Кол-во</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={2} className="text-muted-foreground">
-                Пока пусто
-              </TableCell>
-            </TableRow>
-          ) : (
-            entries.map(([status, n]) => (
-              <TableRow key={status}>
-                <TableCell>{labels?.[status] ?? status}</TableCell>
-                <TableCell numeric>{formatNumber(n)}</TableCell>
-              </TableRow>
-            ))
-          )}
-          <TableRow>
-            <TableCell className="font-medium">Всего</TableCell>
-            <TableCell numeric className="font-medium">
-              {formatNumber(total)}
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
-    </Card>
+    <DataGrid
+      columns={columns}
+      rows={data}
+      getRowId={(row) => row.key}
+      emptyTitle="Пока пусто"
+      caption={`${title}: статус и количество, последняя строка — итог`}
+    />
   );
 }
 

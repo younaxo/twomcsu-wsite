@@ -22,7 +22,7 @@ export const Label = forwardRef<
   <RadixLabel.Root
     ref={ref}
     className={cn(
-      'text-sm font-medium leading-none text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-60',
+      'text-[13px] font-medium leading-none text-foreground/90 peer-disabled:cursor-not-allowed peer-disabled:opacity-60',
       className,
     )}
     {...props}
@@ -97,7 +97,7 @@ export function Field({
           <span>{error}</span>
         </p>
       ) : hint ? (
-        <p id={hintId} className="text-xs text-muted-foreground">
+        <p id={hintId} className="text-xs leading-snug text-subtle-foreground">
           {hint}
         </p>
       ) : null}

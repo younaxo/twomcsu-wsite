@@ -14,6 +14,12 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 import { Button, IconButton, type ButtonProps } from './button';
+import {
+  modalBodyClassName,
+  modalFooterClassName,
+  modalHeaderClassName,
+  modalSurfaceClassName,
+} from './dialog';
 
 /// AlertDialog — модальное подтверждение, которое прерывает работу: удалить роль,
 /// забанить игрока, отозвать сессии. Поведение закрытия единое со всеми окнами
@@ -68,8 +74,8 @@ export const AlertDialogContent = forwardRef<
         className={cn(
           // Центрирование через `translate` (не `transform`): keyframes pop-in/pop-out
           // переопределяют `transform`, и окно не «прыгает» в конце анимации.
-          'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
-          'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-[28rem] max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
+          modalSurfaceClassName,
           'overscroll-contain focus:outline-none',
           'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
           className,
@@ -83,7 +89,11 @@ export const AlertDialogContent = forwardRef<
             ref={closeRef}
             aria-label="Закрыть"
             size="sm"
-            className={cn('absolute right-3 top-3 z-[1]', hideClose && 'hidden')}
+            variant="ghost"
+            className={cn(
+              'absolute right-4 top-4 z-[1] text-muted-foreground hover:text-foreground',
+              hideClose && 'hidden',
+            )}
           >
             <X />
           </IconButton>
@@ -96,31 +106,15 @@ export const AlertDialogContent = forwardRef<
 AlertDialogContent.displayName = 'AlertDialogContent';
 
 export function AlertDialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1 p-card-p pb-0 pr-12', className)} {...props} />;
+  return <div className={cn(modalHeaderClassName, className)} {...props} />;
 }
 
 export function AlertDialogBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        'min-h-0 flex-1 overflow-y-auto px-card-p pt-4 text-sm scrollbar-thin',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn(modalBodyClassName, 'text-sm', className)} {...props} />;
 }
 
 export function AlertDialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col-reverse gap-2 p-card-p pt-5 sm:flex-row sm:justify-end',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn(modalFooterClassName, className)} {...props} />;
 }
 
 export const AlertDialogTitle = forwardRef<

@@ -19,15 +19,19 @@ export type CheckedState = RadixCheckbox.CheckedState;
 
 export interface CheckboxProps extends ComponentPropsWithoutRef<typeof RadixCheckbox.Root> {
   invalid?: boolean;
+  /// `round` — индикатор выбора строки в таблицах (DataGrid); в формах —
+  /// обычный квадратный Checkbox. Семантика одна: role="checkbox".
+  shape?: 'square' | 'round';
 }
 
 export const Checkbox = forwardRef<ElementRef<typeof RadixCheckbox.Root>, CheckboxProps>(
-  ({ className, invalid, ...props }, ref) => (
+  ({ className, invalid, shape = 'square', ...props }, ref) => (
     <RadixCheckbox.Root
       ref={ref}
       aria-invalid={invalid || props['aria-invalid'] || undefined}
       className={cn(
-        'peer relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-border-strong bg-surface',
+        'peer relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center border border-border-strong bg-surface',
+        shape === 'round' ? 'rounded-full' : 'rounded-sm',
         // Зона касания ≥ 32px без увеличения самого квадрата.
         "before:absolute before:-inset-2 before:content-['']",
         'transition-[background-color,border-color,box-shadow] duration-fast',

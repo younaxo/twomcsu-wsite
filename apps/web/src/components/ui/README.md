@@ -38,12 +38,12 @@
 
 ## Семейства
 
-| Семейство | База | Компоненты |
-|---|---|---|
-| Floating | Radix | `Tooltip` (simple/rich/shortcut/help/validation), `Toggletip`, `Hint`, `Popover`, `HoverCard`, `DropdownMenu`, `ContextMenu` |
-| Overlay | Radix / Vaul / Sonner / cmdk | `Dialog`, `AlertDialog`, `Sheet`, `Drawer`/`BottomSheet`, `QuickView`, `FloatingPanel`, `Command`, `toast` + `Toaster` |
-| Forms | Radix | `Button`, `IconButton`, `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroup`, `Switch`, `Slider`, `SegmentedControl`, `Tabs`, `Accordion`, `Stepper`, `OtpInput`, `Combobox`, `MultiSelect`, `DatePicker`, `FileDropzone`, `Field`/`Label` |
-| Data | — | `Table`, `DataGrid`, `Pagination`, `Skeleton`, `Progress`/`ProgressRing`, `Badge`, `StatusBadge`, `Avatar`/`AvatarStack`, `Breadcrumbs`, `Timeline`, `EmptyState`, `ErrorState`, `Kbd`, `Card`, `Separator` |
+| Семейство | База                         | Компоненты                                                                                                                                                                                                                                    |
+| --------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Floating  | Radix                        | `Tooltip` (simple/rich/shortcut/help/validation), `Toggletip`, `Hint`, `Popover`, `HoverCard`, `DropdownMenu`, `ContextMenu`                                                                                                                  |
+| Overlay   | Radix / Vaul / Sonner / cmdk | `Dialog`, `AlertDialog`, `Sheet`, `Drawer`/`BottomSheet`, `QuickView`, `FloatingPanel`, `Command`, `toast` + `Toaster`                                                                                                                        |
+| Forms     | Radix                        | `Button`, `IconButton`, `Input`, `Textarea`, `Select`, `Checkbox`, `RadioGroup`, `Switch`, `Slider`, `SegmentedControl`, `Tabs`, `Accordion`, `Stepper`, `OtpInput`, `Combobox`, `MultiSelect`, `DatePicker`, `FileDropzone`, `Field`/`Label` |
+| Data      | —                            | `Table`, `DataGrid`, `Pagination`, `Skeleton`, `Progress`/`ProgressRing`, `Badge`, `StatusBadge`, `Avatar`/`AvatarStack`, `Breadcrumbs`, `Timeline`, `EmptyState`, `ErrorState`, `Kbd`, `Card`, `Separator`                                   |
 
 Состояния, которые компонент обязан поддерживать там, где они осмысленны:
 default · hover · active · focus-visible · disabled · loading · error · success.

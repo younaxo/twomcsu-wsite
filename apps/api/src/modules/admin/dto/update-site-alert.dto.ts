@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsISO8601,
   IsIn,
   IsOptional,
   IsString,
@@ -19,6 +20,9 @@ export const SITE_ALERT_VARIANT_VALUES = [
 ] as const;
 export type SiteAlertVariant = (typeof SITE_ALERT_VARIANT_VALUES)[number];
 
+export const SITE_ALERT_STYLE_VALUES = ['outline', 'filled'] as const;
+export type SiteAlertStyle = (typeof SITE_ALERT_STYLE_VALUES)[number];
+
 export const SITE_ALERT_ICON_VALUES = [
   'alert-triangle',
   'alert-octagon',
@@ -32,6 +36,7 @@ export const SITE_ALERT_ICON_VALUES = [
   'gift',
   'calendar',
   'check-circle',
+  'custom',
 ] as const;
 export type SiteAlertIcon = (typeof SITE_ALERT_ICON_VALUES)[number];
 
@@ -46,6 +51,10 @@ export class UpdateSiteAlertDto {
   @IsOptional()
   @IsIn(SITE_ALERT_VARIANT_VALUES)
   variant?: SiteAlertVariant;
+
+  @IsOptional()
+  @IsIn(SITE_ALERT_STYLE_VALUES)
+  displayStyle?: SiteAlertStyle;
 
   @IsOptional()
   @IsIn(SITE_ALERT_ICON_VALUES)
@@ -81,4 +90,22 @@ export class UpdateSiteAlertDto {
   @IsString()
   @MaxLength(40)
   linkLabel?: string | null;
+
+  /// Свой SVG (icon = "custom"); проверяется svgProblems() в сервисе.
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @MaxLength(16_384)
+  customIcon?: string | null;
+
+  /// Окно показа (ISO 8601, хранится в UTC); null — без ограничения.
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601()
+  startsAt?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601()
+  endsAt?: string | null;
 }

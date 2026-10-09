@@ -1,7 +1,7 @@
 'use client';
 
 import type { RoleDto } from '@twomc/shared';
-import { Ellipsis, Plus, Trash2 } from 'lucide-react';
+import { Ellipsis, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
@@ -22,6 +22,7 @@ import { useDeleteRole, useRoles } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDate, formatNumber, plural } from '@/lib/format';
+import { BulkPermissionsDialog } from './_components/bulk-permissions-dialog';
 import { RoleFormDialog } from './_components/role-form-dialog';
 
 function compare(a: RoleDto, b: RoleDto, sort: DataGridSort | null): number {
@@ -44,9 +45,14 @@ export default function RolesPage() {
   const [sort, setSort] = useState<DataGridSort | null>({ key: 'priority', direction: 'desc' });
   const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<RoleDto | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const rows = [...(roles.data ?? [])].sort((a, b) => compare(a, b, sort));
   const canDelete = can('roles.delete');
+  /// Массовое изменение прав — ADR-0068 (backend проверяет те же права).
+  const canBulk = can({ allOf: ['permissions.manage', 'roles.bulk.edit'] });
+  const selectedRoles = rows.filter((role) => selected.has(role.id));
 
   const columns: DataGridColumn<RoleDto>[] = [
     {
@@ -163,9 +169,27 @@ export default function RolesPage() {
         error={roles.isError ? roles.error : undefined}
         onRetry={() => roles.refetch()}
         onRowClick={(role) => router.push(`/admin/roles/${role.id}`)}
+        selection={canBulk ? { selected, onChange: setSelected } : undefined}
+        bulkActions={
+          canBulk ? (
+            <Button size="sm" onClick={() => setBulkOpen(true)}>
+              <KeyRound />
+              Изменить права
+            </Button>
+          ) : undefined
+        }
         emptyTitle="Ролей нет"
         caption="Роли проекта: название, slug, приоритет, флаги, дата создания"
       />
+
+      {bulkOpen ? (
+        <BulkPermissionsDialog
+          roles={selectedRoles}
+          open
+          onOpenChange={setBulkOpen}
+          onDone={() => setSelected(new Set())}
+        />
+      ) : null}
 
       <RoleFormDialog
         open={createOpen}

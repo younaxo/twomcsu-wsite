@@ -97,7 +97,7 @@ export const TableRow = forwardRef<HTMLTableRowElement, TableRowProps>(
       data-state={selected ? 'selected' : undefined}
       className={cn(
         'h-row border-b border-border-subtle transition-colors duration-fast',
-        'hover:bg-muted/50 data-[state=selected]:bg-primary-soft/40',
+        'hover:bg-muted/50 data-[state=selected]:bg-primary-soft/30 data-[state=selected]:hover:bg-primary-soft/40',
         className,
       )}
       {...props}

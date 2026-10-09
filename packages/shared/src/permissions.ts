@@ -20,6 +20,11 @@ export const PERMISSIONS = [
   { key: 'roles.assign', module: 'roles', description: 'Выдача/снятие роли у пользователя' },
   { key: 'roles.history.view', module: 'roles', description: 'Просмотр истории выдачи роли' },
   {
+    key: 'roles.bulk.edit',
+    module: 'roles',
+    description: 'Массовое изменение прав нескольких ролей (вместе с permissions.manage)',
+  },
+  {
     key: 'permissions.manage',
     module: 'roles',
     description: 'Просмотр реестра permissions и изменение набора прав роли',

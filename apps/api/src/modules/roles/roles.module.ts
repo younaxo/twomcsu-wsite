@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { PermissionService } from './permission.service';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { RoleBulkService } from './role-bulk.service';
 import { RolesController } from './roles.controller';
 import { UserRolesController } from './user-roles.controller';
 
@@ -10,7 +11,7 @@ import { UserRolesController } from './user-roles.controller';
 @Global()
 @Module({
   controllers: [RolesController, UserRolesController],
-  providers: [PermissionService, PermissionsGuard],
+  providers: [PermissionService, PermissionsGuard, RoleBulkService],
   exports: [PermissionService, PermissionsGuard],
 })
 export class RolesModule {}

@@ -11,7 +11,12 @@ import { SwitchField } from '@/components/ui/switch';
 import { useDashboard } from '@/lib/admin/hooks';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime, formatNumber } from '@/lib/format';
-import { SettingsAside, SettingsIsland, SettingsLayout, SummaryRow } from './layout';
+import {
+  SettingsAside,
+  SettingsIsland,
+  SettingsLayout,
+  SummaryRow,
+} from '@/components/admin/islands';
 import type { BoolKey, SiteSettingsFormApi } from './use-site-settings-form';
 
 interface TabProps {

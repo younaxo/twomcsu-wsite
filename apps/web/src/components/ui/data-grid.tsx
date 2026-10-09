@@ -115,6 +115,7 @@ function SelectCheckbox({
 }: SelectCheckboxProps) {
   return (
     <Checkbox
+      shape="round"
       checked={indeterminate ? 'indeterminate' : checked}
       onCheckedChange={() => onChange()}
       onClick={(event) => event.stopPropagation()}

@@ -9,6 +9,7 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/compo
 import { cn } from '@/lib/cn';
 import { isSiteNavActive, SITE_NAVIGATION } from '@/lib/site/config';
 import { useAuthStore } from '@/lib/auth/store';
+import { GlobalAlertBar } from './global-alert-bar';
 import { NotificationsPopover } from './notifications-popover';
 import { OnlineCounter } from './sidebar-rail';
 import { ProfileMenu } from './profile-menu';
@@ -84,6 +85,8 @@ export function SiteHeader({ className }: { className?: string }) {
           <ProfileMenu />
         </div>
       </div>
+      {/* HeaderStack: плашка — часть sticky-шапки и двигается вместе с ней. */}
+      <GlobalAlertBar />
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent side="left" size="sm" aria-describedby={undefined}>

@@ -68,7 +68,7 @@ export const SegmentedControl = forwardRef<HTMLDivElement, SegmentedControlProps
           onValueChange?.(next);
         }}
         className={cn(
-          'inline-flex max-w-full items-stretch gap-0.5 rounded bg-surface-sunken p-0.5',
+          'inline-flex max-w-full items-stretch gap-0.5 rounded bg-background-subtle p-0.5',
           fullWidth && 'flex w-full',
           className,
         )}
@@ -83,7 +83,8 @@ export const SegmentedControl = forwardRef<HTMLDivElement, SegmentedControlProps
               'inline-flex min-w-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-sm font-medium text-muted-foreground',
               'transition-[background-color,color,box-shadow] duration-fast',
               'hover:text-foreground',
-              'data-[state=on]:bg-surface data-[state=on]:text-foreground data-[state=on]:shadow-sm',
+              // Активный пункт — приподнятая поверхность с оранжевым акцентом текста.
+              'data-[state=on]:bg-surface-raised data-[state=on]:text-primary data-[state=on]:shadow-sm',
               'focus-visible:z-10',
               'disabled:pointer-events-none disabled:opacity-50',
               '[&_svg]:size-4 [&_svg]:shrink-0',

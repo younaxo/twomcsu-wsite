@@ -131,7 +131,11 @@ describe('Site settings: alert bar & social links (e2e)', () => {
       .send({
         enabled: true,
         variant: 'danger',
+        displayStyle: 'outline',
         icon: 'wrench',
+        customIcon: null,
+        startsAt: null,
+        endsAt: null,
         title: null,
         message: `Технические работы ${unique}`,
         linkUrl: '/status',
@@ -144,12 +148,69 @@ describe('Site settings: alert bar & social links (e2e)', () => {
       .expect(200);
     expect(publicSettings.body.alert).toEqual({
       variant: 'danger',
+      displayStyle: 'outline',
       icon: 'wrench',
+      customIcon: null,
       title: null,
       message: `Технические работы ${unique}`,
       linkUrl: '/status',
       linkLabel: 'Статус',
     });
+
+    // Режим отображения — только outline/filled.
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({ displayStyle: 'glass' })
+      .expect(400);
+
+    // Свой SVG: опасный отклоняется, безопасный принимается и уходит публично.
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({ icon: 'custom', customIcon: '<svg onload="alert(1)"></svg>' })
+      .expect(400);
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle r="4"/></svg>';
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({ icon: 'custom', customIcon: svg, displayStyle: 'filled' })
+      .expect(200);
+    const withSvg = await request(app.getHttpServer())
+      .get('/site/settings')
+      .expect(200);
+    expect(withSvg.body.alert).toMatchObject({
+      icon: 'custom',
+      customIcon: svg,
+      displayStyle: 'filled',
+    });
+
+    // Расписание по серверному времени: окно в будущем — не показывается;
+    // конец раньше начала — 400.
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({
+        startsAt: future,
+        endsAt: new Date(Date.now() + 60_000).toISOString(),
+      })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({ startsAt: future, endsAt: null })
+      .expect(200);
+    const scheduled = await request(app.getHttpServer())
+      .get('/site/settings')
+      .expect(200);
+    expect(scheduled.body.alert).toBeNull();
+    await request(app.getHttpServer())
+      .patch('/admin/settings/alert')
+      .set('Authorization', editor.auth)
+      .send({ startsAt: null })
+      .expect(200);
 
     const enabledAudit = await prisma.auditLog.findFirst({
       where: { actorId: editor.id, action: 'settings.alert.enable' },

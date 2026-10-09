@@ -1,6 +1,11 @@
 'use client';
 
-import { ORDER_STATUSES, type AdminOrderDto, type OrderStatus } from '@twomc/shared';
+import {
+  ORDER_STATUSES,
+  type AdminOrderDto,
+  type FinanceOverview,
+  type OrderStatus,
+} from '@twomc/shared';
 import { Download, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -27,14 +32,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import { downloadExport } from '@/lib/admin/api';
@@ -64,6 +61,12 @@ function useDebounced<T>(value: T, delay = 300): T {
 }
 
 /* ---------------- Обзор ---------------- */
+
+const TOP_PRODUCT_COLUMNS: DataGridColumn<FinanceOverview['topProducts'][number]>[] = [
+  { key: 'name', header: 'Товар', truncate: true, cell: (p) => p.name },
+  { key: 'quantity', header: 'Шт.', align: 'right', cell: (p) => formatNumber(p.quantity) },
+  { key: 'revenue', header: 'Выручка', align: 'right', cell: (p) => formatMoney(p.revenue) },
+];
 
 function OverviewTab() {
   const query = useFinanceOverview();
@@ -132,34 +135,13 @@ function OverviewTab() {
                 </Card>
               </PageSection>
               <PageSection title="Топ товаров">
-                <Card flush>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Товар</TableHead>
-                        <TableHead numeric>Шт.</TableHead>
-                        <TableHead numeric>Выручка</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.topProducts.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={3} className="text-muted-foreground">
-                            Пока пусто
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        data.topProducts.map((p) => (
-                          <TableRow key={p.name}>
-                            <TableCell>{p.name}</TableCell>
-                            <TableCell numeric>{formatNumber(p.quantity)}</TableCell>
-                            <TableCell numeric>{formatMoney(p.revenue)}</TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </Card>
+                <DataGrid
+                  columns={TOP_PRODUCT_COLUMNS}
+                  rows={data.topProducts}
+                  getRowId={(p) => p.name}
+                  emptyTitle="Пока пусто"
+                  caption="Топ товаров: название, продано штук, выручка"
+                />
               </PageSection>
             </div>
           </div>
@@ -170,6 +152,26 @@ function OverviewTab() {
 }
 
 /* ---------------- Заказы ---------------- */
+
+const ORDER_ITEM_COLUMNS: DataGridColumn<AdminOrderDto['items'][number]>[] = [
+  {
+    key: 'item',
+    header: 'Позиция',
+    cell: (item) => (
+      <>
+        {item.product?.name ?? item.bundle?.name ?? '—'}
+        {item.giftToUser ? (
+          <span className="text-xs text-muted-foreground">
+            {' '}
+            · подарок {item.giftToUser.username}
+          </span>
+        ) : null}
+      </>
+    ),
+  },
+  { key: 'quantity', header: 'Кол-во', align: 'right', cell: (item) => item.quantity },
+  { key: 'total', header: 'Сумма', align: 'right', cell: (item) => formatMoney(item.totalPrice) },
+];
 
 function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
   const { can } = usePermissions();
@@ -334,32 +336,13 @@ function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
                 </DescriptionItem>
               ) : null}
             </DescriptionList>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Позиция</TableHead>
-                  <TableHead numeric>Кол-во</TableHead>
-                  <TableHead numeric>Сумма</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {selected.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      {item.product?.name ?? item.bundle?.name ?? '—'}
-                      {item.giftToUser ? (
-                        <span className="text-xs text-muted-foreground">
-                          {' '}
-                          · подарок {item.giftToUser.username}
-                        </span>
-                      ) : null}
-                    </TableCell>
-                    <TableCell numeric>{item.quantity}</TableCell>
-                    <TableCell numeric>{formatMoney(item.totalPrice)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataGrid
+              columns={ORDER_ITEM_COLUMNS}
+              rows={selected.items}
+              getRowId={(item) => item.id}
+              emptyTitle="Позиций нет"
+              caption="Позиции заказа: товар или набор, количество, сумма"
+            />
           </div>
         ) : null}
       </QuickView>
