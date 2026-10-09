@@ -95,3 +95,34 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
+
+// --- Вход через Discord/Telegram (ADR-0069) ------------------------------------
+// Только для уже привязанных аккаунтов: без автосоздания и автопривязки.
+
+export type ExternalProvider = 'discord' | 'telegram';
+
+/// `GET /auth/social/providers` — какие кнопки показывать (без секретов).
+export interface SocialProvidersResponse {
+  discord: { enabled: boolean };
+  telegram: { enabled: boolean; botUsername: string | null; botId: string | null };
+}
+
+/// Данные Telegram Login Widget (проверяются на backend по подписи).
+export interface TelegramAuthPayload {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+}
+
+/// `GET /auth/linked-accounts`.
+export interface LinkedAccountDto {
+  provider: ExternalProvider;
+  username: string | null;
+  displayName: string | null;
+  linkedAt: IsoDateString;
+  lastLoginAt: IsoDateString | null;
+}

@@ -1250,3 +1250,20 @@ priority не ниже собственного блокируют ВСЮ опе
 (`icon = custom`) проверяется на сервере (`svgProblems`: скрипты, on*, внешние
 ссылки, data:, foreignObject) и на сайте показывается только как `<img>`.
 Управление перенесено в «Объявления → Верхняя плашка».
+
+## ADR-0069 — Вход через Discord/Telegram только для привязанных аккаунтов
+
+**Decision.** `UserExternalAccount` (provider + providerUserId уникальны; один
+аккаунт провайдера на пользователя). Discord — OAuth2 code flow (scope
+`identify`, redirect `https://api.twomc.su/auth/discord/callback`, dev —
+`http://localhost:4000/...`): подписанный HMAC `state` (режим login/link, id
+пользователя для link, `next` — только внутренний путь, срок 10 минут) +
+nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
+`Telegram.Login.auth`, домен бота `twomc.su`): backend проверяет подпись
+(`secret = SHA256(bot_token)`, HMAC по data-check-string) и свежесть
+(≤ 24 ч). Вход возможен ТОЛЬКО при существующей привязке: иначе 403
+`<provider>_not_linked` и понятный текст; аккаунт не создаётся, автопривязки по
+нику/e-mail/имени нет. Привязка/отвязка — только из «Настройки → Связанные
+аккаунты» вошедшим пользователем; занятый чужим аккаунт — 409; события
+`auth.external.link/unlink` в audit. Секреты — только в env (`DISCORD_*`,
+`TELEGRAM_*`), во frontend уходит лишь `botId`/`botUsername`.

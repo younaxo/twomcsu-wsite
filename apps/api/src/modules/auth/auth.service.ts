@@ -201,6 +201,32 @@ export class AuthService {
     return { user: this.toAuthenticatedUser(user), ...tokens };
   }
 
+  /// Сессия для уже установленной личности (вход через привязанный внешний
+  /// аккаунт, ADR-0069): те же проверки бана/системного аккаунта, что у входа
+  /// по паролю, и та же пара access/refresh.
+  async issueSessionForUser(
+    userId: string,
+    context: RequestContext,
+  ): Promise<{ user: AuthenticatedUser } & TokenPair> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.accountType === AccountType.SYSTEM) {
+      throw new UnauthorizedException();
+    }
+    if (user.isBanned) {
+      throw new ForbiddenException({
+        message: 'Аккаунт заблокирован',
+        reason: user.banReason,
+        bannedUntil: user.bannedUntil,
+      });
+    }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date(), lastLoginIp: context.ip },
+    });
+    const tokens = await this.issueTokenPair(user.id, context);
+    return { user: this.toAuthenticatedUser(user), ...tokens };
+  }
+
   private async issueTokenPair(
     userId: string,
     context: RequestContext,

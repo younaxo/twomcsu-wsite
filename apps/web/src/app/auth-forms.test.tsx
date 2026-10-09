@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import React from 'react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -21,10 +23,15 @@ vi.mock('next/navigation', () => ({
 }));
 
 function Providers({ children }: { children: React.ReactNode }) {
+  const [client] = React.useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
   return (
-    <ThemeProvider>
-      <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={client}>
+      <ThemeProvider>
+        <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -186,5 +193,83 @@ describe('auth-формы «Полдня»', () => {
     await user.type(screen.getByLabelText(/Подтверждение/), 'new-secret-pass');
     await user.click(screen.getByRole('button', { name: 'Сменить пароль' }));
     expect(await screen.findByTestId('reset-done')).toBeInTheDocument();
+  });
+});
+
+describe('вход через Discord/Telegram (только привязанные аккаунты)', () => {
+  const providers = {
+    discord: { enabled: true },
+    telegram: { enabled: true, botUsername: 'twomcsu_testbot', botId: '123' },
+  };
+
+  it('кнопки с официальными иконками и разделителем «или»; Discord — переход на API', async () => {
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.startsWith('/auth/social/providers')) return jsonResponse(providers);
+      return new Response(null, { status: 404 });
+    });
+    navigation.params = new URLSearchParams('next=/shop');
+    render(<LoginForm />, { wrapper: Providers });
+    const discord = await screen.findByRole('link', { name: /Продолжить через Discord/ });
+    expect(discord.getAttribute('href')).toMatch(/\/auth\/discord\/start\?next=%2Fshop$/);
+    expect(discord.querySelector('svg path')).not.toBeNull();
+    expect(screen.getByRole('button', { name: /Продолжить через Telegram/ })).toBeInTheDocument();
+    expect(screen.getByText('или')).toBeInTheDocument();
+  });
+
+  it('провайдеры не настроены — кнопок нет', async () => {
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.startsWith('/auth/social/providers')) {
+        return jsonResponse({
+          discord: { enabled: false },
+          telegram: { enabled: false, botUsername: null, botId: null },
+        });
+      }
+      return new Response(null, { status: 404 });
+    });
+    render(<LoginForm />, { wrapper: Providers });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByTestId('social-login')).toBeNull();
+  });
+
+  it('?social_error=discord_not_linked — понятное объяснение, аккаунт не создаётся', async () => {
+    fetchMock.mockImplementation(async () => jsonResponse(providers));
+    navigation.params = new URLSearchParams('social_error=discord_not_linked');
+    render(<LoginForm />, { wrapper: Providers });
+    expect(
+      await screen.findByText(/Этот Discord-аккаунт не привязан к twomc\.su/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/привяжите аккаунт в настройках профиля/)).toBeInTheDocument();
+    expect(useAuthStore.getState().status).toBe('anonymous');
+  });
+
+  it('Telegram: непривязанный аккаунт — ошибка, сессия не создаётся', async () => {
+    const user = userEvent.setup();
+    window.Telegram = {
+      Login: {
+        auth: (_options, callback) =>
+          callback({ id: 1, auth_date: 1, hash: 'a'.repeat(64), first_name: 'T' }),
+      },
+    };
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.startsWith('/auth/social/providers')) return jsonResponse(providers);
+      if (path.startsWith('/auth/telegram/login')) {
+        return jsonResponse(
+          { statusCode: 403, code: 'telegram_not_linked', message: 'not linked' },
+          { status: 403 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+    render(<LoginForm />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: /Продолжить через Telegram/ }));
+    expect(
+      await screen.findByText(/Этот Telegram-аккаунт не привязан к twomc\.su/),
+    ).toBeInTheDocument();
+    expect(useAuthStore.getState().status).toBe('anonymous');
+    expect(navigation.replace).not.toHaveBeenCalled();
+    delete window.Telegram;
   });
 });

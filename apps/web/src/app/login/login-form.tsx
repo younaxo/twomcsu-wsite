@@ -7,11 +7,13 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { describeAuthError } from '@/components/auth/auth-errors';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { PasswordField } from '@/components/auth/password-field';
+import { SocialLogin } from '@/components/auth/social-login';
 import { Turnstile, type TurnstileHandle } from '@/components/auth/turnstile';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { TURNSTILE_SITE_KEY } from '@/lib/env';
+import { describeSocialError } from '@/lib/auth/social';
 import { CaptchaRequiredError, useAuthStore } from '@/lib/auth/store';
 
 /// Куда вести после входа: только внутренние пути (без `//evil.com`).
@@ -44,7 +46,9 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    describeSocialError(searchParams.get('social_error')),
+  );
   const turnstileRef = useRef<TurnstileHandle>(null);
   const errorId = useId();
 
@@ -152,6 +156,7 @@ export function LoginForm() {
           Войти
         </Button>
       </form>
+      <SocialLogin next={next} onError={setError} onSuccess={() => router.replace(next)} />
     </AuthShell>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard, LogIn, LogOut, Settings, Shield, UserRound } from 'lucide-react';
+import { LayoutDashboard, LogIn, LogOut, Settings, Shield, UserRound, Link2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -79,6 +79,12 @@ export function ProfileMenu() {
         <DropdownMenuItem disabled>
           <Shield />
           Безопасность и сессии
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings/linked-accounts">
+            <Link2 />
+            Связанные аккаунты
+          </Link>
         </DropdownMenuItem>
         {can(ADMIN_ENTRY_REQUIREMENT) ? (
           <DropdownMenuItem asChild>
