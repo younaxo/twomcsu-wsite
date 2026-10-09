@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class ListNotificationsQueryDto {
   @IsOptional()
@@ -27,4 +27,9 @@ export class ListNotificationsQueryDto {
   )
   @IsBoolean()
   unreadOnly?: boolean;
+
+  /// `?type=system` — только системные сообщения twomc.su (ADR-0080).
+  @IsOptional()
+  @IsIn(['system'])
+  type?: 'system';
 }

@@ -43,6 +43,7 @@ export class NotificationsController {
       query.page ?? 1,
       query.limit ?? 30,
       query.unreadOnly,
+      query.type,
     );
   }
 

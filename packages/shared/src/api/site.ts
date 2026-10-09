@@ -198,6 +198,8 @@ export interface NotificationDto {
   readAt: IsoDateString | null;
   createdAt: IsoDateString;
   fromUser?: { id: string; username: string; avatar?: string | null } | null;
+  /// Служебные данные; `sender: 'system'` — сообщение от имени twomc.su (ADR-0080).
+  metadata?: ({ sender?: string } & Record<string, unknown>) | null;
 }
 
 export interface UnreadCountResponse {

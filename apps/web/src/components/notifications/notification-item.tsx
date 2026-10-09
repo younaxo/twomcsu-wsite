@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
 import { useNotificationActions } from '@/lib/notifications/hooks';
+import { SystemSender, isSystemMessage } from './system-sender';
 
 /// Пункт уведомления (ADR-0074): переход по ссылке отмечает прочитанным;
 /// действия — видимые кнопки (при наведении/фокусе, на touch всегда) и то же
@@ -29,6 +30,7 @@ export function NotificationItem({
 }) {
   const actions = useNotificationActions();
   const href = item.actionUrl ?? item.link ?? null;
+  const system = isSystemMessage(item);
   const toggleRead = () =>
     item.isRead ? actions.markUnread.mutate(item.id) : actions.markRead.mutate(item.id);
   const open = () => {
@@ -46,6 +48,7 @@ export function NotificationItem({
         )}
       />
       <span className="min-w-0 flex-1">
+        {system ? <SystemSender className="mb-0.5" /> : null}
         <span
           className={cn('block truncate text-sm', item.isRead ? 'font-normal' : 'font-semibold')}
         >
@@ -79,6 +82,7 @@ export function NotificationItem({
           )}
           data-testid="notification-item"
           data-read={item.isRead}
+          data-system={system || undefined}
         >
           {href ? (
             <Link

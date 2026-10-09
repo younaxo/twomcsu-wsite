@@ -23,7 +23,7 @@ import { siteKeys } from '@/lib/site/hooks';
 /// изменениях из других вкладок и устройств.
 
 export const NOTIFICATIONS_PREFIX = ['site', 'notifications'] as const;
-export type NotificationFilter = 'all' | 'unread';
+export type NotificationFilter = 'all' | 'unread' | 'system';
 const PAGE_SIZE = 20;
 
 export const notificationKeys = {
@@ -37,7 +37,12 @@ export function useNotificationList(filter: NotificationFilter, enabled = true) 
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       api.get<Paginated<NotificationDto>>('/notifications', {
-        query: { page: pageParam, limit: PAGE_SIZE, unreadOnly: filter === 'unread' },
+        query: {
+          page: pageParam,
+          limit: PAGE_SIZE,
+          unreadOnly: filter === 'unread',
+          type: filter === 'system' ? 'system' : undefined,
+        },
       }),
     getNextPageParam: (last) => (last.page * last.limit < last.total ? last.page + 1 : undefined),
     enabled: enabled && authenticated,

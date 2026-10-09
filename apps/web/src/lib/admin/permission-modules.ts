@@ -9,6 +9,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   chat: 'Чат',
   comment_reports: 'Жалобы на комментарии',
   comments: 'Комментарии',
+  communications: 'Коммуникации',
   content: 'Контент',
   custom_positions: 'Особые должности',
   dashboard: 'Дашборд',

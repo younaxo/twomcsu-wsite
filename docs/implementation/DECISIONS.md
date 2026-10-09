@@ -1568,3 +1568,29 @@ ON/OFF целиком, режим `auto | forced` (+ `forcedCampaignId`), фла
 **Consequences.** Новая кампания = запись в реестре web + id в
 `SEASONAL_CAMPAIGN_IDS` DTO. Сезонные баннеры пока только флаг — компонента
 баннеров нет (Product Completion). Миграция аддитивная (CREATE TABLE).
+
+## ADR-0080 — Системные сообщения от имени twomc.su
+
+**Decision.** Системное сообщение — уведомление типа `SYSTEM` с
+`metadata.sender = 'system'` и приоритетом HIGH, без `fromUser`. Такой тип
+создаёт только сервер (`CommunicationsModule`) по запросу администратора с
+правом — пользователь не может прислать уведомление, поэтому подделать
+отправителя нельзя. В центре уведомлений оно показано как «twomc.su ·
+Системное» (основной логотип, метка), на `/notifications` — фильтр «От twomc.su»
+(`GET /notifications?type=system`). Личная беседа в ЛС не используется: на
+системное сообщение нельзя ответить, а беседа «только для чтения» в модели ЛС
+отсутствует. Маршруты `admin/communications`: `GET recipients?q=` (право send
+или bulk), `POST messages` (`communications.messages.send`, 20/мин),
+`POST messages/bulk/preview` и `POST messages/bulk`
+(`communications.messages.bulk`, 3/мин; аудитория all | role | users ≤ 100;
+`confirmCount` должен совпасть с числом получателей на момент отправки, иначе
+409). Получатели — только обычные активные аккаунты (не SYSTEM, не
+забаненные). Доставка игнорирует отключение типа в настройках пользователя
+(`bypassPreferences`). Аудит явный: `communications.message.send` /
+`communications.message.bulk` (warning) — заголовок, длина текста, ссылка,
+аудитория и число получателей; полный текст в аудит не пишется. Ссылка —
+только внутренний путь `/…` или `https://…`.
+
+**Consequences.** Массовая рассылка выполняется синхронно O(n), как прежний
+broadcast — при большой аудитории нужна очередь (Product Completion).
+Объявления (баннеры, расписание, места показа) — отдельный срез.

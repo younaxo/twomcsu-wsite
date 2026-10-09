@@ -33,6 +33,7 @@ function NotificationsList() {
               value: 'unread',
               label: count > 0 ? `Непрочитанные · ${formatBadgeCount(count)}` : 'Непрочитанные',
             },
+            { value: 'system', label: 'От twomc.su' },
           ]}
         />
         <NotificationBulkActions unreadCount={count} hasItems={items.length > 0} />
@@ -48,11 +49,19 @@ function NotificationsList() {
       ) : items.length === 0 ? (
         <EmptyState
           icon={<Bell />}
-          title={filter === 'unread' ? 'Всё прочитано' : 'Уведомлений нет'}
+          title={
+            filter === 'unread'
+              ? 'Всё прочитано'
+              : filter === 'system'
+                ? 'Сообщений от twomc.su нет'
+                : 'Уведомлений нет'
+          }
           description={
             filter === 'unread'
               ? 'Новых уведомлений нет.'
-              : 'Здесь появятся заявки в друзья, ответы, заказы и новости twomc.su.'
+              : filter === 'system'
+                ? 'Здесь появятся системные сообщения администрации сайта.'
+                : 'Здесь появятся заявки в друзья, ответы, заказы и новости twomc.su.'
           }
         />
       ) : (
