@@ -43,6 +43,9 @@ describe('Profiles (e2e)', () => {
   });
 
   afterAll(async () => {
+    await prisma.auditLog.deleteMany({
+      where: { actor: { email } },
+    });
     await prisma.user.deleteMany({ where: { email } });
     await app.close();
   });

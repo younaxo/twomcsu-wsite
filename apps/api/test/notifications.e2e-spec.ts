@@ -154,6 +154,11 @@ describe('Notifications (e2e)', () => {
       await prisma.role.deleteMany({
         where: { slug: { in: cleanupRoleSlugs } },
       });
+      await prisma.auditLog.deleteMany({
+        where: {
+          actor: { email: { in: [alice.email, bob.email, moderator.email] } },
+        },
+      });
       await prisma.user.deleteMany({
         where: { email: { in: [alice.email, bob.email, moderator.email] } },
       });

@@ -122,6 +122,9 @@ describe('Voting (e2e)', () => {
       await prisma.role.deleteMany({
         where: { slug: { in: cleanupRoleSlugs } },
       });
+      await prisma.auditLog.deleteMany({
+        where: { actor: { email: { in: [alice.email, admin.email] } } },
+      });
       await prisma.user.deleteMany({
         where: { email: { in: [alice.email, admin.email] } },
       });

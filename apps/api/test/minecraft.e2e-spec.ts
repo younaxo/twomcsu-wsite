@@ -253,6 +253,9 @@ describe('Minecraft servers (e2e)', () => {
       where: { role: { slug: { in: cleanupRoleSlugs } } },
     });
     await prisma.role.deleteMany({ where: { slug: { in: cleanupRoleSlugs } } });
+    await prisma.auditLog.deleteMany({
+      where: { actor: { email: { in: [admin.email, alice.email] } } },
+    });
     await prisma.user.deleteMany({
       where: { email: { in: [admin.email, alice.email] } },
     });

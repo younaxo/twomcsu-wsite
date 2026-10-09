@@ -16,6 +16,16 @@
 - Встроенный `ColorPicker` без системного color dialog: пресеты, HEX, палитра
   (область + оттенок), bottom sheet на mobile; используется в форме роли.
 - Тесты: shell (8), ColorPicker (7). Секции Global shell и ColorPicker в /design-lab.
+### CDN / файловое хранилище (PHASE 23)
+- `modules/files`: StorageService (local → `/uploads`, s3 за CDN_BASE_URL), пресеты
+  загрузок по типу с permission, pipeline magic-bytes → sharp → AVIF, модель File
+  TEMP/ATTACHED/DELETED, orphan cleanup, `POST /files/upload`,
+  `POST|DELETE /users/me/avatar|banner`. E2E `files` (6).
+### Audit log (PHASE 22)
+- Глобальный `AuditInterceptor`: все успешные staff-мутации с `@RequirePermissions`
+  пишутся в audit log (действие = ключ permission, цель, очищенные изменения,
+  IP/UA/длительность, уровень по ключу); `@SkipAudit()` для ручных записей.
+- `AUDIT_RETENTION_DAYS` и ежедневная очистка в 04:00; `AuditModule` глобальный.
 
 ### Production infrastructure (PHASE 35)
 - `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,

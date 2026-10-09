@@ -8,6 +8,7 @@ import { envValidationSchema } from './config/env.validation';
 import { AchievementsModule } from './modules/achievements/achievements.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
 import { CommentsModule } from './modules/comments/comments.module';
@@ -17,6 +18,7 @@ import { DepartmentsModule } from './modules/departments/departments.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
 import { EmailModule } from './modules/email/email.module';
 import { EventsModule } from './modules/events/events.module';
+import { FilesModule } from './modules/files/files.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
@@ -47,6 +49,8 @@ import { VotingModule } from './modules/voting/voting.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     RedisModule,
+    FilesModule,
+    AuditModule,
     EmailModule,
     HealthModule,
     AuthModule,

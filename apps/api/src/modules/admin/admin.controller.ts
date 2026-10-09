@@ -11,8 +11,9 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
-import { AuditService } from './audit.service';
+import { AuditService } from '../audit/audit.service';
 import { DashboardService } from './dashboard.service';
 import { BroadcastDto } from './dto/broadcast.dto';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
@@ -46,6 +47,7 @@ export class AdminController {
 
   @Post('broadcast')
   @RequirePermissions('broadcast.create')
+  @SkipAudit()
   async broadcast(
     @Body() dto: BroadcastDto,
     @CurrentUser() admin: AuthenticatedUser,
@@ -61,6 +63,7 @@ export class AdminController {
 
   @Patch('settings')
   @RequirePermissions('settings.edit')
+  @SkipAudit()
   async updateSettings(
     @Body() dto: UpsertSettingsDto,
     @CurrentUser() admin: AuthenticatedUser,

@@ -162,6 +162,22 @@ describe('Moderation (e2e)', () => {
       where: { role: { slug: { in: cleanupRoleSlugs } } },
     });
     await prisma.role.deleteMany({ where: { slug: { in: cleanupRoleSlugs } } });
+    await prisma.auditLog.deleteMany({
+      where: {
+        actor: {
+          email: {
+            in: [
+              admin.email,
+              alice.email,
+              bob.email,
+              carol.email,
+              dave.email,
+              erin.email,
+            ],
+          },
+        },
+      },
+    });
     await prisma.user.deleteMany({
       where: {
         email: {

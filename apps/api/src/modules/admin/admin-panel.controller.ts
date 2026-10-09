@@ -15,6 +15,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { ListAdminOrdersQueryDto } from '../store/dto/list-admin-orders-query.dto';
 import { AdminFinanceService } from './admin-finance.service';
@@ -172,6 +173,7 @@ export class AdminPanelController {
 
   @Patch('settings/site')
   @RequirePermissions('settings.site.edit')
+  @SkipAudit()
   async updateSiteSettings(
     @Body() dto: UpdateSiteSettingsDto,
     @CurrentUser() admin: AuthenticatedUser,
@@ -201,6 +203,7 @@ export class AdminPanelController {
 
   @Post('security/ip-whitelist')
   @RequirePermissions('security.ip_whitelist.create')
+  @SkipAudit()
   async ipWhitelist(
     @Body() dto: IpWhitelistDto,
     @CurrentUser() admin: AuthenticatedUser,

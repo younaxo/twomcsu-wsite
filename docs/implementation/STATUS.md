@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/production-infrastructure (PHASE 35, вынесена вперёд); PHASE 21 части 1–3 слиты (PR #32, #35)
+Current branch: feature/audit-log (PHASE 22); PHASE 21 (PR #32, #35) и PHASE 35 (PR #36) слиты
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -92,7 +92,7 @@ In progress:
   API, production-деплой (R8 — данных хостинга нет).
 
 Blocked:
-none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
+- Production deploy (PHASE 35 артефакты слиты, PR #36): нет данных хостинга — RISKS R8. (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
 R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
 
 ## История веток (normalized, см. RISKS.md R12)
