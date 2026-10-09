@@ -149,3 +149,14 @@ export interface ProductListItem {
   category?: { id: string; name: string; slug: string } | null;
   variants?: { id: string; name?: string; price: DecimalString }[];
 }
+
+/// `GET /store/recent-purchases` — публичная лента последних покупок; ник уже
+/// замаскирован backend-ом (`maskNickname`), личных данных нет.
+export interface RecentPurchaseDto {
+  productName: string;
+  image: string | null;
+  quantity: number;
+  nickname: string;
+  avatar: string | null;
+  purchasedAt: IsoDateString | null;
+}

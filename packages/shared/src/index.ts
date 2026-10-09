@@ -13,3 +13,4 @@ export * from './api/users';
 export * from './api/moderation';
 export * from './api/admin';
 export * from './api/site';
+export * from './privacy';
