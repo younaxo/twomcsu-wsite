@@ -75,3 +75,17 @@ export function formatRelative(value: string | number | Date, now: Date = new Da
   }
   return relative.format(0, 'second');
 }
+
+const pluralRules = new Intl.PluralRules(LOCALE);
+
+/// Русские формы по количеству: plural(5, { one: 'игрок', few: 'игрока', many: 'игроков' }).
+export function plural(count: number, forms: { one: string; few: string; many: string }): string {
+  const category = pluralRules.select(count);
+  if (category === 'one') {
+    return forms.one;
+  }
+  if (category === 'few') {
+    return forms.few;
+  }
+  return forms.many;
+}
