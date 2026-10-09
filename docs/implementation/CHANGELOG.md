@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+### Admin panel и тема «Полдень» (PHASE 21, часть 3)
+- Решение владельца: «Полдень» — единственная система, тёмная тема основная,
+  светлая вторичная, стекло запрещено (ADR-0055). Архивные направления
+  удалены; `ThemeProvider` + `ThemeToggle`, no-flash inline-скрипт.
+- Шрифты Onest / Literata / JetBrains Mono self-hosted (fontsource) — сборка
+  без обращения к Google Fonts.
+- `/login`, защищённая зона `/admin/*` (RequireAuth, permission-driven
+  сайдбар и палитра Ctrl+K, меню аккаунта с префиксом роли), экраны:
+  дашборд, пользователи (список, bulk бан/разбан, карточка: роли/эффективные
+  права/бейджи/наказания/сессии), роли (список, создание, редактирование,
+  матрица permissions, история), permissions, журнал аудита (+QuickView,
+  CSV), безопасность (сессии/входы/подозрительные IP/whitelist), настройки
+  (сайт + KV), объявления, контент, финансы (обзор/транзакции/возвраты),
+  экспорт CSV, личные инструменты (закладки/фильтры/расписания).
+- Overlay-компоненты переведены на solid-поверхности без backdrop-blur.
+- Ops-скрипт `apps/api/scripts/grant-role.ts` для первичной выдачи роли.
+
 ### Design system и /design-lab (PHASE 21, дизайн)
 - Семантические design-токены (`apps/web/src/styles/tokens.css`) с тремя
   кандидатами направления (`data-direction=ember|daylight|signal`, темы) и

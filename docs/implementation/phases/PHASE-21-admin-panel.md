@@ -51,27 +51,30 @@ frontend + ~20 экранов core-админки). Статус по частя
 - `apps/api`: e2e `roles` + `auth` — 16 тестов зелёные локально.
 - `lint`/`format:check`/`typecheck`/`build` — зелёные во всех пакетах.
 
-## Часть 2 — дизайн-система и UI-слой (`feature/frontend-design-system`) — выполнено, экраны ждут решения
+## Часть 2 — дизайн-система и UI-слой (`feature/frontend-design-system`) — выполнено
 
-- Семантические токены с тремя направлениями, TwoMC UI-слой (~60
-  примитивов), `/design-lab` с витринами, Interactions / Component lab и
-  Role prefixes, графические префиксы ролей, 61 unit-тест — ADR-0053/0054,
-  `docs/design/VISUAL-DIRECTION.md`, `docs/design/DESIGN-CRITIQUE.md`.
-- Admin-shell и экраны — после выбора направления владельцем (RISKS.md R14).
+- Семантические токены, TwoMC UI-слой (~60 примитивов), `/design-lab` с
+  витриной, Interactions / Component lab и Role prefixes, графические
+  префиксы ролей, 61 unit-тест — ADR-0053/0054.
 
-## Часть 3 — admin-shell и экраны — ожидает решения, см. STATUS.md
+## Часть 3 — тема «Полдень» dark-first и admin-экраны (`feature/polden-production-theme`) — выполнено (PR на CI)
 
-Порядок по указанию владельца (2026-10-08): сначала дизайн-направления
-(`/design-lab`, `docs/design/VISUAL-DIRECTION.md`, tokens, TwoMC
-UI-примитивы поверх Radix) в отдельной ветке
-`feature/frontend-design-system`; затем, после выбора направления
-владельцем, — admin-shell с permission-driven навигацией и экраны:
-dashboard, users (список/карточка/bulk/роли/бейджи/наказания), roles
-(список/карточка/матрица permissions/история), audit log, broadcast,
-settings (KV + site), security (sessions/suspicious/logins/ip-whitelist),
-content/finance, личные инструменты (saved-filters/bookmarks/
-scheduled-exports), CSV-экспорт; состояния loading/error/empty/403;
-responsive; тесты.
+- Решение владельца (ADR-0055): «Полдень», тёмная тема основная, светлая
+  вторичная, стекло запрещено; архивные направления удалены; шрифты
+  self-hosted; overlay — solid-поверхности.
+- `src/lib/admin/`: navigation (группы/пункты с `PermissionRequirement`),
+  api (все эндпоинты PHASE 20), hooks (TanStack Query, инвалидация по
+  доменам, перечитывание `/auth/me` при смене своих ролей/прав),
+  permission-modules (подписи модулей).
+- `src/components/admin/`: RequireAuth, AdminShell, PermissionGate/Can,
+  PageHeader/PageSection/StatCard/DescriptionList, QueryBoundary.
+- Экраны `/admin`: дашборд, users (+[id]), roles (+[id]), permissions,
+  audit-log, security, settings, broadcast, content, finance, exports, tools;
+  `/login`. Все permission-aware, состояния loading/error/empty/403,
+  деструктивные действия через ConfirmDialog.
+- Проверено: lint / format / typecheck / 61 unit-тест / production build.
+- Остаётся в рамках фазы: unit-тесты страниц, QA с реальным API в браузере
+  (локальный Docker), затем merge.
 
 ## Не входит в фазу
 - Доменные admin-разделы (news/topics/forms/events/streams/voting/store/

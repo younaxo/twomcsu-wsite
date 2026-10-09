@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/frontend-design-system (дизайн-система и /design-lab); часть 1 PHASE 21 слита (PR #32)
+Current branch: feature/polden-production-theme (тема «Полдень» dark-first + admin-экраны); часть 1 PHASE 21 слита (PR #32)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,15 +71,17 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
-- PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) слита в main (PR #32):
-  `GET /auth/me` с effective permissions, контракт `packages/shared`,
-  fetch-клиент/auth-store/permission-хелперы/TanStack Query (ADR-0051/0052).
-  Дизайн-система (`feature/frontend-design-system`, ADR-0053): семантические
-  токены, TwoMC UI-слой (~60 примитивов поверх Radix/vaul/sonner/cmdk), три
-  направления в `/design-lab` (витрины + Interactions/Component lab + Role
-  prefixes), графические префиксы ролей (ADR-0054), 61 unit-тест. **Ожидает
-  решения владельца по направлению** (RISKS.md R14) — до этого admin-экраны
-  (часть 2) не верстаются.
+- PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) слита в main (PR #32).
+  Часть 2 — дизайн-система (ADR-0053/0054): токены, TwoMC UI-слой (~60
+  примитивов), `/design-lab`, префиксы ролей. Часть 3 — решение владельца
+  «Полдень» dark-first, стекло запрещено (ADR-0055); self-hosted шрифты;
+  admin-shell (auth-gate, permission-driven сайдбар, палитра Ctrl+K), `/login`,
+  экраны: дашборд, пользователи (список/карточка/роли/бейджи/наказания/
+  сессии), роли (список/карточка/матрица permissions/история), permissions,
+  журнал аудита, безопасность, настройки, объявления, контент, финансы,
+  экспорт CSV, личные инструменты. Ветка `feature/polden-production-theme`,
+  PR → CI → merge. Остаётся: unit-тесты страниц, QA в браузере с реальным
+  API, production-деплой (R8 — данных хостинга нет).
 
 Blocked:
 none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
@@ -114,7 +116,7 @@ PHASE 04/05).
 | PHASE 18 — Minecraft servers | `feature/minecraft` | merged (PR #28, `289363a`) | completed |
 | PHASE 19 — Gamification | `feature/gamification` | merged (PR #29, `79bf5bb`) | completed |
 | PHASE 20 — Admin backend | `feature/admin-backend` | merged (PR #30, `5f8f59d`) | completed |
-| PHASE 21 — Admin panel (frontend) | `feature/admin-panel` (часть 1), `feature/frontend-design-system` (дизайн) | *(в работе)* | in progress |
+| PHASE 21 — Admin panel (frontend) | `feature/admin-panel` (часть 1), `feature/frontend-design-system` (дизайн), `feature/polden-production-theme` (тема + экраны) | *(в работе)* | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять
@@ -136,4 +138,4 @@ Postgres+Redis (и настоящего TCP-сервера в minecraft-тест
 параллельный прогон всего сьюта)
 build: pass
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
