@@ -73,7 +73,13 @@ export interface CartItemDto {
   productId: string | null;
   variantId: string | null;
   bundleId: string | null;
-  product?: { id: string; name: string; slug: string; price?: DecimalString; image?: string | null } | null;
+  product?: {
+    id: string;
+    name: string;
+    slug: string;
+    price?: DecimalString;
+    image?: string | null;
+  } | null;
   variant?: { id: string; name?: string; price?: DecimalString } | null;
   bundle?: { id: string; name: string; totalPrice?: DecimalString } | null;
 }
