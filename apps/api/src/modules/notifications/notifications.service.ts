@@ -73,6 +73,7 @@ export class NotificationsService {
     // WS realtime — всегда, это отражение состояния UI, а не канал доставки
     // в смысле email/push/discord (на которые распространяются quiet hours).
     this.gateway.emitToUser(input.userId, notification);
+    await this.notifyChanged(input.userId);
 
     await this.deliver(notification);
 
@@ -180,7 +181,10 @@ export class NotificationsService {
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
         where,
-        include: { fromUser: true },
+        // Только публичная часть отправителя (без e-mail, причин банов и т.п.).
+        include: {
+          fromUser: { select: { id: true, username: true, avatar: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -194,17 +198,41 @@ export class NotificationsService {
     return this.prisma.notification.count({ where: { userId, isRead: false } });
   }
 
-  async markRead(userId: string, id: string) {
+  /// Сообщить вкладкам пользователя актуальное число непрочитанных (ADR-0074).
+  private async notifyChanged(userId: string): Promise<void> {
+    this.gateway.emitChanged(userId, await this.unreadCount(userId));
+  }
+
+  private async ensureOwn(userId: string, id: string) {
     const notification = await this.prisma.notification.findUnique({
       where: { id },
     });
     if (!notification || notification.userId !== userId) {
       throw new NotFoundException('Уведомление не найдено');
     }
-    return this.prisma.notification.update({
+    return notification;
+  }
+
+  async markRead(userId: string, id: string) {
+    const notification = await this.ensureOwn(userId, id);
+    const updated = notification.isRead
+      ? notification
+      : await this.prisma.notification.update({
+          where: { id },
+          data: { isRead: true, readAt: new Date() },
+        });
+    await this.notifyChanged(userId);
+    return updated;
+  }
+
+  async markUnread(userId: string, id: string) {
+    await this.ensureOwn(userId, id);
+    const updated = await this.prisma.notification.update({
       where: { id },
-      data: { isRead: true, readAt: new Date() },
+      data: { isRead: false, readAt: null },
     });
+    await this.notifyChanged(userId);
+    return updated;
   }
 
   async markAllRead(userId: string): Promise<{ count: number }> {
@@ -212,17 +240,32 @@ export class NotificationsService {
       where: { userId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+    await this.notifyChanged(userId);
     return { count: result.count };
   }
 
   async remove(userId: string, id: string): Promise<void> {
-    const notification = await this.prisma.notification.findUnique({
-      where: { id },
-    });
-    if (!notification || notification.userId !== userId) {
-      throw new NotFoundException('Уведомление не найдено');
-    }
+    await this.ensureOwn(userId, id);
     await this.prisma.notification.delete({ where: { id } });
+    await this.notifyChanged(userId);
+  }
+
+  /// «Удалить прочитанные» — непрочитанные остаются.
+  async removeRead(userId: string): Promise<{ count: number }> {
+    const result = await this.prisma.notification.deleteMany({
+      where: { userId, isRead: true },
+    });
+    await this.notifyChanged(userId);
+    return { count: result.count };
+  }
+
+  /// «Очистить» — все уведомления пользователя (подтверждение — на клиенте).
+  async clearAll(userId: string): Promise<{ count: number }> {
+    const result = await this.prisma.notification.deleteMany({
+      where: { userId },
+    });
+    await this.notifyChanged(userId);
+    return { count: result.count };
   }
 
   async subscribePush(userId: string, dto: PushSubscribeDto) {

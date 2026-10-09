@@ -3303,6 +3303,19 @@
 - Response type: `Promise<AppNotification>`
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
+### PATCH `/notifications/:id/unread` (ADR-0074)
+
+- Отметить уведомление непрочитанным (`isRead=false`, `readAt=null`); чужое — 404.
+- Authentication: **required**; guards: `JwtAuthGuard`. Ответ — строка `Notification`.
+
+### DELETE `/notifications/read` (ADR-0074)
+
+- Удалить все прочитанные уведомления текущего пользователя. Ответ `{ count }`.
+
+### DELETE `/notifications` (ADR-0074)
+
+- Очистить все уведомления текущего пользователя (подтверждение — на клиенте). Ответ `{ count }`.
+
 ### DELETE `/notifications/:id`
 
 - Handler: `NotificationsController.remove()` — `notifications/notifications.controller.ts:182`
@@ -3310,7 +3323,7 @@
 - Min RoleGroup: `-`
 - Path params: `id`
 - Service call: `notifications.remove()`
-- Response type: `Promise<void>`
+- Response type: `{ success: true }`
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
 

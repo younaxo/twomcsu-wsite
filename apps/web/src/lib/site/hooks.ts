@@ -8,7 +8,7 @@ import type {
   ServersOverview,
   UnreadCountResponse,
 } from '@twomc/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuthStore } from '../auth/store';
 
@@ -61,23 +61,6 @@ export function useRecentNotifications(enabled: boolean) {
       api.get<Paginated<NotificationDto>>('/notifications', { query: { page: 1, limit: 10 } }),
     enabled: enabled && authenticated,
   });
-}
-
-export function useMarkNotificationRead() {
-  const client = useQueryClient();
-  const invalidate = () => {
-    void client.invalidateQueries({ queryKey: siteKeys.unread });
-    void client.invalidateQueries({ queryKey: siteKeys.notifications });
-  };
-  const one = useMutation({
-    mutationFn: (id: string) => api.patch<unknown>(`/notifications/${id}/read`),
-    onSuccess: invalidate,
-  });
-  const all = useMutation({
-    mutationFn: () => api.patch<unknown>('/notifications/read-all'),
-    onSuccess: invalidate,
-  });
-  return { one, all };
 }
 
 /// Корзина — только для авторизованных и только когда она нужна (store-зона).

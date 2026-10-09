@@ -81,6 +81,14 @@ export class NotificationsGateway
     this.server.to(userRoom(userId)).emit('notification:new', notification);
   }
 
+  /// Любое изменение уведомлений пользователя (создание, прочтение, удаление):
+  /// все его вкладки и устройства сразу обновляют счётчик и список.
+  emitChanged(userId: string, unreadCount: number): void {
+    this.server
+      .to(userRoom(userId))
+      .emit('notification:changed', { unreadCount });
+  }
+
   private extractToken(client: Socket): string | undefined {
     const fromAuth = (
       client.handshake.auth as Record<string, unknown> | undefined

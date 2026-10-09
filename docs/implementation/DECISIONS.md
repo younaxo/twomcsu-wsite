@@ -1455,3 +1455,19 @@ TwoMC (RISKS R20). Скриншоты tutorial и официальный SVG RuT
 
 **Consequences.** Страницы `/u/[username]` пока нет — ссылки «Открыть профиль»
 в превью нет (появится с публичной страницей профиля, Product Completion).
+
+## ADR-0074 — Уведомления: действия, единый счётчик, мгновенное обновление
+
+**Decision.** Backend: `PATCH /notifications/:id/unread`, `DELETE /notifications/read`
+(прочитанные), `DELETE /notifications` (все); после любого изменения (и создания)
+WS `/notifications` шлёт `notification:changed { unreadCount }` в комнату
+пользователя. `?unreadOnly=false` больше не превращается в `true`; отправитель в
+списке — только `id/username/avatar`. Frontend: единственный источник числа —
+`siteKeys.unread` (бейдж, превью, страница, title, favicon), формат —
+`formatBadgeCount` (1–99, «99+», 0 — без бейджа); действия
+(`useNotificationActions`) обновляют кэш оптимистично и сверяются с сервером;
+один сокет на вкладку (`useNotificationsRealtime` в `DocumentBadge`), опрос раз в
+60 с — запасной путь. `NotificationItem` — кнопки при наведении/фокусе (на touch
+всегда) и те же действия в ПКМ; «Удалить прочитанные» и «Очистить все» — с
+подтверждением. Страница `/notifications`: фильтр «Все/Непрочитанные», «Показать
+ещё». `socket.io-client` добавлен в web (та же версия, что в api).

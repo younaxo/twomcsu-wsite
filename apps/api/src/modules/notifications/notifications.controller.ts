@@ -137,6 +137,25 @@ export class NotificationsController {
     return this.notifications.markAllRead(user.id);
   }
 
+  @Patch(':id/unread')
+  async markUnread(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.notifications.markUnread(user.id, id);
+  }
+
+  /// Объявлены до `DELETE :id`, иначе `read` попадёт в параметр id.
+  @Delete('read')
+  async removeRead(@CurrentUser() user: AuthenticatedUser) {
+    return this.notifications.removeRead(user.id);
+  }
+
+  @Delete()
+  async clearAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.notifications.clearAll(user.id);
+  }
+
   @Patch(':id/read')
   async markRead(
     @CurrentUser() user: AuthenticatedUser,

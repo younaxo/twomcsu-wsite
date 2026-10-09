@@ -12,6 +12,8 @@ import { SiteLogo } from './site-logo';
 const unread = { count: 0 };
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
+// Реальное время (WS) в этих тестах не нужно — только title/favicon.
+vi.mock('@/lib/notifications/hooks', () => ({ useNotificationsRealtime: () => undefined }));
 vi.mock('@/lib/site/hooks', () => ({
   useUnreadCount: () => ({ data: { count: unread.count } }),
 }));

@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class ListNotificationsQueryDto {
@@ -15,8 +15,16 @@ export class ListNotificationsQueryDto {
   @Max(100)
   limit?: number = 30;
 
+  /// `?unreadOnly=true|false` — строку разбираем явно: `@Type(() => Boolean)`
+  /// превращал «false» в true.
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(({ value }) =>
+    value === true || value === 'true' || value === '1'
+      ? true
+      : value === false || value === 'false' || value === '0'
+        ? false
+        : value,
+  )
   @IsBoolean()
   unreadOnly?: boolean;
 }
