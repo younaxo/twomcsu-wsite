@@ -1,74 +1,31 @@
 'use client';
 
-import { ArrowRight, Server, ShoppingBag } from 'lucide-react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { formatNumber, plural } from '@/lib/format';
-import { SITE_NAME, SITE_TAGLINE } from '@/lib/site/config';
-import { useServersOverview } from '@/lib/site/hooks';
+import { HomeCommunity } from './_components/community';
+import { HomeEvents } from './_components/events-section';
+import { HomeFinalCta } from './_components/final-cta';
+import { HomeHero } from './_components/hero';
+import { HomeNews } from './_components/news-section';
+import { HomeQuickStart } from './_components/quick-start';
+import { HomeServers } from './_components/servers-section';
+import { HomeShop } from './_components/shop-section';
+import { HomeShowcase } from './_components/showcase';
 
-/// Главная публичного сайта: live-онлайн по реальному ping серверов и
-/// переходы в разделы. Полноценная главная (новости, события) — PHASE 31.
+/// Главная twomc.su — продаёт проект и игру, а не витрину доната:
+/// hero → showcase → сервера → (недавно купили +) магазин → события →
+/// новости → как играть (+ промокод START) → сообщество → финальный CTA →
+/// footer (shell). Все данные — реальные API; без данных — skeleton/empty state.
 export default function HomePage() {
-  const overview = useServersOverview();
-  const players = overview.data?.totalPlayers;
   return (
-    <div className="mx-auto flex max-w-[1440px] flex-col gap-10 px-4 py-10 md:px-6 md:py-16">
-      <section className="grid gap-8 lg:grid-cols-[1.4fr_1fr] lg:items-end">
-        <div>
-          <p className="text-sm font-medium text-primary-soft-foreground">{SITE_TAGLINE}</p>
-          <h1 className="mt-2 font-display text-4xl font-bold tracking-tight md:text-6xl">
-            {SITE_NAME}
-          </h1>
-          <p className="mt-4 max-w-prose text-lg text-muted-foreground">
-            Minecraft-проект с собственными серверами, магазином и сообществом. Сейчас на серверах{' '}
-            {players === undefined ? (
-              <span aria-hidden className="inline-block h-5 w-12 animate-pulse rounded bg-muted align-middle" />
-            ) : (
-              <span className="font-semibold text-foreground tabular">
-                {formatNumber(players)}{' '}
-                {plural(players, { one: 'игрок', few: 'игрока', many: 'игроков' })}
-              </span>
-            )}
-            .
-          </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Button asChild size="lg">
-              <Link href="/servers">
-                <Server />
-                Начать играть
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="secondary">
-              <Link href="/shop">
-                <ShoppingBag />
-                Магазин
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <Card className="flex flex-col gap-3">
-          <p className="text-sm text-muted-foreground">Сервера онлайн</p>
-          {overview.isPending ? (
-            <Skeleton className="h-9 w-24" />
-          ) : (
-            <p className="font-display text-3xl font-bold tabular">
-              {overview.data
-                ? `${overview.data.onlineServers} / ${overview.data.totalServers}`
-                : '—'}
-            </p>
-          )}
-          <Link
-            href="/servers"
-            className="inline-flex items-center gap-1 text-sm text-primary-soft-foreground hover:underline"
-          >
-            Все сервера
-            <ArrowRight aria-hidden className="size-4" />
-          </Link>
-        </Card>
-      </section>
+    <div className="mx-auto flex max-w-[1440px] flex-col gap-16 px-4 py-10 md:gap-24 md:px-6 md:py-16">
+      <HomeHero />
+      <HomeShowcase />
+      <HomeServers />
+      <HomeShop />
+      <HomeEvents />
+      <HomeNews />
+      <HomeQuickStart />
+      <HomeCommunity />
+      <HomeFinalCta />
     </div>
   );
 }
