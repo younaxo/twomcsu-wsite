@@ -70,6 +70,9 @@ describe('Auth (e2e)', () => {
 
   afterAll(async () => {
     await flushBruteForceKeys(redis);
+    await prisma.auditLog.deleteMany({
+      where: { actor: { email: { in: [email, bannedEmail] } } },
+    });
     await prisma.user.deleteMany({
       where: { email: { in: [email, bannedEmail] } },
     });
@@ -247,6 +250,9 @@ describe('Auth (e2e)', () => {
       .expect(429);
 
     await flushBruteForceKeys(redis);
+    await prisma.auditLog.deleteMany({
+      where: { actor: { email: bruteEmail } },
+    });
     await prisma.user.deleteMany({ where: { email: bruteEmail } });
   });
 });

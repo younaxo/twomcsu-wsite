@@ -123,7 +123,7 @@ export function StatCard({
   return (
     <Card className={cn('flex h-full flex-col gap-2', className)} {...props}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">{label}</p>
+        <div className="text-sm text-muted-foreground">{label}</div>
         {icon ? (
           <span aria-hidden className="text-subtle-foreground [&_svg]:size-4">
             {icon}

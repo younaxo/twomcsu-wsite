@@ -40,3 +40,6 @@ Thumbs.db
 # misc
 *.tsbuildinfo
 .turbo/
+
+# локальные dev-учётки/заметки
+*.local.json

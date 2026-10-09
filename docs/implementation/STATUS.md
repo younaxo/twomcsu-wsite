@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/production-infrastructure (PHASE 35, вынесена вперёд); PHASE 21 части 1–3 слиты (PR #32, #35)
+Current branch: feature/audit-log (PHASE 22); PHASE 21 (PR #32, #35) и PHASE 35 (PR #36) слиты
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,9 +71,9 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
-- PHASE 35 — Production infrastructure: Dockerfile api/web, docker-compose.prod,
-  deploy.sh (build → migrate deploy → switch → health → rollback), nginx-пример.
-  Деплой заблокирован отсутствием данных хостинга (RISKS R8).
+- PHASE 22 — Audit log: глобальный AuditInterceptor (все staff-мутации с
+  @RequirePermissions), уровни по ключу, @SkipAudit для ручных записей,
+  AUDIT_RETENTION_DAYS + ежедневная очистка, e2e `audit` — ADR-0056.
 - PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) слита в main (PR #32).
   Часть 2 — дизайн-система (ADR-0053/0054): токены, TwoMC UI-слой (~60
   примитивов), `/design-lab`, префиксы ролей. Часть 3 — решение владельца
@@ -87,7 +87,7 @@ In progress:
   API, production-деплой (R8 — данных хостинга нет).
 
 Blocked:
-none (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
+- Production deploy (PHASE 35 артефакты слиты, PR #36): нет данных хостинга — RISKS R8. (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
 R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
 
 ## История веток (normalized, см. RISKS.md R12)

@@ -13,3 +13,13 @@ Staff-мутаций (POST/PATCH/PUT/DELETE с `@Roles`): **186**; вызово�
 
 ## Обязательные новые действия (REQUIRED)
 `role.create|update|delete`, `role.permissions.update`, `role.assign|revoke`, `user.ban|unban|delete` (включая bulk — по записи на цель), `order.refund|cancel`, `finance.export`, `store.product.*|category.*|bundle.*|promocode.*|discount.*|currency.*`, `settings.update` (с diff в `changes`), `server.*`, `moderation.*`, `file.delete` (при появлении модели файлов), `auth.session.revoke_all`, `bootstrap.account.create`. Рекомендация: писать audit **в той же транзакции**, что и мутация, и сделать падение записи ошибкой для severity `critical`.
+
+
+## Актуально (PHASE 22, ADR-0056)
+Покрытие — автоматическое: `AuditInterceptor` логирует все успешные
+POST/PATCH/PUT/DELETE на хендлерах с `@RequirePermissions` (action = ключ
+permission). Ручные записи с обогащённым payload остаются для broadcast,
+settings (diff), site settings, ip-whitelist, bulk-бан (по цели) — эти
+хендлеры помечены `@SkipAudit()`. Ретенция — `AUDIT_RETENTION_DAYS` (ENV,
+default 90), очистка ежедневно в 04:00. Для `critical` ошибка записи не
+проглатывается. См. `docs/implementation/phases/PHASE-22-audit-log.md`.

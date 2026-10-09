@@ -98,6 +98,9 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
       where: { roleId: managerRoleId },
     });
     await prisma.role.deleteMany({ where: { id: managerRoleId } });
+    await prisma.auditLog.deleteMany({
+      where: { actor: { id: targetUserId } },
+    });
     await prisma.user.deleteMany({ where: { id: targetUserId } });
     await app.close();
   });
