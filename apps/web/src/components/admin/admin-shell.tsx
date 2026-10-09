@@ -149,7 +149,7 @@ function SidebarNav({ groups, onNavigate }: { groups: AdminNavGroup[]; onNavigat
 function Brand() {
   return (
     <Link href="/admin" className="flex items-center gap-2 rounded-sm">
-      <span className="font-display text-xl font-bold tracking-tight">TwoMC</span>
+      <span className="font-display text-xl font-bold tracking-tight">twomc.su</span>
       <span className="text-xs text-muted-foreground">Админ-панель</span>
     </Link>
   );
@@ -203,7 +203,7 @@ function SidebarSheet({
       <SheetContent side="left" size="sm" aria-describedby={undefined}>
         <SheetHeader>
           <SheetTitle className="font-display text-xl font-bold tracking-tight">
-            TwoMC
+            twomc.su
             <span className="ml-2 text-xs font-normal text-muted-foreground">Админ-панель</span>
           </SheetTitle>
         </SheetHeader>

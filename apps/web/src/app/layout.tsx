@@ -6,10 +6,19 @@ import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: {
-    default: 'TwoMC',
-    template: '%s — TwoMC',
+    default: 'twomc.su — New-Era Anarchy',
+    template: '%s — twomc.su',
   },
-  description: 'twomc.su — сайт Minecraft-проекта TwoMC',
+  description: 'twomc.su — Minecraft-проект: сервера, магазин, сообщество.',
+  applicationName: 'twomc.su',
+  openGraph: {
+    siteName: 'twomc.su',
+    title: 'twomc.su — New-Era Anarchy',
+    description: 'twomc.su — Minecraft-проект: сервера, магазин, сообщество.',
+    locale: 'ru_RU',
+    type: 'website',
+  },
+  twitter: { card: 'summary', title: 'twomc.su — New-Era Anarchy' },
 };
 
 export const viewport: Viewport = {

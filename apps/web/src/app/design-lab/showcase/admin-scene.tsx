@@ -195,7 +195,7 @@ function Sidebar() {
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r bg-surface lg:flex">
       <div className="flex h-16 items-center gap-3 border-b border-border-subtle px-5">
-        <p className="font-display text-xl font-bold tracking-tight">TwoMC</p>
+        <p className="font-display text-xl font-bold tracking-tight">twomc.su</p>
         <p className="text-xs text-muted-foreground">Админ-панель</p>
       </div>
       <div className="flex-1 overflow-y-auto px-2 py-5 scrollbar-thin">
@@ -224,7 +224,7 @@ function SidebarSheet({
       <SheetContent side="left" size="sm" aria-describedby={undefined}>
         <SheetHeader>
           <SheetTitle className="font-display text-xl font-bold tracking-tight">
-            TwoMC
+            twomc.su
             <span className="ml-2 text-xs font-normal text-muted-foreground">Админ-панель</span>
           </SheetTitle>
         </SheetHeader>

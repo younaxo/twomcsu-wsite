@@ -111,6 +111,21 @@ const config: Config = {
         'card-p': 'var(--card-p)',
         gap: 'var(--gap)',
       },
+      /// Системные уровни наложения — никаких случайных z-index по проекту.
+      zIndex: {
+        content: '0',
+        sticky: '10',
+        header: '20',
+        sidebar: '30',
+        floating: '35',
+        overlay: '50',
+        modal: '50',
+        // Popover/dropdown ≥ modal: открываются из диалогов и должны быть поверх.
+        dropdown: '50',
+        popover: '50',
+        tooltip: '60',
+        toast: '70',
+      },
       transitionDuration: {
         fast: 'var(--motion-fast)',
         DEFAULT: 'var(--motion)',

@@ -12,6 +12,7 @@ import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
+import { SiteController } from './site.controller';
 
 @Module({
   imports: [ModerationModule, NotificationsModule, StoreModule],
@@ -20,6 +21,7 @@ import { ExportService } from './export.service';
     AdminPanelController,
     AdminUsersBulkController,
     ExportController,
+    SiteController,
   ],
   providers: [
     AuditService,

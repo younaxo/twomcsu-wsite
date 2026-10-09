@@ -769,25 +769,41 @@ function FileDropzoneDemo() {
 
 function ColorPickerDemo() {
   const [color, setColor] = useState<string | null>(ROLE_COLORS[1] ?? null);
+  const [empty, setEmpty] = useState<string | null>(null);
   return (
     <DemoBlock
       title="ColorPicker"
-      use="Цвет роли: готовые цвета из домена + произвольный через нативный пикер и HEX-поле с валидацией."
+      span={2}
+      use="Цвет роли/метки: готовые цвета, HEX-поле с валидацией и встроенная палитра (область + оттенок) внутри popover; на телефоне — нижняя панель. Системный color dialog не открывается никогда."
       avoid="цветов интерфейса — они только из токенов направления."
     >
-      <Field label="Цвет роли" hint="Готовые цвета — из существующих ролей">
-        <ColorPicker
-          value={color}
-          onChange={setColor}
-          presets={ROLE_COLORS}
-          presetLabels={ROLE_COLOR_LABELS}
-        />
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Выбран (пресеты ролей)" hint="Готовые цвета — из существующих ролей">
+          <ColorPicker
+            value={color}
+            onChange={setColor}
+            presets={ROLE_COLORS}
+            presetLabels={ROLE_COLOR_LABELS}
+          />
+        </Field>
+        <Field label="Без цвета (палитра по умолчанию)" hint="Введите HEX или откройте «Палитра»">
+          <ColorPicker value={empty} onChange={setEmpty} />
+        </Field>
+        <Field label="Невалидное значение" error="Выберите цвет роли">
+          <ColorPicker value={null} onChange={() => undefined} invalid />
+        </Field>
+        <Field label="Недоступно">
+          <ColorPicker value="#f26a1b" onChange={() => undefined} disabled />
+        </Field>
+      </div>
       <DemoRow>
         <span className="text-sm text-muted-foreground">Предпросмотр:</span>
         <Badge color={color}>
           {color ? (ROLE_COLOR_LABELS[color] ?? 'Новая роль') : 'Без цвета'}
         </Badge>
+        <span className="text-xs text-muted-foreground">
+          Mobile (&lt; 768px): тот же picker открывается нижней панелью.
+        </span>
       </DemoRow>
     </DemoBlock>
   );

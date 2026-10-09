@@ -87,7 +87,7 @@ export function LoginForm() {
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <header className="flex items-center justify-between px-4 py-3 md:px-6">
-        <p className="font-display text-xl font-bold tracking-tight">TwoMC</p>
+        <p className="font-display text-xl font-bold tracking-tight">twomc.su</p>
         <ThemeToggle />
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-16">

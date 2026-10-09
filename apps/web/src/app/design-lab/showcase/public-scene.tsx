@@ -58,7 +58,7 @@ function Navbar({ onOpenMenu }: { onOpenMenu: () => void }) {
           href="#daylight-public-title"
           className="mr-4 rounded-sm font-display text-xl font-bold tracking-tight"
         >
-          TwoMC
+          twomc.su
         </a>
         <ul className="hidden items-center md:flex">
           {NAV_ITEMS.map((item) => (
@@ -98,7 +98,7 @@ function MobileMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (o: b
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" size="sm" aria-describedby={undefined}>
         <SheetHeader>
-          <SheetTitle className="font-display text-xl font-bold tracking-tight">TwoMC</SheetTitle>
+          <SheetTitle className="font-display text-xl font-bold tracking-tight">twomc.su</SheetTitle>
         </SheetHeader>
         <SheetBody className="flex flex-col gap-6">
           <Input leading={<Search />} placeholder="Поиск по сайту" aria-label="Поиск по сайту" />
