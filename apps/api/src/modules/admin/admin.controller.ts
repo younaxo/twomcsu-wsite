@@ -33,6 +33,13 @@ export class AdminController {
     return this.dashboard.getDashboard();
   }
 
+  /// Ряды для графиков дашборда, `?days=7..90` (по умолчанию 30).
+  @Get('dashboard/timeseries')
+  @RequirePermissions('dashboard.view')
+  async getTimeseries(@Query('days') days?: string) {
+    return this.dashboard.getTimeseries(Number(days ?? 30));
+  }
+
   @Get('audit-log')
   @RequirePermissions('audit_log.view')
   async auditLog(@Query() query: ListAuditLogQueryDto) {

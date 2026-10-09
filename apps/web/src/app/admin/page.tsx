@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { PageHeader, PageSection, StatCard, StatGrid } from '@/components/admin/page-header';
 import { Can, PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
+import { DashboardCharts } from './_components/dashboard-charts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -134,6 +135,8 @@ export default function DashboardPage() {
                   }
                 />
               </StatGrid>
+
+              <DashboardCharts />
 
               <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
                 <PageSection

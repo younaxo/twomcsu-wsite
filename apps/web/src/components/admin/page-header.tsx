@@ -121,7 +121,11 @@ export function StatCard({
         ? formatNumber(value)
         : String(value);
   return (
-    <Card className={cn('flex h-full flex-col gap-2', className)} {...props}>
+    // Остров без рамки (ADR-0078): поверхность, скругление, мягкая тень.
+    <Card
+      className={cn('flex h-full flex-col gap-2 rounded-xl border-0 shadow-sm', className)}
+      {...props}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm text-muted-foreground">{label}</div>
         {icon ? (

@@ -179,8 +179,9 @@ function Brand() {
 
 function Sidebar({ groups }: { groups: AdminNavGroup[] }) {
   return (
-    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r bg-surface lg:flex">
-      <div className="flex h-16 items-center border-b border-border-subtle px-5">
+    // Плавающий остров (ADR-0078): отступ от краёв, скругление, тень — без рамок.
+    <aside className="sticky top-3 m-3 mr-0 hidden h-[calc(100dvh-1.5rem)] w-64 shrink-0 flex-col overflow-hidden rounded-xl bg-surface shadow-sm lg:flex">
+      <div className="flex h-16 items-center px-5">
         <Brand />
       </div>
       <div className="flex-1 overflow-y-auto px-2 py-5 scrollbar-thin">
@@ -198,7 +199,7 @@ function SidebarUser() {
   }
   const primary = pickPrimaryRole(user.roles);
   return (
-    <div className="flex items-center gap-3 border-t border-border-subtle p-4">
+    <div className="m-3 flex items-center gap-3 rounded-lg bg-surface-sunken p-3">
       <Avatar name={user.username} size="sm" shape="round" />
       <UserIdentity username={user.username} role={primary} tag={user.tag} />
     </div>
@@ -286,7 +287,7 @@ function Topbar({
   children?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b bg-surface px-4 md:px-6">
+    <header className="sticky top-3 z-30 mx-3 mt-3 flex min-h-14 items-center gap-2 rounded-xl bg-surface px-4 shadow-sm md:px-5">
       <Tooltip content="Разделы">
         <IconButton
           aria-label="Открыть разделы"
@@ -394,7 +395,7 @@ export function AdminShell({ children, topbar }: AdminShellProps) {
         <Topbar onOpenMenu={() => setMenuOpen(true)} onOpenPalette={palette.toggle}>
           {topbar}
         </Topbar>
-        <main id="admin-main" className="flex flex-1 flex-col gap-8 p-4 md:p-6 xl:p-8">
+        <main id="admin-main" className="flex flex-1 flex-col gap-6 px-3 pb-8 pt-5 md:gap-8">
           {children}
         </main>
       </div>

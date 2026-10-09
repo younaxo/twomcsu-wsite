@@ -209,6 +209,30 @@ describe('Admin backend (e2e)', () => {
     expect(Array.isArray(res.body.recentAuditLog)).toBe(true);
   });
 
+  it('dashboard/timeseries: ряды по дням без пропусков, сегодняшние регистрации учтены, лимиты периода', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/admin/dashboard/timeseries?days=30')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    expect(res.body.days).toBe(30);
+    expect(res.body.series).toHaveLength(30);
+    const today = new Date().toISOString().slice(0, 10);
+    const last = res.body.series.at(-1);
+    expect(last.day).toBe(today);
+    expect(last.registrations).toBeGreaterThanOrEqual(3);
+    expect(typeof last.reports).toBe('number');
+    expect(typeof last.auditActions).toBe('number');
+    const clamped = await request(app.getHttpServer())
+      .get('/admin/dashboard/timeseries?days=1000')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    expect(clamped.body.series).toHaveLength(90);
+    await request(app.getHttpServer())
+      .get('/admin/dashboard/timeseries')
+      .set('Authorization', auth(alice))
+      .expect(403);
+  });
+
   it('settings (KV): PATCH сохраняет, GET возвращает актуальные значения', async () => {
     const key = `e2e-flag-${unique}`;
     await request(app.getHttpServer())

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -138,5 +139,43 @@ export class DashboardService {
     });
 
     return after;
+  }
+
+  /// Ряды для графиков дашборда (ADR-0078): по дням (UTC) за `days` дней —
+  /// регистрации (без системных аккаунтов), новые жалобы (все три вида),
+  /// действия в журнале аудита. Дни без событий — нули из `generate_series`,
+  /// не дорисовка на клиенте.
+  async getTimeseries(days: number) {
+    const span = Math.min(90, Math.max(7, Math.trunc(days) || 30));
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        day: string;
+        registrations: number;
+        reports: number;
+        auditActions: number;
+      }>
+    >(Prisma.sql`
+      WITH days AS (
+        SELECT generate_series(
+          date_trunc('day', now() AT TIME ZONE 'UTC') - (${span - 1}::int * interval '1 day'),
+          date_trunc('day', now() AT TIME ZONE 'UTC'),
+          interval '1 day'
+        ) AS day
+      )
+      SELECT
+        to_char(d.day, 'YYYY-MM-DD') AS day,
+        (SELECT count(*) FROM users u
+          WHERE date_trunc('day', u."createdAt") = d.day
+            AND u."accountType"::text <> 'SYSTEM')::int AS registrations,
+        ((SELECT count(*) FROM reports r WHERE date_trunc('day', r."createdAt") = d.day)
+          + (SELECT count(*) FROM comment_reports c WHERE date_trunc('day', c."createdAt") = d.day)
+          + (SELECT count(*) FROM profile_reports p WHERE date_trunc('day', p."createdAt") = d.day)
+        )::int AS reports,
+        (SELECT count(*) FROM audit_logs a
+          WHERE date_trunc('day', a."createdAt") = d.day)::int AS "auditActions"
+      FROM days d
+      ORDER BY d.day
+    `);
+    return { days: span, series: rows };
   }
 }
