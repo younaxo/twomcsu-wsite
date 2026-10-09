@@ -107,7 +107,7 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(
             collisionPadding={8}
             className={cn(
               'z-50 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-3 p-3',
-              'rounded-lg glass-frosted text-foreground',
+              'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
               'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
               'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',
             )}

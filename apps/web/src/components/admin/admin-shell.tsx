@@ -282,7 +282,7 @@ function Topbar({
   children?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b glass-frosted-strong rounded-none border-x-0 border-t-0 px-4 md:px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b bg-surface px-4 md:px-6">
       <Tooltip content="Разделы">
         <IconButton
           aria-label="Открыть разделы"

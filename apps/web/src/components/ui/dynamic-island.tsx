@@ -106,7 +106,7 @@ export const DynamicIsland = forwardRef<HTMLDivElement, DynamicIslandProps>(
             data-status={status}
             className={cn(
               'pointer-events-auto flex w-max max-w-full flex-col',
-              'rounded-lg glass-liquid text-sm text-foreground',
+              'rounded-lg border bg-surface-overlay text-sm text-foreground shadow-lg edge-highlight',
               'animate-pop-in [--pop-y:-8px]',
               isExpanded ? 'min-w-[min(20rem,100%)]' : 'min-w-0',
               className,

@@ -51,7 +51,6 @@ const config: Config = {
         ring: token('ring'),
         'focus-ring': token('focus-ring'),
         error: token('error'),
-        glass: token('glass'),
         success: {
           DEFAULT: token('success'),
           foreground: token('success-foreground'),

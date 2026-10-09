@@ -32,7 +32,7 @@ export const AlertDialogOverlay = forwardRef<
   <RadixAlertDialog.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-foreground/40 backdrop-blur-[2px]',
+      'fixed inset-0 z-50 bg-foreground/40',
       'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
       className,
     )}
@@ -53,7 +53,7 @@ export const AlertDialogContent = forwardRef<
         // Центрирование через `translate` (не `transform`): keyframes pop-in/pop-out
         // переопределяют `transform`, и окно не «прыгает» в конце анимации.
         'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
-        'rounded-lg glass-frosted-strong text-foreground',
+        'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
         'overscroll-contain focus:outline-none',
         'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
         className,

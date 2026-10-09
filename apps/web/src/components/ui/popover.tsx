@@ -19,7 +19,7 @@ export const PopoverClose = RadixPopover.Close;
 export const PopoverPortal = RadixPopover.Portal;
 
 export const popoverContentClassName = cn(
-  'z-50 w-72 max-w-[calc(100vw-2rem)] rounded-lg glass-frosted p-4 text-foreground',
+  'z-50 w-72 max-w-[calc(100vw-2rem)] rounded-lg border bg-surface-overlay p-4 text-foreground shadow-lg edge-highlight',
   'max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain scrollbar-thin',
   'focus:outline-none',
   'origin-[var(--radix-popover-content-transform-origin)]',
@@ -48,7 +48,7 @@ export const PopoverContent = forwardRef<
       {children}
       {arrow ? (
         <RadixPopover.Arrow
-          className="[fill:rgb(var(--glass-surface)/0.92)]"
+          className="fill-surface-overlay drop-shadow-[0_1px_0_rgb(var(--border))]"
           width={12}
           height={6}
         />

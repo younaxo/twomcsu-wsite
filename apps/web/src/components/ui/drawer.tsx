@@ -64,7 +64,7 @@ export const DrawerOverlay = forwardRef<
 >(({ className, ...props }, ref) => (
   <VaulDrawer.Overlay
     ref={ref}
-    className={cn('fixed inset-0 z-50 bg-foreground/40 backdrop-blur-[2px]', className)}
+    className={cn('fixed inset-0 z-50 bg-foreground/40', className)}
     {...props}
   />
 ));
@@ -105,7 +105,7 @@ export const DrawerContent = forwardRef<ElementRef<typeof VaulDrawer.Content>, D
         <VaulDrawer.Content
           ref={ref}
           className={cn(
-            'fixed z-50 flex flex-col glass-frosted-strong text-foreground',
+            'fixed z-50 flex flex-col bg-surface-overlay text-foreground shadow-lg edge-highlight',
             'overscroll-contain focus:outline-none',
             direction === 'bottom'
               ? 'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t pb-[env(safe-area-inset-bottom)]'

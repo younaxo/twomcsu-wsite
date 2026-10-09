@@ -198,7 +198,7 @@ export function MegaMenu({ sections, label = 'Разделы сайта', classN
         <NavigationMenu.Viewport
           className={cn(
             'relative mt-2 h-[var(--radix-navigation-menu-viewport-height)] w-full overflow-hidden',
-            'rounded-lg glass-frosted text-foreground',
+            'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
             'transition-[height]',
             'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:-6px]',
           )}

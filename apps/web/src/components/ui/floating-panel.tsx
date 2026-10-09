@@ -78,7 +78,7 @@ export const FloatingPanel = forwardRef<HTMLElement, FloatingPanelProps>(
           aria-label={typeof title === 'string' ? title : props['aria-label']}
           className={cn(
             'fixed z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col',
-            'rounded-lg glass-liquid text-foreground',
+            'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
             'animate-pop-in [--pop-y:8px]',
             positionClass[position],
             className,

@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
-import { GlassSection } from './sections/glass-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
 
@@ -13,7 +12,6 @@ const SECTIONS = [
   { id: 'direction', label: 'О направлении' },
   { id: 'showcase', label: 'Витрина' },
   { id: 'lab', label: 'Interactions / Component lab' },
-  { id: 'glass', label: 'Glass materials' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -29,7 +27,7 @@ function useViewportWidth(): number | null {
 }
 
 /// /design-lab — внутренняя лаборатория production-направления «Полдень»:
-/// витрина, Interactions / Component lab, Glass materials, Role prefixes.
+/// витрина, Interactions / Component lab, Role prefixes.
 /// Тема — глобальный ThemeProvider (тёмная по умолчанию), overlay-порталы
 /// получают токены с <html>.
 export function DesignLab() {
@@ -37,7 +35,7 @@ export function DesignLab() {
 
   return (
     <div className="min-h-screen bg-background font-sans text-foreground">
-      <header className="sticky top-0 z-40 border-b glass-frosted-strong rounded-none border-x-0 border-t-0">
+      <header className="sticky top-0 z-40 border-b bg-surface">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           <p className="mr-2 text-sm font-semibold">
             TwoMC <span className="text-muted-foreground">· Design lab</span>
@@ -80,14 +78,6 @@ export function DesignLab() {
             description="Ручная проверка floating UI, overlay, форм и данных. Общие функциональные примитивы, оформление — по токенам темы."
           />
           <ComponentLab />
-        </section>
-
-        <section id="glass" className="scroll-mt-20">
-          <SectionHeading
-            title="Glass materials"
-            description="Frosted Glass для overlay с текстом, Liquid Glass — точечно для премиальных плавающих контролов. Тёмная и светлая тема, состояния, fallback и сравнение Solid / Frosted / Liquid."
-          />
-          <GlassSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">
