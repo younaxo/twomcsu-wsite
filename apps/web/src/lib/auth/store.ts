@@ -24,9 +24,7 @@ export interface AuthState {
 /// вместо тихого «неверный пароль».
 export class CaptchaRequiredError extends Error {
   constructor() {
-    super(
-      'Проверка Cloudflare не пройдена. Подтвердите, что вы не робот, и повторите.',
-    );
+    super('Проверка Cloudflare не пройдена. Подтвердите, что вы не робот, и повторите.');
     this.name = 'CaptchaRequiredError';
   }
 }
