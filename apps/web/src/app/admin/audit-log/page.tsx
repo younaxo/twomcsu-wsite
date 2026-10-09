@@ -25,6 +25,7 @@ import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import { DescriptionItem, DescriptionList } from '@/components/admin/page-header';
+import { UserIdentity } from '@/components/ui/user-identity';
 
 const SEVERITY_TONE: Record<AuditLogSeverity, 'neutral' | 'warning' | 'destructive'> = {
   info: 'neutral',
@@ -84,7 +85,11 @@ export default function AuditLogPage() {
       header: 'Действие',
       cell: (e) => <span className="font-mono text-xs">{e.action}</span>,
     },
-    { key: 'actor', header: 'Кто', cell: (e) => e.actor.username },
+    {
+      key: 'actor',
+      header: 'Кто',
+      cell: (e) => <UserIdentity username={e.actor.username} variant="inline" previewable />,
+    },
     {
       key: 'target',
       header: 'Объект',

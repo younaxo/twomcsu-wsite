@@ -1,7 +1,9 @@
 'use client';
 
 import { ROLE_PREFIXES } from '@twomc/shared';
+import { ProfilePreviewCard } from '@/components/profile/profile-preview';
 import { RolePrefix, UserRolesInline } from '@/components/ui/role-prefix';
+import { UserIdentity } from '@/components/ui/user-identity';
 import { getRolePrefixAsset } from '@/lib/roles/primary-role';
 
 const multiRoleUser = [
@@ -106,6 +108,64 @@ export function RolePrefixesSection() {
             })}
           </tbody>
         </table>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">UserIdentity — длинные ник и роль</p>
+          <div className="w-56">
+            <UserIdentity
+              username="very_long_name16"
+              tag="very_long_name16#a1b2"
+              role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
+            />
+          </div>
+          <div className="w-56">
+            <UserIdentity
+              username="very_long_name16"
+              variant="inline"
+              role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
+            />
+          </div>
+          <p className="text-xs text-subtle-foreground">
+            stacked — префикс над ником; inline — префикс сжимается пропорционально, ник обрезается
+            многоточием (полное значение в title).
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">Превью профиля (пример данных)</p>
+          <div className="w-80 rounded-lg bg-surface-overlay p-4 shadow-lg">
+            <ProfilePreviewCard
+              username="player"
+              loading={false}
+              error={false}
+              summary={{
+                username: 'player',
+                hidden: false,
+                tag: 'player#0001',
+                avatar: null,
+                createdAt: '2025-03-01T10:00:00.000Z',
+                system: false,
+                banned: false,
+                position: { displayName: 'Игрок', color: '#a3a3a3' },
+                roles: [
+                  {
+                    slug: 'chief-curator',
+                    displayName: 'Главный куратор',
+                    priority: 90,
+                    color: null,
+                  },
+                ],
+                online: true,
+                currentServer: 'Выживание',
+                lastActivityAt: null,
+                statistics: { playTimeMinutes: 185, kills: 12, deaths: 4, killDeathRatio: 3 },
+                statisticsHidden: false,
+                friendsCount: 7,
+                achievementsCompleted: 15,
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

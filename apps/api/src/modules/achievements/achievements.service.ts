@@ -181,6 +181,14 @@ export class AchievementsService {
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
     }
+    // Закрытый профиль не раскрывает и достижения (как GET /users/:u/public).
+    if (
+      !viewerIsOwner &&
+      (user.profileVisibility === 'NOBODY' ||
+        user.profileVisibility === 'FRIENDS_ONLY')
+    ) {
+      throw new NotFoundException('Пользователь не найден');
+    }
     return this.buildUserAchievementsResponse(user.id, viewerIsOwner);
   }
 

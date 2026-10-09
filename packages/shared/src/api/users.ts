@@ -140,3 +140,40 @@ export interface GrantBadgeRequest {
   type: UserBadgeType;
   expiresAt?: IsoDateString;
 }
+
+// --- Превью профиля (ADR-0073) ------------------------------------------------
+
+export interface ProfileSummaryRole {
+  slug: string;
+  displayName: string;
+  priority: number;
+  color: string | null;
+}
+
+/// `GET /users/:username/summary` — карточка превью. Нет данных — `null`
+/// (никаких выдуманных значений); скрытый профиль — только `hidden: true`.
+export type PublicProfileSummary =
+  | { username: string; hidden: true }
+  | {
+      username: string;
+      hidden: false;
+      tag: string;
+      avatar: string | null;
+      createdAt: string;
+      system: boolean;
+      banned: boolean;
+      position: { displayName: string; color: string } | null;
+      roles: ProfileSummaryRole[];
+      online: boolean;
+      currentServer: string | null;
+      lastActivityAt: string | null;
+      statistics: {
+        playTimeMinutes: number;
+        kills: number;
+        deaths: number;
+        killDeathRatio: number;
+      } | null;
+      statisticsHidden: boolean;
+      friendsCount: number;
+      achievementsCompleted: number;
+    };

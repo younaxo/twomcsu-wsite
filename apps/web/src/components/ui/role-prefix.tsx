@@ -75,7 +75,7 @@ export function RolePrefix({
         decoding="async"
         draggable={false}
         onError={() => setFailed(true)}
-        className="max-w-full select-none [image-rendering:pixelated]"
+        className="max-w-full select-none object-contain object-left [image-rendering:pixelated]"
         style={{ height: ROLE_PREFIX_HEIGHT * scale, width: 'auto' }}
       />
     </span>

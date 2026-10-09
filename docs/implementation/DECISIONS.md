@@ -1436,3 +1436,22 @@ server-authoritative; поля регистрации без пустот, ре�
 
 **Consequences.** Production-привязка заработает после плагина на серверах
 TwoMC (RISKS R20). Скриншоты tutorial и официальный SVG RuTube — от владельца.
+
+## ADR-0073 — Превью профиля по нику, варианты отображения пользователя
+
+**Decision.** `GET /users/:username/summary` (OptionalJwt) — лёгкая карточка:
+роли (slug/displayName/priority/color), должность, аватар, дата регистрации,
+онлайн (`isOnlineInGame` + сервер) или последняя активность, статистика
+(`PlayerStatistics`) только если игрок её не скрыл (`hideStatistics`, владелец
+видит всегда) и она реально есть, счётчики друзей (ACCEPTED) и выполненных
+достижений. Нет данных — `null`, без выдуманных нулей. Профиль `NOBODY`/
+`FRIENDS_ONLY` для посторонних — только `{ username, hidden: true }` (как у
+публичного профиля); `GET /users/:u/achievements` теперь тоже скрыт для таких
+профилей (раньше раскрывал достижения). Frontend: `ProfilePreview` — hover card
+на desktop (наведение и фокус), нижний sheet на touch/mobile, запрос только при
+открытии; `UserIdentity` — варианты `stacked`/`inline` и `previewable`;
+`RolePrefix` сжимает длинный PNG пропорционально (`object-contain`), а не
+сплющивает. Подключено в админке: «Пользователи», «Журнал аудита».
+
+**Consequences.** Страницы `/u/[username]` пока нет — ссылки «Открыть профиль»
+в превью нет (появится с публичной страницей профиля, Product Completion).

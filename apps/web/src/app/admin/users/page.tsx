@@ -25,6 +25,7 @@ import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDate, formatNumber, formatRelative, plural } from '@/lib/format';
 import { BanDialog } from './_components/ban-dialog';
+import { UserIdentity } from '@/components/ui/user-identity';
 
 function useDebounced<T>(value: T, delay = 300): T {
   const [debounced, setDebounced] = useState(value);
@@ -75,10 +76,7 @@ export default function UsersPage() {
       cell: (user) => (
         <div className="flex items-center gap-3">
           <Avatar name={user.username} size="sm" shape="round" />
-          <div className="min-w-0">
-            <p className="truncate font-medium">{user.username}</p>
-            <p className="truncate font-mono text-xs text-subtle-foreground">{user.tag}</p>
-          </div>
+          <UserIdentity username={user.username} tag={user.tag} previewable />
         </div>
       ),
     },
@@ -87,7 +85,13 @@ export default function UsersPage() {
       key: 'position',
       header: 'Должность',
       cell: (user) => (
-        <Badge color={user.position?.color ?? null}>{user.position?.displayName ?? '—'}</Badge>
+        <Badge
+          color={user.position?.color ?? null}
+          className="max-w-[12rem] truncate"
+          title={user.position?.displayName}
+        >
+          {user.position?.displayName ?? '—'}
+        </Badge>
       ),
     },
     { key: 'status', header: 'Статус', cell: userStatus },
