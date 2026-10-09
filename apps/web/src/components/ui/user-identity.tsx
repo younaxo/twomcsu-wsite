@@ -30,7 +30,10 @@ export function UserIdentity({
         {username}
       </span>
       {tag ? (
-        <span className="block min-w-0 truncate font-mono text-xs text-subtle-foreground" title={tag}>
+        <span
+          className="block min-w-0 truncate font-mono text-xs text-subtle-foreground"
+          title={tag}
+        >
           {tag}
         </span>
       ) : null}
