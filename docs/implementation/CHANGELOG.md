@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### CDN / файловое хранилище (PHASE 23)
+- `modules/files`: StorageService (local → `/uploads`, s3 за CDN_BASE_URL), пресеты
+  загрузок по типу с permission, pipeline magic-bytes → sharp → AVIF, модель File
+  TEMP/ATTACHED/DELETED, orphan cleanup, `POST /files/upload`,
+  `POST|DELETE /users/me/avatar|banner`. E2E `files` (6).
 ### Audit log (PHASE 22)
 - Глобальный `AuditInterceptor`: все успешные staff-мутации с `@RequirePermissions`
   пишутся в audit log (действие = ключ permission, цель, очищенные изменения,

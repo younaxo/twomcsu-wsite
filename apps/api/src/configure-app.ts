@@ -2,6 +2,8 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { resolve } from 'path';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
@@ -25,4 +27,30 @@ export function configureApp(app: INestApplication): void {
     }),
   );
   app.useWebSocketAdapter(new ConfigurableIoAdapter(app));
+
+  // Локальный драйвер хранилища (dev/тесты): файлы отдаются самим API по
+  // /uploads; в production за cdn-files.twomc.su стоит S3/отдельный слой.
+  if ((config.get<string>('STORAGE_DRIVER') ?? 'local') === 'local') {
+    const express = app as NestExpressApplication;
+    if (typeof express.useStaticAssets === 'function') {
+      express.useStaticAssets(
+        resolve(
+          process.cwd(),
+          config.get<string>('UPLOADS_DIR') ?? './uploads',
+        ),
+        {
+          prefix: '/uploads',
+          maxAge: '7d',
+          immutable: true,
+          index: false,
+          // express static не знает image/avif — выставляем явно.
+          setHeaders: (res, path) => {
+            if (path.endsWith('.avif')) {
+              res.setHeader('Content-Type', 'image/avif');
+            }
+          },
+        },
+      );
+    }
+  }
 }
