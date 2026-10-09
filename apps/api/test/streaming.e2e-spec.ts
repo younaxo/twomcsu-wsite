@@ -119,12 +119,22 @@ describe('Streaming (e2e)', () => {
       await prisma.role.deleteMany({
         where: { slug: { in: cleanupRoleSlugs } },
       });
-      await prisma.auditLog.deleteMany({
-        where: { actor: { email: { in: [alice.email, admin.email] } } },
-      });
-      await prisma.user.deleteMany({
-        where: { email: { in: [alice.email, admin.email] } },
-      });
+      // Аудит пишется асинхронно и может появиться между очисткой и удалением
+      // пользователей (параллельный прогон в CI) — повторяем пару шагов.
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await prisma.auditLog.deleteMany({
+          where: { actor: { email: { in: [alice.email, admin.email] } } },
+        });
+        try {
+          await prisma.user.deleteMany({
+            where: { email: { in: [alice.email, admin.email] } },
+          });
+          break;
+        } catch (error) {
+          if (attempt === 4) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
     }
     await app.close();
   }, 15_000);

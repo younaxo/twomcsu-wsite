@@ -7,6 +7,7 @@ import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
 import { AuthSection } from './sections/auth-section';
 import { BrandSection } from './sections/brand-section';
+import { CursorsSection } from './sections/cursors-section';
 import { GlobalShellSection } from './sections/global-shell-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
@@ -18,6 +19,7 @@ const SECTIONS = [
   { id: 'shell', label: 'Global shell' },
   { id: 'brand', label: 'Бренд и плашка' },
   { id: 'auth', label: 'Auth' },
+  { id: 'cursors', label: 'Курсоры' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -108,6 +110,14 @@ export function DesignLab() {
             description="Единая auth-панель: вход, регистрация, код подтверждения и итог входа/привязки Discord и Telegram — те же компоненты, что на /login, /register и /auth/result."
           />
           <AuthSection />
+        </section>
+
+        <section id="cursors" className="scroll-mt-20">
+          <SectionHeading
+            title="Курсоры"
+            description="Собственный курсор «Полдня»: обычный, ссылка/кнопка, текст, перетаскивание, недоступно. Только мышь/тачпад, с системным fallback."
+          />
+          <CursorsSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">
