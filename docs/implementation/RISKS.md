@@ -176,3 +176,13 @@ Socket.IO-сервера) — под полным `pnpm test:e2e` (CI: `.github/
 Владелец выбрал «Полдень», тёмная тема — основная, светлая — вторичная;
 стекло запрещено (2026-10-09). Зафиксировано в ADR-0055 и
 `docs/design/VISUAL-DIRECTION.md` §0; архивные направления удалены.
+
+## R15 — Данные для публичной оболочки — OPEN
+
+Для footer/sidebar нужны от владельца: SVG логотипов Visa/Mastercard/МИР/СБП
+(`apps/web/public/assets/payment/*.svg`, в чате не получены), ссылки
+Telegram/Discord/TikTok (TikTok — только `NEXT_PUBLIC_TIKTOK_URL`, остальные —
+/admin/settings), юридические данные владельца (`NEXT_PUBLIC_LEGAL_*`),
+официальный e-mail (настройки сайта), URL status page
+(`NEXT_PUBLIC_STATUS_PAGE_URL`). Без них разделы показывают честные
+заглушки/скрываются, fake-данных нет.

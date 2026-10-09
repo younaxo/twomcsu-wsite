@@ -71,6 +71,11 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
+- Глобальная оболочка twomc.su (App Shell, `feature/global-shell`): rail/header/footer/
+  overlays/mobile nav, публичные страницы /shop /rules /servers /status на реальных
+  API, ColorPicker без нативного диалога. Не хватает от владельца: SVG способов оплаты
+  (public/assets/payment), ссылки соцсетей (или через /admin/settings), юр. данные и
+  e-mail (env NEXT_PUBLIC_LEGAL_* / настройки сайта), URL status page.
 - PHASE 35 — Production infrastructure: Dockerfile api/web, docker-compose.prod,
   deploy.sh (build → migrate deploy → switch → health → rollback), nginx-пример.
   Деплой заблокирован отсутствием данных хостинга (RISKS R8).

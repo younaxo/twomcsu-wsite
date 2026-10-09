@@ -25,7 +25,7 @@ export default function HomePage() {
           <p className="mt-4 max-w-prose text-lg text-muted-foreground">
             Minecraft-проект с собственными серверами, магазином и сообществом. Сейчас на серверах{' '}
             {players === undefined ? (
-              <Skeleton className="inline-block h-5 w-12 align-middle" />
+              <span aria-hidden className="inline-block h-5 w-12 animate-pulse rounded bg-muted align-middle" />
             ) : (
               <span className="font-semibold text-foreground tabular">
                 {formatNumber(players)}{' '}

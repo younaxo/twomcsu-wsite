@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Глобальная оболочка twomc.su (App Shell)
+- `components/shell/*`: фиксированный icon-only rail (общий онлайн по реальному ping,
+  навигация из `lib/site/config.ts`, бонусы, соцсети, язык/валюта), header (логотип с CDN,
+  twomc.su, навигация, уведомления, профиль), информационный footer (владелец из env,
+  e-mail/соцсети из `GET /site/settings`, ссылки игрокам, правовые документы «скоро»,
+  язык, статус серверов, тема, версия, способы оплаты), плавающие действия (корзина в
+  /shop*, чат «скоро»), мобильная нижняя навигация; `app/(site)` с /shop, /rules,
+  /servers, /status. Публичный `GET /site/settings`. Z-index шкала. Бренд в UI — twomc.su.
+- Встроенный `ColorPicker` без системного color dialog: пресеты, HEX, палитра
+  (область + оттенок), bottom sheet на mobile; используется в форме роли.
+- Тесты: shell (8), ColorPicker (7). Секции Global shell и ColorPicker в /design-lab.
+
 ### Production infrastructure (PHASE 35)
 - `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,
   `deploy.sh` с prisma migrate deploy и автоматическим rollback, пример nginx,
