@@ -1,8 +1,10 @@
 'use client';
 
+import { X } from 'lucide-react';
 import { AlertDialog as RadixAlertDialog } from 'radix-ui';
 import {
   forwardRef,
+  useRef,
   useState,
   type ComponentPropsWithoutRef,
   type ElementRef,
@@ -11,13 +13,15 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from '@/lib/cn';
-import { Button, type ButtonProps } from './button';
+import { Button, IconButton, type ButtonProps } from './button';
 
 /// AlertDialog — модальное подтверждение, которое прерывает работу: удалить роль,
-/// забанить игрока, отозвать сессии. В отличие от `Dialog` не закрывается кликом
-/// по подложке и не имеет крестика — пользователь обязан выбрать действие.
-/// Radix ставит `role="alertdialog"` и переводит фокус на `AlertDialogCancel`
-/// (наименее опасная кнопка).
+/// забанить игрока, отозвать сессии. Поведение закрытия единое со всеми окнами
+/// (ADR-0064): тёмный scrim, крестик справа вверху, Esc и клик вне окна
+/// закрывают. Любое закрытие = «Отмена» (безопасно: действие выполняется
+/// только кнопкой подтверждения). Пока идёт запрос, ConfirmDialog закрытие
+/// игнорирует. Radix ставит `role="alertdialog"` и переводит фокус на
+/// `AlertDialogCancel` в футере (наименее опасная кнопка).
 ///
 /// Для типового сценария «подтвердить/отменить» есть готовый `ConfirmDialog`.
 
@@ -32,7 +36,7 @@ export const AlertDialogOverlay = forwardRef<
   <RadixAlertDialog.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-foreground/40',
+      'fixed inset-0 z-50 bg-scrim',
       'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
       className,
     )}
@@ -41,33 +45,58 @@ export const AlertDialogOverlay = forwardRef<
 ));
 AlertDialogOverlay.displayName = 'AlertDialogOverlay';
 
+export interface AlertDialogContentProps extends ComponentPropsWithoutRef<
+  typeof RadixAlertDialog.Content
+> {
+  /// Скрыть крестик (только если у окна есть другой явный способ отмены).
+  hideClose?: boolean;
+}
+
 export const AlertDialogContent = forwardRef<
   ElementRef<typeof RadixAlertDialog.Content>,
-  ComponentPropsWithoutRef<typeof RadixAlertDialog.Content>
->(({ className, children, ...props }, ref) => (
-  <AlertDialogPortal>
-    <AlertDialogOverlay />
-    <RadixAlertDialog.Content
-      ref={ref}
-      className={cn(
-        // Центрирование через `translate` (не `transform`): keyframes pop-in/pop-out
-        // переопределяют `transform`, и окно не «прыгает» в конце анимации.
-        'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
-        'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
-        'overscroll-contain focus:outline-none',
-        'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </RadixAlertDialog.Content>
-  </AlertDialogPortal>
-));
+  AlertDialogContentProps
+>(({ className, children, hideClose = false, ...props }, ref) => {
+  // Клик по подложке = нажатие «Закрыть» (Cancel): Radix AlertDialog сам
+  // по клику вне не закрывается, а Cancel проходит через onOpenChange
+  // (ConfirmDialog может отклонить закрытие во время запроса).
+  const closeRef = useRef<HTMLButtonElement>(null);
+  return (
+    <AlertDialogPortal>
+      <AlertDialogOverlay onClick={() => closeRef.current?.click()} />
+      <RadixAlertDialog.Content
+        ref={ref}
+        className={cn(
+          // Центрирование через `translate` (не `transform`): keyframes pop-in/pop-out
+          // переопределяют `transform`, и окно не «прыгает» в конце анимации.
+          'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-w-md max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
+          'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          'overscroll-contain focus:outline-none',
+          'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
+          className,
+        )}
+        {...props}
+      >
+        {/* Крестик раньше children в DOM: начальный фокус Radix остаётся на
+            «Отмене» в футере (последний смонтированный Cancel). */}
+        <RadixAlertDialog.Cancel asChild>
+          <IconButton
+            ref={closeRef}
+            aria-label="Закрыть"
+            size="sm"
+            className={cn('absolute right-3 top-3 z-[1]', hideClose && 'hidden')}
+          >
+            <X />
+          </IconButton>
+        </RadixAlertDialog.Cancel>
+        {children}
+      </RadixAlertDialog.Content>
+    </AlertDialogPortal>
+  );
+});
 AlertDialogContent.displayName = 'AlertDialogContent';
 
 export function AlertDialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1 p-card-p pb-0', className)} {...props} />;
+  return <div className={cn('flex flex-col gap-1 p-card-p pb-0 pr-12', className)} {...props} />;
 }
 
 export function AlertDialogBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

@@ -11,6 +11,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        /// Затемнение под модалками: `bg-scrim` — тёмный слой нужной плотности
+        /// для каждой темы (никогда не foreground — он светлый в dark).
+        scrim: 'rgb(var(--scrim) / var(--scrim-opacity))',
         background: {
           DEFAULT: token('background'),
           subtle: token('background-subtle'),

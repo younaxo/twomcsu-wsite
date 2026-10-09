@@ -21,7 +21,7 @@ export const HoverCardTrigger = RadixHoverCard.Trigger;
 export const HoverCardPortal = RadixHoverCard.Portal;
 
 export const hoverCardContentClassName = cn(
-  'z-50 w-72 max-w-[calc(100vw-2rem)] rounded-lg border bg-surface-overlay p-4 text-foreground shadow-lg edge-highlight',
+  'z-popover w-72 max-w-[calc(100vw-2rem)] rounded-lg bg-surface-overlay p-4 text-foreground shadow-lg edge-highlight',
   'max-h-[var(--radix-hover-card-content-available-height)] overflow-y-auto overscroll-contain scrollbar-thin',
   'origin-[var(--radix-hover-card-content-transform-origin)]',
   'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',

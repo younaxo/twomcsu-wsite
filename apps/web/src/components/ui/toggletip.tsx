@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 /// rich-блок без кнопок; для интерактива используйте `Popover`.
 
 export const toggletipContentClassName = cn(
-  'z-50 max-w-[min(20rem,calc(100vw-2rem))] rounded-sm bg-foreground px-3 py-2 text-xs leading-snug text-background shadow-lg',
+  'z-tooltip max-w-[min(20rem,calc(100vw-2rem))] rounded-sm bg-foreground px-3 py-2 text-xs leading-snug text-background shadow-lg',
   'overscroll-contain focus:outline-none',
   'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
 );

@@ -111,6 +111,13 @@ export class UserRolesController {
     if (!role) {
       throw new NotFoundException('Роль не найдена');
     }
+    // Защита от самоблокировки: снять с себя superuser-роль нельзя — это
+    // делает другой администратор (иначе аккаунт теряет доступ к админке).
+    if (role.isSuperuser && userId === actor.id) {
+      throw new ForbiddenException(
+        'Нельзя снять с себя роль с полным доступом — обратитесь к другому администратору',
+      );
+    }
 
     const actorEffective = await this.permissions.getEffectivePermissions(
       actor.id,

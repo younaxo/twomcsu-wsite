@@ -64,7 +64,7 @@ export const DrawerOverlay = forwardRef<
 >(({ className, ...props }, ref) => (
   <VaulDrawer.Overlay
     ref={ref}
-    className={cn('fixed inset-0 z-50 bg-foreground/40', className)}
+    className={cn('fixed inset-0 z-50 bg-scrim', className)}
     {...props}
   />
 ));

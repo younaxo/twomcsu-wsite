@@ -53,6 +53,8 @@ export interface AdminUserListItem {
   tag: string;
   email: string;
   username: string;
+  /// Уровень доступа (ADR-0062).
+  accessLevel: number;
   accountType: AccountType;
   isBanned: boolean;
   isVerified: boolean;

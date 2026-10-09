@@ -26,6 +26,9 @@
   /* Поверхности: бумага на прохладном сером */
   --background: 247 247 245;
   --background-subtle: 241 241 238;
+  /* Затемнение под модальными окнами: тёмный scrim (не белёсый). */
+  --scrim: 12 11 10;
+  --scrim-opacity: 0.45;
   --foreground: 28 27 25;
   --foreground-secondary: 76 74 70;
   --foreground-muted: 120 117 112;
@@ -82,7 +85,6 @@
   --shadow-lg: 0 8px 24px rgb(40 30 20 / 0.12), 0 0 0 1px rgb(40 30 20 / 0.06);
   --edge-highlight: transparent;
 
-
   /* Типографика: Onest для всего UI, Literata для редакционного текста */
   --font-sans-fallback: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-onest: 'Onest Variable';
@@ -125,6 +127,8 @@
 
   --background: 23 23 21;
   --background-subtle: 28 28 26;
+  --scrim: 0 0 0;
+  --scrim-opacity: 0.62;
   --foreground: 240 238 233;
   --foreground-secondary: 196 192 184;
   --foreground-muted: 150 146 138;
@@ -170,5 +174,4 @@
   --shadow: 0 2px 6px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(255 255 255 / 0.05);
   --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.07);
   --edge-highlight: rgb(255 255 255 / 0.06);
-
 }

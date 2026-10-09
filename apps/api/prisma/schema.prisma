@@ -259,8 +259,15 @@ model User {
   /// Публичный тег вида name#4a2b.
   tag      String @unique @db.VarChar(32)
   email    String @unique
+  /// Ник = логин для входа = Minecraft-ник. Исключения — только точечные
+  /// alias'ы входа (`LoginAlias`, ADR-0061), модель identity не меняется.
   username String @unique @db.VarChar(16)
   password String
+
+  /// Уровень доступа (ADR-0062) — отдельный числовой параметр пользователя,
+  /// НЕ priority роли и НЕ замена permissions. Показывается в title админки
+  /// (`twomc.su | A [N]`); меняется только через permission `users.access_level.edit`.
+  accessLevel Int @default(0)
 
   accountType        AccountType @default(DEFAULT)
   /// true для #1/#2 сразу после bootstrap-seed (ADR-0006); сбрасывается при смене пароля.
@@ -344,6 +351,7 @@ model User {
 
   customPosition      UserCustomPosition?
   departments         UserDepartment[]
+  loginAliases        LoginAlias[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   promoCodeUsages     PromoCodeUsage[]
@@ -441,6 +449,20 @@ model User {
   @@index([displayBadgeId])
   @@index([selectedDecorationId])
   @@map("users")
+}
+
+/// Точечный alias для входа (ADR-0061): у всех пользователей login = username,
+/// alias — редкое исключение (bootstrap #2: вход `younaxo` → ник `younaxo_`).
+/// Хранится в нижнем регистре; ник, совпадающий с alias, зарегистрировать нельзя.
+model LoginAlias {
+  alias     String   @id @db.VarChar(32)
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("login_aliases")
 }
 
 model RefreshToken {

@@ -77,7 +77,7 @@ export function Lightbox({ images, index, onIndexChange, open, onOpenChange }: L
       <RadixDialog.Portal>
         <RadixDialog.Overlay
           className={cn(
-            'fixed inset-0 z-50 bg-foreground/90',
+            'fixed inset-0 z-50 bg-black/90',
             'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
           )}
         />

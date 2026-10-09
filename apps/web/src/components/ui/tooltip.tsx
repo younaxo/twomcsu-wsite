@@ -18,7 +18,7 @@ export const TooltipRoot = RadixTooltip.Root;
 export const TooltipTrigger = RadixTooltip.Trigger;
 
 export const tooltipContentClassName = cn(
-  'z-50 max-w-[min(20rem,calc(100vw-2rem))] rounded-sm bg-surface-overlay px-2.5 py-1.5 text-xs leading-snug text-foreground shadow-lg',
+  'z-tooltip max-w-[min(20rem,calc(100vw-2rem))] rounded-sm bg-surface-overlay px-2.5 py-1.5 text-xs leading-snug text-foreground shadow-lg',
   'data-[state=delayed-open]:animate-fade-in data-[state=closed]:animate-fade-out',
   '[--pop-y:2px] data-[side=top]:[--pop-y:2px] data-[side=bottom]:[--pop-y:-2px]',
 );

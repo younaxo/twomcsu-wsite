@@ -80,6 +80,9 @@ export const adminApi = {
   users: (query: ListUsersQuery) =>
     api.get<Paginated<AdminUserListItem>>('/admin/users', { query: toQuery(query) }),
   user: (id: string) => api.get<AdminUserFull>(`/admin/users/${id}/full`),
+  /// Уровень доступа (ADR-0062) — permission `users.access_level.edit`.
+  setAccessLevel: (id: string, accessLevel: number) =>
+    api.patch<AdminUserListItem>(`/admin/users/${id}/access-level`, { accessLevel }),
   userEffectivePermissions: (id: string) =>
     api.get<EffectivePermissions>(`/admin/users/${id}/effective-permissions`),
   userBadges: (id: string) => api.get<UserBadgeDto[]>(`/admin/users/${id}/badges`),

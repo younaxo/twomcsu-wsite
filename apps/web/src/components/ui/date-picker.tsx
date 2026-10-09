@@ -258,7 +258,7 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
             sideOffset={4}
             collisionPadding={8}
             className={cn(
-              'z-50 w-auto max-w-[calc(100vw-2rem)] p-3',
+              'z-popover w-auto max-w-[calc(100vw-2rem)] p-3',
               'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
               'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
               'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',

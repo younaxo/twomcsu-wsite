@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 31 — All pages (главная + оболочка v2, первый срез)
-Current branch: feature/home-shell-v2 (от feature/global-shell, PR #40); PHASE 21/22/23/35 слиты
+Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
+Current branch: feature/brand-tables-account (от main после PR #41)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
