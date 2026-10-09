@@ -108,6 +108,102 @@ export class ProfilesService {
     return isOwner ? user : this.applyPrivacy(user);
   }
 
+  /// Карточка превью (ADR-0073). Те же правила видимости, что у публичного
+  /// профиля; для скрытого профиля — только ник и признак `hidden`. Нет данных
+  /// — `null` (никаких выдуманных нулей). Статистика — только если игрок её не
+  /// скрыл и она реально есть.
+  async getProfileSummary(username: string, viewerId: string | null) {
+    const user = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
+      select: {
+        id: true,
+        username: true,
+        tag: true,
+        avatar: true,
+        createdAt: true,
+        accountType: true,
+        isBanned: true,
+        profileVisibility: true,
+        hideStatistics: true,
+        lastActivityAt: true,
+        isOnlineInGame: true,
+        currentServer: true,
+        position: { select: { displayName: true, color: true } },
+        roles: {
+          select: {
+            role: {
+              select: {
+                slug: true,
+                displayName: true,
+                priority: true,
+                color: true,
+              },
+            },
+          },
+        },
+        statistics: {
+          select: {
+            playTime: true,
+            kills: true,
+            deaths: true,
+            killDeathRatio: true,
+          },
+        },
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('Профиль не найден');
+    }
+    const isOwner = viewerId !== null && viewerId === user.id;
+    if (
+      !isOwner &&
+      (user.profileVisibility === 'NOBODY' ||
+        user.profileVisibility === 'FRIENDS_ONLY')
+    ) {
+      return { username: user.username, hidden: true as const };
+    }
+    const [friendsCount, achievementsCompleted] = await Promise.all([
+      this.prisma.friendship.count({
+        where: {
+          status: 'ACCEPTED',
+          OR: [{ requesterId: user.id }, { addresseeId: user.id }],
+        },
+      }),
+      this.prisma.userAchievement.count({
+        where: { userId: user.id, isCompleted: true },
+      }),
+    ]);
+    const showStats = isOwner || !user.hideStatistics;
+    return {
+      username: user.username,
+      hidden: false as const,
+      tag: user.tag,
+      avatar: user.avatar,
+      createdAt: user.createdAt.toISOString(),
+      system: user.accountType === 'SYSTEM',
+      banned: user.isBanned,
+      position: user.position
+        ? { displayName: user.position.displayName, color: user.position.color }
+        : null,
+      roles: user.roles.map((r) => r.role),
+      online: user.isOnlineInGame,
+      currentServer: user.isOnlineInGame ? user.currentServer : null,
+      lastActivityAt: user.lastActivityAt?.toISOString() ?? null,
+      statistics:
+        showStats && user.statistics
+          ? {
+              playTimeMinutes: user.statistics.playTime,
+              kills: user.statistics.kills,
+              deaths: user.statistics.deaths,
+              killDeathRatio: user.statistics.killDeathRatio,
+            }
+          : null,
+      statisticsHidden: !showStats,
+      friendsCount,
+      achievementsCompleted,
+    };
+  }
+
   private applyPrivacy(user: OwnProfile): Record<string, unknown> {
     const visible: Record<string, unknown> = {
       id: user.id,

@@ -35,6 +35,16 @@ export class ProfilesController {
     return this.profiles.getPublicProfile(username, viewer?.id ?? null);
   }
 
+  /// Короткая карточка для превью профиля (ник → popover/sheet): роли,
+  /// онлайн, статистика (если не скрыта), счётчики. Скрытый профиль — только
+  /// `{ username, hidden: true }`.
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':username/summary')
+  async summary(@Param('username') username: string, @Req() req: Request) {
+    const viewer = (req as Request & { user?: AuthenticatedUser }).user;
+    return this.profiles.getProfileSummary(username, viewer?.id ?? null);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post(':username/report')
   async report(

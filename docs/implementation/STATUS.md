@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
-Current branch: feature/auth-tutorial-minecraft (от main после PR #47)
+Current branch: feature/profile-preview (от main после PR #48)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -75,8 +75,9 @@ In progress:
   входа, уровень доступа, плашка, соцсети, массовые права ролей, таблицы, окна,
   вход через Discord/Telegram для привязанных аккаунтов), #46 (регистрация с
   подтверждением почты, ADR-0070), #47 (единая auth-панель, Telegram OpenID
-  Connect, экран результата соцвхода, ADR-0071). Tutorial регистрации и привязка
-  Minecraft через `/site-connect` (ADR-0072) — PR из `feature/auth-tutorial-minecraft`.
+  Connect, экран результата соцвхода, ADR-0071), #48 (tutorial регистрации и
+  привязка Minecraft через `/site-connect`, ADR-0072). Превью профиля по нику
+  (ADR-0073) — PR из `feature/profile-preview`.
   Блокеры: доставка писем (R4), Telegram OIDC в BotFather (R18), Minecraft-плагин (R20).
 - PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
   дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,
@@ -150,7 +151,7 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (api unit 29/29, web unit 169/169 — Vitest; e2e 31 suite / 236 тестов — auth + registration-otp + social-auth + RBAC + users-domain +
+tests: pass (api unit 29/29, web unit 174/174 — Vitest; e2e 32 suite / 240 тестов — auth + registration-otp + social-auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
 store-checkout + minecraft + gamification + admin — roles+auth перепроверены локально
