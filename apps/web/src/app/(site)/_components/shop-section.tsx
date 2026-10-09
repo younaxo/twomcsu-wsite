@@ -2,7 +2,7 @@
 
 import type { ProductListItem } from '@twomc/shared';
 import { ArrowRight, ShoppingBag } from 'lucide-react';
-import Image from 'next/image';
+import { ProtectedImage } from '@/components/ui/protected-image';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,11 +18,13 @@ function ProductCard({ product }: { product: ProductListItem }) {
   return (
     <article
       data-testid="home-product-card"
+      data-context="product"
+      data-context-name={product.name}
       className="flex h-full flex-col overflow-hidden rounded-xl border bg-surface shadow"
     >
       <div className="relative flex aspect-[4/3] items-center justify-center bg-surface-sunken">
         {product.image ? (
-          <Image
+          <ProtectedImage
             src={product.image}
             alt=""
             fill

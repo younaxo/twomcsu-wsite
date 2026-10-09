@@ -52,6 +52,8 @@ export function UserIdentity({
         className={cn('flex min-w-0 items-center gap-1.5', className)}
         data-testid="user-identity"
         data-variant="inline"
+        data-context="user"
+        data-context-username={username}
       >
         {role ? (
           <span className="flex min-w-0 max-w-[45%] shrink">
@@ -64,7 +66,12 @@ export function UserIdentity({
   }
 
   return (
-    <span className={cn('flex min-w-0 flex-col gap-0.5', className)} data-testid="user-identity">
+    <span
+      className={cn('flex min-w-0 flex-col gap-0.5', className)}
+      data-testid="user-identity"
+      data-context="user"
+      data-context-username={username}
+    >
       {role ? (
         <span className="flex min-w-0 max-w-full overflow-hidden">
           <RolePrefix role={role} size={prefixSize} />

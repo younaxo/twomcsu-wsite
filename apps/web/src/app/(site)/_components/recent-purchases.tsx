@@ -33,7 +33,13 @@ function PurchaseItem({ item }: { item: RecentPurchaseDto }) {
   return (
     <li className="flex shrink-0 items-center gap-2 rounded-full border bg-surface py-1 pl-1 pr-3 text-sm shadow-sm">
       <Avatar name={item.nickname} src={item.avatar} size="xs" shape="round" />
-      <span className="font-medium tabular">{item.nickname}</span>
+      <span
+        className="font-medium tabular"
+        data-context="user"
+        data-context-username={item.nickname}
+      >
+        {item.nickname}
+      </span>
       <span aria-hidden className="text-subtle-foreground">
         —
       </span>
