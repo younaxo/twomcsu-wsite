@@ -122,7 +122,7 @@ export const SelectContent = forwardRef<
         className={cn(
           'relative z-dropdown min-w-32 max-w-[calc(100vw-2rem)] overflow-hidden',
           'max-h-[min(18rem,var(--radix-select-content-available-height))]',
-          'rounded-lg bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          'rounded-lg bg-surface-overlay text-foreground shadow-lg',
           'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
           'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',
           position === 'popper' && 'w-[var(--radix-select-trigger-width)]',

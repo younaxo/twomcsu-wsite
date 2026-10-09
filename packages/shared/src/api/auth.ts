@@ -150,11 +150,48 @@ export interface RegisterVerificationState {
   expiresAt: IsoDateString;
   resendAvailableAt: IsoDateString;
   resendsLeft: number;
+  /// Нужен ли шаг привязки Minecraft (ADR-0072): включается вместе с плагином.
+  minecraftRequired?: boolean;
 }
 
 export interface RegisterVerifyResponse {
   completionToken: string;
   email: string;
+  minecraftRequired?: boolean;
+}
+
+// --- Привязка Minecraft при регистрации (ADR-0072) ---------------------------------
+
+export type RegisterStage = 'email' | 'minecraft' | 'create';
+
+/// `POST /auth/register/state` — продолжение после перезагрузки (без пароля).
+export interface RegisterStateResponse extends RegisterVerificationState {
+  stage: RegisterStage;
+  username: string;
+  minecraft: {
+    required: boolean;
+    name: string | null;
+    challengePending: boolean;
+    challengeExpiresAt: IsoDateString | null;
+    confirmed: boolean;
+  };
+}
+
+/// `POST /auth/register/minecraft/code` и `/challenge`: 5-символьный код для
+/// ввода в игре командой `/site-connect <код>` (показывается только здесь).
+export interface RegisterMinecraftChallenge {
+  name: string | null;
+  confirmed: boolean;
+  challenge: string | null;
+  challengeExpiresAt: IsoDateString | null;
+  attempts?: number;
+}
+
+/// `POST /minecraft/site-connect/open` — 15-символьный код со страницы ссылки.
+export interface SiteConnectOpenResponse {
+  code: string;
+  name: string;
+  expiresAt: IsoDateString;
 }
 
 export interface RegisterCompleteRequest {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
+import { MinecraftLinkModule } from '../minecraft-link/minecraft-link.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { BruteForceService } from './brute-force.service';
@@ -14,6 +15,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 @Module({
   imports: [
     PassportModule,
+    MinecraftLinkModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

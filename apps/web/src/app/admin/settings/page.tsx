@@ -75,7 +75,7 @@ function SiteSettingsTabs({
       {editable && api.changedCount > 0 ? (
         <div
           data-testid="settings-save-bar"
-          className="sticky bottom-4 z-sticky mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-surface-raised p-3 shadow-lg edge-highlight"
+          className="sticky bottom-4 z-sticky mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-surface-raised p-3 shadow-lg"
         >
           <p className="text-sm" aria-live="polite">
             Изменено полей: <span className="font-semibold tabular">{api.changedCount}</span>

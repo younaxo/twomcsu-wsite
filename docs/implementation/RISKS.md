@@ -202,6 +202,26 @@ Halloween-декор шапки перенесён на собственный C
 `https://cdn-files.twomc.su/assets/images/halloween_assets.webp` (2728×146).
 Сторонний домен больше не используется; override — `NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC`.
 
+## R19 — Next standalone на Windows стирал node_modules — MITIGATED
+
+`output: 'standalone'` с pnpm на Windows кладёт в `.next/standalone/node_modules`
+ссылки (junctions) на пакеты `node_modules/.pnpm`; очистка `.next` при запуске
+`next dev` проходила по ним и опустошала настоящие пакеты (дважды за сессию).
+Теперь standalone включается только не на Windows (Docker/CI — Linux). Если
+снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
+apps/web/.next && pnpm install --frozen-lockfile --offline`.
+
+## R20 — Minecraft-плагин для `/site-connect` — OPEN (внешняя работа)
+
+API привязки готов (ADR-0072, `MINECRAFT-PLUGIN-CONTRACT.md`), в dev — имитатор
+`pnpm --filter @twomc/api mc:plugin-sim`. Нужен плагин для серверов TwoMC
+(команды `/site-connect`, `/site-connect <код>`) и общий секрет
+`MINECRAFT_PLUGIN_SECRET` в env сайта и плагина. Пока секрета нет в production —
+шаг Minecraft в регистрации не требуется. **Нужно от владельца:** плагин
+(разработчик/исходники), реальные скриншоты для 6 этапов tutorial
+(`apps/web/public/assets/tutorial/README.md`), ссылки на видео YouTube/RuTube,
+официальный SVG логотипа RuTube (в Simple Icons его нет).
+
 ## R18 — Telegram Login (OpenID Connect): настройка BotFather — OPEN (нужен владелец)
 
 Код входа/привязки через Telegram OIDC готов (ADR-0071), но без настройки бота

@@ -42,7 +42,7 @@ export function AuthModeSwitch({ className, mode }: { className?: string; mode?:
           scroll={false}
           aria-current={index === activeIndex ? 'page' : undefined}
           className={cn(
-            'relative z-10 flex h-control items-center justify-center rounded-sm text-sm font-medium transition-colors duration-fast',
+            'relative z-10 flex h-control-sm items-center justify-center rounded-sm text-sm font-medium transition-colors duration-fast',
             index === activeIndex ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
           )}
         >

@@ -65,6 +65,36 @@ export class RegisterResendDto {
   verificationId!: string;
 }
 
+/// Состояние регистрации для продолжения после перезагрузки (без пароля).
+export class RegisterStateDto {
+  @IsString()
+  @Length(10, 40)
+  verificationId!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(32, 128)
+  completionToken?: string;
+}
+
+/// Привязка Minecraft: шаг после подтверждения почты (ADR-0072).
+export class RegisterMinecraftDto {
+  @IsString()
+  @Length(10, 40)
+  verificationId!: string;
+
+  @IsString()
+  @Length(32, 128)
+  completionToken!: string;
+}
+
+export class RegisterMinecraftCodeDto extends RegisterMinecraftDto {
+  /// 15-символьный код со страницы /site-connect (пробелы/дефисы допустимы).
+  @IsString()
+  @Length(15, 40)
+  code!: string;
+}
+
 /// Шаг 3: создание аккаунта — только с одноразовым токеном после верного кода.
 export class RegisterCompleteDto {
   @IsString()

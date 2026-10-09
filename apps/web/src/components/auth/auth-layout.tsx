@@ -1,10 +1,14 @@
 'use client';
 
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, BookOpen } from 'lucide-react';
 import Link from 'next/link';
-import { Suspense, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { SiteLogo } from '@/components/shell/site-logo';
+import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { shouldShowAuthTutorial, TUTORIAL_SEEN_KEY } from '@/lib/auth/tutorial';
+import { AuthTutorial } from './auth-tutorial';
 import { AuthModeSwitch, type AuthMode } from './auth-mode-switch';
 import { AuthVisual } from './auth-visual';
 
@@ -14,10 +18,50 @@ import { AuthVisual } from './auth-visual';
 /// экранах скрыт). Используется layout'ом `app/(auth)` для входа, регистрации,
 /// восстановления/сброса пароля и экранов результата Discord/Telegram, поэтому
 /// при переходах между ними панель не перемонтируется. Solid, без glass.
+function readSeen(): boolean {
+  try {
+    return window.localStorage.getItem(TUTORIAL_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markSeen() {
+  try {
+    window.localStorage.setItem(TUTORIAL_SEEN_KEY, '1');
+  } catch {
+    // Хранилище недоступно (приватный режим) — просто покажем ещё раз.
+  }
+}
+
+/// Tutorial поверх панели: решение — `shouldShowAuthTutorial` (сейчас
+/// принудительно при каждом открытии auth-экрана, позже — только регистрация).
+function useAuthTutorial() {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!shouldShowAuthTutorial({ pathname, seen: readSeen() })) return;
+    // Открываем после гидрации формы (она в Suspense): иначе Radix ставит
+    // aria-hidden на ещё не гидрированную разметку и React предупреждает.
+    const id = window.setTimeout(() => setOpen(true), 350);
+    return () => window.clearTimeout(id);
+    // Только при открытии auth-экрана, не при переключении Вход/Регистрация.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return {
+    open,
+    setOpen: (next: boolean) => {
+      setOpen(next);
+      if (!next) markSeen();
+    },
+  };
+}
+
 export function AuthLayout({ children }: { children: ReactNode }) {
+  const tutorial = useAuthTutorial();
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between px-4 py-3 md:px-6">
+      <header className="flex items-center justify-between px-4 py-2.5 md:px-6">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground hover:text-foreground"
@@ -25,9 +69,16 @@ export function AuthLayout({ children }: { children: ReactNode }) {
           <ArrowLeft aria-hidden className="size-4" />
           На сайт
         </Link>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => tutorial.setOpen(true)}>
+            <BookOpen />
+            Как зарегистрироваться
+          </Button>
+          <ThemeToggle />
+        </div>
       </header>
-      <main className="flex flex-1 items-start justify-center px-3 pb-10 sm:px-4 md:items-center md:px-6">
+      <AuthTutorial open={tutorial.open} onOpenChange={tutorial.setOpen} />
+      <main className="flex flex-1 items-start justify-center px-3 pb-6 sm:px-4 md:items-center md:px-6">
         <AuthPanel>{children}</AuthPanel>
       </main>
     </div>
@@ -40,17 +91,20 @@ export function AuthPanel({ children, mode }: { children: ReactNode; mode?: Auth
   return (
     <div
       data-testid="auth-panel"
-      className="grid w-full max-w-[1120px] overflow-hidden rounded-2xl bg-surface-raised shadow-lg edge-highlight lg:min-h-[640px] lg:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]"
+      className="grid w-full max-w-[1120px] overflow-hidden rounded-2xl bg-surface-raised shadow-lg lg:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)]"
     >
       <AuthVisual compact className="max-[379px]:hidden lg:hidden" />
       <section
         aria-labelledby="auth-title"
-        className="flex min-w-0 flex-col gap-6 px-5 py-6 sm:p-8 lg:p-12"
+        className="flex min-w-0 flex-col gap-5 px-5 py-6 sm:px-8 sm:py-7 lg:px-10 lg:py-8"
       >
-        <SiteLogo size={36} wordmarkSize="lg" className="self-start" />
-        <Suspense fallback={null}>
-          <AuthModeSwitch mode={mode} />
-        </Suspense>
+        {/* Логотип и «Вход | Регистрация» — одной строкой (на узких — друг под другом). */}
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+          <SiteLogo size={36} wordmarkSize="lg" />
+          <Suspense fallback={null}>
+            <AuthModeSwitch mode={mode} className="w-full sm:w-64" />
+          </Suspense>
+        </div>
         {children}
       </section>
       <AuthVisual className="hidden lg:flex" />

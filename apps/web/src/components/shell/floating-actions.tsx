@@ -23,7 +23,7 @@ export function formatCount(count: number): string {
 }
 
 const floatingButtonClassName =
-  'relative size-12 rounded-full border bg-surface-overlay text-foreground shadow-lg edge-highlight hover:bg-surface-hover';
+  'relative size-12 rounded-full border bg-surface-overlay text-foreground shadow-lg hover:bg-surface-hover';
 
 /// Корзина видна только в store-зоне (/shop*), для вошедших — с реальным
 /// счётчиком из GET /store/cart; анонимам — приглашение войти.

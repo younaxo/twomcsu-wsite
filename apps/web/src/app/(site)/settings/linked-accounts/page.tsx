@@ -115,7 +115,7 @@ function LinkedAccounts() {
 
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <section className="rounded-xl bg-surface px-5 py-2 shadow-sm edge-highlight md:px-6">
+      <section className="rounded-xl bg-surface px-5 py-2 shadow-sm md:px-6">
         {linked.isPending || providers.isPending ? (
           <div className="flex flex-col gap-3 py-4">
             <Skeleton className="h-12 w-full" />

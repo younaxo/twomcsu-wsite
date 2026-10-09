@@ -158,7 +158,7 @@ export function SiteFooter({ className }: { className?: string }) {
     <footer data-testid="site-footer" className={cn('mt-auto px-3 md:px-6', className)}>
       <div
         data-testid="site-footer-surface"
-        className="mx-auto flex max-w-[1440px] flex-col gap-10 rounded-t-xl border border-b-0 bg-surface px-5 pb-8 pt-10 shadow-lg edge-highlight max-lg:pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:px-8"
+        className="mx-auto flex max-w-[1440px] flex-col gap-10 rounded-t-xl border border-b-0 bg-surface px-5 pb-8 pt-10 shadow-lg max-lg:pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:px-8"
       >
         <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr_1fr_1.1fr]">
           <div className="flex flex-col gap-4">

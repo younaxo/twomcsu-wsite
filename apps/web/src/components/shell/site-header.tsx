@@ -64,7 +64,7 @@ export function SiteHeader({ className }: { className?: string }) {
     >
       <div
         data-testid="site-header-surface"
-        className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-3 rounded-xl bg-surface px-3 shadow-lg edge-highlight md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
+        className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-3 rounded-xl bg-surface px-3 shadow-lg md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
       >
         <SeasonalHeaderDecoration />
         <IconButton

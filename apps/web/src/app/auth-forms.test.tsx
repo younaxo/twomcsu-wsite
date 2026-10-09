@@ -75,6 +75,10 @@ describe('auth-формы «Полдня»', () => {
       { wrapper: Providers },
     );
     expect(screen.getByTestId('auth-panel')).toBeInTheDocument();
+    // Сейчас (FORCE_AUTH_TUTORIAL) tutorial открывается поверх панели всегда.
+    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('auth-tutorial')).toBeNull());
     expect(screen.getByRole('link', { name: 'twomc.su — на главную' })).toBeInTheDocument();
     const modes = screen.getByRole('navigation', { name: 'Вход или регистрация' });
     expect(within(modes).getByRole('link', { name: 'Вход' })).toHaveAttribute(

@@ -9,6 +9,7 @@ import {
   EmailService,
   SendEmailInput,
 } from '../src/modules/email/email.service';
+import { MinecraftLinkService } from '../src/modules/minecraft-link/minecraft-link.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 
 jest.setTimeout(30_000);
@@ -49,6 +50,11 @@ describe('Registration with e-mail OTP (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    // Набор проверяет регистрацию без шага Minecraft (ADR-0072) — независимо
+    // от того, включена ли интеграция с плагином в локальном .env.
+    jest
+      .spyOn(app.get(MinecraftLinkService), 'required')
+      .mockReturnValue(false);
     jest
       .spyOn(app.get(EmailService), 'send')
       .mockImplementation(async (input) => {

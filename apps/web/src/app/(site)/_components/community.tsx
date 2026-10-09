@@ -42,7 +42,7 @@ export function HomeCommunity() {
                 href={social.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex h-full items-center gap-4 rounded-xl border bg-surface p-5 shadow transition-colors duration-fast hover:bg-surface-hover edge-highlight"
+                className="group flex h-full items-center gap-4 rounded-xl border bg-surface p-5 shadow transition-colors duration-fast hover:bg-surface-hover"
               >
                 <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground [&_svg]:size-6">
                   <BrandIcon id={social.platform} />

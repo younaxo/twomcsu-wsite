@@ -16,7 +16,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       ref={ref}
       className={cn(
         'rounded-lg border text-foreground',
-        variant === 'raised' && 'bg-surface-raised shadow edge-highlight',
+        variant === 'raised' && 'bg-surface-raised shadow',
         variant === 'flat' && 'bg-surface',
         variant === 'sunken' && 'border-border-subtle bg-surface-sunken',
         !flush && 'p-card-p',

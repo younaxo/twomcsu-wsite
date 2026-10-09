@@ -76,6 +76,10 @@ export const envValidationSchema = Joi.object({
   /// BotFather → Login Widget; redirect URI — в Allowed URLs бота.
   TELEGRAM_CLIENT_ID: Joi.string().allow('').optional(),
   TELEGRAM_CLIENT_SECRET: Joi.string().allow('').optional(),
+  /// Minecraft-плагин (ADR-0072): общий секрет подписи HMAC запросов
+  /// `/minecraft/plugin/*`. Пусто — интеграция выключена, шаг Minecraft в
+  /// регистрации не требуется.
+  MINECRAFT_PLUGIN_SECRET: Joi.string().allow('').min(32).optional(),
   TELEGRAM_REDIRECT_URI: Joi.string()
     .uri()
     .default('http://localhost:4000/auth/telegram/callback'),

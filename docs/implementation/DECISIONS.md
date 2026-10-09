@@ -1387,3 +1387,52 @@ Widget → OpenID Connect, Allowed URL callback, Client Secret в env) —
 RISKS R18. Локально Telegram OIDC не проверить (localhost в Allowed URLs не
 принимается) — поток покрыт unit-тестами (подпись, claims, PKCE) и e2e с
 подменённым обменом кода.
+
+## ADR-0072 — Tutorial регистрации, привязка Minecraft (`/site-connect`), тени без рамок
+
+**Context.** Владелец: поверх auth-панели — пошаговый tutorial (6 этапов, у
+каждого скриншот, YouTube/RuTube); регистрация — почта → Minecraft
+(`/site-connect` → 15 символов на сайте → 5 символов в игре) → аккаунт; всё
+server-authoritative; поля регистрации без пустот, регистрация помещается без
+прокрутки; убрать «обведённые» модули. Механизма привязки Minecraft не было ни
+в старом, ни в новом проекте (ADR-0041: RCON нет, плагина нет).
+
+**Decision.**
+- Tutorial — production Dialog (`AuthTutorial`, ~860px, desktop: скриншот слева,
+  mobile: сверху; «Этап N из 6», полоса прогресса, Назад/Далее/Понятно, стрелки,
+  Esc, focus trap Radix). Вся конфигурация — `lib/auth/tutorial.ts`: этапы,
+  слоты скриншотов (`src: null` → явно помеченный временный макет; реальных
+  скриншотов в проектах нет), команда, видео из env
+  (`NEXT_PUBLIC_TUTORIAL_YOUTUBE_URL`/`RUTUBE_URL`, только https и домен
+  платформы; нет URL — нет кнопки; переход через ExternalLinkGuard).
+  `FORCE_AUTH_TUTORIAL = true` — временно показывать при каждом открытии
+  /login и /register; `false` — только регистрация и только впервые
+  (localStorage). Tutorial ничего не выполняет и не связан с состоянием
+  регистрации.
+- Привязка Minecraft — модуль `minecraft-link`: `MinecraftConnectSession`
+  (ссылка и 15-символьный код — только HMAC, TTL 10 минут, одноразово, ≤ 6 на
+  UUID в час), поля Minecraft-стадии в `EmailVerification` (5-символьный код —
+  HMAC, TTL 5 минут, 5 попыток, попытка учитывается до сравнения),
+  `MinecraftAccount` (`uuid` и `userId` уникальны) — создаётся той же вставкой,
+  что и пользователь. Ник сеанса обязан совпадать с ником регистрации; UUID,
+  привязанный к другому аккаунту, — 409 `minecraft_taken`; повтор кода —
+  `mc_code_used` (claim через `updateMany … usedAt: null`).
+- Плагин ↔ API: HMAC-SHA256 общим секретом `MINECRAFT_PLUGIN_SECRET`, метка
+  времени ±60 с, каноническая строка (timestamp, METHOD, path, поля тела по
+  алфавиту) — `docs/implementation/MINECRAFT-PLUGIN-CONTRACT.md`. Команды в
+  игре: `/site-connect` и `/site-connect <код>`. Шаг Minecraft обязателен,
+  только когда секрет задан: без плагина подтвердить код в игре невозможно,
+  и регистрация не должна быть заблокирована; без фальшивого успеха.
+- Продолжение после перезагрузки: `POST /auth/register/state` (стадия
+  email/minecraft/create с сервера); клиент хранит в sessionStorage только
+  `verificationId` и токен завершения — пароль нет (на последнем шаге его
+  вводят снова).
+- Глобально: тени без колец `0 0 0 1px` и без светлой верхней кромки
+  (`--edge-highlight: transparent`, утилита `.edge-highlight` удалена из 37
+  файлов) — источник «обведённых карточек» был в токенах.
+- Регистрация плотнее: логотип + переключатель в одну строку, grid полей
+  `items-start`, требования — в подписи поля, «Политика конфиденциальности» —
+  строка группы согласий без чекбокса; панель 677px — помещается в 1366×768.
+
+**Consequences.** Production-привязка заработает после плагина на серверах
+TwoMC (RISKS R20). Скриншоты tutorial и официальный SVG RuTube — от владельца.

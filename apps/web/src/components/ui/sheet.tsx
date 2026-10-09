@@ -78,7 +78,7 @@ export const SheetContent = forwardRef<ElementRef<typeof RadixDialog.Content>, S
         <RadixDialog.Content
           ref={ref}
           className={cn(
-            'fixed z-50 flex flex-col bg-surface-overlay text-foreground shadow-lg edge-highlight',
+            'fixed z-50 flex flex-col bg-surface-overlay text-foreground shadow-lg',
             'overscroll-contain focus:outline-none',
             // Нижний safe-area (iOS home indicator) — часть панели, а не футера.
             'pb-[env(safe-area-inset-bottom)]',

@@ -5,10 +5,15 @@ import { Suspense, useState } from 'react';
 import { LoginForm } from '@/app/(auth)/login/login-form';
 import { RegisterForm } from '@/app/(auth)/register/register-form';
 import { AuthPanel } from '@/components/auth/auth-layout';
+import { AuthTutorial, TutorialStepView } from '@/components/auth/auth-tutorial';
+import { MinecraftLinkStep } from '@/components/auth/minecraft-link-step';
+import { Button } from '@/components/ui/button';
+import { TUTORIAL_STEPS } from '@/lib/auth/tutorial';
 import { SocialAuthResult } from '@/components/auth/social-auth-result';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 
-type View = 'login' | 'register' | 'otp' | 'result';
+type View =
+  'login' | 'register' | 'otp' | 'mc-code' | 'mc-confirm' | 'success' | 'tutorial' | 'result';
 
 const RESULTS: Array<{
   key: string;
@@ -55,6 +60,12 @@ export function AuthSection() {
   const [view, setView] = useState<View>('login');
   const [result, setResult] = useState(RESULTS[0]!.key);
   const current = RESULTS.find((item) => item.key === result) ?? RESULTS[0]!;
+  const [tutorialStep, setTutorialStep] = useState(TUTORIAL_STEPS[0]!.id);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const stepIndex = Math.max(
+    0,
+    TUTORIAL_STEPS.findIndex((item) => item.id === tutorialStep),
+  );
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -65,9 +76,26 @@ export function AuthSection() {
             { value: 'login', label: 'Вход' },
             { value: 'register', label: 'Регистрация' },
             { value: 'otp', label: 'Код подтверждения' },
+            { value: 'mc-code', label: 'Код Minecraft' },
+            { value: 'mc-confirm', label: 'Подтверждение в игре' },
+            { value: 'success', label: 'Готово' },
+            { value: 'tutorial', label: 'Tutorial' },
             { value: 'result', label: 'Discord / Telegram' },
           ]}
         />
+        {view === 'tutorial' ? (
+          <>
+            <SegmentedControl
+              size="sm"
+              value={tutorialStep}
+              onValueChange={setTutorialStep}
+              options={TUTORIAL_STEPS.map((item, i) => ({ value: item.id, label: `${i + 1}` }))}
+            />
+            <Button size="sm" variant="secondary" onClick={() => setTutorialOpen(true)}>
+              Открыть окно tutorial
+            </Button>
+          </>
+        ) : null}
         {view === 'result' ? (
           <SegmentedControl
             size="sm"
@@ -91,6 +119,47 @@ export function AuthSection() {
             <AuthPanel mode="register">
               <RegisterForm key="code" previewStep="code" />
             </AuthPanel>
+          ) : view === 'mc-code' ? (
+            <AuthPanel mode="register">
+              <RegisterForm key="minecraft" previewStep="minecraft" />
+            </AuthPanel>
+          ) : view === 'mc-confirm' ? (
+            <AuthPanel mode="register">
+              <div className="flex flex-col gap-2">
+                <h3 className="font-display text-2xl font-bold leading-tight tracking-tight">
+                  Подтвердите Minecraft
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Код ниже — пример формата для превью; реальный выдаёт сервер.
+                </p>
+              </div>
+              <MinecraftLinkStep
+                preview
+                verificationId="design-lab-preview"
+                completionToken="design-lab-preview"
+                username="player"
+                initialChallenge={{
+                  name: 'player',
+                  confirmed: false,
+                  challenge: 'K7Q2M',
+                  challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+                }}
+                onConfirmed={() => undefined}
+              />
+            </AuthPanel>
+          ) : view === 'success' ? (
+            <AuthPanel mode="register">
+              <RegisterForm key="create" previewStep="create" />
+            </AuthPanel>
+          ) : view === 'tutorial' ? (
+            <div className="w-full max-w-[56rem] rounded-xl bg-surface-overlay p-6 shadow-xl">
+              <TutorialStepView
+                step={TUTORIAL_STEPS[stepIndex]!}
+                index={stepIndex}
+                total={TUTORIAL_STEPS.length}
+                standalone
+              />
+            </div>
           ) : (
             <AuthPanel>
               <SocialAuthResult
@@ -106,6 +175,7 @@ export function AuthSection() {
           )}
         </Suspense>
       </div>
+      <AuthTutorial open={tutorialOpen} onOpenChange={setTutorialOpen} />
     </div>
   );
 }

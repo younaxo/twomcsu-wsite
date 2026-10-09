@@ -57,8 +57,7 @@ const sizeClass: Record<NonNullable<DialogContentProps['size']>, string> = {
 };
 
 /// Общая поверхность модальных окон (Dialog/AlertDialog).
-export const modalSurfaceClassName =
-  'rounded-xl bg-surface-overlay text-foreground shadow-xl edge-highlight';
+export const modalSurfaceClassName = 'rounded-xl bg-surface-overlay text-foreground shadow-xl';
 
 export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, DialogContentProps>(
   ({ className, size = 'md', hideClose = false, children, ...props }, ref) => (

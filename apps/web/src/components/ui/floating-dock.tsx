@@ -46,7 +46,7 @@ export function FloatingDock({
       aria-label={label}
       className={cn(
         'fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-40 max-w-[calc(100vw-2rem)] -translate-x-1/2',
-        'rounded-lg border bg-surface-overlay p-1 shadow-lg edge-highlight',
+        'rounded-lg border bg-surface-overlay p-1 shadow-lg',
         className,
       )}
       {...props}

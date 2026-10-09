@@ -49,7 +49,7 @@ export default function LegalDocPage({ params }: { params: { doc: string } }) {
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-8 md:px-6">
       <PageHeader title={doc.title} description={doc.summary} />
       {params.doc === 'info' ? (
-        <section className="flex flex-col gap-2 rounded-xl bg-surface p-6 text-sm shadow-sm edge-highlight">
+        <section className="flex flex-col gap-2 rounded-xl bg-surface p-6 text-sm shadow-sm">
           <p>
             <span className="text-muted-foreground">Владелец: </span>
             {LEGAL_OWNER.name}
@@ -70,7 +70,7 @@ export default function LegalDocPage({ params }: { params: { doc: string } }) {
           </p>
         </section>
       ) : (
-        <section className="flex flex-col gap-3 rounded-xl bg-surface p-6 text-sm shadow-sm edge-highlight">
+        <section className="flex flex-col gap-3 rounded-xl bg-surface p-6 text-sm shadow-sm">
           <p className="font-medium">Документ готовится к публикации.</p>
           <p className="text-muted-foreground">
             Полный текст появится на этой странице. По вопросам до публикации пишите на{' '}

@@ -35,7 +35,8 @@
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
     "postinstall": "prisma generate",
-    "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts"
+    "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts",
+    "mc:plugin-sim": "dotenv -e ../../.env -- ts-node scripts/minecraft-plugin-sim.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed/index.ts"

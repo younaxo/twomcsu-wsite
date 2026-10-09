@@ -354,6 +354,7 @@ model User {
   loginAliases        LoginAlias[]
   externalAccounts    UserExternalAccount[]
   legalConsents       LegalConsent[]
+  minecraftAccount    MinecraftAccount?
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   promoCodeUsages     PromoCodeUsage[]
@@ -474,8 +475,51 @@ model EmailVerification {
   ip                  String?
   createdAt           DateTime  @default(now())
 
+  // --- Привязка Minecraft (ADR-0072): стадия регистрации на сервере ---
+  /// Сеанс /site-connect, чей 15-символьный код принят на этом шаге.
+  mcSessionId          String?   @unique
+  mcUuid               String?   @db.VarChar(36)
+  mcName               String?   @db.VarChar(16)
+  /// 5-символьный код для ввода в игре — только HMAC.
+  mcChallengeHash      String?
+  mcChallengeExpiresAt DateTime?
+  mcChallengeAttempts  Int       @default(0)
+  mcConfirmedAt        DateTime?
+
   @@index([email, createdAt])
   @@map("email_verifications")
+}
+
+/// Подтверждённый Minecraft-аккаунт пользователя (ADR-0072): один UUID — один
+/// пользователь; создаётся вместе с аккаунтом после подтверждения в игре.
+model MinecraftAccount {
+  id       String   @id @default(cuid())
+  userId   String   @unique
+  uuid     String   @unique @db.VarChar(36)
+  name     String   @db.VarChar(16)
+  linkedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("minecraft_accounts")
+}
+
+/// Сеанс `/site-connect` (ADR-0072): создаёт Minecraft-плагин по команде игрока.
+/// По одноразовой ссылке сайт выдаёт 15-символьный код; в БД — только HMAC.
+model MinecraftConnectSession {
+  id            String    @id @default(cuid())
+  uuid          String    @db.VarChar(36)
+  name          String    @db.VarChar(16)
+  linkTokenHash String    @unique
+  codeHash      String?   @unique
+  codeIssuedAt  DateTime?
+  expiresAt     DateTime
+  /// Код принят в регистрации — повторно не используется.
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([uuid, createdAt])
+  @@map("minecraft_connect_sessions")
 }
 
 /// Согласие с юридическим документом (ADR-0070): отдельная запись на каждый
