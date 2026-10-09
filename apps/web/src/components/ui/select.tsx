@@ -9,6 +9,8 @@ import { cn } from '@/lib/cn';
 /// Select — выбор одного значения из короткого списка (Radix Select).
 /// Для списков с поиском — `Combobox`, для множественного выбора — `MultiSelect`.
 /// Триггер выглядит как `Input`: те же высоты, рамка, фокус и invalid-состояние.
+/// Содержимое — solid-поверхность в Portal на слое dropdown (выше модалок),
+/// без рамки и blur; collision padding держит меню в пределах viewport.
 
 export const Select = RadixSelect.Root;
 export const SelectGroup = RadixSelect.Group;
@@ -117,9 +119,9 @@ export const SelectContent = forwardRef<
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         className={cn(
-          'relative z-50 min-w-32 max-w-[calc(100vw-2rem)] overflow-hidden',
+          'relative z-dropdown min-w-32 max-w-[calc(100vw-2rem)] overflow-hidden',
           'max-h-[min(18rem,var(--radix-select-content-available-height))]',
-          'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          'rounded-lg bg-surface-overlay text-foreground shadow-lg edge-highlight',
           'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
           'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',
           position === 'popper' && 'w-[var(--radix-select-trigger-width)]',
@@ -158,7 +160,10 @@ export const SelectItem = forwardRef<
     ref={ref}
     className={cn(
       'relative flex h-control-sm w-full cursor-default select-none items-center rounded-sm pl-8 pr-2 text-sm text-foreground outline-none',
-      'focus:bg-muted data-[state=checked]:font-medium',
+      '[@media(pointer:coarse)]:h-11',
+      'transition-colors duration-fast focus:bg-muted data-[highlighted]:bg-muted',
+      // Выбранное значение — оранжевый акцент текста + галочка, без заливки.
+      'data-[state=checked]:font-medium data-[state=checked]:text-primary',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       '[&_svg]:size-4 [&_svg]:shrink-0',
       className,
@@ -167,7 +172,7 @@ export const SelectItem = forwardRef<
   >
     <span className="absolute left-2 inline-flex size-4 items-center justify-center">
       <RadixSelect.ItemIndicator>
-        <Check aria-hidden className="size-4" />
+        <Check aria-hidden className="size-4 text-primary" />
       </RadixSelect.ItemIndicator>
     </span>
     <RadixSelect.ItemText>{children}</RadixSelect.ItemText>

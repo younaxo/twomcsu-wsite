@@ -130,6 +130,20 @@ export function useAssignRole(userId: string) {
   });
 }
 
+export function useSetAccessLevel(userId: string) {
+  const client = useQueryClient();
+  const reloadSelf = useReloadSelfIf(userId);
+  return useMutation({
+    mutationFn: (accessLevel: number) => adminApi.setAccessLevel(userId, accessLevel),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.users.all }),
+        reloadSelf(),
+      ]);
+    },
+  });
+}
+
 export function useRevokeRole(userId: string) {
   const client = useQueryClient();
   const reloadSelf = useReloadSelfIf(userId);

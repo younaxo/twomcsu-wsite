@@ -74,6 +74,8 @@ export interface MeResponse {
   tag: string;
   email: string;
   username: string;
+  /// Уровень доступа (ADR-0062) — отдельный от priority ролей параметр.
+  accessLevel: number;
   accountType: AccountType;
   mustChangePassword: boolean;
   roles: MeRole[];

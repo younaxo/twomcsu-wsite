@@ -518,6 +518,16 @@ export const PERMISSIONS = [
   },
   { key: 'users.awards', module: 'users', description: 'Выдача/отзыв награды пользователю' },
   { key: 'users.badges', module: 'users', description: 'Выдача/отзыв бейджа пользователю' },
+  {
+    key: 'users.access_level.edit',
+    module: 'users',
+    description: 'Изменение уровня доступа пользователя (не выше собственного, ADR-0062)',
+  },
+  {
+    key: 'users.access_level.edit_self',
+    module: 'users',
+    description: 'Изменение собственного уровня доступа',
+  },
 
   { key: 'dashboard.view', module: 'dashboard', description: 'Просмотр главного дашборда админки' },
   { key: 'audit_log.view', module: 'audit_log', description: 'Просмотр журнала аудита' },

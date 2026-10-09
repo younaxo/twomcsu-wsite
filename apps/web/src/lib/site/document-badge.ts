@@ -31,6 +31,15 @@ export function formatDocumentTitle(count: number, base: string = SITE_NAME): st
   return count > 0 ? `(${formatBadgeCount(count)}) ${base}` : base;
 }
 
+/// Базовый title админ-панели: `twomc.su | A [N]`, где N — уровень доступа
+/// пользователя (ADR-0062) из GET /auth/me. Это НЕ priority роли и не
+/// количество permissions; без загруженного пользователя — просто `twomc.su`.
+export function formatAdminBaseTitle(accessLevel: number | null | undefined): string {
+  return typeof accessLevel === 'number' && Number.isFinite(accessLevel)
+    ? `${SITE_NAME} | A [${accessLevel}]`
+    : SITE_NAME;
+}
+
 const faviconCache = new Map<number, string>();
 let baseImagePromise: Promise<HTMLImageElement> | null = null;
 /// Номер последнего вызова: async-генерация не должна перезаписать более

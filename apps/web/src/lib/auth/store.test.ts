@@ -11,6 +11,7 @@ const me: MeResponse = {
   email: 'steve@example.com',
   username: 'Steve_Mainer',
   accountType: 'DEFAULT',
+  accessLevel: 0,
   mustChangePassword: false,
   roles: [],
   permissions: { superuser: false, permissions: ['dashboard.view'], maxPriority: 10 },

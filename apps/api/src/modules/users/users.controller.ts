@@ -2,9 +2,11 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -13,11 +15,15 @@ import { Prisma, UserBadgeType } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { AuditService } from '../audit/audit.service';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
+import { PermissionService } from '../roles/permission.service';
 import { GrantBadgeDto } from './dto/grant-badge.dto';
 import { ListUsersDto } from './dto/list-users.dto';
+import { UpdateAccessLevelDto } from './dto/update-access-level.dto';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -25,6 +31,7 @@ const SAFE_USER_SELECT = {
   tag: true,
   email: true,
   username: true,
+  accessLevel: true,
   accountType: true,
   isBanned: true,
   isVerified: true,
@@ -37,7 +44,11 @@ const SAFE_USER_SELECT = {
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @RequirePermissions('users.view')
 export class UsersController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Get()
   async list(@Query() query: ListUsersDto) {
@@ -82,6 +93,79 @@ export class UsersController {
       throw new NotFoundException('Пользователь не найден');
     }
     return user;
+  }
+
+  /// Уровень доступа (ADR-0062) — отдельно от permissions и priority ролей.
+  /// Защиты: системный аккаунт неизменяем; чужой уровень — только над теми,
+  /// кого actor превосходит по иерархии, и не выше собственного уровня;
+  /// свой — только с `users.access_level.edit_self`.
+  @Patch(':id/access-level')
+  @RequirePermissions('users.access_level.edit')
+  @SkipAudit()
+  async updateAccessLevel(
+    @Param('id') id: string,
+    @Body() dto: UpdateAccessLevelDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    const [target, actorRow, actorEffective] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id },
+        select: { id: true, accountType: true, accessLevel: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: actor.id },
+        select: { accessLevel: true },
+      }),
+      this.permissions.getEffectivePermissions(actor.id),
+    ]);
+    if (!target) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    if (target.accountType === 'SYSTEM') {
+      throw new ForbiddenException('Системный аккаунт защищён от изменений');
+    }
+    const self = target.id === actor.id;
+    if (self) {
+      const canSelf = await this.permissions.hasPermission(
+        actor.id,
+        'users.access_level.edit_self',
+      );
+      if (!canSelf) {
+        throw new ForbiddenException(
+          'Изменение собственного уровня доступа требует отдельного полномочия',
+        );
+      }
+    } else if (!actorEffective.superuser) {
+      if (!(await this.permissions.canActOn(actor.id, id))) {
+        throw new ForbiddenException(
+          'Недостаточно приоритета над этим пользователем',
+        );
+      }
+      const own = actorRow?.accessLevel ?? 0;
+      if (dto.accessLevel > own || target.accessLevel > own) {
+        throw new ForbiddenException(
+          'Нельзя назначать уровень доступа выше собственного',
+        );
+      }
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { accessLevel: dto.accessLevel },
+      select: SAFE_USER_SELECT,
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'users.access_level.edit',
+      targetType: 'User',
+      targetId: id,
+      severity: 'warning',
+      changes: {
+        accessLevel: { from: target.accessLevel, to: dto.accessLevel },
+        self,
+      },
+    });
+    return updated;
   }
 
   @Get(':userId/badges')

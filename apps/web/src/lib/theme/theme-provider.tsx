@@ -33,17 +33,22 @@ function systemPrefersDark(): boolean {
 }
 
 /// Держит выбранную тему в состоянии, пишет её в localStorage и на <html>.
-/// Первый рендер совпадает с SSR (default dark); сохранённый выбор
+/// Первый рендер совпадает с SSR; сохранённый выбор / тему ОС
 /// применяет inline-скрипт в <head> ещё до гидрации, провайдер лишь
 /// синхронизирует состояние React после монтирования.
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(DEFAULT_THEME);
   const [systemDark, setSystemDark] = useState(true);
+  /// До чтения storage/ОС атрибут не трогаем: его уже выставил inline-скрипт,
+  /// иначе первый эффект на миг ставил бы SSR-тему (вспышка).
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setPreferenceState(readStoredPreference());
     const mql = window.matchMedia('(prefers-color-scheme: dark)');
     setSystemDark(mql.matches);
+    setReady(true);
+    // «Как в системе» следует за сменой темы ОС в открытой сессии.
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
@@ -52,8 +57,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const resolved = resolveTheme(preference, systemDark);
 
   useEffect(() => {
-    document.documentElement.setAttribute(THEME_ATTRIBUTE, resolved);
-  }, [resolved]);
+    if (ready) {
+      document.documentElement.setAttribute(THEME_ATTRIBUTE, resolved);
+    }
+  }, [ready, resolved]);
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(next);

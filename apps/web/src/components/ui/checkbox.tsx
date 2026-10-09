@@ -27,13 +27,16 @@ export const Checkbox = forwardRef<ElementRef<typeof RadixCheckbox.Root>, Checkb
       ref={ref}
       aria-invalid={invalid || props['aria-invalid'] || undefined}
       className={cn(
-        'peer inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-border-strong bg-surface',
-        'transition-[background-color,border-color] duration-fast',
-        'hover:border-foreground/40',
+        'peer relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-border-strong bg-surface',
+        // Зона касания ≥ 32px без увеличения самого квадрата.
+        "before:absolute before:-inset-2 before:content-['']",
+        'transition-[background-color,border-color,box-shadow] duration-fast',
+        'hover:border-foreground/40 hover:bg-surface-hover',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
         'data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground',
         'aria-[invalid=true]:border-destructive',
-        'disabled:cursor-not-allowed disabled:opacity-50',
+        'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border-strong disabled:hover:bg-surface',
         className,
       )}
       {...props}

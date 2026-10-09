@@ -147,6 +147,7 @@ export class AuthController {
       tag: fullUser.tag,
       email: fullUser.email,
       username: fullUser.username,
+      accessLevel: fullUser.accessLevel,
       accountType: fullUser.accountType,
       mustChangePassword: fullUser.mustChangePassword,
       roles: fullUser.roles.map(({ role }) => ({

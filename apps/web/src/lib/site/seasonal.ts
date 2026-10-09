@@ -1,58 +1,165 @@
-/// Сезонные украшения оболочки — единый конфиг: какой декор, откуда ассет,
-/// его размеры и период показа. Компонент `SeasonalHeaderDecoration` ничего
-/// не знает о конкретном празднике, поэтому декор легко заменить, отключить
-/// или добавить новый (Новый год и т.д.).
-///
-/// Управление через env:
-///   NEXT_PUBLIC_SEASONAL_DECORATION=off        — выключить полностью;
-///   NEXT_PUBLIC_SEASONAL_DECORATION=halloween  — включить вне периода;
-///   NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC=<url>   — свой хостинг ассета
-///                                                (рекомендуется cdn-files.twomc.su).
+import { cdnUrl } from '../env';
 
-export interface SeasonalDecoration {
-  id: string;
-  /// URL ассета (внешний допустим: при недоступности декор просто не виден).
+/// Сезонное оформление — единый реестр кампаний. Компоненты (BrandWordmark,
+/// SeasonalHeaderDecoration, …) не знают о конкретных праздниках: они
+/// получают активную кампанию и берут из неё нужный ассет, а при его
+/// отсутствии — базовый вид twomc.su.
+///
+/// Выбор активной кампании (resolveSeasonalCampaign):
+///   1. система выключена (`off`/`none`) → null (полный default);
+///   2. явный override id → эта кампания (preview/ручное включение);
+///   3. иначе — кампании, в окно которых попадает дата; при пересечении
+///      побеждает больший `priority`, одна кампания за раз (без смешения
+///      логотипов и эффектов).
+///
+/// Сейчас источник — env + даты; управление из админки (расписание по
+/// серверному времени, ON/OFF, отдельные флаги O/логотипа/декора/эффектов)
+/// подключается через тот же контракт `SeasonalCampaign`.
+///
+///   NEXT_PUBLIC_SEASONAL_DECORATION=off        — выключить систему полностью;
+///   NEXT_PUBLIC_SEASONAL_DECORATION=<id>       — включить кампанию вне окна;
+///   NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC=<url>   — свой ассет декора Halloween.
+
+export type SeasonalCampaignId =
+  | 'new-year'
+  | 'valentine'
+  | 'defender-day'
+  | 'womens-day'
+  | 'victory-day'
+  | 'knowledge-day'
+  | 'halloween'
+  | 'black-friday';
+
+export interface SeasonalImageAsset {
   src: string;
-  /// Натуральные размеры — для пропорций полосы без layout shift.
+  /// Натуральные размеры — для пропорций без layout shift.
   width: number;
   height: number;
-  /// Период показа: месяц 1–12, день 1–31, включительно.
-  from: { month: number; day: number };
-  to: { month: number; day: number };
 }
 
-export const SEASONAL_DECORATIONS: SeasonalDecoration[] = [
+export interface SeasonalCampaign {
+  id: SeasonalCampaignId;
+  name: string;
+  /// Чем больше, тем важнее при пересечении окон.
+  priority: number;
+  /// Окно показа (включительно). Для «плавающих» дат — функция.
+  window:
+    | { from: { month: number; day: number }; to: { month: number; day: number } }
+    | ((date: Date) => boolean);
+  /// Сезонная буква «o» для BrandWordmark (свой файл на каждый сезон).
+  /// Это НЕ логотип: основной логотип (SITE_LOGO_URL) сезонами не меняется
+  /// никогда (ADR-0065) — у кампании намеренно нет поля логотипа.
+  wordmarkO?: string;
+  /// Полоса декора над шапкой.
+  headerDecoration?: SeasonalImageAsset;
+}
+
+/// Чёрная пятница — последняя пятница ноября и выходные после неё.
+function isBlackFridayWindow(date: Date): boolean {
+  if (date.getMonth() !== 10) return false;
+  const lastDay = new Date(date.getFullYear(), 11, 0);
+  const offset = (lastDay.getDay() - 5 + 7) % 7;
+  const friday = lastDay.getDate() - offset;
+  return date.getDate() >= friday && date.getDate() <= friday + 3;
+}
+
+export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
+  {
+    id: 'new-year',
+    name: 'Новый год',
+    priority: 80,
+    window: { from: { month: 12, day: 15 }, to: { month: 1, day: 10 } },
+  },
+  {
+    id: 'valentine',
+    name: '14 февраля',
+    priority: 60,
+    window: { from: { month: 2, day: 10 }, to: { month: 2, day: 15 } },
+  },
+  {
+    id: 'defender-day',
+    name: '23 февраля',
+    priority: 60,
+    window: { from: { month: 2, day: 20 }, to: { month: 2, day: 24 } },
+  },
+  {
+    id: 'womens-day',
+    name: '8 марта',
+    priority: 60,
+    window: { from: { month: 3, day: 5 }, to: { month: 3, day: 9 } },
+  },
+  {
+    id: 'victory-day',
+    name: 'День Победы',
+    priority: 70,
+    window: { from: { month: 5, day: 5 }, to: { month: 5, day: 10 } },
+  },
+  {
+    id: 'knowledge-day',
+    name: '1 сентября',
+    priority: 50,
+    window: { from: { month: 8, day: 29 }, to: { month: 9, day: 2 } },
+  },
   {
     id: 'halloween',
-    // Ассет предоставлен владельцем (reference). Для production лучше
-    // перенести на cdn-files.twomc.su — см. RISKS (внешний хостинг).
-    src:
-      process.env.NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC || 'https://yooma.su/assets/img/h_header.webp',
-    width: 2728,
-    height: 146,
-    from: { month: 10, day: 1 },
-    to: { month: 11, day: 7 },
+    name: 'Хэллоуин',
+    priority: 60,
+    window: { from: { month: 10, day: 1 }, to: { month: 11, day: 7 } },
+    wordmarkO: '/assets/brand/wordmark-o-halloween.svg',
+    headerDecoration: {
+      src:
+        process.env.NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC ||
+        cdnUrl('assets/images/halloween_assets.webp'),
+      width: 2728,
+      height: 146,
+    },
+  },
+  {
+    id: 'black-friday',
+    name: 'Чёрная пятница',
+    // Короткая коммерческая кампания важнее длинного сезонного окна.
+    priority: 90,
+    window: isBlackFridayWindow,
   },
 ];
 
-function inPeriod(decoration: SeasonalDecoration, date: Date): boolean {
+function inWindow(campaign: SeasonalCampaign, date: Date): boolean {
+  if (typeof campaign.window === 'function') {
+    return campaign.window(date);
+  }
   const value = (date.getMonth() + 1) * 100 + date.getDate();
-  const from = decoration.from.month * 100 + decoration.from.day;
-  const to = decoration.to.month * 100 + decoration.to.day;
+  const from = campaign.window.from.month * 100 + campaign.window.from.day;
+  const to = campaign.window.to.month * 100 + campaign.window.to.day;
   return from <= to ? value >= from && value <= to : value >= from || value <= to;
 }
 
-/// Активный декор на дату: env-override → период. `null` — без декора.
-export function resolveSeasonalDecoration(
+/// Активная кампания на дату. `null` — сезонное оформление отсутствует.
+export function resolveSeasonalCampaign(
   date: Date,
   override: string | undefined = process.env.NEXT_PUBLIC_SEASONAL_DECORATION,
-): SeasonalDecoration | null {
+): SeasonalCampaign | null {
   const value = override?.trim().toLowerCase();
   if (value === 'off' || value === 'none') {
     return null;
   }
   if (value) {
-    return SEASONAL_DECORATIONS.find((item) => item.id === value) ?? null;
+    return SEASONAL_CAMPAIGNS.find((item) => item.id === value) ?? null;
   }
-  return SEASONAL_DECORATIONS.find((item) => inPeriod(item, date)) ?? null;
+  return (
+    SEASONAL_CAMPAIGNS.filter((item) => inWindow(item, date)).sort(
+      (a, b) => b.priority - a.priority,
+    )[0] ?? null
+  );
+}
+
+/// Декор шапки активной кампании (если у неё он есть).
+export function resolveSeasonalDecoration(
+  date: Date,
+  override?: string,
+): (SeasonalImageAsset & { id: SeasonalCampaignId }) | null {
+  const campaign =
+    override === undefined
+      ? resolveSeasonalCampaign(date)
+      : resolveSeasonalCampaign(date, override);
+  return campaign?.headerDecoration ? { id: campaign.id, ...campaign.headerDecoration } : null;
 }

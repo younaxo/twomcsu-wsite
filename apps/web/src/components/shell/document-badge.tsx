@@ -1,10 +1,14 @@
 'use client';
 
-import { useDocumentBadge } from '@/lib/site/document-badge';
+import { useAuthStore } from '@/lib/auth/store';
+import { formatAdminBaseTitle, useDocumentBadge } from '@/lib/site/document-badge';
 
-/// Монтируется один раз в AppShell: заголовок вкладки `twomc.su` /
-/// `(N) twomc.su` и favicon с красным бейджем по общему unread-счётчику.
-export function DocumentBadge() {
-  useDocumentBadge();
+/// Единственная точка title + favicon вкладки (unread из общего состояния):
+///   сайт:   `twomc.su` / `(N) twomc.su`;
+///   админка (`variant="admin"`): `twomc.su | A [L]` / `(N) twomc.su | A [L]`,
+///   где L — уровень доступа из /auth/me (не priority роли, ADR-0062).
+export function DocumentBadge({ variant = 'site' }: { variant?: 'site' | 'admin' }) {
+  const accessLevel = useAuthStore((state) => state.user?.accessLevel);
+  useDocumentBadge(variant === 'admin' ? formatAdminBaseTitle(accessLevel) : undefined);
   return null;
 }

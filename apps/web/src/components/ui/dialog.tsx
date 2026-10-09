@@ -26,7 +26,7 @@ export const DialogOverlay = forwardRef<
   <RadixDialog.Overlay
     ref={ref}
     className={cn(
-      'fixed inset-0 z-50 bg-foreground/40',
+      'fixed inset-0 z-50 bg-scrim',
       'data-[state=open]:animate-fade-in data-[state=closed]:animate-fade-out',
       className,
     )}

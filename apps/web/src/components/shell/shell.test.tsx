@@ -163,6 +163,7 @@ describe('SiteHeader', () => {
         email: 'a@b.c',
         username: 'younaxo_',
         accountType: 'DEFAULT',
+        accessLevel: 0,
         mustChangePassword: false,
         roles: [
           {
@@ -293,6 +294,7 @@ describe('CartButton', () => {
         email: 'a@b.c',
         username: 'a',
         accountType: 'DEFAULT',
+        accessLevel: 0,
         mustChangePassword: false,
         roles: [],
         permissions: { superuser: false, permissions: [], maxPriority: null },
@@ -317,6 +319,7 @@ describe('CartButton', () => {
         email: 'a@b.c',
         username: 'a',
         accountType: 'DEFAULT',
+        accessLevel: 0,
         mustChangePassword: false,
         roles: [],
         permissions: { superuser: false, permissions: [], maxPriority: null },

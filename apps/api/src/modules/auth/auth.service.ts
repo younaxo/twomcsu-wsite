@@ -87,6 +87,15 @@ export class AuthService {
       );
     }
 
+    // Ник, совпадающий с alias входа другого аккаунта (ADR-0061), занят:
+    // иначе вход по нему стал бы неоднозначным.
+    const aliasTaken = await this.prisma.loginAlias.findUnique({
+      where: { alias: dto.username.toLowerCase() },
+    });
+    if (aliasTaken) {
+      throw new ConflictException('Email или username уже заняты');
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
     const tag = await this.generateUniqueTag(dto.username);
 
@@ -145,6 +154,12 @@ export class AuthService {
     }
 
     const identifier = dto.emailOrUsername.toLowerCase();
+    // Логин = username (ник). Если такого ника нет — точечный alias входа
+    // (ADR-0061, например `younaxo` → `younaxo_`).
+    const alias = await this.prisma.loginAlias.findUnique({
+      where: { alias: identifier },
+      select: { userId: true },
+    });
     const user = await this.prisma.user.findFirst({
       // Глобально password исключён (PrismaService omit) — здесь он нужен для сверки.
       omit: { password: false },
@@ -152,6 +167,7 @@ export class AuthService {
         OR: [
           { email: identifier },
           { username: { equals: dto.emailOrUsername } },
+          ...(alias ? [{ id: alias.userId }] : []),
         ],
       },
     });

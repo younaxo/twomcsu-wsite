@@ -3,6 +3,7 @@
 import { ArrowDown, Play } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { BrandWordmark } from '@/components/shell/brand-wordmark';
 import { overviewHealth } from '@/components/shell/server-status-button';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +14,6 @@ import {
   SERVER_ADDRESS,
   SITE_DESCRIPTION,
   SITE_LOGO_URL,
-  SITE_NAME,
   SUPPORTED_VERSIONS,
 } from '@/lib/site/config';
 import { useServersOverview } from '@/lib/site/hooks';
@@ -87,11 +87,8 @@ export function HomeHero() {
             <span aria-hidden className={cn('size-2 rounded-full', HEALTH_LABEL[health].dot)} />
             {overview.isPending ? 'Проверяем сервера…' : HEALTH_LABEL[health].text}
           </p>
-          <h1
-            id="hero-title"
-            className="mt-4 font-display text-5xl font-bold tracking-tight md:text-7xl"
-          >
-            {SITE_NAME}
+          <h1 id="hero-title" className="mt-4">
+            <BrandWordmark size="xl" />
           </h1>
           <p className="mt-4 max-w-prose text-lg text-muted-foreground md:text-xl">
             {SITE_DESCRIPTION}
@@ -173,13 +170,18 @@ export function HomeHero() {
           </figure>
         ) : (
           <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-xl border bg-surface-sunken shadow-lg edge-highlight">
+            {/* Основной логотип (исходник 1095×1094). Размер в разметке =
+                фактическому (224px): srcset 1x/2x без растягивания; q=90 и
+                без CSS-фильтров — края не «мылятся». */}
             <Image
               src={SITE_LOGO_URL}
               alt=""
-              width={220}
-              height={220}
+              width={224}
+              height={224}
+              quality={90}
               priority
-              className="size-40 drop-shadow-lg md:size-56"
+              draggable={false}
+              className="size-40 select-none md:size-56"
             />
             <p className="absolute bottom-3 right-3 rounded-sm bg-surface/90 px-2 py-1 text-[11px] text-muted-foreground">
               Скриншоты проекта — скоро

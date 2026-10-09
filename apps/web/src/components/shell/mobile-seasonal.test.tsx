@@ -59,7 +59,7 @@ describe('SeasonalHeaderDecoration', () => {
     expect(decoration).toHaveAttribute('aria-hidden', 'true');
     expect(decoration.className).toMatch(/pointer-events-none/);
     expect(decoration.className).toMatch(/absolute/);
-    expect(decoration.style.backgroundImage).toContain('h_header.webp');
+    expect(decoration.style.backgroundImage).toContain('halloween_assets.webp');
     vi.useRealTimers();
   });
 });

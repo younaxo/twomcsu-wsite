@@ -2,9 +2,19 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { cn } from '@/lib/cn';
 import { SITE_LOGO_URL, SITE_NAME } from '@/lib/site/config';
+import { BrandWordmark, type BrandWordmarkSize } from './brand-wordmark';
 
-/// Официальный логотип с CDN + название «twomc.su» — ссылка на главную.
-export function SiteLogo({ className, size = 28 }: { className?: string; size?: number }) {
+/// Основной логотип (постоянный, ADR-0065 — сезоны его не меняют) +
+/// wordmark «twomc.su» (сезонной может быть только буква «o») — ссылка на главную.
+export function SiteLogo({
+  className,
+  size = 28,
+  wordmarkSize = 'md',
+}: {
+  className?: string;
+  size?: number;
+  wordmarkSize?: BrandWordmarkSize;
+}) {
   return (
     <Link
       href="/"
@@ -16,10 +26,13 @@ export function SiteLogo({ className, size = 28 }: { className?: string; size?: 
         alt=""
         width={size}
         height={size}
+        quality={90}
         priority
-        className="shrink-0 rounded-sm"
+        draggable={false}
+        data-logo="main"
+        className="shrink-0 select-none rounded-sm"
       />
-      <span className="font-display text-lg font-bold tracking-tight">{SITE_NAME}</span>
+      <BrandWordmark size={wordmarkSize} />
     </Link>
   );
 }

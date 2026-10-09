@@ -4,7 +4,6 @@ import { LayoutDashboard, LogIn, LogOut, Settings, Shield, UserRound } from 'luc
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ProfileTrigger } from './profile-trigger';
 import { RolePrefix } from '@/components/ui/role-prefix';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ADMIN_ENTRY_REQUIREMENT } from '@/lib/admin/navigation';
@@ -58,16 +58,7 @@ export function ProfileMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Профиль: ${user.username}`}
-          className="flex h-control items-center gap-2 rounded px-1.5 hover:bg-muted"
-        >
-          <Avatar name={user.username} size="sm" shape="round" />
-          <span className="hidden max-w-32 truncate text-sm font-medium md:inline">
-            {user.username}
-          </span>
-        </button>
+        <ProfileTrigger username={user.username} aria-label={`Профиль: ${user.username}`} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex flex-col gap-1">

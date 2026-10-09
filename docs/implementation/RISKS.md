@@ -188,13 +188,11 @@ URL status page (`NEXT_PUBLIC_STATUS_PAGE_URL`), реальные скриншо
 hero/showcase главной (`NEXT_PUBLIC_HOME_HERO_IMAGES`, `NEXT_PUBLIC_HOME_FEATURE_*`),
 тексты правовых документов. Без них — честные заглушки, fake-данных нет.
 
-## R16 — Внешний хостинг сезонного ассета — OPEN
+## R16 — Внешний хостинг сезонного ассета — CLOSED
 
-Halloween-декор шапки берётся с `https://yooma.su/assets/img/h_header.webp`
-(reference владельца). Доступность/кэш стороннего домена не контролируются; при
-недоступности полоса просто пустая (CSS background, без битой картинки). Для
-production рекомендуется перенести файл на `cdn-files.twomc.su` и задать
-`NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC`.
+Halloween-декор шапки перенесён на собственный CDN:
+`https://cdn-files.twomc.su/assets/images/halloween_assets.webp` (2728×146).
+Сторонний домен больше не используется; override — `NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC`.
 
 ## R17 — Ключи Cloudflare Turnstile для production — OPEN
 

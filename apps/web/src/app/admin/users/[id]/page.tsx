@@ -6,7 +6,7 @@ import {
   type PunishmentDto,
   type UserBadgeType,
 } from '@twomc/shared';
-import { Ban, Copy, Shield, ShieldCheck, Trash2 } from 'lucide-react';
+import { Ban, Copy, Pencil, Shield, ShieldCheck, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
@@ -36,6 +36,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
 import { RolePrefix } from '@/components/ui/role-prefix';
 import {
   Select,
@@ -61,6 +62,7 @@ import {
   useGrantBadge,
   useRevokeBadge,
   useRevokeRole,
+  useSetAccessLevel,
   useUser,
   useUserBadges,
   useUserEffectivePermissions,
@@ -110,6 +112,85 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
+const ACCESS_LEVEL_MAX = 100;
+
+/// Уровень доступа (ADR-0062) — отдельный числовой параметр, не priority
+/// роли. Менять можно только с `users.access_level.edit`; ограничения
+/// (иерархия, не выше собственного, свой — отдельное полномочие) проверяет backend.
+function AccessLevelDialog({ user }: { user: AdminUserFull }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(String(user.accessLevel));
+  const mutation = useSetAccessLevel(user.id);
+  const parsed = Number(value);
+  const valid =
+    value.trim() !== '' && Number.isInteger(parsed) && parsed >= 0 && parsed <= ACCESS_LEVEL_MAX;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setValue(String(user.accessLevel));
+      }}
+    >
+      <Tooltip content="Изменить уровень доступа">
+        <IconButton
+          aria-label="Изменить уровень доступа"
+          size="sm"
+          onClick={() => setOpen(true)}
+          disabled={user.accountType === 'SYSTEM'}
+        >
+          <Pencil />
+        </IconButton>
+      </Tooltip>
+      <DialogContent size="sm">
+        <DialogHeader>
+          <DialogTitle>Уровень доступа</DialogTitle>
+          <DialogDescription>
+            Отдельный числовой параметр {user.username}. Не заменяет права и не связан с приоритетом
+            ролей.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <Field
+            label="Уровень"
+            hint={`Целое число от 0 до ${ACCESS_LEVEL_MAX}`}
+            error={valid ? undefined : 'Введите целое число от 0 до 100'}
+          >
+            <Input
+              inputMode="numeric"
+              value={value}
+              onChange={(event) => setValue(event.target.value.replace(/[^0-9]/g, ''))}
+              className="font-mono"
+              data-testid="access-level-input"
+            />
+          </Field>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            Отмена
+          </Button>
+          <Button
+            disabled={!valid || mutation.isPending}
+            loading={mutation.isPending}
+            onClick={() =>
+              mutation.mutate(parsed, {
+                onSuccess: () => {
+                  toast.success('Уровень доступа обновлён');
+                  setOpen(false);
+                },
+                onError: (error) => toast.error(getErrorMessage(error)),
+              })
+            }
+          >
+            Сохранить
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ---------------- Вкладки ---------------- */
 
 function OverviewTab({ user }: { user: AdminUserFull }) {
@@ -127,6 +208,16 @@ function OverviewTab({ user }: { user: AdminUserFull }) {
           {user.tag}
         </DescriptionItem>
         <DescriptionItem term="E-mail">{user.email}</DescriptionItem>
+        <DescriptionItem term="Уровень доступа">
+          <span className="inline-flex items-center gap-1">
+            <span className="font-mono tabular" data-testid="access-level">
+              {formatNumber(user.accessLevel)}
+            </span>
+            <Can requirement="users.access_level.edit">
+              <AccessLevelDialog user={user} />
+            </Can>
+          </span>
+        </DescriptionItem>
         <DescriptionItem term="Тип аккаунта">
           {user.accountType === 'SYSTEM' ? 'Системный' : 'Обычный'}
         </DescriptionItem>

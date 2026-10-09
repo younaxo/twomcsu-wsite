@@ -23,7 +23,7 @@ import { Kbd } from './kbd';
 /* ---------- Общие классы поверхности меню (DropdownMenu, ContextMenu, Command) ---------- */
 
 export const menuContentClassName = cn(
-  'z-50 min-w-48 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg border bg-surface-overlay p-1 text-foreground shadow-lg edge-highlight scrollbar-thin',
+  'z-dropdown min-w-48 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-lg bg-surface-overlay p-1 text-foreground shadow-lg edge-highlight scrollbar-thin',
   'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
   '[--pop-y:-4px] data-[side=top]:[--pop-y:4px] data-[side=left]:[--pop-y:0] data-[side=right]:[--pop-y:0]',
 );

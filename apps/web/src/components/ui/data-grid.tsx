@@ -2,20 +2,13 @@
 
 import { Columns3, Inbox } from 'lucide-react';
 import { Popover } from 'radix-ui';
-import {
-  Fragment,
-  useEffect,
-  useRef,
-  type CSSProperties,
-  type InputHTMLAttributes,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
+import { Fragment, useId, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 import { useIsMobile } from '@/lib/use-media-query';
 import { Button } from './button';
 import { Card } from './card';
+import { Checkbox } from './checkbox';
 import { EmptyState } from './empty-state';
 import { ErrorState } from './error-state';
 import { LimitSelect, Pagination, PaginationSummary } from './pagination';
@@ -92,34 +85,40 @@ export interface DataGridProps<T> {
   emptyDescription?: ReactNode;
   stickyHeader?: boolean;
   onRowClick?: (row: T) => void;
-  /// Подпись таблицы для screen reader (`<caption>`).
+  /// Подпись таблицы для screen reader (`<caption>`, визуально скрыта).
   caption?: ReactNode;
+  /// Видимое описание НАД таблицей (связано через aria-describedby). Не
+  /// размещается между строками и пагинацией.
+  description?: ReactNode;
   className?: string;
   /// Классы scroll-контейнера таблицы (например `max-h-[60dvh]` для sticky).
   containerClassName?: string;
 }
 
-interface SelectCheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+interface SelectCheckboxProps {
   'aria-label': string;
+  checked: boolean;
   indeterminate?: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+  className?: string;
 }
 
-/// Нативный чекбокс с accent-цветом — без зависимости от `checkbox.tsx`.
-function SelectCheckbox({ indeterminate = false, className, ...props }: SelectCheckboxProps) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.indeterminate = indeterminate;
-    }
-  }, [indeterminate]);
+/// Выбор строк — общий Checkbox дизайн-системы (Radix), не нативный input.
+/// Клик не всплывает к строке (onRowClick).
+function SelectCheckbox({
+  indeterminate = false,
+  checked,
+  onChange,
+  className,
+  ...props
+}: SelectCheckboxProps) {
   return (
-    <input
-      ref={ref}
-      type="checkbox"
-      className={cn(
-        'size-4 shrink-0 cursor-pointer rounded-sm accent-primary disabled:cursor-not-allowed disabled:opacity-50',
-        className,
-      )}
+    <Checkbox
+      checked={indeterminate ? 'indeterminate' : checked}
+      onCheckedChange={() => onChange()}
+      onClick={(event) => event.stopPropagation()}
+      className={className}
       {...props}
     />
   );
@@ -154,10 +153,12 @@ export function DataGrid<T>({
   stickyHeader = false,
   onRowClick,
   caption,
+  description,
   className,
   containerClassName,
 }: DataGridProps<T>) {
   const isMobile = useIsMobile();
+  const descriptionId = useId();
   const visibleColumns = columns.filter((column) => column.visible !== false);
   const mobileColumns = visibleColumns.filter((column) => !column.hideOnMobile);
   const rowIds = rows.map(getRowId);
@@ -238,6 +239,7 @@ export function DataGrid<T>({
       <div
         role="list"
         aria-busy={loading || undefined}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn('flex flex-col gap-2', loading && 'opacity-60')}
       >
         {rows.map((row) => {
@@ -298,9 +300,10 @@ export function DataGrid<T>({
         sticky={stickyHeader}
         containerClassName={containerClassName}
         aria-busy={loading || undefined}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn(loading && 'opacity-60')}
       >
-        {caption ? <TableCaption>{caption}</TableCaption> : null}
+        {caption ? <TableCaption className="sr-only">{caption}</TableCaption> : null}
         {hasWidths ? (
           <colgroup>
             {selection ? <col className="w-10" /> : null}
@@ -408,25 +411,47 @@ export function DataGrid<T>({
           ) : null}
         </div>
       ) : null}
+      {description ? (
+        // Описание — над таблицей (раньше caption-bottom прилипал к
+        // последней строке и пагинации).
+        <p
+          id={descriptionId}
+          data-testid="data-grid-description"
+          className="text-sm leading-relaxed text-muted-foreground"
+        >
+          {description}
+        </p>
+      ) : null}
       {body}
       {pagination ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-3">
-            <PaginationSummary
-              page={pagination.page}
-              limit={pagination.limit}
-              total={pagination.total}
+        // Footer отделён линией и отступом. Desktop: «1–20 из 135» слева,
+        // «Строк на странице» + страницы справа. Mobile: сводка + размер
+        // страницы в первой строке, навигация по центру во второй.
+        <div
+          data-testid="data-grid-footer"
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 border-t border-border-subtle pt-4 md:flex md:gap-4"
+        >
+          <PaginationSummary
+            page={pagination.page}
+            limit={pagination.limit}
+            total={pagination.total}
+          />
+          {pagination.onLimitChange ? (
+            <LimitSelect
+              value={pagination.limit}
+              onChange={pagination.onLimitChange}
+              className="justify-self-end md:ml-auto"
             />
-            {pagination.onLimitChange ? (
-              <LimitSelect value={pagination.limit} onChange={pagination.onLimitChange} />
-            ) : null}
-          </div>
+          ) : null}
           <Pagination
             size="sm"
             page={pagination.page}
             totalPages={totalPages}
             onPageChange={pagination.onPageChange}
-            className="self-end sm:self-auto"
+            className={cn(
+              'col-span-2 justify-self-center',
+              !pagination.onLimitChange && 'md:ml-auto',
+            )}
           />
         </div>
       ) : null}
@@ -473,8 +498,8 @@ export function ColumnVisibilityMenu({
           sideOffset={6}
           collisionPadding={8}
           className={cn(
-            'z-50 w-56 max-w-[calc(100vw-2rem)] overscroll-contain p-1.5',
-            'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+            'z-popover w-56 max-w-[calc(100vw-2rem)] overscroll-contain p-1.5',
+            'rounded-lg bg-surface-overlay text-foreground shadow-lg edge-highlight',
             'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
             'data-[side=top]:[--pop-y:4px] data-[side=bottom]:[--pop-y:-4px]',
           )}
@@ -484,11 +509,9 @@ export function ColumnVisibilityMenu({
             {columns.map((column) => (
               <li key={column.key}>
                 <label className="flex h-control-sm cursor-pointer items-center gap-2 rounded px-2 text-sm hover:bg-muted">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={!hidden.has(column.key)}
-                    onChange={() => toggle(column.key)}
-                    className="size-4 shrink-0 cursor-pointer rounded-sm accent-primary"
+                    onCheckedChange={() => toggle(column.key)}
                   />
                   <span className="min-w-0 truncate">{column.label}</span>
                 </label>

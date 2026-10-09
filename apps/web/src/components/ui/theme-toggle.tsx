@@ -14,21 +14,33 @@ import {
 import { Tooltip } from './tooltip';
 
 const LABELS: Record<ThemePreference, string> = {
+  system: 'Системная',
   dark: 'Тёмная',
   light: 'Светлая',
-  system: 'Как в системе',
 };
 
-/// Переключатель темы: тёмная (по умолчанию) / светлая / как в системе.
-/// Кнопка показывает текущую фактическую тему, меню — выбор.
+const RESOLVED_LABEL = { dark: 'тёмная', light: 'светлая' } as const;
+
+/// Переключатель темы: Системная (по умолчанию) / Тёмная / Светлая.
+/// Выбранный режим (preference) отмечен в меню; для «Системной» рядом видна
+/// фактическая тема (effective), иконка кнопки — фактическая тема.
 export function ThemeToggle({ className }: { className?: string }) {
   const { preference, resolved, setPreference } = useTheme();
-  const Icon = preference === 'system' ? Monitor : resolved === 'dark' ? Moon : Sun;
+  const Icon = resolved === 'dark' ? Moon : Sun;
+  const summary =
+    preference === 'system'
+      ? `Тема: системная (сейчас ${RESOLVED_LABEL[resolved]})`
+      : `Тема: ${LABELS[preference].toLowerCase()}`;
   return (
     <DropdownMenu>
-      <Tooltip content={`Тема: ${LABELS[preference]}`}>
+      <Tooltip content={summary}>
         <DropdownMenuTrigger asChild>
-          <IconButton aria-label="Сменить тему" variant="ghost" className={className}>
+          <IconButton
+            aria-label={`Сменить тему. ${summary}`}
+            variant="ghost"
+            className={className}
+            data-theme-preference={preference}
+          >
             <Icon />
           </IconButton>
         </DropdownMenuTrigger>
@@ -38,6 +50,13 @@ export function ThemeToggle({ className }: { className?: string }) {
           value={preference}
           onValueChange={(value) => setPreference(value as ThemePreference)}
         >
+          <DropdownMenuRadioItem value="system">
+            <Monitor aria-hidden />
+            {LABELS.system}
+            <span className="ml-auto pl-3 text-xs text-muted-foreground">
+              {RESOLVED_LABEL[resolved]}
+            </span>
+          </DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="dark">
             <Moon aria-hidden />
             {LABELS.dark}
@@ -45,10 +64,6 @@ export function ThemeToggle({ className }: { className?: string }) {
           <DropdownMenuRadioItem value="light">
             <Sun aria-hidden />
             {LABELS.light}
-          </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="system">
-            <Monitor aria-hidden />
-            {LABELS.system}
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>

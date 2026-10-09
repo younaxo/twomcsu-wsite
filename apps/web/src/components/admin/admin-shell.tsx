@@ -19,10 +19,13 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useState, type ReactNode } from 'react';
+import { BrandWordmark } from '@/components/shell/brand-wordmark';
 import { DocumentBadge } from '@/components/shell/document-badge';
+import { ProfileTrigger } from '@/components/shell/profile-trigger';
 import { Avatar } from '@/components/ui/avatar';
 import { Button, IconButton } from '@/components/ui/button';
 import {
@@ -59,6 +62,7 @@ import { useAuthStore } from '@/lib/auth/store';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { cn } from '@/lib/cn';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
+import { SITE_LOGO_URL, SITE_NAME } from '@/lib/site/config';
 
 const ICONS: Record<AdminIconName, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -147,11 +151,28 @@ function SidebarNav({ groups, onNavigate }: { groups: AdminNavGroup[]; onNavigat
   );
 }
 
+/// [LOGO] twomc.su / Админ-панель — основной логотип (не сезонный).
 function Brand() {
   return (
-    <Link href="/admin" className="flex items-center gap-2 rounded-sm">
-      <span className="font-display text-xl font-bold tracking-tight">twomc.su</span>
-      <span className="text-xs text-muted-foreground">Админ-панель</span>
+    <Link
+      href="/admin"
+      aria-label={`${SITE_NAME} — Админ-панель`}
+      className="flex min-w-0 items-center gap-2.5 rounded-sm"
+    >
+      <Image
+        src={SITE_LOGO_URL}
+        alt=""
+        width={32}
+        height={32}
+        quality={90}
+        priority
+        draggable={false}
+        className="shrink-0 select-none rounded-sm"
+      />
+      <span className="flex min-w-0 flex-col leading-none">
+        <BrandWordmark size="md" />
+        <span className="mt-0.5 text-xs text-muted-foreground">Админ-панель</span>
+      </span>
     </Link>
   );
 }
@@ -203,9 +224,10 @@ function SidebarSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" size="sm" aria-describedby={undefined}>
         <SheetHeader>
-          <SheetTitle className="font-display text-xl font-bold tracking-tight">
-            twomc.su
-            <span className="ml-2 text-xs font-normal text-muted-foreground">Админ-панель</span>
+          <SheetTitle asChild>
+            <div>
+              <Brand />
+            </div>
           </SheetTitle>
         </SheetHeader>
         <SheetBody>
@@ -232,16 +254,7 @@ function AccountMenu() {
     <DropdownMenu>
       <Tooltip content="Аккаунт">
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Аккаунт ${user.username}`}
-            className="flex h-control items-center gap-2 rounded px-1.5 hover:bg-muted"
-          >
-            <Avatar name={user.username} size="sm" shape="round" />
-            <span className="hidden max-w-32 truncate text-sm font-medium md:inline">
-              {user.username}
-            </span>
-          </button>
+          <ProfileTrigger username={user.username} aria-label={`Аккаунт ${user.username}`} />
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-64">
@@ -384,7 +397,7 @@ export function AdminShell({ children, topbar }: AdminShellProps) {
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground [--card-p:20px] [--control-h-sm:32px] [--control-h:38px] [--control-px:14px] [--gap:16px] [--row-h:44px]">
-      <DocumentBadge />
+      <DocumentBadge variant="admin" />
       <Sidebar groups={groups} />
       <SidebarSheet groups={groups} open={menuOpen} onOpenChange={setMenuOpen} />
       <div className="flex min-w-0 flex-1 flex-col">

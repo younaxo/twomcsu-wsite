@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
-import { resolveSeasonalDecoration, type SeasonalDecoration } from '@/lib/site/seasonal';
+import { resolveSeasonalDecoration } from '@/lib/site/seasonal';
 
-/// Сезонное украшение верхней кромки шапки (сейчас — Halloween).
+/// Сезонное украшение верхней кромки шапки — из активной кампании реестра
+/// `lib/site/seasonal.ts` (сейчас ассет есть у Halloween).
 ///
 /// - Абсолютно позиционировано внутри header-поверхности: не занимает места,
 ///   нет layout shift; `pointer-events-none` — не перекрывает кликабельное.
@@ -16,7 +17,7 @@ import { resolveSeasonalDecoration, type SeasonalDecoration } from '@/lib/site/s
 ///   гидрация не зависят от часового пояса сервера.
 /// - Без glass: никакого backdrop-filter, только изображение.
 export function SeasonalHeaderDecoration({ className }: { className?: string }) {
-  const [decoration, setDecoration] = useState<SeasonalDecoration | null>(null);
+  const [decoration, setDecoration] = useState<ReturnType<typeof resolveSeasonalDecoration>>(null);
 
   useEffect(() => {
     setDecoration(resolveSeasonalDecoration(new Date()));

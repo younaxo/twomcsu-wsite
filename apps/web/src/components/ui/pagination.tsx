@@ -1,11 +1,11 @@
 'use client';
 
-import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { forwardRef, useId, type HTMLAttributes, type SelectHTMLAttributes } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { forwardRef, useId, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 import { Button, IconButton } from './button';
-import { inputClassName } from './input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select';
 
 /// Pagination — постраничная навигация списков (игроки, логи, транзакции).
 /// Состояние страницы хранит вызывающий код (URL/запрос); компонент только
@@ -167,69 +167,64 @@ export function PaginationSummary({
   );
 }
 
-export interface LimitSelectProps extends Omit<
-  SelectHTMLAttributes<HTMLSelectElement>,
-  'value' | 'onChange' | 'size'
-> {
+export interface LimitSelectProps {
   value: number;
   onChange: (limit: number) => void;
   options?: number[];
   size?: 'sm' | 'md';
   /// Подпись слева от селекта.
   label?: string;
+  className?: string;
+  id?: string;
+  disabled?: boolean;
 }
 
 const DEFAULT_LIMITS = [10, 20, 50, 100];
 
-/// Нативный `<select>` «строк на странице», стилизованный под Input.
-export const LimitSelect = forwardRef<HTMLSelectElement, LimitSelectProps>(
-  (
-    {
-      value,
-      onChange,
-      options = DEFAULT_LIMITS,
-      size = 'sm',
-      label = 'Строк на странице',
-      className,
-      id,
-      ...props
-    },
-    ref,
-  ) => {
-    const generatedId = useId();
-    const selectId = id ?? generatedId;
-    const values = options.includes(value) ? options : [...options, value].sort((a, b) => a - b);
-    return (
-      <div className={cn('inline-flex items-center gap-2', className)}>
-        <label htmlFor={selectId} className="whitespace-nowrap text-sm text-muted-foreground">
-          {label}
-        </label>
-        <span className="relative inline-flex">
-          <select
-            ref={ref}
-            id={selectId}
-            value={value}
-            onChange={(event) => onChange(Number(event.target.value))}
-            className={cn(
-              inputClassName,
-              'inline-block w-auto cursor-pointer appearance-none pr-8 tabular',
-              size === 'sm' ? 'h-control-sm' : 'h-control',
-            )}
-            {...props}
-          >
-            {values.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <ChevronDown
-            aria-hidden
-            className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-subtle-foreground"
-          />
-        </span>
-      </div>
-    );
-  },
-);
-LimitSelect.displayName = 'LimitSelect';
+/// «Строк на странице» — общий Select дизайн-системы (Radix, Portal, solid),
+/// никакого нативного popup браузера. Подпись связана с триггером через
+/// aria-labelledby; клавиатура (стрелки/Enter/Escape) — из Radix.
+export function LimitSelect({
+  value,
+  onChange,
+  options = DEFAULT_LIMITS,
+  size = 'sm',
+  label = 'Строк на странице',
+  className,
+  id,
+  disabled,
+}: LimitSelectProps) {
+  const generatedId = useId();
+  const triggerId = id ?? generatedId;
+  const labelId = `${triggerId}-label`;
+  const values = options.includes(value) ? options : [...options, value].sort((a, b) => a - b);
+  return (
+    <div className={cn('inline-flex items-center gap-2', className)}>
+      <span id={labelId} className="whitespace-nowrap text-sm text-muted-foreground">
+        {label}
+      </span>
+      <Select
+        value={String(value)}
+        onValueChange={(next) => onChange(Number(next))}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id={triggerId}
+          aria-labelledby={labelId}
+          size={size}
+          className="w-[4.75rem] tabular"
+          data-testid="limit-select"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="end" className="min-w-[5.5rem]">
+          {values.map((option) => (
+            <SelectItem key={option} value={String(option)} className="tabular">
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}

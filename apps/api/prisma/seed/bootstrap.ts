@@ -18,6 +18,8 @@ interface BootstrapAccount {
   shortId: 0 | 1 | 2;
   label: string;
   username: string | undefined;
+  /// Точечный alias входа (ADR-0061); у остальных login = username.
+  loginAlias?: string;
   email: string | undefined;
   passwordEnv: string;
   roleSlug: 'owner' | 'chief-curator' | null;
@@ -52,13 +54,57 @@ function accounts(): BootstrapAccount[] {
     {
       shortId: 2,
       label: 'Chief Curator',
+      // Ник (= Minecraft-ник) younaxo_, вход дополнительно по alias younaxo.
       username: env('BOOTSTRAP_CHIEF_CURATOR_USERNAME') ?? 'younaxo_',
+      loginAlias: env('BOOTSTRAP_CHIEF_CURATOR_LOGIN_ALIAS') ?? 'younaxo',
       email: env('BOOTSTRAP_CHIEF_CURATOR_EMAIL') ?? 'younaxo@icloud.com',
       passwordEnv: 'BOOTSTRAP_CHIEF_CURATOR_PASSWORD',
       roleSlug: 'chief-curator',
       accountType: AccountType.DEFAULT,
     },
   ];
+}
+
+function envLabel(label: string): string {
+  return label.toUpperCase().replace(/ /g, '_');
+}
+
+/// Уровень доступа (ADR-0062) задаётся только явно через env
+/// `BOOTSTRAP_<LABEL>_ACCESS_LEVEL`; без него seed значение не трогает.
+function accessLevelFromEnv(label: string): number | undefined {
+  const raw = env(`BOOTSTRAP_${envLabel(label)}_ACCESS_LEVEL`);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0 || value > 100) {
+    throw new Error(`Bootstrap: некорректный уровень доступа «${raw}» (0…100)`);
+  }
+  return value;
+}
+
+/// Alias входа: не должен совпадать с чужим ником (вход стал бы неоднозначным).
+async function upsertLoginAlias(
+  prisma: PrismaClient,
+  userId: string,
+  rawAlias: string,
+): Promise<void> {
+  const alias = rawAlias.toLowerCase();
+  const clash = await prisma.user.findFirst({
+    where: {
+      username: { equals: alias, mode: 'insensitive' },
+      NOT: { id: userId },
+    },
+    select: { username: true },
+  });
+  if (clash) {
+    throw new Error(
+      `Bootstrap: alias входа «${alias}» совпадает с ником «${clash.username}» другого пользователя`,
+    );
+  }
+  await prisma.loginAlias.upsert({
+    where: { alias },
+    create: { alias, userId },
+    update: { userId },
+  });
 }
 
 /// Тег вида `name#0000` для bootstrap-аккаунтов — фиксированный суффикс по
@@ -85,9 +131,9 @@ export async function seedBootstrapAccounts(
     const missing: string[] = [];
     if (!password) missing.push(account.passwordEnv);
     if (!account.username)
-      missing.push(`BOOTSTRAP_${account.label.toUpperCase()}_USERNAME`);
+      missing.push(`BOOTSTRAP_${envLabel(account.label)}_USERNAME`);
     if (!account.email)
-      missing.push(`BOOTSTRAP_${account.label.toUpperCase()}_EMAIL`);
+      missing.push(`BOOTSTRAP_${envLabel(account.label)}_EMAIL`);
     if (missing.length > 0) {
       const message = `Bootstrap #${account.shortId} (${account.label}) пропущен: не задано ${missing.join(', ')}`;
       if (production) {
@@ -117,12 +163,14 @@ export async function seedBootstrapAccounts(
       );
     }
 
+    const accessLevel = accessLevelFromEnv(account.label);
     const existingByEmail = await prisma.user.findUnique({ where: { email } });
     const user = existingByEmail
       ? await prisma.user.update({
           where: { id: existingByEmail.id },
           data: {
             password: passwordHash,
+            ...(accessLevel !== undefined ? { accessLevel } : {}),
             accountType: account.accountType,
             mustChangePassword: account.accountType !== AccountType.SYSTEM,
             isBanned: false,
@@ -140,9 +188,14 @@ export async function seedBootstrapAccounts(
             accountType: account.accountType,
             mustChangePassword: account.accountType !== AccountType.SYSTEM,
             isVerified: true,
+            ...(accessLevel !== undefined ? { accessLevel } : {}),
             positionId: position.id,
           },
         });
+
+    if (account.loginAlias) {
+      await upsertLoginAlias(prisma, user.id, account.loginAlias);
+    }
 
     if (account.roleSlug) {
       const role = await prisma.role.findUnique({
