@@ -88,7 +88,8 @@ describe('HomePage', () => {
         siteDescription: null,
         siteLogo: null,
         contactEmail: null,
-        socials: { discord: null, vk: null, telegram: 'https://t.me/x', youtube: null },
+        socialLinks: [{ id: 's1', platform: 'telegram', title: null, url: 'https://t.me/x' }],
+        alert: null,
         registrationEnabled: true,
         modules: {
           chat: true,

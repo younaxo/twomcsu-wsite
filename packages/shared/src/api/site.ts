@@ -1,17 +1,92 @@
 import type { DecimalString, IsoDateString } from './common';
 
 /// `GET /site/settings` — публичная часть SiteSettings для shell frontend.
+/// Глобальная плашка сайта (ADR-0066).
+export const SITE_ALERT_VARIANTS = ['danger', 'warning', 'info', 'success'] as const;
+export type SiteAlertVariant = (typeof SITE_ALERT_VARIANTS)[number];
+
+/// Разрешённые иконки плашки — ключи, а не SVG-код: исключает SVG-инъекции.
+export const SITE_ALERT_ICONS = [
+  'alert-triangle',
+  'alert-octagon',
+  'info',
+  'megaphone',
+  'wrench',
+  'shield-alert',
+  'clock',
+  'server-crash',
+  'sparkles',
+  'gift',
+  'calendar',
+  'check-circle',
+] as const;
+export type SiteAlertIcon = (typeof SITE_ALERT_ICONS)[number];
+
+export interface SiteAlertDto {
+  enabled: boolean;
+  variant: SiteAlertVariant;
+  icon: SiteAlertIcon;
+  title: string | null;
+  message: string;
+  linkUrl: string | null;
+  linkLabel: string | null;
+  updatedBy: string | null;
+  updatedAt: IsoDateString;
+}
+
+/// Публичная часть: только включённая плашка, без служебных полей.
+export type PublicSiteAlert = Pick<
+  SiteAlertDto,
+  'variant' | 'icon' | 'title' | 'message' | 'linkUrl' | 'linkLabel'
+>;
+
+export type UpdateSiteAlertRequest = Partial<
+  Pick<SiteAlertDto, 'enabled' | 'variant' | 'icon' | 'title' | 'message' | 'linkUrl' | 'linkLabel'>
+>;
+
+/// Соцсети проекта (ADR-0067): пресеты платформ — иконка и название
+/// подставляются автоматически; список расширяемый.
+export const SITE_SOCIAL_PLATFORMS = [
+  'telegram',
+  'discord',
+  'youtube',
+  'tiktok',
+  'vk',
+  'twitch',
+  'instagram',
+  'x',
+  'facebook',
+] as const;
+export type SiteSocialPlatform = (typeof SITE_SOCIAL_PLATFORMS)[number];
+
+export interface SiteSocialLinkDto {
+  id: string;
+  platform: SiteSocialPlatform;
+  title: string | null;
+  url: string;
+  isEnabled: boolean;
+  sortOrder: number;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+}
+
+export type PublicSiteSocialLink = Pick<SiteSocialLinkDto, 'id' | 'platform' | 'title' | 'url'>;
+
+export interface CreateSiteSocialLinkRequest {
+  platform: SiteSocialPlatform;
+  url: string;
+  title?: string | null;
+  isEnabled?: boolean;
+}
+export type UpdateSiteSocialLinkRequest = Partial<CreateSiteSocialLinkRequest>;
+
 export interface PublicSiteSettings {
   siteName: string;
   siteDescription: string | null;
   siteLogo: string | null;
   contactEmail: string | null;
-  socials: {
-    discord: string | null;
-    vk: string | null;
-    telegram: string | null;
-    youtube: string | null;
-  };
+  /// Включённые соцсети проекта по порядку (ADR-0067).
+  socialLinks: PublicSiteSocialLink[];
   registrationEnabled: boolean;
   modules: {
     chat: boolean;
@@ -22,6 +97,8 @@ export interface PublicSiteSettings {
     reports: boolean;
   };
   meta: { title: string | null; description: string | null; keywords: string[] };
+  /// Глобальная плашка под шапкой; null — выключена.
+  alert: PublicSiteAlert | null;
   updatedAt: IsoDateString;
 }
 

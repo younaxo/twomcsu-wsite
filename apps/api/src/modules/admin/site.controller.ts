@@ -1,29 +1,32 @@
 import { Controller, Get } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AdminToolsService } from './admin-tools.service';
+import { SiteSocialLinksService } from './site-social-links.service';
 
 /// Публичная часть настроек сайта (без секретов и админских полей) —
 /// единый источник для shell frontend: название, соцсети, контактный
 /// e-mail, флаги модулей. Редактируется в /admin/settings.
 @Controller('site')
 export class SiteController {
-  constructor(private readonly tools: AdminToolsService) {}
+  constructor(
+    private readonly tools: AdminToolsService,
+    private readonly socialLinks: SiteSocialLinksService,
+  ) {}
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get('settings')
   async publicSettings() {
-    const s = await this.tools.getSiteSettings();
+    const [s, alert, socialLinks] = await Promise.all([
+      this.tools.getSiteSettings(),
+      this.tools.getPublicSiteAlert(),
+      this.socialLinks.listPublic(),
+    ]);
     return {
       siteName: s.siteName,
       siteDescription: s.siteDescription,
       siteLogo: s.siteLogo,
       contactEmail: s.contactEmail,
-      socials: {
-        discord: s.discordInvite,
-        vk: s.vkGroup,
-        telegram: s.telegramChannel,
-        youtube: s.youtubeChannel,
-      },
+      socialLinks,
       registrationEnabled: s.registrationEnabled,
       modules: {
         chat: s.chatEnabled,
@@ -38,6 +41,7 @@ export class SiteController {
         description: s.metaDescription,
         keywords: s.metaKeywords,
       },
+      alert,
       updatedAt: s.updatedAt,
     };
   }

@@ -1,4 +1,4 @@
-import type { PublicSiteSettings } from '@twomc/shared';
+import type { PublicSiteSettings, SiteSocialPlatform } from '@twomc/shared';
 import { cdnUrl } from '../env';
 
 /// Единый источник глобального содержимого shell (sidebar, header, footer,
@@ -73,52 +73,91 @@ export const SITE_NAVIGATION: SiteNavItem[] = [
 
 export const BONUS_LINK = { href: '/shop#bonus', label: 'Бонусы', icon: 'gift' as const };
 
+/// Соцсети проекта (ADR-0067). Источник — список из админки
+/// (`PublicSiteSettings.socialLinks`, только включённые, по порядку);
+/// для основных платформ — fallback на env, пока ссылка не задана в админке.
 export interface SocialLink {
-  id: 'telegram' | 'discord' | 'tiktok' | 'vk' | 'youtube';
+  /// Уникальный ключ строки (id записи или платформа для env/плейсхолдера).
+  key: string;
+  platform: SiteSocialPlatform;
   label: string;
   url: string;
 }
 
-const SOCIAL_LABELS: Record<SocialLink['id'], string> = {
+export const SOCIAL_PLATFORM_LABELS: Record<SiteSocialPlatform, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
+  youtube: 'YouTube',
   tiktok: 'TikTok',
   vk: 'VK',
-  youtube: 'YouTube',
+  twitch: 'Twitch',
+  instagram: 'Instagram',
+  x: 'X',
+  facebook: 'Facebook',
 };
 
-/// Официальные сообщества проекта — порядок показа в footer/главной.
-export const SOCIAL_IDS: SocialLink['id'][] = ['telegram', 'discord', 'youtube', 'tiktok', 'vk'];
+/// Основные сообщества: в футере видны всегда (без ссылки — «скоро»).
+export const CORE_SOCIAL_PLATFORMS: SiteSocialPlatform[] = [
+  'telegram',
+  'discord',
+  'youtube',
+  'tiktok',
+  'vk',
+];
 
-export interface SocialSlot {
-  id: SocialLink['id'];
-  label: string;
-  /// null — ссылка ещё не задана (настройки сайта / env): слот показывается недоступным.
+const SOCIAL_ENV: Partial<Record<SiteSocialPlatform, string | undefined>> = {
+  telegram: process.env.NEXT_PUBLIC_TELEGRAM_URL,
+  discord: process.env.NEXT_PUBLIC_DISCORD_URL,
+  youtube: process.env.NEXT_PUBLIC_YOUTUBE_URL,
+  tiktok: process.env.NEXT_PUBLIC_TIKTOK_URL,
+  vk: process.env.NEXT_PUBLIC_VK_URL,
+};
+
+export interface SocialSlot extends Omit<SocialLink, 'url'> {
+  /// null — ссылка ещё не задана: слот показывается недоступным.
   url: string | null;
 }
 
-/// Все пять соцсетей с URL из настроек сайта (backend) → env; без ссылки —
-/// `url: null`. TikTok в SiteSettings нет — только env NEXT_PUBLIC_TIKTOK_URL.
-export function resolveSocialSlots(settings: PublicSiteSettings | null | undefined): SocialSlot[] {
-  const raw: Record<SocialLink['id'], string | null | undefined> = {
-    telegram: settings?.socials.telegram || process.env.NEXT_PUBLIC_TELEGRAM_URL,
-    discord: settings?.socials.discord || process.env.NEXT_PUBLIC_DISCORD_URL,
-    tiktok: process.env.NEXT_PUBLIC_TIKTOK_URL,
-    vk: settings?.socials.vk || process.env.NEXT_PUBLIC_VK_URL,
-    youtube: settings?.socials.youtube || process.env.NEXT_PUBLIC_YOUTUBE_URL,
-  };
-  return SOCIAL_IDS.map((id) => ({
-    id,
-    label: SOCIAL_LABELS[id],
-    url: raw[id] && /^https?:\/\//.test(raw[id] as string) ? (raw[id] as string) : null,
+const isHttps = (value: string | null | undefined): value is string =>
+  !!value && /^https:\/\//.test(value);
+
+/// Только соцсети с реальной ссылкой (rail, «Сообщество»): список из админки
+/// по порядку; основные платформы без записи — из env.
+export function resolveSocialLinks(settings: PublicSiteSettings | null | undefined): SocialLink[] {
+  const fromAdmin: SocialLink[] = (settings?.socialLinks ?? [])
+    .filter((link) => isHttps(link.url))
+    .map((link) => ({
+      key: link.id,
+      platform: link.platform,
+      label: link.title || SOCIAL_PLATFORM_LABELS[link.platform],
+      url: link.url,
+    }));
+  const present = new Set(fromAdmin.map((link) => link.platform));
+  const fromEnv: SocialLink[] = CORE_SOCIAL_PLATFORMS.filter(
+    (platform) => !present.has(platform) && isHttps(SOCIAL_ENV[platform]),
+  ).map((platform) => ({
+    key: `env-${platform}`,
+    platform,
+    label: SOCIAL_PLATFORM_LABELS[platform],
+    url: SOCIAL_ENV[platform] as string,
   }));
+  return [...fromAdmin, ...fromEnv];
 }
 
-/// Только соцсети с реальной ссылкой (rail, блок «Сообщество»).
-export function resolveSocialLinks(settings: PublicSiteSettings | null | undefined): SocialLink[] {
-  return resolveSocialSlots(settings)
-    .filter((slot): slot is SocialSlot & { url: string } => slot.url !== null)
-    .map(({ id, label, url }) => ({ id, label, url }));
+/// Футер: все подключённые соцсети + плейсхолдеры «скоро» для основных
+/// платформ, которых ещё нет (одинаковые по размеру иконки).
+export function resolveSocialSlots(settings: PublicSiteSettings | null | undefined): SocialSlot[] {
+  const links = resolveSocialLinks(settings);
+  const present = new Set(links.map((link) => link.platform));
+  const placeholders: SocialSlot[] = CORE_SOCIAL_PLATFORMS.filter(
+    (platform) => !present.has(platform),
+  ).map((platform) => ({
+    key: `slot-${platform}`,
+    platform,
+    label: SOCIAL_PLATFORM_LABELS[platform],
+    url: null,
+  }));
+  return [...links, ...placeholders];
 }
 
 /// Поддержка: e-mail из настроек сайта → env → официальный адрес владельца;

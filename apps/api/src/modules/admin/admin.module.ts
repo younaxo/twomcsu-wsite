@@ -6,6 +6,7 @@ import { AdminController } from './admin.controller';
 import { AdminFinanceService } from './admin-finance.service';
 import { AdminPanelController } from './admin-panel.controller';
 import { AdminToolsService } from './admin-tools.service';
+import { SiteSocialLinksService } from './site-social-links.service';
 import { AdminUsersBulkController } from './admin-users-bulk.controller';
 import { AdminUsersBulkService } from './admin-users-bulk.service';
 import { DashboardService } from './dashboard.service';
@@ -25,6 +26,7 @@ import { SiteController } from './site.controller';
   providers: [
     DashboardService,
     AdminToolsService,
+    SiteSocialLinksService,
     AdminFinanceService,
     AdminUsersBulkService,
     ExportService,

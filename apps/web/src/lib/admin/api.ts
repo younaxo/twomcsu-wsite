@@ -1,4 +1,9 @@
 import type {
+  CreateSiteSocialLinkRequest,
+  SiteAlertDto,
+  SiteSocialLinkDto,
+  UpdateSiteAlertRequest,
+  UpdateSiteSocialLinkRequest,
   AdminDashboard,
   AdminOrderDto,
   AdminSessionDto,
@@ -74,6 +79,19 @@ export const adminApi = {
   siteSettings: () => api.get<SiteSettingsDto>('/admin/settings/site'),
   updateSiteSettings: (body: UpdateSiteSettingsRequest) =>
     api.patch<SiteSettingsDto>('/admin/settings/site', body),
+  /// Глобальная плашка (ADR-0066).
+  siteAlert: () => api.get<SiteAlertDto>('/admin/settings/alert'),
+  updateSiteAlert: (body: UpdateSiteAlertRequest) =>
+    api.patch<SiteAlertDto>('/admin/settings/alert', body),
+  /// Соцсети проекта (ADR-0067).
+  socialLinks: () => api.get<SiteSocialLinkDto[]>('/admin/settings/social-links'),
+  createSocialLink: (body: CreateSiteSocialLinkRequest) =>
+    api.post<SiteSocialLinkDto>('/admin/settings/social-links', body),
+  updateSocialLink: (id: string, body: UpdateSiteSocialLinkRequest) =>
+    api.patch<SiteSocialLinkDto>(`/admin/settings/social-links/${id}`, body),
+  deleteSocialLink: (id: string) => api.delete<void>(`/admin/settings/social-links/${id}`),
+  reorderSocialLinks: (ids: string[]) =>
+    api.put<SiteSocialLinkDto[]>('/admin/settings/social-links/order', { ids }),
 
   // --- Users -------------------------------------------------------------------
 

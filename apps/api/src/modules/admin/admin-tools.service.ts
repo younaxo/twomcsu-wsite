@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -15,6 +16,7 @@ import { ScheduledExportDto } from './dto/scheduled-export.dto';
 import { UpdateBookmarkDto } from './dto/update-bookmark.dto';
 import { UpdateSavedFilterDto } from './dto/update-saved-filter.dto';
 import { UpdateScheduledExportDto } from './dto/update-scheduled-export.dto';
+import { UpdateSiteAlertDto } from './dto/update-site-alert.dto';
 import { UpdateSiteSettingsDto } from './dto/update-site-settings.dto';
 import { UserIdFilterQueryDto } from './dto/user-id-filter-query.dto';
 
@@ -227,6 +229,85 @@ export class AdminToolsService {
 
   async getSiteSettings() {
     return this.getOrCreateSiteSettings();
+  }
+
+  // --- Глобальная плашка (ADR-0066) -------------------------------------------
+
+  async getSiteAlert() {
+    return this.prisma.siteAlert.upsert({
+      where: { id: 'global' },
+      create: { id: 'global' },
+      update: {},
+    });
+  }
+
+  /// Плашка для публичных настроек: только включённая и с текстом.
+  async getPublicSiteAlert() {
+    const alert = await this.prisma.siteAlert.findUnique({
+      where: { id: 'global' },
+    });
+    if (!alert || !alert.enabled || alert.message.trim() === '') {
+      return null;
+    }
+    return {
+      variant: alert.variant,
+      icon: alert.icon,
+      title: alert.title,
+      message: alert.message,
+      linkUrl: alert.linkUrl,
+      linkLabel: alert.linkLabel,
+    };
+  }
+
+  /// Audit — отдельное действие на включение/выключение и на правку
+  /// содержимого, в changes — только изменившиеся поля (before → after).
+  async updateSiteAlert(dto: UpdateSiteAlertDto, actorId: string) {
+    const current = await this.getSiteAlert();
+    const next = { ...current, ...dto };
+    if (next.enabled && next.message.trim() === '') {
+      throw new BadRequestException(
+        'Нельзя включить плашку без текста сообщения',
+      );
+    }
+    if ((next.linkUrl === null) !== (next.linkLabel === null)) {
+      throw new BadRequestException('Ссылка и её подпись задаются вместе');
+    }
+    const updated = await this.prisma.siteAlert.update({
+      where: { id: 'global' },
+      data: { ...dto, updatedBy: actorId },
+    });
+
+    const fields = [
+      'enabled',
+      'variant',
+      'icon',
+      'title',
+      'message',
+      'linkUrl',
+      'linkLabel',
+    ] as const;
+    const diff: Record<string, { from: unknown; to: unknown }> = {};
+    for (const field of fields) {
+      if (current[field] !== updated[field]) {
+        diff[field] = { from: current[field], to: updated[field] };
+      }
+    }
+    if (Object.keys(diff).length > 0) {
+      const toggled = 'enabled' in diff;
+      await this.audit.log({
+        actorId,
+        action: toggled
+          ? updated.enabled
+            ? 'settings.alert.enable'
+            : 'settings.alert.disable'
+          : 'settings.alert.update',
+        targetType: 'SiteAlert',
+        targetId: updated.id,
+        changes: diff as Prisma.InputJsonValue,
+        severity: toggled ? 'warning' : 'info',
+      });
+    }
+    return updated;
   }
 
   async updateSiteSettings(dto: UpdateSiteSettingsDto, actorId: string) {
