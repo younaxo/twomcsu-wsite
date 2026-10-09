@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { BruteForceService } from './brute-force.service';
 import { CaptchaService } from './captcha.service';
+import { SocialAuthController } from './social-auth.controller';
+import { SocialAuthService } from './social-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -22,8 +24,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, BruteForceService, CaptchaService],
+  controllers: [AuthController, SocialAuthController],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    BruteForceService,
+    CaptchaService,
+    SocialAuthService,
+  ],
   // JwtModule экспортируется, чтобы WS-шлюзы (например DirectMessagesGateway)
   // могли проверять access-token из handshake тем же JwtService, не
   // регистрируя JwtModule повторно со своим конфигом. CaptchaService —

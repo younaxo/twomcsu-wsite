@@ -12,6 +12,8 @@ export interface AuthState {
   /// Восстановить сессию по refresh-cookie при загрузке приложения.
   bootstrap: () => Promise<void>;
   login: (request: LoginRequest) => Promise<MeResponse>;
+  /// Принять готовую сессию (вход через Telegram: backend вернул access-токен).
+  acceptSession: (accessToken: string) => Promise<MeResponse>;
   logout: () => Promise<void>;
   /// Перечитать `/auth/me` (после смены ролей/прав текущего пользователя).
   reload: () => Promise<MeResponse | null>;
@@ -87,6 +89,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       throw new CaptchaRequiredError();
     }
     tokenStore.set(body.accessToken);
+    const user = await fetchMe();
+    set({ status: 'authenticated', user });
+    return user;
+  },
+
+  acceptSession: async (accessToken) => {
+    tokenStore.set(accessToken);
     const user = await fetchMe();
     set({ status: 'authenticated', user });
     return user;

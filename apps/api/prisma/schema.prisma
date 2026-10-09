@@ -352,16 +352,17 @@ model User {
   customPosition      UserCustomPosition?
   departments         UserDepartment[]
   loginAliases        LoginAlias[]
+  externalAccounts    UserExternalAccount[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   promoCodeUsages     PromoCodeUsage[]
-  badges              UserBadge[]          @relation("UserBadgeOwner")
+  badges              UserBadge[]           @relation("UserBadgeOwner")
   socialLinks         SocialLink[]
   mediaBadges         UserMediaBadge[]
   mediaBadgeRequests  MediaBadgeRequest[]
   statistics          PlayerStatistics?
   awards              UserAward[]
-  uploadedFiles       File[]               @relation("FileUploader")
+  uploadedFiles       File[]                @relation("FileUploader")
 
   profileViews     ProfileView[]     @relation("ProfileViewsReceived")
   viewedProfiles   ProfileView[]     @relation("ProfileViewsGiven")
@@ -449,6 +450,28 @@ model User {
   @@index([displayBadgeId])
   @@index([selectedDecorationId])
   @@map("users")
+}
+
+/// Привязанный внешний аккаунт (ADR-0069): Discord/Telegram — ТОЛЬКО для входа
+/// в уже существующий аккаунт twomc.su, если пользователь сам привязал его в
+/// профиле. Автосоздания аккаунта и автопривязки по нику/e-mail нет.
+model UserExternalAccount {
+  id             String    @id @default(cuid())
+  userId         String
+  /// discord | telegram
+  provider       String    @db.VarChar(16)
+  /// Стабильный id у провайдера (snowflake Discord / id Telegram).
+  providerUserId String    @db.VarChar(64)
+  username       String?   @db.VarChar(64)
+  displayName    String?   @db.VarChar(128)
+  linkedAt       DateTime  @default(now())
+  lastLoginAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("user_external_accounts")
 }
 
 /// Точечный alias для входа (ADR-0061): у всех пользователей login = username,
@@ -1626,27 +1649,27 @@ model SiteSocialLink {
 /// может её закрыть — показывается, пока включена в админке. Иконка — ключ из
 /// разрешённого набора (никакого произвольного SVG от клиента).
 model SiteAlert {
-  id        String   @id @default("global")
-  enabled   Boolean  @default(false)
+  id           String    @id @default("global")
+  enabled      Boolean   @default(false)
   /// info | warning | danger | success
-  variant   String   @default("danger") @db.VarChar(16)
+  variant      String    @default("danger") @db.VarChar(16)
   /// Режим отображения (не зависит от variant): outline | filled.
-  displayStyle String @default("outline") @db.VarChar(16)
+  displayStyle String    @default("outline") @db.VarChar(16)
   /// Ключ иконки из SITE_ALERT_ICONS.
-  icon      String   @default("alert-triangle") @db.VarChar(32)
-  title     String?  @db.VarChar(80)
-  message   String   @default("") @db.VarChar(500)
+  icon         String    @default("alert-triangle") @db.VarChar(32)
+  title        String?   @db.VarChar(80)
+  message      String    @default("") @db.VarChar(500)
   /// https://… или внутренний путь `/…`.
-  linkUrl   String?  @db.VarChar(500)
-  linkLabel String?  @db.VarChar(40)
+  linkUrl      String?   @db.VarChar(500)
+  linkLabel    String?   @db.VarChar(40)
   /// Свой SVG (icon = "custom"): проверенный на сервере код, на сайте
   /// показывается только как <img> (скрипты внутри SVG не исполняются).
-  customIcon String?   @db.Text
+  customIcon   String?   @db.Text
   /// Окно показа по серверному времени (UTC); null — без ограничения.
-  startsAt   DateTime?
-  endsAt     DateTime?
-  updatedBy String?
-  updatedAt DateTime @updatedAt
+  startsAt     DateTime?
+  endsAt       DateTime?
+  updatedBy    String?
+  updatedAt    DateTime  @updatedAt
 
   @@map("site_alert")
 }
