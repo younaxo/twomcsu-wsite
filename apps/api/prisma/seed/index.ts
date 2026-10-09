@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { PERMISSIONS } from '@twomc/shared';
+import { seedBootstrapAccounts } from './bootstrap';
 import { DEFAULT_POSITIONS } from './positions';
 import { SUPERUSER_ROLES } from './roles';
 
@@ -14,7 +15,10 @@ async function main(): Promise<void> {
     await prisma.permission.upsert({
       where: { key: permission.key },
       create: permission,
-      update: { module: permission.module, description: permission.description },
+      update: {
+        module: permission.module,
+        description: permission.description,
+      },
     });
   }
   console.log(`Permissions: ${PERMISSIONS.length} синхронизировано`);
@@ -31,11 +35,18 @@ async function main(): Promise<void> {
   for (const role of SUPERUSER_ROLES) {
     await prisma.role.upsert({
       where: { slug: role.slug },
-      create: { ...role, isSystem: true, isSuperuser: true, isAssignable: true },
+      create: {
+        ...role,
+        isSystem: true,
+        isSuperuser: true,
+        isAssignable: true,
+      },
       update: { displayName: role.displayName, priority: role.priority },
     });
   }
   console.log(`Superuser-роли: ${SUPERUSER_ROLES.length} синхронизировано`);
+
+  await seedBootstrapAccounts(prisma);
 }
 
 main()

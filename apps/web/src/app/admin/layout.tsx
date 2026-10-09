@@ -3,7 +3,7 @@ import { AdminShell } from '@/components/admin/admin-shell';
 import { RequireAuth } from '@/components/admin/require-auth';
 
 export const metadata: Metadata = {
-  title: { default: 'Админ-панель', template: '%s — Админ-панель TwoMC' },
+  title: { default: 'Админ-панель', template: '%s — Админ-панель twomc.su' },
   robots: { index: false, follow: false },
 };
 

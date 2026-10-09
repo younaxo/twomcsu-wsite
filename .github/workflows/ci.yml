@@ -47,7 +47,7 @@ jobs:
       REDIS_PASSWORD: ""
       JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci
       JWT_REFRESH_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci-2
-      HCAPTCHA_DISABLED: "true"
+      TURNSTILE_DISABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

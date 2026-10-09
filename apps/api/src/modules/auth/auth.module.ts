@@ -27,8 +27,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   // JwtModule экспортируется, чтобы WS-шлюзы (например DirectMessagesGateway)
   // могли проверять access-token из handshake тем же JwtService, не
   // регистрируя JwtModule повторно со своим конфигом. CaptchaService —
-  // чтобы FormsService мог проверять hCaptcha для анонимных ответов
-  // (Form.requiresCaptcha), не дублируя hCaptcha-интеграцию.
+  // чтобы FormsService мог проверять Cloudflare Turnstile для анонимных ответов
+  // (Form.requiresCaptcha), не дублируя интеграцию с Turnstile (ADR-0059).
   exports: [AuthService, JwtModule, CaptchaService],
 })
 export class AuthModule {}

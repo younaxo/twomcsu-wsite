@@ -5,6 +5,57 @@
 
 ## [Unreleased]
 
+### Auth, Turnstile, внешние ссылки, бейдж вкладки, мобильная навигация
+- Переработаны вход, регистрация, «Забыли пароль?», сброс пароля (`AuthShell`).
+- Cloudflare Turnstile вместо hCaptcha: backend Siteverify, `<Turnstile />` на всех
+  auth-формах, тестовые ключи для dev (ADR-0059).
+- External Link Modal для сторонних сайтов с allowlist доменов проекта (ADR-0060).
+- Title вкладки `twomc.su` / `(N) twomc.su`, favicon с красным бейджем unread;
+  исправлен артефакт favicon (PNG-ссылка указывала на ICO).
+- Главная: «Недавно купили» над магазином (ник маскируется на backend), события
+  после магазина, промокод START, версии 1.21.4 — 1.21.11 в hero.
+- Header и Sidebar без рамки, footer прижат к низу (скругление сверху), все пять
+  соцсетей официальными SVG, Tooltip без обводки, Chat/Cart — обычные кнопки.
+- Плавающая мобильная навигация, сезонный декор Halloween над шапкой.
+- `next.config` подхватывает `NEXT_PUBLIC_*` из корневого `.env`.
+
+### Главная страница и оболочка v2 (PHASE 31, часть 1)
+- Главная: hero (онлайн/статус/IP/версии по реальному ping, копирование адреса),
+  showcase возможностей (1 крупная + 3), сервера (одна большая карточка при одном
+  сервере), «Сейчас на twomc.su» (активный/следующий ивент с обратным отсчётом),
+  магазин 3–5 позиций, «Последнее на twomc.su» с вкладками, быстрый старт,
+  сообщество, финальный CTA. Без данных — skeleton/empty state, fake-данных нет.
+- Header и footer — отдельные плавающие solid-поверхности (отступы, `rounded-xl`,
+  тень, без backdrop-filter). Футер: дисклеймер Mojang AB со ссылкой, поддержка
+  (support@/admin@/Telegram), юр. данные владельца, «Политика Mojang AB»,
+  язык + валюта как независимые настройки (`lib/site/preferences.ts`).
+- Chat/Cart — edge-peek у правой границы (desktop), dock на mobile.
+- Логотипы оплаты из SVG владельца (SVGO, viewBox/title сохранены); favicon,
+  apple-touch-icon и PWA-манифест из официального логотипа.
+- Строка «New-Era Anarchy» убрана из UI и metadata.
+- ColorPicker: первопричина «не открывается» — z-index popover не выше модалки;
+  шкала `dropdown/popover = 55`; тест внутри Dialog.
+- `GET /servers/overview`: `type/description/iconUrl/address/configuredVersion`.
+
+### Bootstrap-аккаунты (PHASE 32, ADR-0006)
+- Seed создаёт #0 SYSTEM / #1 Owner / #2 Chief Curator только из
+  `BOOTSTRAP_*` env; SYSTEM не может войти по паролю; sequence shortId выравнивается.
+
+### Security
+- Prisma `omit: { user: { password: true } }` глобально (ADR-0057): хеш пароля
+  больше не утекает через `include: { author/user: true }` в публичных ответах.
+
+### Глобальная оболочка twomc.su (App Shell)
+- `components/shell/*`: фиксированный icon-only rail (общий онлайн по реальному ping,
+  навигация из `lib/site/config.ts`, бонусы, соцсети, язык/валюта), header (логотип с CDN,
+  twomc.su, навигация, уведомления, профиль), информационный footer (владелец из env,
+  e-mail/соцсети из `GET /site/settings`, ссылки игрокам, правовые документы «скоро»,
+  язык, статус серверов, тема, версия, способы оплаты), плавающие действия (корзина в
+  /shop*, чат «скоро»), мобильная нижняя навигация; `app/(site)` с /shop, /rules,
+  /servers, /status. Публичный `GET /site/settings`. Z-index шкала. Бренд в UI — twomc.su.
+- Встроенный `ColorPicker` без системного color dialog: пресеты, HEX, палитра
+  (область + оттенок), bottom sheet на mobile; используется в форме роли.
+- Тесты: shell (8), ColorPicker (7). Секции Global shell и ColorPicker в /design-lab.
 ### CDN / файловое хранилище (PHASE 23)
 - `modules/files`: StorageService (local → `/uploads`, s3 за CDN_BASE_URL), пресеты
   загрузок по типу с permission, pipeline magic-bytes → sharp → AVIF, модель File

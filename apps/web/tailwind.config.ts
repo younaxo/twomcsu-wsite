@@ -111,6 +111,22 @@ const config: Config = {
         'card-p': 'var(--card-p)',
         gap: 'var(--gap)',
       },
+      /// Системные уровни наложения — никаких случайных z-index по проекту.
+      zIndex: {
+        content: '0',
+        sticky: '10',
+        header: '20',
+        sidebar: '30',
+        floating: '35',
+        overlay: '50',
+        modal: '50',
+        // Popover/dropdown строго выше modal: открываются из диалогов (ColorPicker
+        // в форме роли) и должны быть поверх overlay/содержимого диалога.
+        dropdown: '55',
+        popover: '55',
+        tooltip: '60',
+        toast: '70',
+      },
       transitionDuration: {
         fast: 'var(--motion-fast)',
         DEFAULT: 'var(--motion)',

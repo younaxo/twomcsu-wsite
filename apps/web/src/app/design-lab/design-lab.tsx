@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
+import { GlobalShellSection } from './sections/global-shell-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
 
@@ -12,6 +13,7 @@ const SECTIONS = [
   { id: 'direction', label: 'О направлении' },
   { id: 'showcase', label: 'Витрина' },
   { id: 'lab', label: 'Interactions / Component lab' },
+  { id: 'shell', label: 'Global shell' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -38,7 +40,7 @@ export function DesignLab() {
       <header className="sticky top-0 z-40 border-b bg-surface">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           <p className="mr-2 text-sm font-semibold">
-            TwoMC <span className="text-muted-foreground">· Design lab</span>
+            twomc.su <span className="text-muted-foreground">· Design lab</span>
           </p>
           <Badge tone="primary">{DIRECTION.name} · production</Badge>
           <ThemeToggle />
@@ -78,6 +80,14 @@ export function DesignLab() {
             description="Ручная проверка floating UI, overlay, форм и данных. Общие функциональные примитивы, оформление — по токенам темы."
           />
           <ComponentLab />
+        </section>
+
+        <section id="shell" className="scroll-mt-20">
+          <SectionHeading
+            title="Global shell"
+            description="Межстраничная оболочка twomc.su теми же production-компонентами: rail, header, footer, уведомления, профиль, корзина, чат, язык/валюта, статус серверов, оплата. Desktop / tablet / mobile."
+          />
+          <GlobalShellSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">

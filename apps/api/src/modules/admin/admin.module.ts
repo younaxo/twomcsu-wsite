@@ -11,6 +11,7 @@ import { AdminUsersBulkService } from './admin-users-bulk.service';
 import { DashboardService } from './dashboard.service';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
+import { SiteController } from './site.controller';
 
 @Module({
   imports: [ModerationModule, NotificationsModule, StoreModule],
@@ -19,6 +20,7 @@ import { ExportService } from './export.service';
     AdminPanelController,
     AdminUsersBulkController,
     ExportController,
+    SiteController,
   ],
   providers: [
     DashboardService,

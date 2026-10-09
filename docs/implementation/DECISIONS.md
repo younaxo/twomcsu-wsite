@@ -1101,3 +1101,50 @@ surface-overlay`), границами и тенями. Любое предлож
 **Последствия.** Новый admin-эндпоинт попадает в audit автоматически, как
 только получает `@RequirePermissions`. Запись идёт после ответа (не в одной
 транзакции с мутацией) — компромисс, задокументирован в PHASE-22.
+
+## ADR-0057 — Хеш пароля исключён из результатов Prisma глобально
+
+**Context.** 44 места в API возвращают `include: { author | user | createdBy: true }`
+(новости, события, DM, чат, комментарии…) — полный `User` вместе с `password`
+попадал в публичные ответы. Точечные `select` в каждом месте хрупки.
+
+**Decision.** `PrismaService` создаётся с `omit: { user: { password: true } }`
+(Prisma 6 `omit` API). Там, где hash действительно нужен (`AuthService.login`,
+`changePassword`), поле запрашивается явно `omit: { password: false }`. Любой
+новый `include` безопасен по умолчанию; e2e (`auth`, `users-domain`) проверяют
+отсутствие `password` в ответах.
+
+## ADR-0058 — Оболочка v2: плавающие header/footer, edge-peek действия, независимые язык/валюта
+
+**Decision.** Header и footer публичных страниц — отдельные solid-поверхности
+внутри области контента (отступы от краёв, `rounded-xl`, граница/тень, никакого
+backdrop-filter — ADR-0055), rail остаётся fixed. Глобальные действия (чат,
+корзина) на desktop — «язычки» у правой границы, выезжающие по hover/focus/open
+(без bounce); на mobile — dock над нижней навигацией. Язык и валюта — две
+независимые настройки в одном popover (`lib/site/preferences.ts`); варианты без
+поддержки сервера показываются как «скоро» и не выбираются. Z-index:
+`dropdown/popover (55) > modal (50)`, чтобы popover-контролы (ColorPicker)
+работали внутри диалогов. Бренд в UI — «twomc.su», строка «New-Era Anarchy» не
+используется; информационное примечание о Mojang AB — в футере со ссылкой на
+документ политики.
+
+## ADR-0059 — Cloudflare Turnstile вместо hCaptcha
+
+**Decision.** Единая anti-bot система — Cloudflare Turnstile. Backend
+`CaptchaService.verify(token, remoteIp)` обращается к Siteverify с
+`TURNSTILE_SECRET_KEY`; токен с frontend без этой проверки ничего не значит.
+Обязателен для login (каждая попытка, ответ `403 { requiresCaptcha: true }`),
+register, forgot-password, reset-password; дальше — для публичных форм обращений/
+жалоб по мере их появления. Frontend `<Turnstile />` рендерит виджет явно и
+сбрасывает его после каждой попытки. Dev использует официальные тестовые ключи
+Cloudflare (не отключение проверки), `TURNSTILE_DISABLED=true` — только CI e2e без
+сети. hCaptcha (`HCAPTCHA_*`) удалена.
+
+## ADR-0060 — Подтверждение переходов на сторонние сайты
+
+**Decision.** Глобальный `ExternalLinkGuard` (capture-слушатель кликов по `<a>`)
+и `lib/site/external-links.ts` с единственным allowlist доверенных доменов
+(`twomc.su` и поддомены, localhost). Для внешних ссылок — модалка с hostname и
+компактным URL; переход — `window.open(url, '_blank', 'noopener,noreferrer')`.
+mailto/tel/hash/внутренние ссылки не перехватываются; `javascript:`, `data:` и
+битые URL не открываются. Отдельной логики для соцсетей нет.

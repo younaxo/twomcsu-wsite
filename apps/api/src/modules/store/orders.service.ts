@@ -8,6 +8,7 @@ import {
 import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { maskNickname } from '../../common/privacy.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -275,17 +276,22 @@ export class OrdersService {
     ];
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, avatar: true },
     });
-    const usernameById = new Map(users.map((u) => [u.id, u.username]));
-    return items.map((i) => ({
-      productName: i.product?.name ?? i.bundle?.name ?? 'Товар',
-      image: i.product?.image ?? i.bundle?.image ?? null,
-      username: i.order.userId
-        ? usernameById.get(i.order.userId)
-        : i.order.guestMinecraftNick,
-      purchasedAt: i.order.paidAt,
-    }));
+    const userById = new Map(users.map((u) => [u.id, u]));
+    // Публичная лента: ник маскируется единым алгоритмом (@twomc/shared),
+    // e-mail/логин/id не отдаются.
+    return items.map((i) => {
+      const user = i.order.userId ? userById.get(i.order.userId) : undefined;
+      return {
+        productName: i.product?.name ?? i.bundle?.name ?? 'Товар',
+        image: i.product?.image ?? i.bundle?.image ?? null,
+        quantity: i.quantity,
+        nickname: maskNickname(user?.username ?? i.order.guestMinecraftNick),
+        avatar: user?.avatar ?? null,
+        purchasedAt: i.order.paidAt,
+      };
+    });
   }
 
   private verifyWebhookSecret(secret: string): boolean {

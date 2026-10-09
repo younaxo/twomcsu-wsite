@@ -40,7 +40,7 @@ Fix: удалить/закрыть флагом `PAYMENTS_MOCK_ENABLED` (тол�
 - SQL: все `$queryRaw` — tagged templates (параметризованы), 6 мест (`admin-tools`, `statistics`, `health`).
 - Mass assignment: `ValidationPipe({ whitelist, forbidNonWhitelisted })` отсекает лишние поля.
 - XSS: HTML пользовательского контента строится на сервере `MarkdownService` через `sanitize-html` (allowlist тегов, схемы `http/https/mailto`); на фронте `dangerouslySetInnerHTML` получает уже очищенное `*Html`. Замечание: `img src` разрешён для любых http(s) URL (трекинг-пиксели, LOW).
-- SSRF: `LinkPreviewService` (46 строк) только извлекает URL регуляркой и **не выполняет запросов**; SSRF отсутствует. Исходящие запросы: hCaptcha, Twitch/YouTube, SMTP, Minecraft ping (адреса задаёт ADMIN).
+- SSRF: `LinkPreviewService` (46 строк) только извлекает URL регуляркой и **не выполняет запросов**; SSRF отсутствует. Исходящие запросы: Cloudflare Turnstile, Twitch/YouTube, SMTP, Minecraft ping (адреса задаёт ADMIN).
 - Voting webhook: секрет в `x-vote-secret`, хранится хеш, сравнение `timingSafeEqual`.
 - Refresh-токены: хранятся как HMAC-хеш, rotation + reuse detection; cookie `httpOnly`.
 - CSRF: refresh-cookie `sameSite=lax` по умолчанию, access-токен в заголовке; при `COOKIE_SAMESITE=none` нужен CSRF-токен на `/auth/refresh`.

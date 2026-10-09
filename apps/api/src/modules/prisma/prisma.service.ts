@@ -15,6 +15,10 @@ export class PrismaService
 
   constructor() {
     super({
+      // Хеш пароля никогда не попадает в результаты запросов по умолчанию —
+      // include: { author: true } и подобные в публичных ответах безопасны.
+      // Где hash действительно нужен (login, смена пароля) — omit: { password: false }.
+      omit: { user: { password: true } },
       log:
         process.env.PRISMA_DEBUG === 'true'
           ? [

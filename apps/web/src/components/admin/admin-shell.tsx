@@ -22,6 +22,7 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useState, type ReactNode } from 'react';
+import { DocumentBadge } from '@/components/shell/document-badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Button, IconButton } from '@/components/ui/button';
 import {
@@ -149,7 +150,7 @@ function SidebarNav({ groups, onNavigate }: { groups: AdminNavGroup[]; onNavigat
 function Brand() {
   return (
     <Link href="/admin" className="flex items-center gap-2 rounded-sm">
-      <span className="font-display text-xl font-bold tracking-tight">TwoMC</span>
+      <span className="font-display text-xl font-bold tracking-tight">twomc.su</span>
       <span className="text-xs text-muted-foreground">Админ-панель</span>
     </Link>
   );
@@ -203,7 +204,7 @@ function SidebarSheet({
       <SheetContent side="left" size="sm" aria-describedby={undefined}>
         <SheetHeader>
           <SheetTitle className="font-display text-xl font-bold tracking-tight">
-            TwoMC
+            twomc.su
             <span className="ml-2 text-xs font-normal text-muted-foreground">Админ-панель</span>
           </SheetTitle>
         </SheetHeader>
@@ -383,6 +384,7 @@ export function AdminShell({ children, topbar }: AdminShellProps) {
 
   return (
     <div className="flex min-h-dvh bg-background text-foreground [--card-p:20px] [--control-h-sm:32px] [--control-h:38px] [--control-px:14px] [--gap:16px] [--row-h:44px]">
+      <DocumentBadge />
       <Sidebar groups={groups} />
       <SidebarSheet groups={groups} open={menuOpen} onOpenChange={setMenuOpen} />
       <div className="flex min-w-0 flex-1 flex-col">

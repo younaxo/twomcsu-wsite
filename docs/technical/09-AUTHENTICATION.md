@@ -11,7 +11,7 @@
 ## Flows
 | Flow | Endpoint | Особенности |
 |---|---|---|
-| Register | `POST /auth/register` | `RegisterDto`; email lower-case; проверка занятости email/username (+ обработка гонки по unique → 409); hCaptcha |
+| Register | `POST /auth/register` | `RegisterDto`; email lower-case; проверка занятости email/username (+ обработка гонки по unique → 409); Cloudflare Turnstile |
 | Login | `POST /auth/login` (`@Throttle` 10/мин) | `emailOrUsername` + `password`; см. brute-force ниже; бан → 403 `{ message, reason, bannedUntil }`; обновляет `lastLoginAt/lastLoginIp`; запускает проверки достижений |
 | Refresh | `POST /auth/refresh` | читает cookie `refresh_token`; роль/данные берутся из БД заново |
 | Logout | `POST /auth/logout` (**required**) | ревокает refresh-токен из cookie, чистит cookie |
@@ -21,7 +21,7 @@
 | Change password | `POST /auth/change-password` (required) | смена пароля авторизованным пользователем |
 | Current user | `GET /auth/me` (required) | профиль; кеш `auth:me:{userId}` |
 | Forgot password | `POST /auth/forgot-password` | молчит при неизвестном email; токен 32 байта, хеш в `PasswordResetToken`, TTL 1 ч, старые ссылки инвалидируются; **письмо не отправляется** (см. ниже) |
-| Reset password | `POST /auth/reset-password` | hCaptcha; одноразовый токен; обновляет пароль |
+| Reset password | `POST /auth/reset-password` | Cloudflare Turnstile; одноразовый токен; обновляет пароль |
 
 Всего в модуле `auth`: **11 endpoints** (5 без guard: register, login, refresh, forgot-password, reset-password). Подробности — в 04-API-REFERENCE.md (модуль `auth`).
 
@@ -32,7 +32,7 @@
 - Счётчик привязан к **IP**, не к аккаунту; IP берётся из `req.ip`, а `trust proxy` в `main.ts` не включён (за reverse proxy все клиенты окажутся с одним IP — см. 29-SECURITY.md).
 
 ## Captcha (`CaptchaService`)
-hCaptcha `https://api.hcaptcha.com/siteverify`, таймаут 5 с, отключается `HCAPTCHA_DISABLED=true` (тогда `verify()` возвращается сразу). Frontend ключ: `NEXT_PUBLIC_HCAPTCHA_SITE_KEY`.
+Cloudflare Turnstile `https://challenges.cloudflare.com/turnstile/v0/siteverify` (ADR-0059), таймаут 5 с, `TURNSTILE_SECRET_KEY`; `TURNSTILE_DISABLED=true` только для CI e2e. Frontend ключ: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (dev — тестовый ключ Cloudflare).
 
 ## Статус аккаунта
 - `User.isBanned` / `banReason` / `bannedUntil`: проверяется **только** в `login()` и при WS-подключении. `refresh()` и `JwtStrategy.validate()` **не** проверяют бан; бан (`AdminUsersService.bulk`, `QuickModerationService`) **не** вызывает `revokeAllSessions` → забаненный пользователь продолжает получать access-токены (см. 29-SECURITY.md, HIGH).

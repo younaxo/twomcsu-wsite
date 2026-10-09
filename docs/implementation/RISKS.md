@@ -51,8 +51,8 @@ password reset, email-дайджесты.
 
 ## R5 — hCaptcha — OPEN
 
-Нужны `HCAPTCHA_SECRET` (server) и `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` (client) для
-production. В dev/test работает `HCAPTCHA_DISABLED=true`.
+Заменено Turnstile (ADR-0059): нужны `TURNSTILE_SECRET_KEY` и
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY` для production (см. R17).
 PHASE 21: hCaptcha-виджет на странице входа не подключён (без site key его
 нечем проверить) — ответ backend `{ requiresCaptcha: true }` показывается как
 явная ошибка «требуется проверка captcha» (ADR-0052), не как «неверный пароль»;
@@ -176,3 +176,27 @@ Socket.IO-сервера) — под полным `pnpm test:e2e` (CI: `.github/
 Владелец выбрал «Полдень», тёмная тема — основная, светлая — вторичная;
 стекло запрещено (2026-10-09). Зафиксировано в ADR-0055 и
 `docs/design/VISUAL-DIRECTION.md` §0; архивные направления удалены.
+
+## R15 — Данные для публичной оболочки — PARTIAL
+
+Получено от владельца: SVG Visa/Mastercard/МИР/СБП (в репозитории), ФИО и ИНН
+(в футере, **требуют подтверждения владельцем перед production** — legal
+checklist в PHASE-31), e-mail поддержки/администрации и Telegram поддержки.
+Ещё нет: ссылки Telegram/Discord/TikTok (задать в /admin/settings или
+`NEXT_PUBLIC_*_URL`), ОГРНИП/адрес (`NEXT_PUBLIC_LEGAL_*`, не выдумываются),
+URL status page (`NEXT_PUBLIC_STATUS_PAGE_URL`), реальные скриншоты для
+hero/showcase главной (`NEXT_PUBLIC_HOME_HERO_IMAGES`, `NEXT_PUBLIC_HOME_FEATURE_*`),
+тексты правовых документов. Без них — честные заглушки, fake-данных нет.
+
+## R16 — Внешний хостинг сезонного ассета — OPEN
+
+Halloween-декор шапки берётся с `https://yooma.su/assets/img/h_header.webp`
+(reference владельца). Доступность/кэш стороннего домена не контролируются; при
+недоступности полоса просто пустая (CSS background, без битой картинки). Для
+production рекомендуется перенести файл на `cdn-files.twomc.su` и задать
+`NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC`.
+
+## R17 — Ключи Cloudflare Turnstile для production — OPEN
+
+Нужны реальные `NEXT_PUBLIC_TURNSTILE_SITE_KEY` и `TURNSTILE_SECRET_KEY` из Cloudflare
+Dashboard для домена twomc.su. В dev работают официальные тестовые ключи.

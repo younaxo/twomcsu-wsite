@@ -19,7 +19,7 @@ Defaults паролей в compose (`minecraft`, `redis_dev_password`) — то�
 ## Production (по скриптам)
 `pnpm build` (`pnpm -r build`) → `prisma migrate deploy` (`pnpm --filter @twomc/api db:deploy`) → `node dist/main.js` (API) и `next start` (web). Seed в production запускать нельзя до исправления S1.
 ## Зависимости между сервисами
-Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (обязателен), Redis (обязателен: brute-force, кеш, presence), SMTP/VAPID/Twitch/YouTube/hCaptcha (опционально/внешние), Minecraft-серверы (TCP ping). Health: `GET /health` (проверка БД `SELECT 1`). Статус системы: `GET /system/status` (опрашивается middleware web для maintenance).
+Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (обязателен), Redis (обязателен: brute-force, кеш, presence), SMTP/VAPID/Twitch/YouTube/Cloudflare Turnstile (опционально/внешние), Minecraft-серверы (TCP ping). Health: `GET /health` (проверка БД `SELECT 1`). Статус системы: `GET /system/status` (опрашивается middleware web для maintenance).
 ## Сеть и прокси
 Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); в API включить `trust proxy` (S6). Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
 ## Backup
