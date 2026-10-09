@@ -1,7 +1,7 @@
 import type { PublicSeasonalSettings } from '@twomc/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { SeasonalEffects, particleCount } from './seasonal-effects';
+import { SeasonalEffects, devicePowerFactor, particleCount } from './seasonal-effects';
 
 const state: { seasonal: PublicSeasonalSettings | undefined; reduced: boolean } = {
   seasonal: undefined,
@@ -43,10 +43,22 @@ describe('SeasonalEffects', () => {
     state.seasonal = forced('new-year');
     render(<SeasonalEffects />);
     const canvas = await screen.findByTestId('seasonal-effects');
-    expect(canvas).toHaveAttribute('data-effect', 'snow');
+    expect(canvas).toHaveAttribute('data-effects', 'snow');
     expect(canvas).toHaveAttribute('aria-hidden');
     expect(canvas.className).toMatch(/pointer-events-none/);
     expect(canvas.className).toMatch(/z-effects/);
+  });
+
+  it('комбинация эффектов из админки — один canvas на все эффекты', async () => {
+    state.seasonal = forced('halloween', {
+      campaigns: { halloween: { effects: ['leaves', 'rain'] } },
+    });
+    render(<SeasonalEffects />);
+    expect(await screen.findByTestId('seasonal-effects')).toHaveAttribute(
+      'data-effects',
+      'leaves,rain',
+    );
+    expect(screen.getAllByTestId('seasonal-effects')).toHaveLength(1);
   });
 
   it('эффекты выключены в настройках, у кампании нет эффекта или reduced-motion — ничего', async () => {
@@ -69,5 +81,15 @@ describe('SeasonalEffects', () => {
     expect(particleCount(1440, 2)).toBe(72);
     expect(particleCount(1920, 3)).toBe(120);
     expect(particleCount(1920, 9)).toBe(120);
+    expect(particleCount(1440, 2, 0.5)).toBe(36);
+  });
+
+  it('слабое устройство или экономия трафика — меньше частиц', () => {
+    expect(devicePowerFactor({ hardwareConcurrency: 8, deviceMemory: 8 })).toBe(1);
+    expect(devicePowerFactor({ hardwareConcurrency: 4 })).toBe(0.5);
+    expect(devicePowerFactor({ hardwareConcurrency: 8, deviceMemory: 2 })).toBe(0.5);
+    expect(devicePowerFactor({ hardwareConcurrency: 16, connection: { saveData: true } })).toBe(
+      0.4,
+    );
   });
 });

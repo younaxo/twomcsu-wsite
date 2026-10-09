@@ -22,6 +22,17 @@ export const SEASONAL_CAMPAIGN_IDS = [
   'black-friday',
 ] as const;
 
+/// Эффекты сезонного движка (зеркало `SeasonalEffectId` из shared).
+export const SEASONAL_EFFECT_IDS = [
+  'snow',
+  'hearts',
+  'leaves',
+  'rain',
+  'blossom',
+  'sun',
+] as const;
+export const SEASONAL_MAX_EFFECTS = 3;
+
 export class UpdateSeasonalDto {
   @IsOptional()
   @IsBoolean()
@@ -58,7 +69,7 @@ export class UpdateSeasonalDto {
   @Max(3)
   effectIntensity?: number;
 
-  /// `{ [campaignId]: { enabled?: boolean, startsAt?: ISO|null, endsAt?: ISO|null } }`
+  /// `{ [campaignId]: { enabled?, startsAt?: ISO|null, endsAt?: ISO|null, effects?: id[]|null } }`
   /// — проверяется в сервисе.
   @IsOptional()
   @IsObject()

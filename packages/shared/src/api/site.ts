@@ -106,10 +106,15 @@ export interface CreateSiteSocialLinkRequest {
 }
 export type UpdateSiteSocialLinkRequest = Partial<CreateSiteSocialLinkRequest>;
 
+/// Эффекты сезонного движка (ADR-0079).
+export type SeasonalEffectId = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun';
+
 export interface SeasonalCampaignOverride {
   enabled?: boolean;
   startsAt?: IsoDateString | null;
   endsAt?: IsoDateString | null;
+  /// Свой набор эффектов (до 3; `[]` — без эффектов); нет/null — по умолчанию кампании.
+  effects?: SeasonalEffectId[] | null;
 }
 
 export interface PublicSeasonalSettings {

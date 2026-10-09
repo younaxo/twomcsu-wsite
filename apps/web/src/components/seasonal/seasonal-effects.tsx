@@ -1,16 +1,19 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { cn } from '@/lib/cn';
 import type { SeasonalEffect } from '@/lib/site/seasonal';
 import { useSeasonal } from '@/lib/site/use-seasonal';
 import { usePrefersReducedMotion } from '@/lib/use-media-query';
 
-/// Движок сезонных эффектов (ADR-0079): один canvas поверх страницы
-/// (pointer-events: none, ниже модалок), rAF с паузой в скрытой вкладке,
-/// ограниченное число частиц (по ширине экрана и плотности), учёт DPR.
+/// Движок сезонных эффектов (ADR-0079): один canvas (pointer-events: none,
+/// ниже модалок), rAF с паузой в скрытой вкладке, ограниченное число частиц
+/// (ширина × плотность, на слабых устройствах и при экономии трафика — меньше),
+/// учёт DPR. Несколько эффектов делят один бюджет частиц.
 /// prefers-reduced-motion → эффект не рисуется вовсе.
 
 interface Particle {
+  kind: SeasonalEffect;
   x: number;
   y: number;
   size: number;
@@ -29,13 +32,28 @@ const COLORS: Record<SeasonalEffect, string[]> = {
   sun: ['rgba(255,214,120,0.35)', 'rgba(255,240,180,0.3)'],
 };
 
-/// Частиц на экран: плотность × ширина / 40, не больше 120.
-export function particleCount(width: number, intensity: number): number {
-  return Math.min(120, Math.round((Math.max(1, Math.min(3, intensity)) * width) / 40));
+/// Частиц на холст: плотность × ширина / 40 × множитель устройства, не больше 120.
+export function particleCount(width: number, intensity: number, power = 1): number {
+  const density = Math.max(1, Math.min(3, intensity));
+  return Math.min(120, Math.round(((density * width) / 40) * power));
 }
 
-function spawn(width: number, height: number, initial: boolean): Particle {
+/// Множитель для слабых устройств: экономия трафика — 0.4, ≤ 4 ядер или
+/// ≤ 4 ГБ памяти — 0.5, иначе 1.
+export function devicePowerFactor(
+  nav: Pick<Navigator, 'hardwareConcurrency'> & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean };
+  },
+): number {
+  if (nav.connection?.saveData) return 0.4;
+  const weak = (nav.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory ?? 8) <= 4;
+  return weak ? 0.5 : 1;
+}
+
+function spawn(kind: SeasonalEffect, width: number, height: number, initial: boolean): Particle {
   return {
+    kind,
     x: Math.random() * width,
     y: initial ? Math.random() * height : -20,
     size: 2 + Math.random() * 5,
@@ -46,10 +64,10 @@ function spawn(width: number, height: number, initial: boolean): Particle {
   };
 }
 
-function draw(ctx: CanvasRenderingContext2D, effect: SeasonalEffect, p: Particle, color: string) {
+function draw(ctx: CanvasRenderingContext2D, p: Particle, color: string) {
   ctx.fillStyle = color;
   ctx.strokeStyle = color;
-  switch (effect) {
+  switch (p.kind) {
     case 'rain':
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -78,52 +96,67 @@ function draw(ctx: CanvasRenderingContext2D, effect: SeasonalEffect, p: Particle
       return;
     default:
       ctx.beginPath();
-      ctx.arc(p.x, p.y, effect === 'sun' ? p.size * 2 : p.size / 2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.kind === 'sun' ? p.size * 2 : p.size / 2, 0, Math.PI * 2);
       ctx.fill();
   }
 }
 
-export function SeasonalEffects() {
-  const seasonal = useSeasonal();
+/// Холст эффектов. `contained` — внутри родителя (превью в админке), иначе —
+/// на весь экран.
+export function EffectsCanvas({
+  effects,
+  intensity,
+  contained = false,
+  className,
+}: {
+  effects: SeasonalEffect[];
+  intensity: number;
+  contained?: boolean;
+  className?: string;
+}) {
   const reduced = usePrefersReducedMotion();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const effect = seasonal.showEffects ? seasonal.campaign?.effect : undefined;
-  const intensity = seasonal.effectIntensity;
+  const key = effects.join(',');
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !effect || reduced) return;
+    const kinds = key ? (key.split(',') as SeasonalEffect[]) : [];
+    if (!canvas || kinds.length === 0 || reduced) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const power = devicePowerFactor(navigator);
     let width = 0;
     let height = 0;
     let particles: Particle[] = [];
     const resize = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      width = window.innerWidth;
-      height = window.innerHeight;
+      const dpr = power < 1 ? 1 : Math.min(2, window.devicePixelRatio || 1);
+      const box = contained ? canvas.parentElement?.getBoundingClientRect() : null;
+      width = Math.round(box?.width ?? window.innerWidth);
+      height = Math.round(box?.height ?? window.innerHeight);
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = particleCount(width, intensity);
-      particles = Array.from({ length: count }, () => spawn(width, height, true));
+      const count = particleCount(width, intensity, power);
+      particles = Array.from({ length: count }, (_, i) =>
+        spawn(kinds[i % kinds.length]!, width, height, true),
+      );
     };
     resize();
-    const palette = COLORS[effect];
     let frame = 0;
     const tick = () => {
       ctx.clearRect(0, 0, width, height);
       particles.forEach((p, index) => {
-        const fall = effect === 'rain' ? p.speed * 6 : effect === 'sun' ? p.speed * 0.15 : p.speed;
+        const fall = p.kind === 'rain' ? p.speed * 6 : p.kind === 'sun' ? p.speed * 0.15 : p.speed;
         p.y += fall;
         p.phase += p.spin;
-        p.x += p.drift + Math.sin(p.phase) * (effect === 'rain' ? 0 : 0.4);
+        p.x += p.drift + Math.sin(p.phase) * (p.kind === 'rain' ? 0 : 0.4);
         if (p.y > height + 20 || p.x < -30 || p.x > width + 30) {
-          particles[index] = spawn(width, height, false);
+          particles[index] = spawn(p.kind, width, height, false);
         }
-        draw(ctx, effect, p, palette[index % palette.length] ?? palette[0]!);
+        const palette = COLORS[p.kind];
+        draw(ctx, p, palette[index % palette.length] ?? palette[0]!);
       });
       frame = window.requestAnimationFrame(tick);
     };
@@ -132,23 +165,39 @@ export function SeasonalEffects() {
       if (!document.hidden) frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
-    window.addEventListener('resize', resize);
+    const observer =
+      contained && canvas.parentElement && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(resize)
+        : null;
+    if (observer && canvas.parentElement) observer.observe(canvas.parentElement);
+    else window.addEventListener('resize', resize);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.cancelAnimationFrame(frame);
+      observer?.disconnect();
       window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [effect, intensity, reduced]);
+  }, [key, intensity, reduced, contained]);
 
-  if (!effect || reduced) return null;
+  if (!key || reduced) return null;
   return (
     <canvas
       ref={canvasRef}
       aria-hidden
       data-testid="seasonal-effects"
-      data-effect={effect}
-      className="pointer-events-none fixed inset-0 z-effects"
+      data-effects={key}
+      className={cn(
+        'pointer-events-none inset-0',
+        contained ? 'absolute' : 'fixed z-effects',
+        className,
+      )}
     />
   );
+}
+
+/// Эффекты активной кампании на сайте (флаг «Эффекты» и плотность — из админки).
+export function SeasonalEffects() {
+  const seasonal = useSeasonal();
+  return <EffectsCanvas effects={seasonal.effects} intensity={seasonal.effectIntensity} />;
 }

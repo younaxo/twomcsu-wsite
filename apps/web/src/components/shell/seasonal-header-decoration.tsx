@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/cn';
+import type { SeasonalCampaign } from '@/lib/site/seasonal';
 import { useSeasonal } from '@/lib/site/use-seasonal';
 
 /// Сезонное украшение верхней кромки шапки — из активной кампании реестра
@@ -15,12 +16,20 @@ import { useSeasonal } from '@/lib/site/use-seasonal';
 /// - Активный декор — из серверных настроек сезонов и серверного времени
 ///   (`useSeasonal`, ADR-0079), после монтирования; флаг «Декор» в админке.
 /// - Без glass: никакого backdrop-filter, только изображение.
-export function SeasonalHeaderDecoration({ className }: { className?: string }) {
+export function SeasonalHeaderDecoration({
+  className,
+  campaign,
+}: {
+  className?: string;
+  /// Явная кампания (preview в админке); по умолчанию — активная на сайте.
+  campaign?: SeasonalCampaign | null;
+}) {
   const seasonal = useSeasonal();
-  const decoration =
-    seasonal.showDecoration && seasonal.campaign?.headerDecoration
-      ? { id: seasonal.campaign.id, ...seasonal.campaign.headerDecoration }
-      : null;
+  const source =
+    campaign === undefined ? (seasonal.showDecoration ? seasonal.campaign : null) : campaign;
+  const decoration = source?.headerDecoration
+    ? { id: source.id, ...source.headerDecoration }
+    : null;
 
   if (!decoration) {
     return null;

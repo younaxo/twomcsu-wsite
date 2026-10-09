@@ -4,10 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  SEASONAL_CAMPAIGN_IDS,
-  UpdateSeasonalDto,
-} from './dto/update-seasonal.dto';
 import { Prisma } from '@prisma/client';
 import { svgProblems } from '../../common/svg-safety.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,6 +20,20 @@ import { UpdateScheduledExportDto } from './dto/update-scheduled-export.dto';
 import { UpdateSiteAlertDto } from './dto/update-site-alert.dto';
 import { UpdateSiteSettingsDto } from './dto/update-site-settings.dto';
 import { UserIdFilterQueryDto } from './dto/user-id-filter-query.dto';
+import {
+  SEASONAL_CAMPAIGN_IDS,
+  SEASONAL_EFFECT_IDS,
+  SEASONAL_MAX_EFFECTS,
+  UpdateSeasonalDto,
+} from './dto/update-seasonal.dto';
+
+/// Переопределение кампании в `seasonal_settings.campaigns` (ADR-0079).
+type SeasonalOverride = {
+  enabled?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  effects?: string[] | null;
+};
 
 @Injectable()
 export class AdminToolsService {
@@ -435,21 +445,34 @@ export class AdminToolsService {
     };
   }
 
+  /// null — эффекты кампании по умолчанию; массив — свой набор (уникальные, ≤ 3).
+  private normalizeEffects(id: string, raw: unknown): string[] | null {
+    if (raw === null) return null;
+    if (
+      !Array.isArray(raw) ||
+      raw.some(
+        (item) => !(SEASONAL_EFFECT_IDS as readonly unknown[]).includes(item),
+      )
+    ) {
+      throw new BadRequestException(`${id}.effects — неизвестный эффект`);
+    }
+    const unique = [...new Set(raw as string[])];
+    if (unique.length > SEASONAL_MAX_EFFECTS) {
+      throw new BadRequestException(
+        `${id}.effects — не больше ${SEASONAL_MAX_EFFECTS} эффектов`,
+      );
+    }
+    return unique;
+  }
+
   private normalizeCampaigns(input: Record<string, unknown>) {
-    const out: Record<
-      string,
-      { enabled?: boolean; startsAt?: string | null; endsAt?: string | null }
-    > = {};
+    const out: Record<string, SeasonalOverride> = {};
     for (const [id, raw] of Object.entries(input)) {
       if (!(SEASONAL_CAMPAIGN_IDS as readonly string[]).includes(id)) {
         throw new BadRequestException(`Неизвестная кампания: ${id}`);
       }
       const value = (raw ?? {}) as Record<string, unknown>;
-      const entry: {
-        enabled?: boolean;
-        startsAt?: string | null;
-        endsAt?: string | null;
-      } = {};
+      const entry: SeasonalOverride = {};
       if (value.enabled !== undefined) {
         if (typeof value.enabled !== 'boolean')
           throw new BadRequestException('enabled — boolean');
@@ -465,6 +488,9 @@ export class AdminToolsService {
           throw new BadRequestException(`${id}.${key} — некорректная дата`);
         }
         entry[key] = new Date(date).toISOString();
+      }
+      if (value.effects !== undefined) {
+        entry.effects = this.normalizeEffects(id, value.effects);
       }
       if (entry.startsAt && entry.endsAt && entry.startsAt >= entry.endsAt) {
         throw new BadRequestException(`${id}: начало должно быть раньше конца`);

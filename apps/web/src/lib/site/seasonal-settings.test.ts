@@ -59,4 +59,29 @@ describe('resolveSeasonalFromSettings (ADR-0079)', () => {
       // Равный priority (60): побеждает кампания, стоящая в реестре раньше.
     ).toBe('valentine');
   });
+
+  it('эффекты: по умолчанию кампании; свой набор из админки; [] — без эффектов', () => {
+    expect(resolveSeasonalFromSettings(base, october)?.effects).toEqual(['leaves']);
+    expect(
+      resolveSeasonalFromSettings(
+        { ...base, campaigns: { halloween: { effects: ['leaves', 'rain'] } } },
+        october,
+      )?.effects,
+    ).toEqual(['leaves', 'rain']);
+    expect(
+      resolveSeasonalFromSettings({ ...base, campaigns: { halloween: { effects: [] } } }, october)
+        ?.effects,
+    ).toEqual([]);
+    expect(
+      resolveSeasonalFromSettings(
+        {
+          ...base,
+          mode: 'forced',
+          forcedCampaignId: 'new-year',
+          campaigns: { 'new-year': { effects: ['snow', 'sun'] } },
+        },
+        october,
+      )?.effects,
+    ).toEqual(['snow', 'sun']);
+  });
 });

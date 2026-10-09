@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { usePublicSiteSettings } from './hooks';
-import { resolveSeasonalFromSettings, type SeasonalCampaign } from './seasonal';
+import {
+  resolveSeasonalFromSettings,
+  type SeasonalCampaign,
+  type SeasonalEffect,
+} from './seasonal';
 
 export interface SeasonalState {
   campaign: SeasonalCampaign | null;
@@ -10,6 +14,8 @@ export interface SeasonalState {
   showDecoration: boolean;
   showEffects: boolean;
   showBanners: boolean;
+  /// Эффекты к показу: пусто, если эффекты выключены или их нет у кампании.
+  effects: SeasonalEffect[];
   effectIntensity: number;
 }
 
@@ -19,6 +25,7 @@ const NONE: SeasonalState = {
   showDecoration: false,
   showEffects: false,
   showBanners: false,
+  effects: [],
   effectIntensity: 2,
 };
 
@@ -33,12 +40,14 @@ export function useSeasonal(): SeasonalState {
     if (settings.isPending) return;
     const now = seasonal ? new Date(seasonal.serverTime) : new Date();
     const campaign = resolveSeasonalFromSettings(seasonal, now);
+    const showEffects = !!campaign && (seasonal?.showEffects ?? true);
     setState({
       campaign,
       showWordmarkO: !!campaign && (seasonal?.showWordmarkO ?? true),
       showDecoration: !!campaign && (seasonal?.showDecoration ?? true),
-      showEffects: !!campaign && (seasonal?.showEffects ?? true),
+      showEffects,
       showBanners: !!campaign && (seasonal?.showBanners ?? true),
+      effects: showEffects && campaign ? campaign.effects : [],
       effectIntensity: seasonal?.effectIntensity ?? 2,
     });
   }, [settings.isPending, seasonal]);

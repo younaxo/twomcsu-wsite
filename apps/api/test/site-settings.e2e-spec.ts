@@ -125,6 +125,17 @@ describe('Site settings: alert bar & social links (e2e)', () => {
         },
       })
       .expect(400);
+    for (const effects of [
+      ['fireworks'],
+      ['snow', 'rain', 'sun', 'hearts'],
+      'snow',
+    ]) {
+      await http()
+        .patch('/admin/settings/seasonal')
+        .set('Authorization', editor.auth)
+        .send({ campaigns: { halloween: { effects } } })
+        .expect(400);
+    }
 
     const saved = await http()
       .patch('/admin/settings/seasonal')
@@ -135,7 +146,11 @@ describe('Site settings: alert bar & social links (e2e)', () => {
         forcedCampaignId: 'halloween',
         showEffects: false,
         effectIntensity: 3,
-        campaigns: { 'new-year': { enabled: false } },
+        campaigns: {
+          'new-year': { enabled: false },
+          halloween: { effects: ['leaves', 'rain', 'leaves'] },
+          'womens-day': { effects: null },
+        },
       })
       .expect(200);
     expect(saved.body).toMatchObject({
@@ -151,7 +166,12 @@ describe('Site settings: alert bar & social links (e2e)', () => {
       forcedCampaignId: 'halloween',
       showEffects: false,
       effectIntensity: 3,
-      campaigns: { 'new-year': { enabled: false } },
+      campaigns: {
+        'new-year': { enabled: false },
+        // Дубликаты убраны, null — эффекты кампании по умолчанию.
+        halloween: { effects: ['leaves', 'rain'] },
+        'womens-day': { effects: null },
+      },
     });
     expect(
       Math.abs(Date.parse(pub.body.seasonal.serverTime) - Date.now()),

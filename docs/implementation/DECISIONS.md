@@ -1543,7 +1543,9 @@ DropdownMenu с виртуальным якорем), клавиатура и Es
 настройки — singleton `SeasonalSettings` (`seasonal_settings`, id `global`):
 ON/OFF целиком, режим `auto | forced` (+ `forcedCampaignId`), флаги
 `showWordmarkO / showDecoration / showEffects / showBanners`, плотность эффектов
-1–3 и переопределения кампаний `{ enabled, startsAt, endsAt }` (JSON).
+1–3 и переопределения кампаний `{ enabled, startsAt, endsAt, effects }` (JSON;
+`effects` — свой набор до 3 эффектов, `[]` — без эффектов, null — набор кампании
+по умолчанию; эффекты не привязаны жёстко к празднику).
 `GET/PATCH /admin/settings/seasonal` — права `settings.seasonal.view/edit`,
 изменение пишется в аудит `settings.seasonal.update` с diff полей.
 `/site/settings.seasonal` отдаёт настройки и `serverTime`; кампанию выбирает
@@ -1553,8 +1555,15 @@ ON/OFF целиком, режим `auto | forced` (+ `forcedCampaignId`), фла
 Эффекты — один canvas (`pointer-events: none`, `z-effects` = 40: поверх
 оболочки, ниже модалок), rAF с паузой в скрытой вкладке, частиц
 `плотность × ширина / 40 ≤ 120`, DPR ≤ 2, при `prefers-reduced-motion` не
-рисуются; отдельный чанк `next/dynamic` (`ssr: false`). Основной логотип
-сезоны не меняют.
+рисуются; несколько эффектов делят один бюджет частиц; на слабых устройствах
+(≤ 4 ядер или ≤ 4 ГБ) — половина частиц и DPR 1, при экономии трафика — 40 %;
+отдельный чанк `next/dynamic` (`ssr: false`). Даты в форме — дата + время в
+часовом поясе администратора с подписью пояса (`Europe/Moscow (UTC+3)`),
+хранятся в UTC. Предпросмотр во вкладке — любая кампания, «Компьютер/Телефон»,
+тёмная/светлая тема (вложенный `data-theme`), те же компоненты, что на сайте
+(wordmark, декор шапки, `EffectsCanvas contained`); «сейчас на сайте» считается
+по времени сервера (смещение из `/site/settings`). Основной логотип сезоны не
+меняют (ADR-0065) — `halloween_logo.png` не используется.
 
 **Consequences.** Новая кампания = запись в реестре web + id в
 `SEASONAL_CAMPAIGN_IDS` DTO. Сезонные баннеры пока только флаг — компонента

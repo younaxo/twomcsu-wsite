@@ -1,4 +1,4 @@
-import type { PublicSeasonalSettings } from '@twomc/shared';
+import type { PublicSeasonalSettings, SeasonalEffectId } from '@twomc/shared';
 import { cdnUrl } from '../env';
 
 /// Сезонное оформление — единый реестр кампаний. Компоненты (BrandWordmark,
@@ -53,11 +53,23 @@ export interface SeasonalCampaign {
   wordmarkO?: string;
   /// Полоса декора над шапкой.
   headerDecoration?: SeasonalImageAsset;
-  /// Эффект на фоне сайта (ADR-0079); нет — без эффекта.
-  effect?: SeasonalEffect;
+  /// Эффекты на фоне сайта по умолчанию (ADR-0079); админка может задать свой
+  /// набор (комбинация до 3), `[]` — без эффектов.
+  effects: SeasonalEffect[];
 }
 
-export type SeasonalEffect = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun';
+export type SeasonalEffect = SeasonalEffectId;
+
+/// Эффекты движка с подписями — для админки (порядок = порядок в UI).
+export const SEASONAL_EFFECTS: { id: SeasonalEffect; label: string }[] = [
+  { id: 'snow', label: 'Снег' },
+  { id: 'hearts', label: 'Сердечки' },
+  { id: 'blossom', label: 'Лепестки' },
+  { id: 'leaves', label: 'Листья' },
+  { id: 'rain', label: 'Дождь' },
+  { id: 'sun', label: 'Солнце' },
+];
+export const SEASONAL_MAX_EFFECTS = 3;
 
 /// Чёрная пятница — последняя пятница ноября и выходные после неё.
 function isBlackFridayWindow(date: Date): boolean {
@@ -71,49 +83,49 @@ function isBlackFridayWindow(date: Date): boolean {
 export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
   {
     id: 'new-year',
-    effect: 'snow',
+    effects: ['snow'],
     name: 'Новый год',
     priority: 80,
     window: { from: { month: 12, day: 15 }, to: { month: 1, day: 10 } },
   },
   {
     id: 'valentine',
-    effect: 'hearts',
+    effects: ['hearts'],
     name: '14 февраля',
     priority: 60,
     window: { from: { month: 2, day: 10 }, to: { month: 2, day: 15 } },
   },
   {
     id: 'defender-day',
-    effect: 'snow',
+    effects: ['snow'],
     name: '23 февраля',
     priority: 60,
     window: { from: { month: 2, day: 20 }, to: { month: 2, day: 24 } },
   },
   {
     id: 'womens-day',
-    effect: 'blossom',
+    effects: ['blossom'],
     name: '8 марта',
     priority: 60,
     window: { from: { month: 3, day: 5 }, to: { month: 3, day: 9 } },
   },
   {
     id: 'victory-day',
-    effect: 'sun',
+    effects: ['sun'],
     name: 'День Победы',
     priority: 70,
     window: { from: { month: 5, day: 5 }, to: { month: 5, day: 10 } },
   },
   {
     id: 'knowledge-day',
-    effect: 'leaves',
+    effects: ['leaves'],
     name: '1 сентября',
     priority: 50,
     window: { from: { month: 8, day: 29 }, to: { month: 9, day: 2 } },
   },
   {
     id: 'halloween',
-    effect: 'leaves',
+    effects: ['leaves'],
     name: 'Хэллоуин',
     priority: 60,
     window: { from: { month: 10, day: 1 }, to: { month: 11, day: 7 } },
@@ -132,6 +144,7 @@ export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
     // Короткая коммерческая кампания важнее длинного сезонного окна.
     priority: 90,
     window: isBlackFridayWindow,
+    effects: [],
   },
 ];
 
@@ -187,10 +200,13 @@ export function resolveSeasonalFromSettings(
   if (!settings) return resolveSeasonalCampaign(now);
   if (!settings.enabled) return null;
   if (settings.mode === 'forced') {
-    return SEASONAL_CAMPAIGNS.find((item) => item.id === settings.forcedCampaignId) ?? null;
+    return withOverrides(
+      SEASONAL_CAMPAIGNS.find((item) => item.id === settings.forcedCampaignId) ?? null,
+      settings,
+    );
   }
   const time = now.getTime();
-  return (
+  return withOverrides(
     SEASONAL_CAMPAIGNS.filter((item) => {
       const override = settings.campaigns?.[item.id];
       if (override?.enabled === false) return false;
@@ -201,6 +217,16 @@ export function resolveSeasonalFromSettings(
         );
       }
       return inWindow(item, now);
-    }).sort((a, b) => b.priority - a.priority)[0] ?? null
+    }).sort((a, b) => b.priority - a.priority)[0] ?? null,
+    settings,
   );
+}
+
+/// Кампания с переопределениями из админки (сейчас — набор эффектов).
+export function withOverrides(
+  campaign: SeasonalCampaign | null,
+  settings: Pick<PublicSeasonalSettings, 'campaigns'>,
+): SeasonalCampaign | null {
+  const effects = campaign ? settings.campaigns?.[campaign.id]?.effects : undefined;
+  return campaign && Array.isArray(effects) ? { ...campaign, effects } : campaign;
 }

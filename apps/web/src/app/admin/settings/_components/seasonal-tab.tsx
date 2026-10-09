@@ -4,8 +4,13 @@ import type { PublicSeasonalSettings, SeasonalCampaignOverride } from '@twomc/sh
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { EffectsCanvas } from '@/components/seasonal/seasonal-effects';
+import { BrandWordmark } from '@/components/shell/brand-wordmark';
+import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
+import { Input } from '@/components/ui/input';
+import { MultiSelect } from '@/components/ui/multi-select';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import {
   Select,
@@ -20,22 +25,45 @@ import { toast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
-import { SEASONAL_CAMPAIGNS, resolveSeasonalFromSettings } from '@/lib/site/seasonal';
+import { cn } from '@/lib/cn';
+import { usePublicSiteSettings } from '@/lib/site/hooks';
+import { isoToLocalParts, localPartsToIso, timezoneLabel } from '@/lib/site/local-datetime';
+import {
+  SEASONAL_CAMPAIGNS,
+  SEASONAL_EFFECTS,
+  SEASONAL_MAX_EFFECTS,
+  resolveSeasonalFromSettings,
+  withOverrides,
+  type SeasonalCampaign,
+  type SeasonalEffect,
+} from '@/lib/site/seasonal';
+import { usePrefersReducedMotion } from '@/lib/use-media-query';
 
 type SeasonalForm = Omit<PublicSeasonalSettings, 'serverTime'>;
 const KEY = ['admin', 'settings', 'seasonal'] as const;
 const island = 'flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-sm';
+const EFFECT_OPTIONS = SEASONAL_EFFECTS.map((item) => ({ value: item.id, label: item.label }));
+const effectLabel = (id: SeasonalEffect) =>
+  SEASONAL_EFFECTS.find((item) => item.id === id)?.label ?? id;
 
-function toIsoDay(value: string | null | undefined): string | null {
-  return value ? value.slice(0, 10) : null;
+/// Время сервера: смещение относительно часов браузера по ответу `/site/settings`
+/// (ADR-0079) — предпросмотр «сейчас на сайте» не зависит от часов админа.
+function useServerNow(): () => Date {
+  const site = usePublicSiteSettings();
+  const serverTime = site.data?.seasonal?.serverTime;
+  const skew = serverTime && site.dataUpdatedAt ? Date.parse(serverTime) - site.dataUpdatedAt : 0;
+  return () => new Date(Date.now() + skew);
 }
 
 /// «Настройки → Сезоны» (ADR-0079): ON/OFF целиком, режим, флаги элементов,
-/// плотность эффектов, расписание кампаний (серверное время), предпросмотр.
+/// плотность эффектов, расписание и эффекты кампаний (время сервера, пояс
+/// админа), предпросмотр desktop/mobile в тёмной и светлой теме.
 export function SeasonalTab() {
   const client = useQueryClient();
   const { can } = usePermissions();
   const editable = can('settings.seasonal.edit');
+  const serverNow = useServerNow();
+  const zone = useMemo(() => timezoneLabel(), []);
   const query = useQuery({
     queryKey: KEY,
     queryFn: () => api.get<SeasonalForm & { updatedAt: string }>('/admin/settings/seasonal'),
@@ -54,19 +82,16 @@ export function SeasonalTab() {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
-  const active = useMemo(
-    () =>
-      form
-        ? resolveSeasonalFromSettings({ ...form, serverTime: new Date().toISOString() }, new Date())
-        : null,
-    [form],
-  );
+  const now = serverNow();
+  const active = form
+    ? resolveSeasonalFromSettings({ ...form, serverTime: now.toISOString() }, now)
+    : null;
 
-  if (query.isPending || !form) {
-    return <Skeleton className="h-64 w-full" />;
-  }
   if (query.isError) {
     return <p className="text-sm text-muted-foreground">Не удалось загрузить настройки сезонов.</p>;
+  }
+  if (query.isPending || !form) {
+    return <Skeleton className="h-64 w-full" />;
   }
 
   const set = <K extends keyof SeasonalForm>(key: K, value: SeasonalForm[K]) =>
@@ -79,7 +104,7 @@ export function SeasonalTab() {
     );
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]" data-testid="seasonal-tab">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]" data-testid="seasonal-tab">
       <div className="flex flex-col gap-5">
         <section className={island}>
           <h3 className="text-sm font-semibold">Сезонная система</h3>
@@ -153,55 +178,33 @@ export function SeasonalTab() {
               ]}
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            На слабых устройствах, при экономии трафика и с «уменьшением движения» эффекты
+            автоматически упрощаются или выключаются.
+          </p>
         </section>
 
         <section className={island}>
-          <h3 className="text-sm font-semibold">Расписание кампаний</h3>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold">Кампании: расписание и эффекты</h3>
+            <span className="text-xs text-subtle-foreground" data-testid="seasonal-timezone">
+              Часовой пояс: {zone}
+            </span>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Без дат — ежегодное окно по умолчанию. Даты — по времени сервера.
+            Без дат — ежегодное окно по умолчанию. Сайт сверяет даты по времени сервера. При
+            пересечении показывается одна кампания — с большим приоритетом.
           </p>
           <ul className="flex flex-col divide-y divide-border-subtle">
-            {SEASONAL_CAMPAIGNS.map((item) => {
-              const override = form.campaigns[item.id] ?? {};
-              return (
-                <li
-                  key={item.id}
-                  className="flex flex-wrap items-center gap-3 py-3"
-                  data-campaign={item.id}
-                >
-                  <div className="min-w-[10rem] flex-1">
-                    <p className="text-sm font-medium">{item.name}</p>
-                    <p className="text-xs text-subtle-foreground">Приоритет {item.priority}</p>
-                  </div>
-                  <SwitchField
-                    label="Вкл."
-                    checked={override.enabled !== false}
-                    disabled={!editable}
-                    onCheckedChange={(value) => setCampaign(item.id, { enabled: value })}
-                  />
-                  <DatePicker
-                    size="sm"
-                    aria-label={`${item.name}: начало`}
-                    placeholder="Начало"
-                    value={toIsoDay(override.startsAt)}
-                    disabled={!editable}
-                    onChange={(value) =>
-                      setCampaign(item.id, { startsAt: value ? `${value}T00:00:00.000Z` : null })
-                    }
-                  />
-                  <DatePicker
-                    size="sm"
-                    aria-label={`${item.name}: конец`}
-                    placeholder="Конец"
-                    value={toIsoDay(override.endsAt)}
-                    disabled={!editable}
-                    onChange={(value) =>
-                      setCampaign(item.id, { endsAt: value ? `${value}T23:59:59.000Z` : null })
-                    }
-                  />
-                </li>
-              );
-            })}
+            {SEASONAL_CAMPAIGNS.map((item) => (
+              <CampaignRow
+                key={item.id}
+                campaign={item}
+                override={form.campaigns[item.id] ?? {}}
+                editable={editable}
+                onChange={(patch) => setCampaign(item.id, patch)}
+              />
+            ))}
           </ul>
         </section>
       </div>
@@ -220,8 +223,9 @@ export function SeasonalTab() {
             минут.
           </p>
         </section>
+        <SeasonalPreview form={form} active={active} />
         {editable ? (
-          <Button loading={save.isPending} onClick={() => form && save.mutate(form)}>
+          <Button loading={save.isPending} onClick={() => save.mutate(form)}>
             Сохранить
           </Button>
         ) : (
@@ -231,5 +235,201 @@ export function SeasonalTab() {
         )}
       </aside>
     </div>
+  );
+}
+
+function CampaignRow({
+  campaign,
+  override,
+  editable,
+  onChange,
+}: {
+  campaign: SeasonalCampaign;
+  override: SeasonalCampaignOverride;
+  editable: boolean;
+  onChange: (patch: SeasonalCampaignOverride) => void;
+}) {
+  const start = isoToLocalParts(override.startsAt);
+  const end = isoToLocalParts(override.endsAt);
+  const customEffects = Array.isArray(override.effects);
+  const effects = customEffects ? override.effects! : campaign.effects;
+  const defaults = campaign.effects.length
+    ? campaign.effects.map(effectLabel).join(', ')
+    : 'без эффектов';
+
+  return (
+    <li className="flex flex-col gap-3 py-4" data-campaign={campaign.id}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">{campaign.name}</p>
+          <p className="text-xs text-subtle-foreground">Приоритет {campaign.priority}</p>
+        </div>
+        <SwitchField
+          label="Вкл."
+          checked={override.enabled !== false}
+          disabled={!editable}
+          onCheckedChange={(value) => onChange({ enabled: value })}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(
+          [
+            ['startsAt', 'начало', start, '00:00'],
+            ['endsAt', 'конец', end, '23:59'],
+          ] as const
+        ).map(([key, label, parts, fallback]) => (
+          <div key={key} className="flex items-center gap-2">
+            <DatePicker
+              size="sm"
+              aria-label={`${campaign.name}: ${label}`}
+              placeholder={label === 'начало' ? 'Начало' : 'Конец'}
+              value={parts.date}
+              disabled={!editable}
+              onChange={(value) =>
+                onChange({
+                  [key]: value ? localPartsToIso(value, parts.time, fallback) : null,
+                })
+              }
+            />
+            <Input
+              type="time"
+              size="sm"
+              className="w-28"
+              aria-label={`${campaign.name}: время, ${label}`}
+              value={parts.time}
+              disabled={!editable || !parts.date}
+              onChange={(event) =>
+                parts.date &&
+                onChange({ [key]: localPartsToIso(parts.date, event.target.value, fallback) })
+              }
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <MultiSelect
+          size="sm"
+          className="min-w-[14rem] flex-1"
+          aria-label={`${campaign.name}: эффекты`}
+          options={EFFECT_OPTIONS}
+          value={effects}
+          max={SEASONAL_MAX_EFFECTS}
+          placeholder="Без эффектов"
+          disabled={!editable}
+          onValueChange={(value) => onChange({ effects: value as SeasonalEffect[] })}
+        />
+        {customEffects ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!editable}
+            onClick={() => onChange({ effects: null })}
+          >
+            По умолчанию
+          </Button>
+        ) : (
+          <span className="text-xs text-subtle-foreground">По умолчанию: {defaults}</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/// Предпросмотр до публикации: любая кампания, desktop/mobile, dark/light —
+/// те же компоненты, что на сайте (wordmark, декор шапки, движок эффектов).
+function SeasonalPreview({
+  form,
+  active,
+}: {
+  form: SeasonalForm;
+  active: SeasonalCampaign | null;
+}) {
+  const [campaignId, setCampaignId] = useState('site');
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const reduced = usePrefersReducedMotion();
+  const campaign =
+    campaignId === 'site'
+      ? active
+      : withOverrides(SEASONAL_CAMPAIGNS.find((item) => item.id === campaignId) ?? null, form);
+  const wordmarkO =
+    form.showWordmarkO && campaign?.wordmarkO ? { id: campaign.id, src: campaign.wordmarkO } : null;
+  const effects = form.showEffects && campaign ? campaign.effects : [];
+
+  return (
+    <section className={island}>
+      <h3 className="text-sm font-semibold">Предпросмотр</h3>
+      <Select value={campaignId} onValueChange={setCampaignId}>
+        <SelectTrigger size="sm" aria-label="Кампания для предпросмотра">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="site">Как на сайте сейчас</SelectItem>
+          {SEASONAL_CAMPAIGNS.map((item) => (
+            <SelectItem key={item.id} value={item.id}>
+              {item.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex flex-wrap gap-2">
+        <SegmentedControl
+          size="sm"
+          aria-label="Устройство"
+          value={device}
+          onValueChange={(value) => setDevice(value as 'desktop' | 'mobile')}
+          options={[
+            { value: 'desktop', label: 'Компьютер' },
+            { value: 'mobile', label: 'Телефон' },
+          ]}
+        />
+        <SegmentedControl
+          size="sm"
+          aria-label="Тема"
+          value={theme}
+          onValueChange={(value) => setTheme(value as 'dark' | 'light')}
+          options={[
+            { value: 'dark', label: 'Тёмная' },
+            { value: 'light', label: 'Светлая' },
+          ]}
+        />
+      </div>
+      <div
+        data-theme={theme}
+        data-device={device}
+        data-testid="seasonal-preview-frame"
+        aria-hidden
+        className={cn(
+          'relative mx-auto overflow-hidden rounded-lg bg-background text-foreground shadow-sm',
+          device === 'desktop' ? 'aspect-[16/10] w-full' : 'h-80 w-44',
+        )}
+      >
+        <div className="relative m-2 flex h-9 items-center rounded-md bg-surface px-2.5 shadow-sm">
+          <SeasonalHeaderDecoration
+            campaign={form.showDecoration ? campaign : null}
+            className="h-3 rounded-t-md md:h-3"
+          />
+          <span className="relative z-[1]">
+            <BrandWordmark size="sm" seasonalO={wordmarkO} />
+          </span>
+        </div>
+        <div className="mx-2 flex flex-col gap-1.5">
+          <div className="h-14 rounded-md bg-surface" />
+          <div className="h-2 w-3/4 rounded-full bg-surface-raised" />
+          <div className="h-2 w-1/2 rounded-full bg-surface-raised" />
+        </div>
+        <EffectsCanvas contained effects={effects} intensity={form.effectIntensity} />
+      </div>
+      <p className="text-xs text-muted-foreground" data-testid="seasonal-preview-effects">
+        {!campaign
+          ? 'Сезонного оформления нет.'
+          : effects.length === 0
+            ? 'Эффекты: нет.'
+            : `Эффекты: ${effects.map(effectLabel).join(', ')}.`}
+        {reduced && effects.length > 0
+          ? ' В системе включено «уменьшение движения» — анимация здесь не показывается.'
+          : ''}
+      </p>
+    </section>
   );
 }
