@@ -18,7 +18,7 @@ function ProductCard({ product }: { product: ProductListItem }) {
   return (
     <article
       data-testid="home-product-card"
-      className="flex h-full flex-col overflow-hidden rounded-xl border bg-surface shadow edge-highlight"
+      className="flex h-full flex-col overflow-hidden rounded-xl border bg-surface shadow"
     >
       <div className="relative flex aspect-[4/3] items-center justify-center bg-surface-sunken">
         {product.image ? (

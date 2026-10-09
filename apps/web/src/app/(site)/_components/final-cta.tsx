@@ -35,7 +35,7 @@ export function HomeFinalCta() {
     <section
       id="cta"
       aria-labelledby="cta-title"
-      className="flex flex-col items-start gap-6 rounded-xl border bg-surface p-6 shadow-lg edge-highlight md:flex-row md:items-center md:justify-between md:p-10"
+      className="flex flex-col items-start gap-6 rounded-xl border bg-surface p-6 shadow-lg md:flex-row md:items-center md:justify-between md:p-10"
     >
       <div className="min-w-0">
         <p className="text-xs font-semibold uppercase tracking-wide text-primary-soft-foreground">

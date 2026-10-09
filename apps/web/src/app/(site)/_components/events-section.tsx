@@ -52,7 +52,7 @@ function EventCard({
     <article
       data-testid={`event-${kind}`}
       className={cn(
-        'flex flex-col overflow-hidden rounded-xl border bg-surface shadow edge-highlight',
+        'flex flex-col overflow-hidden rounded-xl border bg-surface shadow',
         highlighted && 'md:flex-row',
       )}
     >

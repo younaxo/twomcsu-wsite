@@ -150,7 +150,7 @@ export function SocialAuthBrands({ provider }: { provider: ExternalProvider }) {
       <Plus className="size-4 text-subtle-foreground" />
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-xl bg-surface shadow-sm edge-highlight [&_svg]:size-6',
+          'flex size-12 items-center justify-center rounded-xl bg-surface shadow-sm [&_svg]:size-6',
           PROVIDER_COLOR[provider],
         )}
       >

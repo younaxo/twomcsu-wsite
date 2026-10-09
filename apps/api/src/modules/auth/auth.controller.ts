@@ -24,8 +24,11 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import {
   RegisterCompleteDto,
+  RegisterMinecraftCodeDto,
+  RegisterMinecraftDto,
   RegisterResendDto,
   RegisterStartDto,
+  RegisterStateDto,
   RegisterVerifyDto,
 } from './dto/registration.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -83,6 +86,32 @@ export class AuthController {
   @Post('register/verify')
   registerVerify(@Body() dto: RegisterVerifyDto) {
     return this.registration.verify(dto);
+  }
+
+  /// Состояние регистрации (продолжение после перезагрузки; без пароля).
+  @Public()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/state')
+  registerState(@Body() dto: RegisterStateDto) {
+    return this.registration.state(dto);
+  }
+
+  /// Привязка Minecraft (ADR-0072): 15-символьный код → 5-символьный код.
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/minecraft/code')
+  registerMinecraftCode(@Body() dto: RegisterMinecraftCodeDto) {
+    return this.registration.submitMinecraftCode(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/minecraft/challenge')
+  registerMinecraftChallenge(@Body() dto: RegisterMinecraftDto) {
+    return this.registration.renewMinecraftChallenge(dto);
   }
 
   @Public()

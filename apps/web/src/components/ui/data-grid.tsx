@@ -500,7 +500,7 @@ export function ColumnVisibilityMenu({
           collisionPadding={8}
           className={cn(
             'z-popover w-56 max-w-[calc(100vw-2rem)] overscroll-contain p-1.5',
-            'rounded-lg bg-surface-overlay text-foreground shadow-lg edge-highlight',
+            'rounded-lg bg-surface-overlay text-foreground shadow-lg',
             'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
             'data-[side=top]:[--pop-y:4px] data-[side=bottom]:[--pop-y:-4px]',
           )}

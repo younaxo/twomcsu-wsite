@@ -41,7 +41,7 @@ function NewsCard({ item, large }: { item: NewsListItem; large: boolean }) {
     <article
       data-testid={large ? 'news-featured' : 'news-compact'}
       className={cn(
-        'flex overflow-hidden rounded-xl border bg-surface shadow edge-highlight',
+        'flex overflow-hidden rounded-xl border bg-surface shadow',
         large ? 'flex-col' : 'flex-row items-stretch',
       )}
     >

@@ -1,72 +1,63 @@
 'use client';
 
+import { ShoppingBag, Swords, Trophy } from 'lucide-react';
 import Image from 'next/image';
-import { useServersOverview } from '@/lib/site/hooks';
-import { SITE_LOGO_URL } from '@/lib/site/config';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
+import { SITE_LOGO_URL } from '@/lib/site/config';
+import { useServersOverview } from '@/lib/site/hooks';
 
-/// Узор из «блоков» — векторный (чёткий на любом экране), детерминированный,
-/// в цветах темы. Без растровых stock-картинок: только визуал проекта.
-const BLOCKS: Array<[number, number, number]> = [
-  [0, 0, 0.55],
-  [1, 0, 0.25],
-  [3, 0, 0.4],
-  [6, 0, 0.18],
-  [7, 0, 0.5],
+/// Изометрический кластер блоков (векторный, чёткий на любом экране) — отсылка
+/// к Minecraft без выдуманного игрового UI. Цвета — из темы.
+const CUBES: Array<[number, number, number]> = [
+  // [x, y, яркость] в изометрической сетке
+  [0, 2, 0.5],
+  [1, 2, 0.35],
+  [2, 2, 0.6],
   [0, 1, 0.3],
-  [2, 1, 0.6],
-  [5, 1, 0.22],
-  [7, 1, 0.3],
-  [1, 2, 0.45],
-  [4, 2, 0.15],
-  [6, 2, 0.42],
-  [0, 3, 0.2],
-  [3, 3, 0.3],
-  [7, 3, 0.62],
-  [0, 4, 0.5],
-  [2, 4, 0.18],
-  [5, 4, 0.36],
-  [1, 5, 0.32],
-  [6, 5, 0.2],
-  [7, 5, 0.45],
-  [0, 6, 0.4],
-  [3, 6, 0.22],
-  [4, 6, 0.5],
-  [7, 6, 0.28],
-  [1, 7, 0.2],
-  [2, 7, 0.48],
-  [5, 7, 0.3],
-  [6, 7, 0.55],
+  [1, 1, 0.75],
+  [2, 1, 0.4],
+  [1, 0, 0.55],
+  [3, 1, 0.25],
+  [3, 2, 0.45],
 ];
 
-function BlockPattern({ className }: { className?: string }) {
+function IsoCube({ x, y, tone }: { x: number; y: number; tone: number }) {
+  const w = 40;
+  const cx = (x - y) * w + 200;
+  const cy = (x + y) * (w / 2) + 40 - y * 10;
+  const top = `${cx},${cy} ${cx + w},${cy + w / 2} ${cx},${cy + w} ${cx - w},${cy + w / 2}`;
+  const left = `${cx - w},${cy + w / 2} ${cx},${cy + w} ${cx},${cy + w * 2} ${cx - w},${cy + w * 1.5}`;
+  const right = `${cx + w},${cy + w / 2} ${cx},${cy + w} ${cx},${cy + w * 2} ${cx + w},${cy + w * 1.5}`;
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 8 8"
-      preserveAspectRatio="xMidYMid slice"
-      className={cn('absolute inset-0 size-full', className)}
-    >
-      {BLOCKS.map(([x, y, alpha]) => (
-        <rect
-          key={`${x}-${y}`}
-          x={x + 0.06}
-          y={y + 0.06}
-          width={0.88}
-          height={0.88}
-          rx={0.08}
-          className="fill-primary"
-          fillOpacity={alpha * 0.32}
-        />
+    <g>
+      <polygon points={top} className="fill-primary" fillOpacity={0.18 + tone * 0.22} />
+      <polygon points={left} className="fill-primary" fillOpacity={0.08 + tone * 0.12} />
+      <polygon points={right} className="fill-primary" fillOpacity={0.04 + tone * 0.08} />
+    </g>
+  );
+}
+
+function BlockCluster({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 400 280" className={className}>
+      {CUBES.map(([x, y, tone]) => (
+        <IsoCube key={`${x}-${y}`} x={x} y={y} tone={tone} />
       ))}
     </svg>
   );
 }
 
-/// Правая часть auth-панели: основной логотип twomc.su (постоянный, ADR-0065),
-/// подпись проекта и живой онлайн серверов (реальный Server List Ping; если
-/// данных нет — строка просто не показывается). `compact` — баннер для mobile.
+const FEATURES = [
+  { icon: ShoppingBag, label: 'Магазин и подарки друзьям' },
+  { icon: Trophy, label: 'Профиль, достижения и награды' },
+  { icon: Swords, label: 'Серверы twomc.su и онлайн' },
+] as const;
+
+/// Правая часть auth-панели: основной логотип twomc.su (постоянный, ADR-0065)
+/// на тёплом фирменном фоне с кластером блоков, что даёт аккаунт, и живой
+/// онлайн (реальный Server List Ping; нет данных — строка скрыта). Плотные
+/// поверхности, без glass. `compact` — баннер для mobile.
 export function AuthVisual({
   compact = false,
   className,
@@ -77,66 +68,92 @@ export function AuthVisual({
   const overview = useServersOverview();
   const players = overview.data?.totalPlayers;
   const online = overview.data?.onlineServers;
+  const onlineLine =
+    typeof players === 'number' && typeof online === 'number' && online > 0 ? (
+      <p
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground"
+        data-testid="auth-visual-online"
+      >
+        <span aria-hidden className="size-2 rounded-full bg-success" />
+        {formatNumber(players)} онлайн на серверах
+      </p>
+    ) : null;
+
+  if (compact) {
+    return (
+      <aside
+        aria-label="twomc.su"
+        className={cn(
+          'relative isolate flex items-center gap-4 overflow-hidden bg-surface-sunken px-5 py-4',
+          className,
+        )}
+      >
+        <BlockCluster className="absolute -right-10 -top-6 -z-10 h-32 opacity-70" />
+        <Image
+          src={SITE_LOGO_URL}
+          alt=""
+          width={56}
+          height={56}
+          quality={90}
+          priority
+          draggable={false}
+          sizes="56px"
+          data-logo="main"
+          className="size-14 shrink-0 select-none rounded-xl shadow-lg"
+        />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <p className="font-display text-base font-bold leading-tight tracking-tight">
+            Один аккаунт — сайт, магазин и серверы
+          </p>
+          {onlineLine}
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside
       aria-label="twomc.su"
       className={cn(
-        'relative isolate overflow-hidden bg-surface-sunken',
-        compact ? 'flex items-center gap-4 px-5 py-4' : 'flex flex-col justify-between p-10',
+        'relative isolate flex-col justify-between gap-8 overflow-hidden bg-surface-sunken p-10',
         className,
       )}
+      style={{
+        backgroundImage:
+          'radial-gradient(120% 80% at 100% 0%, rgb(var(--primary) / 0.16) 0%, transparent 60%)',
+      }}
     >
-      <BlockPattern />
-      {/* Плотная подложка под текстом — без прозрачного стекла. */}
-      <div
-        aria-hidden
-        className="absolute inset-x-0 bottom-0 -z-0 h-1/2 bg-gradient-to-t from-surface-sunken to-transparent"
-      />
-      <div
-        className={cn(
-          'relative flex',
-          compact ? 'items-center' : 'flex-1 items-center justify-center',
-        )}
-      >
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-subtle-foreground">
+        twomc.su · Minecraft
+      </p>
+      <div className="relative flex flex-1 items-center justify-center">
+        <BlockCluster className="absolute inset-x-0 top-1/2 -z-10 mx-auto w-full max-w-[420px] -translate-y-1/2" />
         <Image
           src={SITE_LOGO_URL}
           alt=""
-          width={compact ? 56 : 232}
-          height={compact ? 56 : 232}
+          width={176}
+          height={176}
           quality={90}
           priority
           draggable={false}
-          sizes={compact ? '56px' : '232px'}
+          sizes="176px"
           data-logo="main"
-          className={cn(
-            'select-none shadow-lg',
-            compact ? 'size-14 rounded-xl' : 'size-[min(232px,22vw)] rounded-[28px]',
-          )}
+          className="size-[min(176px,16vw)] select-none rounded-[28px] shadow-lg"
         />
       </div>
-      <div className="relative flex flex-col gap-1.5">
-        <p
-          className={cn(
-            'font-display font-bold tracking-tight',
-            compact ? 'text-base' : 'text-2xl',
-          )}
-        >
+      <div className="flex flex-col gap-4">
+        <p className="font-display text-2xl font-bold leading-tight tracking-tight">
           Один аккаунт — сайт, магазин и серверы
         </p>
-        {!compact ? (
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Профиль, покупки, достижения и друзья twomc.su — в одном месте.
-          </p>
-        ) : null}
-        {typeof players === 'number' && typeof online === 'number' && online > 0 ? (
-          <p
-            className="mt-1 inline-flex items-center gap-2 text-sm text-muted-foreground"
-            data-testid="auth-visual-online"
-          >
-            <span aria-hidden className="size-2 rounded-full bg-success" />
-            {formatNumber(players)} онлайн на серверах
-          </p>
-        ) : null}
+        <ul className="flex flex-col gap-2 text-sm text-muted-foreground">
+          {FEATURES.map(({ icon: Icon, label }) => (
+            <li key={label} className="flex items-center gap-2.5">
+              <Icon aria-hidden className="size-4 shrink-0 text-primary" />
+              {label}
+            </li>
+          ))}
+        </ul>
+        {onlineLine}
       </div>
     </aside>
   );

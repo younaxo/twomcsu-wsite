@@ -23,16 +23,24 @@ async function main() {
 
   const prisma = new PrismaClient();
   try {
-    const user = await prisma.user.findUnique({ where: { username }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: { id: true },
+    });
     if (!user) {
       throw new Error(`Пользователь «${username}» не найден`);
     }
-    const role = await prisma.role.findUnique({ where: { slug }, select: { id: true, name: true } });
+    const role = await prisma.role.findUnique({
+      where: { slug },
+      select: { id: true, name: true },
+    });
     if (!role) {
       throw new Error(`Роль «${slug}» не найдена`);
     }
     if (revoke) {
-      await prisma.userRole.deleteMany({ where: { userId: user.id, roleId: role.id } });
+      await prisma.userRole.deleteMany({
+        where: { userId: user.id, roleId: role.id },
+      });
       console.log(`Роль ${role.name} снята с ${username}`);
     } else {
       await prisma.userRole.upsert({

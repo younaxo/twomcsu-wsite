@@ -33,10 +33,7 @@ export function SettingsIsland({
 }) {
   return (
     <section
-      className={cn(
-        'flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-sm edge-highlight',
-        className,
-      )}
+      className={cn('flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-sm', className)}
       {...props}
     >
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">

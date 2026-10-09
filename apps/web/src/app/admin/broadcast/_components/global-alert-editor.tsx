@@ -313,7 +313,7 @@ function AlertEditor({ alert }: { alert: SiteAlertDto }) {
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,32%)]">
       {/* ── Редактор ─────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-col gap-4">
-        <div className="flex flex-col gap-7 rounded-xl bg-surface p-5 shadow-sm edge-highlight md:p-6">
+        <div className="flex flex-col gap-7 rounded-xl bg-surface p-5 shadow-sm md:p-6">
           <header className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-lg font-semibold tracking-tight">
@@ -554,7 +554,7 @@ function AlertEditor({ alert }: { alert: SiteAlertDto }) {
         {editable ? (
           <div
             data-testid="alert-action-bar"
-            className="sticky bottom-4 z-sticky flex flex-wrap items-center justify-end gap-3 rounded-xl bg-surface-raised px-4 py-3 shadow-lg edge-highlight"
+            className="sticky bottom-4 z-sticky flex flex-wrap items-center justify-end gap-3 rounded-xl bg-surface-raised px-4 py-3 shadow-lg"
           >
             {errors.length > 0 ? (
               <p role="alert" className="min-w-0 flex-1 text-sm text-destructive">
@@ -592,7 +592,7 @@ function AlertEditor({ alert }: { alert: SiteAlertDto }) {
 
       {/* ── Предпросмотр и состояние ─────────────────────────────── */}
       <aside className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-24">
-        <section className="flex flex-col gap-3 rounded-xl bg-surface p-4 shadow-sm edge-highlight">
+        <section className="flex flex-col gap-3 rounded-xl bg-surface p-4 shadow-sm">
           <header className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold tracking-tight">Предпросмотр</h3>
             <div className="flex gap-1.5">
@@ -644,7 +644,7 @@ function AlertEditor({ alert }: { alert: SiteAlertDto }) {
           </div>
         </section>
 
-        <section className="rounded-xl bg-surface p-4 shadow-sm edge-highlight">
+        <section className="rounded-xl bg-surface p-4 shadow-sm">
           <header className="mb-1 flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold tracking-tight">Состояние</h3>
             <Badge tone={liveNow ? 'primary' : 'neutral'}>{statusLabel}</Badge>

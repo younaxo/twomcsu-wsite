@@ -105,7 +105,7 @@ export const DrawerContent = forwardRef<ElementRef<typeof VaulDrawer.Content>, D
         <VaulDrawer.Content
           ref={ref}
           className={cn(
-            'fixed z-50 flex flex-col bg-surface-overlay text-foreground shadow-lg edge-highlight',
+            'fixed z-50 flex flex-col bg-surface-overlay text-foreground shadow-lg',
             'overscroll-contain focus:outline-none',
             direction === 'bottom'
               ? 'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t pb-[env(safe-area-inset-bottom)]'

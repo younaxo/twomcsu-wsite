@@ -2,6 +2,7 @@
 
 import type {
   LoginResponse,
+  RegisterStateResponse,
   RegisterCompleteRequest,
   RegisterStartRequest,
   RegisterVerificationState,
@@ -10,6 +11,7 @@ import type {
 import {
   CircleCheck,
   Clock,
+  FileText,
   MailCheck,
   Pencil,
   RotateCw,
@@ -28,6 +30,7 @@ import { CheckboxField } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { OtpInput } from '@/components/ui/otp-input';
+import { MinecraftLinkStep } from '@/components/auth/minecraft-link-step';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
@@ -116,7 +119,35 @@ function useCountdown(target: string | null): number {
   return target ? Math.max(0, Math.ceil((new Date(target).getTime() - now) / 1000)) : 0;
 }
 
-type Step = 'details' | 'code' | 'create';
+type Step = 'details' | 'code' | 'minecraft' | 'create';
+
+/// Продолжение регистрации после перезагрузки: в sessionStorage — только
+/// идентификатор запроса и токен завершения (НЕ пароль); стадию знает backend.
+const RESUME_KEY = 'twomc.registration';
+
+interface ResumeData {
+  verificationId: string;
+  completionToken?: string;
+}
+
+function readResume(): ResumeData | null {
+  try {
+    const raw = window.sessionStorage.getItem(RESUME_KEY);
+    const data = raw ? (JSON.parse(raw) as ResumeData) : null;
+    return data && typeof data.verificationId === 'string' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeResume(data: ResumeData | null) {
+  try {
+    if (data) window.sessionStorage.setItem(RESUME_KEY, JSON.stringify(data));
+    else window.sessionStorage.removeItem(RESUME_KEY);
+  } catch {
+    // Хранилище недоступно — продолжение после перезагрузки просто не сработает.
+  }
+}
 
 /// Состояние «код отправлен» для превью в design-lab (письмо не отправляется).
 function previewVerification(): RegisterVerificationState {
@@ -129,10 +160,12 @@ function previewVerification(): RegisterVerificationState {
   };
 }
 
-export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
+export function RegisterForm({
+  previewStep,
+}: { previewStep?: 'code' | 'minecraft' | 'create' } = {}) {
   const router = useRouter();
   const acceptSession = useAuthStore((state) => state.acceptSession);
-  const preview = previewStep === 'code';
+  const preview = previewStep !== undefined;
   const [values, setValues] = useState(() => ({
     email: preview ? 'player@twomc.su' : '',
     username: preview ? 'player' : '',
@@ -143,11 +176,16 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
   const [consents, setConsents] = useState({ terms: preview, personalData: preview });
   const [touched, setTouched] = useState<Partial<Record<Fields | 'consents', boolean>>>({});
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [step, setStep] = useState<Step>(preview ? 'code' : 'details');
+  const [step, setStep] = useState<Step>(previewStep ?? 'details');
   const [verification, setVerification] = useState<RegisterVerificationState | null>(() =>
     preview ? previewVerification() : null,
   );
-  const [completionToken, setCompletionToken] = useState<string | null>(null);
+  const [completionToken, setCompletionToken] = useState<string | null>(() =>
+    preview ? 'design-lab-preview-token-0000000000000000000000000000' : null,
+  );
+  const [minecraftRequired, setMinecraftRequired] = useState(preview);
+  /// Пароль потерян при перезагрузке — на последнем шаге его вводят снова.
+  const [needPassword, setNeedPassword] = useState(false);
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +194,37 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
   const otpLabelId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
   const resendIn = useCountdown(verification?.resendAvailableAt ?? null);
+
+  // Продолжение после перезагрузки страницы (стадия — с сервера).
+  useEffect(() => {
+    if (preview) return;
+    const saved = readResume();
+    if (!saved) return;
+    let cancelled = false;
+    api
+      .post<RegisterStateResponse>('/auth/register/state', saved, {
+        auth: false,
+        retryOn401: false,
+      })
+      .then((state) => {
+        if (cancelled) return;
+        setVerification(state);
+        setMinecraftRequired(state.minecraft.required);
+        setValues((prev) => ({ ...prev, email: state.maskedEmail, username: state.username }));
+        setConsents({ terms: true, personalData: true });
+        if (state.stage === 'email') {
+          setStep('code');
+          return;
+        }
+        setCompletionToken(saved.completionToken ?? null);
+        setNeedPassword(true);
+        setStep(state.stage === 'minecraft' ? 'minecraft' : 'create');
+      })
+      .catch(() => writeResume(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [preview]);
 
   const errors = validateRegister(values);
   const consentsOk = consents.terms && consents.personalData;
@@ -193,6 +262,8 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
         retryOn401: false,
       });
       setVerification(state);
+      setMinecraftRequired(state.minecraftRequired === true);
+      writeResume({ verificationId: state.verificationId });
       setCode('');
       setStep('code');
     } catch (caught) {
@@ -214,7 +285,11 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
         { auth: false, retryOn401: false },
       );
       setCompletionToken(result.completionToken);
-      setStep('create');
+      writeResume({
+        verificationId: verification.verificationId,
+        completionToken: result.completionToken,
+      });
+      setStep(result.minecraftRequired ? 'minecraft' : 'create');
     } catch (caught) {
       const apiErr = caught instanceof ApiError ? caught : null;
       const body = apiErr?.body as { attemptsLeft?: number; message?: { attemptsLeft?: number } };
@@ -253,6 +328,8 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
     setStep('details');
     setVerification(null);
     setCompletionToken(null);
+    setNeedPassword(false);
+    writeResume(null);
     setCode('');
     setError(null);
     // Поля снова доступны — фокус в e-mail после перерисовки.
@@ -261,6 +338,10 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
 
   const createAccount = async () => {
     if (!verification || !completionToken || pending) return;
+    if (needPassword && (errors.password || errors.confirm)) {
+      setTouched((prev) => ({ ...prev, password: true, confirm: true }));
+      return;
+    }
     setPending(true);
     setError(null);
     const body: RegisterCompleteRequest = {
@@ -273,6 +354,7 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
         auth: false,
         retryOn401: false,
       });
+      writeResume(null);
       await acceptSession(session.accessToken);
       router.replace('/');
     } catch (caught) {
@@ -295,6 +377,11 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
   /// После «Подтвердить почту» данные остаются видны, но заблокированы:
   /// изменить их можно только через «Изменить E-mail».
   const locked = step !== 'details';
+  /// После перезагрузки пароль вводится заново на последнем шаге.
+  const passwordLocked = locked && !(step === 'create' && needPassword);
+  const totalSteps = minecraftRequired ? 4 : 3;
+  const requirement = 'text-xs text-subtle-foreground';
+  const consentRow = 'min-h-0 py-1.5';
   const legalLink =
     'text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground';
 
@@ -306,30 +393,39 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
     event.preventDefault();
     if (step === 'code') {
       void verifyCode();
-    } else {
+    } else if (step === 'create') {
       void createAccount();
     }
   };
 
   return (
     <AuthShell
-      title={step === 'create' ? 'Почта подтверждена' : 'Создайте аккаунт'}
+      title={
+        step === 'create'
+          ? 'Почти готово'
+          : step === 'minecraft'
+            ? 'Подтвердите Minecraft'
+            : 'Создайте аккаунт'
+      }
       description={
         step === 'details'
           ? 'Один аккаунт для сайта, магазина и серверов twomc.su.'
           : step === 'code'
-            ? 'Шаг 2 из 3 — введите код из письма.'
-            : 'Шаг 3 из 3 — осталось создать аккаунт.'
+            ? `Шаг 2 из ${totalSteps} — введите код из письма.`
+            : step === 'minecraft'
+              ? `Шаг 3 из ${totalSteps} — привяжите игровой аккаунт.`
+              : `Шаг ${totalSteps} из ${totalSteps} — осталось создать аккаунт.`
       }
     >
       <form
-        className="flex flex-col gap-5"
+        className="flex flex-col gap-4"
         onSubmit={onSubmit}
         noValidate
         data-testid="register-form"
         data-step={step}
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* items-start: подсказки/ошибки одного поля не растягивают соседнее. */}
+        <div className="grid items-start gap-x-4 gap-y-3 sm:grid-cols-2">
           <Field label="E-mail" required error={shown('email')}>
             <Input
               ref={emailRef}
@@ -347,7 +443,7 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
           <Field
             label="Ник"
             required
-            hint="Логин и игровой ник: 3–16 символов, a–z, 0–9, _"
+            labelAddon={<span className={requirement}>3–16 · a–z 0–9 _</span>}
             error={shown('username')}
           >
             <Input
@@ -364,8 +460,8 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
             label="Пароль"
             name="password"
             autoComplete="new-password"
-            hint="От 8 до 72 символов"
-            disabled={locked}
+            labelAddon={<span className={requirement}>8–72 символа</span>}
+            disabled={passwordLocked}
             value={values.password}
             error={shown('password')}
             onChange={update('password')}
@@ -375,7 +471,7 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
             label="Повторите пароль"
             name="confirm"
             autoComplete="new-password"
-            disabled={locked}
+            disabled={passwordLocked}
             value={values.confirm}
             error={shown('confirm')}
             onChange={update('confirm')}
@@ -383,7 +479,7 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
           />
           <Field
             label="Реферальный код"
-            labelAddon={<span className="text-xs text-subtle-foreground">Необязательно</span>}
+            labelAddon={<span className={requirement}>Необязательно</span>}
             error={shown('referral')}
           >
             <Input
@@ -407,12 +503,13 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
           <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
         ) : null}
 
-        <fieldset className="flex flex-col gap-2" aria-label="Согласия" disabled={locked}>
+        <fieldset className="flex flex-col" aria-label="Согласия" disabled={locked}>
           <CheckboxField
             checked={consents.terms}
             disabled={locked}
             onCheckedChange={(value) => setConsents((c) => ({ ...c, terms: value === true }))}
             invalid={touched.consents && !consents.terms}
+            wrapperClassName={consentRow}
             data-testid="consent-terms"
             label={
               <span className="text-muted-foreground">
@@ -434,6 +531,7 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
               setConsents((c) => ({ ...c, personalData: value === true }))
             }
             invalid={touched.consents && !consents.personalData}
+            wrapperClassName={consentRow}
             data-testid="consent-personal-data"
             label={
               <span className="text-muted-foreground">
@@ -444,15 +542,18 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
               </span>
             }
           />
-          <p className="pl-7 text-xs text-subtle-foreground">
-            Как мы храним данные —{' '}
-            <Link
-              href="/legal/privacy"
-              className="underline underline-offset-2 hover:text-foreground"
-              target="_blank"
-            >
-              Политика конфиденциальности
-            </Link>
+          {/* Информационная строка той же группы: не согласие — поэтому без чекбокса,
+              на его месте иконка; шрифт и отступы как у согласий. */}
+          <p className="flex items-start gap-3 py-1.5 text-sm font-medium leading-5">
+            <span aria-hidden className="mt-0.5 flex size-5 shrink-0 items-center justify-center">
+              <FileText className="size-4 text-subtle-foreground" />
+            </span>
+            <span className="text-muted-foreground">
+              Как мы обрабатываем данные —{' '}
+              <Link href="/legal/privacy" className={legalLink} target="_blank">
+                Политика конфиденциальности
+              </Link>
+            </span>
           </p>
           {touched.consents && !consentsOk ? (
             <p className="text-xs text-destructive">Оба согласия обязательны.</p>
@@ -513,45 +614,68 @@ export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
           </section>
         ) : null}
 
+        {step === 'minecraft' && verification && completionToken ? (
+          <MinecraftLinkStep
+            verificationId={verification.verificationId}
+            completionToken={completionToken}
+            username={values.username}
+            preview={preview}
+            onConfirmed={() => {
+              setError(null);
+              setStep('create');
+            }}
+          />
+        ) : null}
+
         {step === 'create' ? (
-          <p
-            className="flex items-center gap-2 border-t border-border-subtle pt-5 text-sm"
+          <ul
+            className="flex flex-col gap-1.5 border-t border-border-subtle pt-4 text-sm"
             data-testid="create-step"
             role="status"
           >
-            <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
-            Почта {verification?.maskedEmail} подтверждена.
-          </p>
+            <li className="flex items-center gap-2">
+              <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
+              Почта {verification?.maskedEmail} подтверждена.
+            </li>
+            {minecraftRequired ? (
+              <li className="flex items-center gap-2">
+                <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
+                Minecraft-аккаунт {values.username} подтверждён.
+              </li>
+            ) : null}
+          </ul>
         ) : null}
 
         {errorBlock}
 
-        <Button
-          type="submit"
-          size="lg"
-          loading={pending}
-          disabled={
-            step === 'details' ? !captchaReady : step === 'code' ? code.length !== 6 : false
-          }
-          data-testid="register-primary"
-        >
-          {step === 'details' ? (
-            <>
-              <MailCheck />
-              Подтвердить почту
-            </>
-          ) : step === 'code' ? (
-            <>
-              <ShieldCheck />
-              Подтвердить код
-            </>
-          ) : (
-            <>
-              <UserPlus />
-              Создать аккаунт
-            </>
-          )}
-        </Button>
+        {step !== 'minecraft' ? (
+          <Button
+            type="submit"
+            size="lg"
+            loading={pending}
+            disabled={
+              step === 'details' ? !captchaReady : step === 'code' ? code.length !== 6 : false
+            }
+            data-testid="register-primary"
+          >
+            {step === 'details' ? (
+              <>
+                <MailCheck />
+                Подтвердить почту
+              </>
+            ) : step === 'code' ? (
+              <>
+                <ShieldCheck />
+                Подтвердить код
+              </>
+            ) : (
+              <>
+                <UserPlus />
+                Создать аккаунт
+              </>
+            )}
+          </Button>
+        ) : null}
         {/* Ник/e-mail успели занять или подтверждение устарело — вернуться к
             форме (введённые данные сохраняются) и пройти подтверждение заново. */}
         {step === 'create' && error && !pending ? (

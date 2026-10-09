@@ -471,7 +471,7 @@ export const ColorPicker = forwardRef<HTMLButtonElement, ColorPickerProps>(
             aria-label="Выбор цвета"
             className={cn(
               'z-popover w-72 max-w-[calc(100vw-2rem)] p-3',
-              'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+              'rounded-lg border bg-surface-overlay text-foreground shadow-lg',
               'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out',
               'data-[side=bottom]:[--pop-y:-4px] data-[side=top]:[--pop-y:4px]',
             )}

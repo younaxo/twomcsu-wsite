@@ -15,17 +15,17 @@ export function AuthShell({
   footer?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <header>
         <h1
           id="auth-title"
-          className="font-display text-2xl font-bold tracking-tight md:text-[1.75rem]"
+          className="font-display text-2xl font-bold leading-tight tracking-tight"
         >
           {title}
         </h1>
-        {description ? <p className="mt-1.5 text-sm text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </header>
-      <div className="flex flex-col gap-5">{children}</div>
+      <div className="flex flex-col gap-4">{children}</div>
       {footer ? (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">{footer}</div>
       ) : null}

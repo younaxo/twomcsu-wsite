@@ -24,7 +24,7 @@ function ServerCard({ server, featured }: { server: ServerOverviewItem; featured
     <article
       data-testid="home-server-card"
       className={cn(
-        'flex flex-col overflow-hidden rounded-xl border bg-surface shadow edge-highlight',
+        'flex flex-col overflow-hidden rounded-xl border bg-surface shadow',
         featured ? 'md:grid md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]' : '',
       )}
     >

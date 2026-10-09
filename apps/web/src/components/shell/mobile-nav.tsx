@@ -62,7 +62,7 @@ export function MobileNav() {
     >
       <ul
         data-testid="mobile-nav-surface"
-        className="flex h-16 items-stretch gap-1 rounded-full bg-surface-raised p-1.5 shadow-lg edge-highlight [@media(max-height:480px)]:h-12"
+        className="flex h-16 items-stretch gap-1 rounded-full bg-surface-raised p-1.5 shadow-lg [@media(max-height:480px)]:h-12"
       >
         {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = ICONS[item.icon] ?? Home;

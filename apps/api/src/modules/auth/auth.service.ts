@@ -133,6 +133,8 @@ export class AuthService {
     password: string;
     referrerId?: string | null;
     emailVerified?: boolean;
+    /// Подтверждённый Minecraft-аккаунт (ADR-0072) — создаётся той же вставкой.
+    minecraft?: { uuid: string; name: string } | null;
   }): Promise<User> {
     const email = input.email.toLowerCase();
     const defaultPosition = await this.prisma.position.findFirst({
@@ -163,6 +165,16 @@ export class AuthService {
           positionId: defaultPosition.id,
           isVerified: input.emailVerified ?? false,
           referredBy: input.referrerId ?? null,
+          ...(input.minecraft
+            ? {
+                minecraftAccount: {
+                  create: {
+                    uuid: input.minecraft.uuid,
+                    name: input.minecraft.name,
+                  },
+                },
+              }
+            : {}),
         },
       });
       // Личный реферальный код — ник в верхнем регистре (при совпадении — с номером).
@@ -180,6 +192,14 @@ export class AuthService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
+        const target = String(error.meta?.target ?? '');
+        if (target.includes('uuid')) {
+          throw new ConflictException({
+            code: 'minecraft_taken',
+            message:
+              'Этот Minecraft-аккаунт уже привязан к другому аккаунту twomc.su',
+          });
+        }
         throw new ConflictException('Email или username уже заняты');
       }
       throw error;

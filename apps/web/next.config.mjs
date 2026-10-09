@@ -23,8 +23,12 @@ loadRootPublicEnv();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Standalone-сборка для Docker-образа (infrastructure/web.Dockerfile).
-  output: 'standalone',
+  // Standalone-сборка для Docker-образа (infrastructure/web.Dockerfile, Linux).
+  // На Windows с pnpm standalone кладёт в .next/standalone/node_modules ссылки
+  // (junctions) на пакеты из node_modules/.pnpm, а очистка .next при следующем
+  // `next dev` проходит по ним и стирает содержимое настоящих пакетов. Поэтому
+  // локальная Windows-сборка — обычная (RISKS R19).
+  output: process.platform === 'win32' ? undefined : 'standalone',
   // Версия сайта для футера берётся из package.json, build id — из CI/деплоя.
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,

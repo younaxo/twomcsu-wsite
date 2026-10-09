@@ -19,7 +19,7 @@ export const PopoverClose = RadixPopover.Close;
 export const PopoverPortal = RadixPopover.Portal;
 
 export const popoverContentClassName = cn(
-  'z-popover w-72 max-w-[calc(100vw-2rem)] rounded-lg bg-surface-overlay p-4 text-foreground shadow-lg edge-highlight',
+  'z-popover w-72 max-w-[calc(100vw-2rem)] rounded-lg bg-surface-overlay p-4 text-foreground shadow-lg',
   'max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain scrollbar-thin',
   'focus:outline-none',
   'origin-[var(--radix-popover-content-transform-origin)]',

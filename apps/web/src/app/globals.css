@@ -95,10 +95,6 @@
 
 @layer utilities {
   /* Тонкая верхняя кромка — подсветка листа на тёмных поверхностях. */
-  .edge-highlight {
-    box-shadow: inset 0 1px 0 0 var(--edge-highlight);
-  }
-
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--border-strong)) transparent;

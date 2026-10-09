@@ -52,7 +52,7 @@ function Stat({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border bg-surface p-4 edge-highlight">
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border bg-surface p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">{label}</p>
       {pending ? (
         <Skeleton className="h-7 w-20" />
@@ -169,7 +169,7 @@ export function HomeHero() {
             />
           </figure>
         ) : (
-          <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-xl border bg-surface-sunken shadow-lg edge-highlight">
+          <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-xl border bg-surface-sunken shadow-lg">
             {/* Основной логотип (исходник 1095×1094). Размер в разметке =
                 фактическому (224px): srcset 1x/2x без растягивания; q=90 и
                 без CSS-фильтров — края не «мылятся». */}

@@ -20,7 +20,7 @@ function FeatureCard({ feature }: { feature: HomeFeature }) {
     <article
       data-testid={`feature-${feature.id}`}
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-xl border bg-surface shadow edge-highlight',
+        'group relative flex flex-col overflow-hidden rounded-xl border bg-surface shadow',
         large && 'md:col-span-2 md:row-span-3',
       )}
     >

@@ -11,13 +11,20 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { EmailService } from '../email/email.service';
+import {
+  CHALLENGE_MAX_ATTEMPTS,
+  MinecraftLinkService,
+} from '../minecraft-link/minecraft-link.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, RequestContext } from './auth.service';
 import { CaptchaService } from './captcha.service';
 import {
   RegisterCompleteDto,
+  RegisterMinecraftCodeDto,
+  RegisterMinecraftDto,
   RegisterResendDto,
   RegisterStartDto,
+  RegisterStateDto,
   RegisterVerifyDto,
 } from './dto/registration.dto';
 
@@ -59,6 +66,7 @@ export class RegistrationService {
     private readonly email: EmailService,
     private readonly captcha: CaptchaService,
     private readonly auth: AuthService,
+    private readonly minecraft: MinecraftLinkService,
   ) {}
 
   private hash(scope: string, value: string): string {
@@ -136,6 +144,7 @@ export class RegistrationService {
         record.lastSentAt.getTime() + RESEND_COOLDOWN_MS,
       ).toISOString(),
       resendsLeft: Math.max(0, MAX_SENDS - record.sendCount),
+      minecraftRequired: this.minecraft.required(),
     };
   }
 
@@ -302,24 +311,165 @@ export class RegistrationService {
         completionExpiresAt: new Date(Date.now() + COMPLETION_TTL_MS),
       },
     });
-    return { completionToken: token, email: maskEmail(record.email) };
+    return {
+      completionToken: token,
+      email: maskEmail(record.email),
+      minecraftRequired: this.minecraft.required(),
+    };
   }
 
-  async complete(dto: RegisterCompleteDto, context: RequestContext) {
-    const record = await this.getActive(dto.verificationId);
-    const tokenOk =
+  /// Токен завершения (выдан после верного кода из письма) — пропуск к шагам
+  /// Minecraft и созданию аккаунта.
+  private completionValid(
+    record: {
+      id: string;
+      verifiedAt: Date | null;
+      completionTokenHash: string | null;
+      completionExpiresAt: Date | null;
+    },
+    token: string | undefined,
+  ): boolean {
+    return (
+      !!token &&
       !!record.verifiedAt &&
       !!record.completionTokenHash &&
       !!record.completionExpiresAt &&
       record.completionExpiresAt > new Date() &&
       this.same(
         record.completionTokenHash,
-        this.hash(`complete:${record.id}`, dto.completionToken),
-      );
-    if (!tokenOk) {
+        this.hash(`complete:${record.id}`, token),
+      )
+    );
+  }
+
+  private async getCompletable(verificationId: string, token: string) {
+    const record = await this.getActive(verificationId);
+    if (!this.completionValid(record, token)) {
       throw new ForbiddenException({
         code: 'completion_invalid',
         message: 'Подтверждение почты устарело — пройдите его заново',
+      });
+    }
+    return record;
+  }
+
+  /// Состояние регистрации на сервере — для продолжения после перезагрузки
+  /// страницы. Пароль здесь не участвует и нигде не хранится.
+  async state(dto: RegisterStateDto) {
+    const record = await this.getActive(dto.verificationId);
+    const verified = this.completionValid(record, dto.completionToken);
+    const required = this.minecraft.required();
+    const stage = !verified
+      ? 'email'
+      : required && !record.mcConfirmedAt
+        ? 'minecraft'
+        : 'create';
+    return {
+      ...this.publicState(record),
+      stage,
+      username: record.username,
+      minecraft: {
+        required,
+        name: verified ? record.mcName : null,
+        challengePending:
+          verified && !!record.mcChallengeHash && !record.mcConfirmedAt,
+        challengeExpiresAt:
+          verified && record.mcChallengeExpiresAt && !record.mcConfirmedAt
+            ? record.mcChallengeExpiresAt.toISOString()
+            : null,
+        confirmed: verified && !!record.mcConfirmedAt,
+      },
+    };
+  }
+
+  private async issueChallenge(recordId: string) {
+    const { challenge, expiresAt } = this.minecraft.newChallenge();
+    await this.prisma.emailVerification.update({
+      where: { id: recordId },
+      data: {
+        mcChallengeHash: this.minecraft.hash(
+          `challenge:${recordId}`,
+          challenge,
+        ),
+        mcChallengeExpiresAt: expiresAt,
+        mcChallengeAttempts: 0,
+      },
+    });
+    return {
+      challenge,
+      challengeExpiresAt: expiresAt.toISOString(),
+      attempts: CHALLENGE_MAX_ATTEMPTS,
+    };
+  }
+
+  /// 15-символьный код со страницы /site-connect → 5-символьный код для игры.
+  async submitMinecraftCode(dto: RegisterMinecraftCodeDto) {
+    if (!this.minecraft.required()) {
+      throw new BadRequestException({
+        code: 'minecraft_disabled',
+        message: 'Привязка Minecraft сейчас не требуется',
+      });
+    }
+    const record = await this.getCompletable(
+      dto.verificationId,
+      dto.completionToken,
+    );
+    if (record.mcConfirmedAt) {
+      return {
+        name: record.mcName,
+        confirmed: true,
+        challenge: null,
+        challengeExpiresAt: null,
+      };
+    }
+    const session = await this.minecraft.claimCode(dto.code, record.username);
+    await this.prisma.emailVerification.update({
+      where: { id: record.id },
+      data: {
+        mcSessionId: session.sessionId,
+        mcUuid: session.uuid,
+        mcName: session.name,
+      },
+    });
+    return {
+      name: session.name,
+      confirmed: false,
+      ...(await this.issueChallenge(record.id)),
+    };
+  }
+
+  /// Новый 5-символьный код (истёк или исчерпаны попытки) для уже принятого
+  /// 15-символьного кода.
+  async renewMinecraftChallenge(dto: RegisterMinecraftDto) {
+    const record = await this.getCompletable(
+      dto.verificationId,
+      dto.completionToken,
+    );
+    if (!record.mcUuid || record.mcConfirmedAt) {
+      throw new BadRequestException({
+        code: 'mc_no_session',
+        message: 'Сначала введите код привязки Minecraft',
+      });
+    }
+    return {
+      name: record.mcName,
+      confirmed: false,
+      ...(await this.issueChallenge(record.id)),
+    };
+  }
+
+  async complete(dto: RegisterCompleteDto, context: RequestContext) {
+    const record = await this.getCompletable(
+      dto.verificationId,
+      dto.completionToken,
+    );
+    if (
+      this.minecraft.required() &&
+      (!record.mcConfirmedAt || !record.mcUuid || !record.mcName)
+    ) {
+      throw new BadRequestException({
+        code: 'minecraft_required',
+        message: 'Подтвердите Minecraft-аккаунт в игре',
       });
     }
     // Одноразовость: помечаем использованным до создания аккаунта.
@@ -341,6 +491,10 @@ export class RegistrationService {
       password: dto.password,
       referrerId: record.referrerId,
       emailVerified: true,
+      minecraft:
+        record.mcConfirmedAt && record.mcUuid && record.mcName
+          ? { uuid: record.mcUuid, name: record.mcName }
+          : null,
     });
     const version = this.config.get<string>('LEGAL_DOCS_VERSION', 'draft');
     await this.prisma.legalConsent.createMany({
