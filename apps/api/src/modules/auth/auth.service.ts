@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, User } from '@prisma/client';
+import { AccountType, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, createHmac, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -146,6 +146,8 @@ export class AuthService {
 
     const identifier = dto.emailOrUsername.toLowerCase();
     const user = await this.prisma.user.findFirst({
+      // Глобально password исключён (PrismaService omit) — здесь он нужен для сверки.
+      omit: { password: false },
       where: {
         OR: [
           { email: identifier },
@@ -154,7 +156,12 @@ export class AuthService {
       },
     });
 
-    if (!user || !(await bcrypt.compare(dto.password, user.password))) {
+    // Системный аккаунт #0 (ADR-0006): вход по паролю запрещён независимо от hash.
+    if (
+      !user ||
+      user.accountType === AccountType.SYSTEM ||
+      !(await bcrypt.compare(dto.password, user.password))
+    ) {
       await this.bruteForce.registerFailure(context.ip);
       throw new UnauthorizedException('Неверный email/логин или пароль');
     }
@@ -306,6 +313,7 @@ export class AuthService {
   async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
+      omit: { password: false },
     });
     const matches = await bcrypt.compare(dto.currentPassword, user.password);
     if (!matches) {
