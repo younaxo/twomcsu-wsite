@@ -1471,3 +1471,16 @@ WS `/notifications` шлёт `notification:changed { unreadCount }` в комн�
 всегда) и те же действия в ПКМ; «Удалить прочитанные» и «Очистить все» — с
 подтверждением. Страница `/notifications`: фильтр «Все/Непрочитанные», «Показать
 ещё». `socket.io-client` добавлен в web (та же версия, что в api).
+
+## ADR-0075 — Собственный курсор «Полдня»
+
+**Decision.** Шесть SVG-курсоров (`apps/web/public/assets/cursors/`): default
+(светлая стрелка с тёмным контуром), pointer (та же стрелка, оранжевый акцент
+`--primary`), text (I-beam), grab/grabbing (стрелки перемещения, при нажатии —
+оранжевые), not-allowed (стрелка с запретом). Подключение — CSS в
+`globals.css` только под `@media (pointer: fine)` (мышь/тачпад; на touch —
+системный), у каждого `url()` — fallback на стандартное ключевое слово.
+Приоритет недоступности: правило not-allowed объявлено последним и
+перекрывает pointer/text (кнопки, ссылки с `aria-disabled`, `label:has(:disabled)`).
+Класс `html.no-custom-cursor` выключает курсор целиком (точка для будущей
+настройки). Design-lab: раздел «Курсоры».

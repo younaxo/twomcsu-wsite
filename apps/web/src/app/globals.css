@@ -23,11 +23,82 @@
     @apply border-border;
   }
 
-  /* Недоступные элементы: курсор показывает недоступность (fallback, пока нет
-     собственного курсора проекта). */
+  /* Недоступные элементы: курсор показывает недоступность (fallback для touch
+     и без собственного курсора). */
   :disabled,
   [aria-disabled='true'] {
     cursor: not-allowed;
+  }
+
+  /* Собственный курсор «Полдня» (ADR-0075): только мышь/тачпад (pointer: fine),
+     на touch — системный. После url() — стандартное ключевое слово (fallback).
+     `html.no-custom-cursor` выключает его целиком (точка для настройки). */
+  @media (pointer: fine) {
+    html:not(.no-custom-cursor) {
+      cursor:
+        url('/assets/cursors/default.svg') 5 3,
+        auto;
+    }
+    html:not(.no-custom-cursor)
+      :is(
+        a[href],
+        button,
+        summary,
+        select,
+        label[for],
+        [role='button'],
+        [role='link'],
+        [role='tab'],
+        [role='menuitem'],
+        [role='menuitemcheckbox'],
+        [role='menuitemradio'],
+        [role='option'],
+        [role='checkbox'],
+        [role='radio'],
+        [role='switch'],
+        [role='slider']
+      ) {
+      cursor:
+        url('/assets/cursors/pointer.svg') 5 3,
+        pointer;
+    }
+    html:not(.no-custom-cursor)
+      :is(
+        input:not(
+          [type='checkbox'],
+          [type='radio'],
+          [type='range'],
+          [type='button'],
+          [type='submit'],
+          [type='reset'],
+          [type='color'],
+          [type='file']
+        ),
+        textarea,
+        [contenteditable='true']
+      ) {
+      cursor:
+        url('/assets/cursors/text.svg') 16 16,
+        text;
+    }
+    html:not(.no-custom-cursor) :is([draggable='true'], .cursor-grab) {
+      cursor:
+        url('/assets/cursors/grab.svg') 16 16,
+        grab;
+    }
+    html:not(.no-custom-cursor) :is([draggable='true'], .cursor-grab):active,
+    html:not(.no-custom-cursor) .cursor-grabbing {
+      cursor:
+        url('/assets/cursors/grabbing.svg') 16 16,
+        grabbing;
+    }
+    /* Последним — недоступность перекрывает «указатель» у кнопок и ссылок. */
+    html:not(.no-custom-cursor) :is(:disabled, [aria-disabled='true'], label:has(:disabled)),
+    html:not(.no-custom-cursor) :is(:disabled, [aria-disabled='true']) * {
+      cursor:
+        url('/assets/cursors/not-allowed.svg') 5 3,
+        not-allowed;
+    }
   }
 
   ::selection {
