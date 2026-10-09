@@ -373,8 +373,14 @@ describe('Direct Messages (e2e)', () => {
         userId: string;
       }>(bobSocket, 'typing:start');
 
+      // Сокет может войти в комнату беседы чуть позже подключения — повторяем
+      // отправку, пока собеседник не получит событие (без гонки в CI).
       aliceSocket.emit('typing:start', { conversationId });
-      const typing = await typingPromise;
+      const retry = setInterval(
+        () => aliceSocket.emit('typing:start', { conversationId }),
+        200,
+      );
+      const typing = await typingPromise.finally(() => clearInterval(retry));
       expect(typing.userId).toBe(alice.id);
       expect(aliceReceivedOwnTyping).toBe(false);
     });

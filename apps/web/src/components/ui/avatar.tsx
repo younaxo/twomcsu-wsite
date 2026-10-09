@@ -56,6 +56,7 @@ export const Avatar = forwardRef<ElementRef<typeof RadixAvatar.Root>, AvatarProp
         <RadixAvatar.Image
           src={src}
           alt={name}
+          draggable={false}
           className="size-full object-cover [image-rendering:pixelated]"
         />
       ) : null}

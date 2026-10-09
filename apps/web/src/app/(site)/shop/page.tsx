@@ -3,7 +3,7 @@
 import type { DecimalString, Paginated } from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Gift, ShoppingBag } from 'lucide-react';
-import Image from 'next/image';
+import { ProtectedImage } from '@/components/ui/protected-image';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { Card } from '@/components/ui/card';
@@ -52,11 +52,11 @@ export default function ShopPage() {
               {data.items.map((product) => {
                 const price = product.variants?.[0]?.price;
                 return (
-                  <li key={product.id}>
+                  <li key={product.id} data-context="product" data-context-name={product.name}>
                     <Card className="flex h-full flex-col gap-3">
                       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded bg-surface-sunken">
                         {product.image ? (
-                          <Image
+                          <ProtectedImage
                             src={product.image}
                             alt=""
                             width={320}

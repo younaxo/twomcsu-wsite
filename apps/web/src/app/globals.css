@@ -101,6 +101,20 @@
     }
   }
 
+  /* Политика выделения (ADR-0077): текст контента выделяется и копируется,
+     элементы управления — нет (двойной клик по кнопке не выделяет подпись). */
+  button,
+  summary,
+  label,
+  nav a,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   ::selection {
     background: rgb(var(--primary) / 0.28);
   }
