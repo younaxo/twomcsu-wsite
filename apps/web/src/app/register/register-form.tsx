@@ -1,31 +1,51 @@
 'use client';
 
-import type { AuthUser, RegisterRequest } from '@twomc/shared';
-import { UserPlus } from 'lucide-react';
+import type {
+  LoginResponse,
+  RegisterCompleteRequest,
+  RegisterStartRequest,
+  RegisterVerificationState,
+  RegisterVerifyResponse,
+} from '@twomc/shared';
+import { MailCheck, Pencil, RotateCw, ShieldCheck, UserPlus } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { describeAuthError } from '@/components/auth/auth-errors';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { PasswordField } from '@/components/auth/password-field';
 import { Turnstile, type TurnstileHandle } from '@/components/auth/turnstile';
 import { Button } from '@/components/ui/button';
+import { CheckboxField } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { OtpInput } from '@/components/ui/otp-input';
 import { api } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/errors';
+import { useAuthStore } from '@/lib/auth/store';
 import { TURNSTILE_SITE_KEY } from '@/lib/env';
 
-/// Требования backend (RegisterDto): e-mail, ник 3–16 латиница/цифры/_,
-/// пароль 8–72. Валидируем те же правила на клиенте — без выдуманных полей.
+/// Регистрация с подтверждением почты (ADR-0070):
+///   1) данные + реферальный код + Turnstile + два отдельных согласия →
+///      «Подтвердить почту» (backend отправляет 6-значный код);
+///   2) на этой же странице — ввод кода (вставка, автофокус, Backspace,
+///      цифровая клавиатура), «Отправить повторно» с таймером, «Изменить E-mail»;
+///   3) только после верного кода — «Создать аккаунт».
+/// Пароль хранится только в памяти этой формы: не в URL, storage или логах.
+
 export const USERNAME_PATTERN = /^[a-zA-Z0-9_]{3,16}$/;
+export const REFERRAL_PATTERN = /^[A-Za-z0-9_]{3,24}$/;
+
+type Fields = 'email' | 'username' | 'password' | 'confirm' | 'referral';
 
 export function validateRegister(values: {
   email: string;
   username: string;
   password: string;
   confirm: string;
-}): Partial<Record<'email' | 'username' | 'password' | 'confirm', string>> {
-  const errors: Partial<Record<'email' | 'username' | 'password' | 'confirm', string>> = {};
+  referral?: string;
+}): Partial<Record<Fields, string>> {
+  const errors: Partial<Record<Fields, string>> = {};
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
     errors.email = 'Введите корректный e-mail.';
   }
@@ -38,60 +58,230 @@ export function validateRegister(values: {
   if (values.confirm !== values.password) {
     errors.confirm = 'Пароли не совпадают.';
   }
+  if (values.referral && !REFERRAL_PATTERN.test(values.referral.trim())) {
+    errors.referral = 'Код: 3–24 символа, латиница, цифры и подчёркивание.';
+  }
   return errors;
 }
 
+function apiCode(error: unknown): string | null {
+  if (error instanceof ApiError && error.body && typeof error.body === 'object') {
+    const body = error.body as { code?: unknown; message?: unknown };
+    if (typeof body.code === 'string') return body.code;
+    if (body.message && typeof body.message === 'object') {
+      const nested = (body.message as { code?: unknown }).code;
+      if (typeof nested === 'string') return nested;
+    }
+  }
+  return null;
+}
+
+const OTP_MESSAGES: Record<string, string> = {
+  otp_expired: 'Срок действия кода истёк — отправьте новый.',
+  otp_attempts: 'Слишком много неверных попыток — отправьте новый код.',
+  otp_cooldown: 'Повторно отправить код можно чуть позже.',
+  otp_send_limit: 'Лимит отправок исчерпан — измените e-mail или начните заново.',
+  otp_rate_limited: 'Слишком много запросов кода на этот e-mail. Попробуйте позже.',
+  otp_not_found: 'Запрос подтверждения устарел — начните заново.',
+  completion_invalid: 'Подтверждение почты устарело — пройдите его заново.',
+  referral_invalid: 'Реферальный код не найден.',
+  email_taken: 'Этот e-mail уже зарегистрирован.',
+  username_taken: 'Этот ник уже занят.',
+  mail_failed: 'Не удалось отправить письмо с кодом. Попробуйте позже.',
+  registration_closed: 'Регистрация временно закрыта.',
+  captcha_failed: 'Проверка Cloudflare не пройдена. Повторите.',
+};
+
+function describe(error: unknown, fallback: string): string {
+  const code = apiCode(error);
+  if (code && OTP_MESSAGES[code]) return OTP_MESSAGES[code];
+  return describeAuthError(error, fallback);
+}
+
+function useCountdown(target: string | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!target) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [target]);
+  return target ? Math.max(0, Math.ceil((new Date(target).getTime() - now) / 1000)) : 0;
+}
+
+type Step = 'details' | 'code' | 'create';
+
 export function RegisterForm() {
   const router = useRouter();
-  const [values, setValues] = useState({ email: '', username: '', password: '', confirm: '' });
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const acceptSession = useAuthStore((state) => state.acceptSession);
+  const [values, setValues] = useState({
+    email: '',
+    username: '',
+    password: '',
+    confirm: '',
+    referral: '',
+  });
+  const [consents, setConsents] = useState({ terms: false, personalData: false });
+  const [touched, setTouched] = useState<Partial<Record<Fields | 'consents', boolean>>>({});
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [step, setStep] = useState<Step>('details');
+  const [verification, setVerification] = useState<RegisterVerificationState | null>(null);
+  const [completionToken, setCompletionToken] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileHandle>(null);
   const errorId = useId();
+  const resendIn = useCountdown(verification?.resendAvailableAt ?? null);
 
   const errors = validateRegister(values);
-  const valid = Object.keys(errors).length === 0;
+  const consentsOk = consents.terms && consents.personalData;
+  const valid = Object.keys(errors).length === 0 && consentsOk;
   const captchaReady = !TURNSTILE_SITE_KEY || captchaToken !== null;
-  const update = (field: keyof typeof values) => (event: { target: { value: string } }) =>
+  const update = (field: Fields) => (event: { target: { value: string } }) =>
     setValues((prev) => ({ ...prev, [field]: event.target.value }));
-  const touch = (field: keyof typeof values) => () =>
-    setTouched((prev) => ({ ...prev, [field]: true }));
-  const shown = (field: keyof typeof values) => (touched[field] ? errors[field] : undefined);
+  const touch = (field: Fields) => () => setTouched((prev) => ({ ...prev, [field]: true }));
+  const shown = (field: Fields) => (touched[field] ? errors[field] : undefined);
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const startVerification = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setTouched({ email: true, username: true, password: true, confirm: true });
-    if (!valid || submitting) return;
-    setSubmitting(true);
+    setTouched({
+      email: true,
+      username: true,
+      password: true,
+      confirm: true,
+      referral: true,
+      consents: true,
+    });
+    if (!valid || pending) return;
+    setPending(true);
     setError(null);
-    const body: RegisterRequest = {
+    const body: RegisterStartRequest = {
       email: values.email.trim().toLowerCase(),
       username: values.username,
-      password: values.password,
+      referralCode: values.referral.trim() ? values.referral.trim().toUpperCase() : undefined,
+      acceptTerms: consents.terms,
+      acceptPersonalData: consents.personalData,
       captchaToken: captchaToken ?? undefined,
     };
     try {
-      await api.post<{ user: AuthUser }>('/auth/register', body, {
+      const state = await api.post<RegisterVerificationState>('/auth/register/start', body, {
         auth: false,
         retryOn401: false,
       });
-      // Backend не выдаёт сессию при регистрации, а вход требует свой Turnstile-токен —
-      // ведём на вход с подтверждением, что аккаунт создан.
-      router.replace('/login?registered=1');
+      setVerification(state);
+      setCode('');
+      setStep('code');
     } catch (caught) {
-      setError(describeAuthError(caught, 'Не удалось зарегистрироваться. Попробуйте ещё раз.'));
-      // Токен Turnstile одноразовый — после любой попытки нужен новый.
+      setError(describe(caught, 'Не удалось отправить код. Попробуйте ещё раз.'));
+    } finally {
       turnstileRef.current?.reset();
-      setSubmitting(false);
+      setPending(false);
     }
   };
 
+  const verifyCode = async (value = code) => {
+    if (!verification || value.length !== 6 || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      const result = await api.post<RegisterVerifyResponse>(
+        '/auth/register/verify',
+        { verificationId: verification.verificationId, code: value },
+        { auth: false, retryOn401: false },
+      );
+      setCompletionToken(result.completionToken);
+      setStep('create');
+    } catch (caught) {
+      const apiErr = caught instanceof ApiError ? caught : null;
+      const body = apiErr?.body as { attemptsLeft?: number; message?: { attemptsLeft?: number } };
+      const left = body?.attemptsLeft ?? body?.message?.attemptsLeft;
+      setError(
+        apiCode(caught) === 'otp_invalid'
+          ? `Неверный код${typeof left === 'number' ? `. Осталось попыток: ${left}` : ''}.`
+          : describe(caught, 'Не удалось проверить код.'),
+      );
+      setCode('');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const resend = async () => {
+    if (!verification || resendIn > 0 || pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      const state = await api.post<RegisterVerificationState>(
+        '/auth/register/resend',
+        { verificationId: verification.verificationId },
+        { auth: false, retryOn401: false },
+      );
+      setVerification(state);
+      setCode('');
+    } catch (caught) {
+      setError(describe(caught, 'Не удалось отправить код повторно.'));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const changeEmail = () => {
+    setStep('details');
+    setVerification(null);
+    setCompletionToken(null);
+    setCode('');
+    setError(null);
+  };
+
+  const createAccount = async () => {
+    if (!verification || !completionToken || pending) return;
+    setPending(true);
+    setError(null);
+    const body: RegisterCompleteRequest = {
+      verificationId: verification.verificationId,
+      completionToken,
+      password: values.password,
+    };
+    try {
+      const session = await api.post<LoginResponse>('/auth/register/complete', body, {
+        auth: false,
+        retryOn401: false,
+      });
+      await acceptSession(session.accessToken);
+      router.replace('/');
+    } catch (caught) {
+      setError(describe(caught, 'Не удалось создать аккаунт.'));
+      setPending(false);
+    }
+  };
+
+  const errorBlock = (
+    <p
+      id={errorId}
+      role="alert"
+      aria-live="assertive"
+      className={error ? 'text-sm text-destructive' : 'sr-only'}
+    >
+      {error ?? ''}
+    </p>
+  );
+
   return (
     <AuthShell
-      title="Регистрация"
-      description="Ник станет вашим именем на сайте; в игре используется ваш Minecraft-ник."
+      title={
+        step === 'details'
+          ? 'Регистрация'
+          : step === 'code'
+            ? 'Подтвердите почту'
+            : 'Почта подтверждена'
+      }
+      description={
+        step === 'details'
+          ? 'Один аккаунт для сайта, магазина и серверов twomc.su.'
+          : step === 'code'
+            ? 'Введите 6-значный код из письма.'
+            : 'Осталось создать аккаунт.'
+      }
       footer={
         <p>
           Уже есть аккаунт?{' '}
@@ -101,77 +291,222 @@ export function RegisterForm() {
         </p>
       }
     >
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={onSubmit}
-        noValidate
-        data-testid="register-form"
-      >
-        <Field label="E-mail" required error={shown('email')}>
-          <Input
-            type="email"
-            name="email"
-            autoComplete="email"
+      {step === 'details' ? (
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={startVerification}
+          noValidate
+          data-testid="register-form"
+        >
+          <Field label="E-mail" required error={shown('email')}>
+            <Input
+              type="email"
+              name="email"
+              autoComplete="email"
+              autoFocus
+              value={values.email}
+              invalid={!!shown('email')}
+              onChange={update('email')}
+              onBlur={touch('email')}
+            />
+          </Field>
+          <Field
+            label="Ник"
+            required
+            hint="Он же логин и игровой ник: 3–16 символов, латиница, цифры, _"
+            error={shown('username')}
+          >
+            <Input
+              name="username"
+              autoComplete="username"
+              value={values.username}
+              invalid={!!shown('username')}
+              onChange={update('username')}
+              onBlur={touch('username')}
+            />
+          </Field>
+          <PasswordField
+            label="Пароль"
+            name="password"
+            autoComplete="new-password"
+            hint="От 8 до 72 символов"
+            value={values.password}
+            error={shown('password')}
+            onChange={update('password')}
+            onBlur={touch('password')}
+          />
+          <PasswordField
+            label="Повторите пароль"
+            name="confirm"
+            autoComplete="new-password"
+            value={values.confirm}
+            error={shown('confirm')}
+            onChange={update('confirm')}
+            onBlur={touch('confirm')}
+          />
+          <Field
+            label="Реферальный код"
+            labelAddon={<span className="text-xs text-subtle-foreground">необязательно</span>}
+            error={shown('referral')}
+          >
+            <Input
+              name="referral"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="YOUNAXO"
+              className="font-mono uppercase tracking-wider"
+              value={values.referral}
+              invalid={!!shown('referral')}
+              onChange={(event) =>
+                setValues((prev) => ({ ...prev, referral: event.target.value.toUpperCase() }))
+              }
+              onBlur={touch('referral')}
+            />
+          </Field>
+          <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
+          <fieldset className="flex flex-col gap-1" aria-label="Согласия">
+            <CheckboxField
+              checked={consents.terms}
+              onCheckedChange={(value) => setConsents((c) => ({ ...c, terms: value === true }))}
+              invalid={touched.consents && !consents.terms}
+              data-testid="consent-terms"
+              label={
+                <>
+                  Я принимаю{' '}
+                  <Link
+                    href="/legal/terms"
+                    className="text-primary hover:underline"
+                    target="_blank"
+                  >
+                    Пользовательское соглашение
+                  </Link>{' '}
+                  и{' '}
+                  <Link href="/rules" className="text-primary hover:underline" target="_blank">
+                    Правила проекта
+                  </Link>
+                  .
+                </>
+              }
+            />
+            <CheckboxField
+              checked={consents.personalData}
+              onCheckedChange={(value) =>
+                setConsents((c) => ({ ...c, personalData: value === true }))
+              }
+              invalid={touched.consents && !consents.personalData}
+              data-testid="consent-personal-data"
+              label={
+                <>
+                  Я даю{' '}
+                  <Link
+                    href="/legal/personal-data"
+                    className="text-primary hover:underline"
+                    target="_blank"
+                  >
+                    согласие на обработку персональных данных
+                  </Link>
+                  .
+                </>
+              }
+            />
+            <p className="pl-7 text-xs text-subtle-foreground">
+              <Link
+                href="/legal/privacy"
+                className="hover:text-foreground hover:underline"
+                target="_blank"
+              >
+                Политика конфиденциальности
+              </Link>
+            </p>
+            {touched.consents && !consentsOk ? (
+              <p className="text-xs text-destructive">Оба согласия обязательны.</p>
+            ) : null}
+          </fieldset>
+          {errorBlock}
+          <Button
+            type="submit"
+            size="lg"
+            loading={pending}
+            disabled={!captchaReady}
+            data-testid="start-verification"
+          >
+            <MailCheck />
+            Подтвердить почту
+          </Button>
+        </form>
+      ) : null}
+
+      {step === 'code' && verification ? (
+        <div className="flex flex-col gap-4" data-testid="otp-step">
+          <p className="text-sm text-muted-foreground">
+            Код отправлен на:{' '}
+            <span className="font-medium text-foreground">{verification.maskedEmail}</span>
+          </p>
+          <OtpInput
             autoFocus
-            required
-            value={values.email}
-            onChange={update('email')}
-            onBlur={touch('email')}
+            size="lg"
+            value={code}
+            onChange={(next) => {
+              setCode(next);
+              // Новый ввод после ошибки — снимаем подсветку и сообщение.
+              if (next && error) {
+                setError(null);
+              }
+            }}
+            onComplete={(value) => void verifyCode(value)}
+            invalid={!!error}
+            disabled={pending}
+            aria-describedby={error ? errorId : undefined}
           />
-        </Field>
-        <Field
-          label="Ник"
-          required
-          hint="3–16 символов: латиница, цифры, подчёркивание"
-          error={shown('username')}
-        >
-          <Input
-            name="username"
-            autoComplete="username"
-            required
-            maxLength={16}
-            value={values.username}
-            onChange={update('username')}
-            onBlur={touch('username')}
-          />
-        </Field>
-        <PasswordField
-          label="Пароль"
-          name="password"
-          autoComplete="new-password"
-          hint="От 8 до 72 символов"
-          error={shown('password')}
-          value={values.password}
-          onChange={update('password')}
-          onBlur={touch('password')}
-        />
-        <PasswordField
-          label="Повторите пароль"
-          name="confirm"
-          autoComplete="new-password"
-          error={shown('confirm')}
-          value={values.confirm}
-          onChange={update('confirm')}
-          onBlur={touch('confirm')}
-        />
-        <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
-        <p
-          id={errorId}
-          role="alert"
-          aria-live="assertive"
-          className={error ? 'text-sm text-destructive' : 'sr-only'}
-        >
-          {error ?? ''}
-        </p>
-        <Button type="submit" size="lg" loading={submitting} disabled={!captchaReady}>
-          <UserPlus />
-          Создать аккаунт
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Регистрируясь, вы соглашаетесь с правилами проекта. Правовые документы публикуются в
-          разделе «Правовая информация».
-        </p>
-      </form>
+          {errorBlock}
+          <Button
+            size="lg"
+            onClick={() => void verifyCode()}
+            loading={pending}
+            disabled={code.length !== 6}
+          >
+            <ShieldCheck />
+            Подтвердить код
+          </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void resend()}
+              disabled={resendIn > 0 || pending || verification.resendsLeft === 0}
+            >
+              <RotateCw />
+              {resendIn > 0 ? `Отправить повторно через ${resendIn} с` : 'Отправить повторно'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={changeEmail}>
+              <Pencil />
+              Изменить E-mail
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === 'create' ? (
+        <div className="flex flex-col gap-4" data-testid="create-step">
+          <p className="flex items-center gap-2 rounded bg-success-soft px-3 py-2 text-sm text-foreground">
+            <ShieldCheck aria-hidden className="size-4 text-success" />
+            Почта {verification?.maskedEmail} подтверждена.
+          </p>
+          {errorBlock}
+          <Button size="lg" onClick={() => void createAccount()} loading={pending}>
+            <UserPlus />
+            Создать аккаунт
+          </Button>
+          {/* Ник/e-mail успели занять или подтверждение устарело — вернуться к
+              форме (введённые данные сохраняются) и пройти подтверждение заново. */}
+          {error && !pending ? (
+            <Button variant="ghost" size="sm" className="self-start" onClick={changeEmail}>
+              <Pencil />
+              Изменить данные
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </AuthShell>
   );
 }

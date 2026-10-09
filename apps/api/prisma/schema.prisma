@@ -353,6 +353,7 @@ model User {
   departments         UserDepartment[]
   loginAliases        LoginAlias[]
   externalAccounts    UserExternalAccount[]
+  legalConsents       LegalConsent[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   promoCodeUsages     PromoCodeUsage[]
@@ -450,6 +451,48 @@ model User {
   @@index([displayBadgeId])
   @@index([selectedDecorationId])
   @@map("users")
+}
+
+/// Регистрация с подтверждением почты (ADR-0070). Пароль здесь НЕ хранится:
+/// он передаётся только на финальном шаге и сразу хешируется в User.
+/// Код — только HMAC-хеш; одноразовый токен завершения — тоже хеш.
+model EmailVerification {
+  id                  String    @id @default(cuid())
+  email               String
+  username            String    @db.VarChar(16)
+  /// Пригласивший (по реферальному коду), проверен на шаге start.
+  referrerId          String?
+  codeHash            String
+  attempts            Int       @default(0)
+  sendCount           Int       @default(1)
+  lastSentAt          DateTime  @default(now())
+  expiresAt           DateTime
+  verifiedAt          DateTime?
+  completionTokenHash String?
+  completionExpiresAt DateTime?
+  consumedAt          DateTime?
+  ip                  String?
+  createdAt           DateTime  @default(now())
+
+  @@index([email, createdAt])
+  @@map("email_verifications")
+}
+
+/// Согласие с юридическим документом (ADR-0070): отдельная запись на каждый
+/// документ, с версией и временем — для подтверждения факта согласия.
+model LegalConsent {
+  id         String   @id @default(cuid())
+  userId     String
+  /// terms (Пользовательское соглашение и Правила) | personal_data (обработка ПД)
+  document   String   @db.VarChar(32)
+  version    String   @db.VarChar(32)
+  acceptedAt DateTime @default(now())
+  ip         String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("legal_consents")
 }
 
 /// Привязанный внешний аккаунт (ADR-0069): Discord/Telegram — ТОЛЬКО для входа

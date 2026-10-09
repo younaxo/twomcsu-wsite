@@ -115,29 +115,85 @@ describe('auth-формы «Полдня»', () => {
     expect(safeNext('https://evil.example')).toBe('/');
   });
 
-  it('register: валидация по контракту backend, успех → /login?registered=1', async () => {
+  it('register: проверка полей, согласия обязательны и раздельны, реферальный код', async () => {
     const user = userEvent.setup();
-    expect(validateRegister({ email: 'x', username: 'a!', password: '123', confirm: '1' })).toEqual(
-      {
-        email: 'Введите корректный e-mail.',
-        username: 'Ник: 3–16 символов, латиница, цифры и подчёркивание.',
-        password: 'Пароль: от 8 до 72 символов.',
-        confirm: 'Пароли не совпадают.',
-      },
-    );
+    expect(
+      validateRegister({
+        email: 'x',
+        username: 'a!',
+        password: '123',
+        confirm: '1',
+        referral: '!',
+      }),
+    ).toEqual({
+      email: 'Введите корректный e-mail.',
+      username: 'Ник: 3–16 символов, латиница, цифры и подчёркивание.',
+      password: 'Пароль: от 8 до 72 символов.',
+      confirm: 'Пароли не совпадают.',
+      referral: 'Код: 3–24 символа, латиница, цифры и подчёркивание.',
+    });
+    fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
+    render(<RegisterForm />, { wrapper: Providers });
+    const form = screen.getByTestId('register-form');
+    await user.type(within(form).getByLabelText(/E-mail/), 'new@twomc.su');
+    await user.type(within(form).getByLabelText(/^Ник/), 'new_player');
+    await user.type(within(form).getByLabelText(/^Пароль/), 'secret-pass-1');
+    await user.type(within(form).getByLabelText(/Повторите пароль/), 'secret-pass-1');
+    // Чекбоксы не отмечены заранее; без согласий код не отправляется.
+    expect(screen.getByTestId('consent-terms')).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByTestId('consent-personal-data')).toHaveAttribute('aria-checked', 'false');
+    await user.click(screen.getByRole('button', { name: 'Подтвердить почту' }));
+    expect(await screen.findByText('Оба согласия обязательны.')).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).includes('/auth/register/start')),
+    ).toBe(false);
+    // Реферальный код — моноширинный и в верхнем регистре.
+    const referral = within(form).getByLabelText(/Реферальный код/);
+    expect(referral.className).toMatch(/font-mono/);
+    await user.type(referral, 'younaxo');
+    expect(referral).toHaveValue('YOUNAXO');
+  });
+
+  it('register: «Подтвердить почту» → код на этой же странице → «Создать аккаунт» → вход', async () => {
+    const user = userEvent.setup();
+    const calls: { path: string; body: Record<string, unknown> }[] = [];
     fetchMock.mockImplementation(async (...args) => {
       const { path, body: raw } = requestInfo(args);
-      if (path.startsWith('/auth/register')) {
-        const body = JSON.parse(String(raw));
-        expect(body).toEqual({
+      const body = raw ? JSON.parse(String(raw)) : {};
+      calls.push({ path, body });
+      if (path.startsWith('/auth/register/start')) {
+        return jsonResponse({
+          verificationId: 'ver_1234567890',
+          maskedEmail: 'ne***@twomc.su',
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          resendAvailableAt: new Date(Date.now() + 60_000).toISOString(),
+          resendsLeft: 4,
+        });
+      }
+      if (path.startsWith('/auth/register/verify')) {
+        return body.code === '123456'
+          ? jsonResponse({ completionToken: 'c'.repeat(64), email: 'ne***@twomc.su' })
+          : jsonResponse(
+              { statusCode: 400, code: 'otp_invalid', attemptsLeft: 4 },
+              { status: 400 },
+            );
+      }
+      if (path.startsWith('/auth/register/complete')) {
+        return jsonResponse({ user: { id: 'u' }, accessToken: 'token-1' }, { status: 201 });
+      }
+      if (path.startsWith('/auth/me')) {
+        return jsonResponse({
+          id: 'u',
+          shortId: 9,
+          tag: 'new_player#0009',
           email: 'new@twomc.su',
           username: 'new_player',
-          password: 'secret-pass-1',
+          accessLevel: 0,
+          accountType: 'DEFAULT',
+          mustChangePassword: false,
+          roles: [],
+          permissions: { superuser: false, permissions: [], maxPriority: null },
         });
-        return jsonResponse(
-          { user: { id: 'u', email: body.email, username: body.username } },
-          { status: 201 },
-        );
       }
       return new Response(null, { status: 404 });
     });
@@ -147,8 +203,93 @@ describe('auth-формы «Полдня»', () => {
     await user.type(within(form).getByLabelText(/^Ник/), 'new_player');
     await user.type(within(form).getByLabelText(/^Пароль/), 'secret-pass-1');
     await user.type(within(form).getByLabelText(/Повторите пароль/), 'secret-pass-1');
+    await user.click(screen.getByTestId('consent-terms'));
+    await user.click(screen.getByTestId('consent-personal-data'));
+    await user.click(screen.getByRole('button', { name: 'Подтвердить почту' }));
+
+    const otp = await screen.findByTestId('otp-step');
+    expect(otp).toHaveTextContent('ne***@twomc.su');
+    const start = calls.find((c) => c.path.startsWith('/auth/register/start'));
+    expect(start?.body).toEqual({
+      email: 'new@twomc.su',
+      username: 'new_player',
+      acceptTerms: true,
+      acceptPersonalData: true,
+    });
+    // Пароль не уходит на шаге отправки кода.
+    expect(JSON.stringify(start?.body)).not.toContain('secret-pass-1');
+    expect(screen.getByRole('button', { name: /Отправить повторно через/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Изменить E-mail' })).toBeInTheDocument();
+
+    // Фокус сразу в первой ячейке кода.
+    expect(screen.getByLabelText('Код, цифра 1')).toHaveFocus();
+    // Неверный код — сообщение с числом попыток, поле очищено, фокус снова в первой ячейке.
+    await user.keyboard('000000');
+    expect(await screen.findByText('Неверный код. Осталось попыток: 4.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Код, цифра 1')).toHaveFocus());
+    expect(screen.getByLabelText('Код, цифра 1')).toHaveValue('');
+    // Новый ввод снимает сообщение об ошибке; Backspace стирает цифру одним нажатием.
+    await user.keyboard('1');
+    expect(screen.queryByText('Неверный код. Осталось попыток: 4.')).toBeNull();
+    await user.keyboard('{Backspace}');
+    expect(screen.getByLabelText('Код, цифра 1')).toHaveValue('');
+    expect(screen.getByLabelText('Код, цифра 1')).toHaveFocus();
+    await user.keyboard('123456');
+    await screen.findByTestId('create-step');
     await user.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
-    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith('/login?registered=1'));
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith('/'));
+    const complete = calls.find((c) => c.path.startsWith('/auth/register/complete'));
+    expect(complete?.body).toEqual({
+      verificationId: 'ver_1234567890',
+      completionToken: 'c'.repeat(64),
+      password: 'secret-pass-1',
+    });
+    expect(useAuthStore.getState().status).toBe('authenticated');
+  });
+
+  it('register: ник успели занять до создания — понятная ошибка и возврат к форме с данными', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.startsWith('/auth/register/start')) {
+        return jsonResponse({
+          verificationId: 'ver_1234567890',
+          maskedEmail: 'ne***@twomc.su',
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+          resendAvailableAt: new Date(Date.now() + 60_000).toISOString(),
+          resendsLeft: 4,
+        });
+      }
+      if (path.startsWith('/auth/register/verify')) {
+        return jsonResponse({ completionToken: 'c'.repeat(64), email: 'ne***@twomc.su' });
+      }
+      if (path.startsWith('/auth/register/complete')) {
+        return jsonResponse(
+          { statusCode: 409, code: 'username_taken', message: 'Ник занят' },
+          { status: 409 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+    render(<RegisterForm />, { wrapper: Providers });
+    const form = screen.getByTestId('register-form');
+    await user.type(within(form).getByLabelText(/E-mail/), 'new@twomc.su');
+    await user.type(within(form).getByLabelText(/^Ник/), 'new_player');
+    await user.type(within(form).getByLabelText(/^Пароль/), 'secret-pass-1');
+    await user.type(within(form).getByLabelText(/Повторите пароль/), 'secret-pass-1');
+    await user.click(screen.getByTestId('consent-terms'));
+    await user.click(screen.getByTestId('consent-personal-data'));
+    await user.click(screen.getByRole('button', { name: 'Подтвердить почту' }));
+    await screen.findByTestId('otp-step');
+    await user.paste('123456');
+    await screen.findByTestId('create-step');
+    await user.click(screen.getByRole('button', { name: 'Создать аккаунт' }));
+    expect(await screen.findByText('Этот ник уже занят.')).toBeInTheDocument();
+    expect(navigation.replace).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Изменить данные' }));
+    const back = screen.getByTestId('register-form');
+    expect(within(back).getByLabelText(/E-mail/)).toHaveValue('new@twomc.su');
+    expect(within(back).getByLabelText(/^Ник/)).toHaveValue('new_player');
   });
 
   it('forgot: нейтральный ответ после отправки, не раскрывает наличие аккаунта', async () => {

@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  GoneException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -71,13 +72,69 @@ export class AuthService {
     return { id: user.id, email: user.email, username: user.username };
   }
 
+  /// Прямая регистрация без подтверждения почты — ТОЛЬКО для автотестов
+  /// (NODE_ENV=test; Jest выставляет его сам). На сайте аккаунт создаётся через
+  /// подтверждение почты (RegistrationService, ADR-0070). Флаг капчи
+  /// TURNSTILE_DISABLED сюда намеренно не относится.
   async register(dto: RegisterDto): Promise<{ user: AuthenticatedUser }> {
+    if (this.config.get<string>('NODE_ENV') !== 'test') {
+      throw new GoneException(
+        'Регистрация проходит через подтверждение почты: /auth/register/start',
+      );
+    }
     const captchaOk = await this.captcha.verify(dto.captchaToken);
     if (!captchaOk) {
       throw new ForbiddenException('Проверка captcha не пройдена');
     }
+    const user = await this.createAccount({
+      email: dto.email,
+      username: dto.username,
+      password: dto.password,
+    });
+    return { user: this.toAuthenticatedUser(user) };
+  }
 
-    const email = dto.email.toLowerCase();
+  /// Ник/e-mail свободны? (ник не должен совпадать с alias входа, ADR-0061)
+  async assertIdentityAvailable(
+    email: string,
+    username: string,
+  ): Promise<void> {
+    const [byEmail, byUsername, alias] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+        select: { id: true },
+      }),
+      this.prisma.user.findFirst({
+        where: { username: { equals: username, mode: 'insensitive' } },
+        select: { id: true },
+      }),
+      this.prisma.loginAlias.findUnique({
+        where: { alias: username.toLowerCase() },
+      }),
+    ]);
+    if (byEmail) {
+      throw new ConflictException({
+        code: 'email_taken',
+        message: 'Этот e-mail уже зарегистрирован',
+      });
+    }
+    if (byUsername || alias) {
+      throw new ConflictException({
+        code: 'username_taken',
+        message: 'Этот ник уже занят',
+      });
+    }
+  }
+
+  /// Создание аккаунта (общая часть для всех путей регистрации).
+  async createAccount(input: {
+    email: string;
+    username: string;
+    password: string;
+    referrerId?: string | null;
+    emailVerified?: boolean;
+  }): Promise<User> {
+    const email = input.email.toLowerCase();
     const defaultPosition = await this.prisma.position.findFirst({
       where: { isDefault: true },
     });
@@ -86,30 +143,38 @@ export class AuthService {
         'Не настроена позиция по умолчанию (isDefault) — выполните seed перед регистрацией',
       );
     }
-
-    // Ник, совпадающий с alias входа другого аккаунта (ADR-0061), занят:
-    // иначе вход по нему стал бы неоднозначным.
     const aliasTaken = await this.prisma.loginAlias.findUnique({
-      where: { alias: dto.username.toLowerCase() },
+      where: { alias: input.username.toLowerCase() },
     });
     if (aliasTaken) {
       throw new ConflictException('Email или username уже заняты');
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, this.bcryptRounds);
-    const tag = await this.generateUniqueTag(dto.username);
+    const passwordHash = await bcrypt.hash(input.password, this.bcryptRounds);
+    const tag = await this.generateUniqueTag(input.username);
 
     try {
       const user = await this.prisma.user.create({
         data: {
           email,
-          username: dto.username,
+          username: input.username,
           password: passwordHash,
           tag,
           positionId: defaultPosition.id,
+          isVerified: input.emailVerified ?? false,
+          referredBy: input.referrerId ?? null,
         },
       });
-      return { user: this.toAuthenticatedUser(user) };
+      // Личный реферальный код — ник в верхнем регистре (при совпадении — с номером).
+      const base = input.username.toUpperCase();
+      const taken = await this.prisma.user.findUnique({
+        where: { referralCode: base },
+        select: { id: true },
+      });
+      return await this.prisma.user.update({
+        where: { id: user.id },
+        data: { referralCode: taken ? `${base}${user.shortId}` : base },
+      });
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

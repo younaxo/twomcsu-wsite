@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach } from 'vitest';
 
 afterEach(() => {
   cleanup();
@@ -8,6 +8,8 @@ afterEach(() => {
 
 /// jsdom не реализует часть browser API, на которые опираются Radix/floating-ui
 /// и наши хуки — минимальные заглушки, чтобы компоненты монтировались в тестах.
+/// Заглушки ставятся напрямую, а не через vi.stubGlobal: тесты вызывают
+/// vi.unstubAllGlobals() для своих fetch-моков, и это не должно снимать полифиллы.
 if (typeof window !== 'undefined') {
   if (!('ResizeObserver' in window)) {
     class ResizeObserverStub {
@@ -15,7 +17,11 @@ if (typeof window !== 'undefined') {
       unobserve() {}
       disconnect() {}
     }
-    vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+    Object.defineProperty(window, 'ResizeObserver', {
+      value: ResizeObserverStub,
+      writable: true,
+      configurable: true,
+    });
   }
 
   if (!window.matchMedia) {

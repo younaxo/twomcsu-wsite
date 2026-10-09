@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { BruteForceService } from './brute-force.service';
 import { CaptchaService } from './captcha.service';
+import { RegistrationService } from './registration.service';
 import { SocialAuthController } from './social-auth.controller';
 import { SocialAuthService } from './social-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -31,6 +32,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     BruteForceService,
     CaptchaService,
     SocialAuthService,
+    RegistrationService,
   ],
   // JwtModule экспортируется, чтобы WS-шлюзы (например DirectMessagesGateway)
   // могли проверять access-token из handshake тем же JwtService, не

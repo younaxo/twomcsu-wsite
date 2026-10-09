@@ -42,12 +42,20 @@ production нужен S3-совместимый бакет и домен `cdn-fi
 `POST /admin/reports/:reportNumber/export` (экспорт ответов) не реализованы —
 та же зависимость от `StorageService`, ADR-0033.
 
-## R4 — SMTP (доставка писем) — OPEN
+## R4 — SMTP (доставка писем) — OPEN (блокер DNS)
 
 `EmailService` реализуется с рабочим интерфейсом; без `SMTP_HOST/USER/PASSWORD`
 отправка писем выключается (логируется, не падает). Влияет на: email verification,
 password reset, email-дайджесты.
-**Нужно от владельца:** SMTP-credentials (или SaaS типа SendGrid/Mailgun/Postmark).
+
+2026-10-09: владелец передал SMTP Beget для `noreply@twomc.su` (хранится только
+в локальном ignored `.env`). Авторизация проходит, но отправка отклоняется:
+`550 You can send from only domains with BeGet MX records in DNS` — MX домена
+`twomc.su` указывают на Cloudflare Email Routing. Регистрация (ADR-0070) без
+доставки кода в production отвечает 503 `mail_failed`; в development код
+пишется в лог разработки.
+**Нужно от владельца:** решение по почте — MX/SPF/DKIM для Beget или другой
+провайдер отправки (SendGrid/Mailgun/Postmark/Resend), совместимый с текущими MX.
 
 ## R5 — hCaptcha — OPEN
 

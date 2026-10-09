@@ -218,16 +218,20 @@ describe('SiteHeader', () => {
 });
 
 describe('SiteFooter', () => {
-  it('правовые ссылки без документов помечены «скоро», соцсети и e-mail из настроек, статус и оплата на месте', async () => {
+  it('правовые ссылки ведут на страницы документов, соцсети и e-mail из настроек, статус и оплата на месте', async () => {
     route(fetchMock, { '/servers/overview': overview, '/site/settings': settings });
     render(<SiteFooter />, { wrapper: Providers });
     const legal = screen.getByRole('navigation', { name: 'Правовая информация' });
-    // Единственная ссылка — внешний документ политики Mojang AB; остальное — «скоро».
-    const legalLinks = within(legal).getAllByRole('link');
-    expect(legalLinks).toHaveLength(1);
-    expect(legalLinks[0]).toHaveAttribute('href', 'https://reallyworld.ru/mojang.pdf');
-    expect(legalLinks[0]).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(within(legal).getByText('Политика конфиденциальности')).toBeInTheDocument();
+    expect(
+      within(legal).getByRole('link', { name: 'Политика конфиденциальности' }),
+    ).toHaveAttribute('href', '/legal/privacy');
+    expect(within(legal).getByRole('link', { name: 'Юридическая информация' })).toHaveAttribute(
+      'href',
+      '/legal/info',
+    );
+    const mojang = within(legal).getByRole('link', { name: /Политика Mojang AB/ });
+    expect(mojang).toHaveAttribute('href', 'https://reallyworld.ru/mojang.pdf');
+    expect(mojang).toHaveAttribute('rel', 'noopener noreferrer');
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Discord' })).toHaveAttribute(
         'href',

@@ -39,6 +39,11 @@ export class EmailService {
       );
     }
 
+    // Автотесты (NODE_ENV=test) никогда не отправляют настоящие письма.
+    if (this.config.get<string>('NODE_ENV') === 'test') {
+      return;
+    }
+
     if (!this.transporter) {
       this.logger.warn(
         `SMTP_HOST не задан — письмо "${input.subject}" для ${input.to} не отправлено`,

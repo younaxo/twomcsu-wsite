@@ -200,11 +200,11 @@ export const FOOTER_PLAYER_LINKS: FooterLink[] = [
 /// (RISKS R15). Недоступные показываются без ссылки; политика Mojang AB —
 /// внешний документ.
 export const FOOTER_LEGAL_LINKS: FooterLink[] = [
-  { href: '/legal/privacy', label: 'Политика конфиденциальности', available: false },
-  { href: '/legal/terms', label: 'Пользовательское соглашение', available: false },
-  { href: '/legal/cookies', label: 'Политика Cookie', available: false },
-  { href: '/legal/info', label: 'Юридическая информация', available: false },
-  { href: '/legal/refunds', label: 'Политика возвратов', available: false },
+  { href: '/legal/privacy', label: 'Политика конфиденциальности', available: true },
+  { href: '/legal/terms', label: 'Пользовательское соглашение', available: true },
+  { href: '/legal/cookies', label: 'Политика Cookie', available: true },
+  { href: '/legal/info', label: 'Юридическая информация', available: true },
+  { href: '/legal/refunds', label: 'Политика возвратов', available: true },
   { href: MOJANG_POLICY_URL, label: 'Политика Mojang AB', external: true, available: true },
 ];
 
