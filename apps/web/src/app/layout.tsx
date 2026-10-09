@@ -6,19 +6,24 @@ import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: {
-    default: 'twomc.su — New-Era Anarchy',
-    template: '%s — twomc.su',
+    default: 'twomc.su',
+    // Во вкладке всегда только «twomc.su» (с unread — «(N) twomc.su», см. useDocumentBadge);
+    // заголовки страниц в metadata не попадают в title вкладки.
+    template: 'twomc.su',
   },
-  description: 'twomc.su — Minecraft-проект: сервера, магазин, сообщество.',
+  description:
+    'twomc.su — Minecraft-проект с собственными серверами, уникальными механиками, магазином и живым сообществом.',
   applicationName: 'twomc.su',
+  manifest: '/manifest.webmanifest',
   openGraph: {
     siteName: 'twomc.su',
-    title: 'twomc.su — New-Era Anarchy',
-    description: 'twomc.su — Minecraft-проект: сервера, магазин, сообщество.',
+    title: 'twomc.su',
+    description:
+      'twomc.su — Minecraft-проект с собственными серверами, уникальными механиками, магазином и живым сообществом.',
     locale: 'ru_RU',
     type: 'website',
   },
-  twitter: { card: 'summary', title: 'twomc.su — New-Era Anarchy' },
+  twitter: { card: 'summary', title: 'twomc.su' },
 };
 
 export const viewport: Viewport = {
