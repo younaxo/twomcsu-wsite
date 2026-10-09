@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Production infrastructure (PHASE 35)
+- `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,
+  `deploy.sh` с prisma migrate deploy и автоматическим rollback, пример nginx,
+  `.dockerignore`, `robots.txt` (закрыты /admin и /design-lab).
+
 ### Admin panel и тема «Полдень» (PHASE 21, часть 3)
 - Решение владельца: «Полдень» — единственная система, тёмная тема основная,
   светлая вторичная, стекло запрещено (ADR-0055). Архивные направления

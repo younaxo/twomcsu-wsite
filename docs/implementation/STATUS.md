@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/polden-production-theme (тема «Полдень» dark-first + admin-экраны); часть 1 PHASE 21 слита (PR #32)
+Current branch: feature/production-infrastructure (PHASE 35, вынесена вперёд); PHASE 21 части 1–3 слиты (PR #32, #35)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,6 +71,9 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
+- PHASE 35 — Production infrastructure: Dockerfile api/web, docker-compose.prod,
+  deploy.sh (build → migrate deploy → switch → health → rollback), nginx-пример.
+  Деплой заблокирован отсутствием данных хостинга (RISKS R8).
 - PHASE 21 — Admin panel (frontend). Часть 1 (фундамент) слита в main (PR #32).
   Часть 2 — дизайн-система (ADR-0053/0054): токены, TwoMC UI-слой (~60
   примитивов), `/design-lab`, префиксы ролей. Часть 3 — решение владельца

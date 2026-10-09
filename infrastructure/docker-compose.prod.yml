@@ -1,0 +1,100 @@
+# Production-стек twomc.su: Postgres + Redis + API + Web.
+# Reverse proxy (nginx/Caddy) и TLS — вне этого файла, см. infrastructure/nginx.twomc.su.conf.example.
+#
+#   cp .env.example .env            # заполнить production-значения (не в git)
+#   infrastructure/deploy.sh         # build → migrate → переключение → health check
+#
+# Образы помечаются тегом ${RELEASE} (git sha) — откат = запуск с предыдущим тегом.
+
+name: twomc-su-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: twomc-su-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-twomc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Укажите POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-twomc}
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-twomc} -d ${POSTGRES_DB:-twomc}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [twomc]
+
+  redis:
+    image: redis:7-alpine
+    container_name: twomc-su-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Укажите REDIS_PASSWORD в .env}", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [twomc]
+
+  api:
+    image: twomc-api:${RELEASE:-latest}
+    build:
+      context: ..
+      dockerfile: infrastructure/api.Dockerfile
+    container_name: twomc-su-api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      NODE_ENV: production
+      API_PORT: ${API_PORT:-4000}
+      # Внутри сети compose — по имени сервиса; DATABASE_URL в .env должен указывать на postgres:5432.
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      TRUST_PROXY: "true"
+      UPLOADS_DIR: /app/apps/api/uploads
+    volumes:
+      - uploads:/app/apps/api/uploads
+    ports:
+      - "127.0.0.1:${API_PORT:-4000}:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [twomc]
+
+  web:
+    image: twomc-web:${RELEASE:-latest}
+    build:
+      context: ..
+      dockerfile: infrastructure/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Укажите NEXT_PUBLIC_API_URL в .env}
+        NEXT_PUBLIC_CDN_BASE_URL: ${NEXT_PUBLIC_CDN_BASE_URL:-https://cdn-files.twomc.su}
+        NEXT_PUBLIC_HCAPTCHA_SITE_KEY: ${NEXT_PUBLIC_HCAPTCHA_SITE_KEY:-}
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+    container_name: twomc-su-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+    networks: [twomc]
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploads:
+
+networks:
+  twomc:
+    driver: bridge

@@ -34,11 +34,11 @@
     "db:validate": "dotenv -e ../../.env -- prisma validate",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed/index.ts",
-    "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts"
+    "seed": "ts-node prisma/seed/index.ts"
   },
   "dependencies": {
     "@twomc/shared": "workspace:*",

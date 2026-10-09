@@ -76,11 +76,14 @@ Console и получить API key в Google Cloud Console (YouTube Data API v3
 `VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT` — нужны на фазе PHASE 12 (Notifications).
 Без ключей push-канал отключается, остальные каналы уведомлений работают.
 
-## R8 — Production deployment (DNS, сервер, reverse proxy) — OPEN
+## R8 — Production deployment (DNS, сервер, reverse proxy) — OPEN (нужны данные хостинга)
 
-В этой среде нет доступа к production-серверу/DNS. Деплой-документация и
-Dockerfile/Compose готовятся (PHASE 35), но реальный выезд в прод не выполняется
-в рамках этой сессии — только подготовка инфраструктуры как кода.
+Артефакты деплоя готовы (PHASE 35: Dockerfile api/web, compose prod,
+`infrastructure/deploy.sh`, nginx-пример). В контексте проекта НЕТ: host/IP,
+SSH-порт и пользователь, директория деплоя, существующая схема прокси/
+панели, способ доставки `.env`. Без них деплой не выполняется (не
+угадывать сервер). **Нужно от владельца:** перечисленные данные
+(секреты — не в чат и не в git).
 
 ## R9 — GitHub Pull Request workflow — MITIGATED
 

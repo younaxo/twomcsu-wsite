@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/*.log
+.git
+.github
+.claude
+docs
+.env
+.env.*
+!.env.example
+apps/api/uploads
+**/test
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
