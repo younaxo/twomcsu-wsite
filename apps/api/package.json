@@ -37,7 +37,8 @@
     "postinstall": "prisma generate"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed/index.ts"
+    "seed": "ts-node prisma/seed/index.ts",
+    "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts"
   },
   "dependencies": {
     "@twomc/shared": "workspace:*",

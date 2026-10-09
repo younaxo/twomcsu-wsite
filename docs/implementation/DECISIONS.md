@@ -985,3 +985,99 @@ Frontend-меню должно строиться из effective permissions
 проекте): refresh-cookie выставляется API-доменом и в production может быть
 недоступна web-домену — защита маршрутов выполняется на клиенте после
 восстановления сессии, настоящая защита остаётся на backend.
+
+## ADR-0053 — Дизайн-система: семантические токены, TwoMC UI-слой поверх Radix, три направления в `/design-lab`
+
+**Context.** Владелец (2026-10-08) обнулил все прошлые визуальные указания:
+дизайн создаётся с нуля, единственное ограничение — фирменный оранжевый.
+Требуется узнаваемый продуктовый дизайн без AI/SaaS/shadcn-шаблонности,
+три заметно разных направления для честного сравнения, затем решение
+владельца и только потом перенос на страницы.
+
+**Decision.**
+1. **Токены** (`apps/web/src/styles/tokens.css`) — только семантические
+   (`surface/primary/border/ring/success…`, радиусы, тени, шрифты,
+   плотность, движение), RGB-каналами для alpha; Tailwind маппится на
+   токены. Направление и тема — атрибуты `data-direction`/`data-theme`
+   на корне; компоненты не знают hex и не знают, в каком направлении
+   рендерятся. Порталы overlay получают токены через зеркалирование
+   атрибутов на `<html>`.
+2. **UI-слой** `apps/web/src/components/ui/*` — единственная точка импорта
+   для feature-кода. База: `radix-ui` (единый пакет), `vaul` (drawer),
+   `sonner` (toast), `cmdk` (command palette), `lucide-react` (одна
+   icon-библиотека), `cva`/`clsx`/`tailwind-merge`. Контракт слоя —
+   `components/ui/README.md`. Tooltip / Toggletip / Popover / DropdownMenu
+   / ContextMenu / HoverCard — разные компоненты; Dialog и AlertDialog не
+   смешиваются; mobile-замены overlay (BottomSheet/ActionSheet) — в слое.
+3. **Три направления** (`app/design-lab/directions.ts`): «Раскалённое»
+   (Unbounded/Golos, тёплый уголь, табло онлайна), «Полдень» (Onest +
+   Literata, бумага на сером, стопка аватаров), «Пульт» (Commissioner/
+   Martian Mono, графит, статусная таблица + ⌘K). Различаются
+   типографикой, плотностью, композицией, поверхностями, формой,
+   движением — не оттенком. Шрифты — `next/font/google` с Cyrillic,
+   только в layout лаборатории.
+4. **`/design-lab`** — внутренний маршрут (в production — 404 без
+   `NEXT_PUBLIC_DESIGN_LAB=1`), `robots: noindex`: карточка направления,
+   витрина (публичная + админ-сцена на одном наборе элементов),
+   Interactions / Component lab, Role prefixes. Выбор направления — за
+   владельцем; до решения выбранный стиль на страницы не переносится
+   (critique и рекомендация — `docs/design/DESIGN-CRITIQUE.md`).
+
+**Consequences.** Admin-экраны PHASE 21 (часть 2) строятся на этом же
+UI-слое после выбора направления — смена направления = правка токенов,
+а не страниц. В production остаётся одна пара шрифтов; `fonts.ts`
+лаборатории не попадает в остальные маршруты.
+
+## ADR-0054 — Графические префиксы ролей: реестр по `Role.slug` в shared, CDN через конфиг, только визуализация
+
+**Context.** У 29 staff-ролей есть официальные PNG-префиксы из Minecraft
+resource pack на `cdn-files.twomc.su` (pixel-art 7 px высотой, ширина
+35–117 px). Нужно показывать их рядом с никами без хардкода по компонентам
+и без связи с permissions.
+
+**Decision.** Реестр `packages/shared/src/role-prefixes.ts` — slug роли →
+имя и реальная ширина PNG (измерены 2026-10-08; все 29 URL проверены:
+200, image/png). Ключ — `Role.slug` (как в seed superuser-ролей), не
+displayName. CDN-хост — только `NEXT_PUBLIC_CDN_BASE_URL` (`lib/env.ts`,
+`cdnUrl()`); физический путь сервера во frontend не используется, клиент
+не может подставить произвольный URL. Компонент `RolePrefix` — обычный
+`<img>` (не `next/image`: pixel-art нельзя ресемплить) с явными
+width/height, `image-rendering: pixelated`, целочисленным масштабом
+xs/sm/md/lg (2×/3×/4×/6×), `loading=lazy`, Tooltip TwoMC, fallback на
+текстовый бейдж при 404/неизвестной роли. Основная роль пользователя —
+`pickPrimaryRole`: старшая по `priority` роль с префиксом (иерархию задаёт
+backend, frontend только выбирает, что показать). Permissions — только
+RBAC backend; префикс ничего не решает. В seed PHASE 32 staff-роли должны
+получить slug из этого реестра.
+
+**Consequences.** Добавление/переименование префикса — одна запись в
+shared; UI не меняется. Upload/редактирование префиксов не предусмотрено —
+assets фиксированы.
+
+## ADR-0055 — «Полдень» dark-first как единственная дизайн-система; стеклянные материалы запрещены
+
+**Статус:** принято (решение владельца 2026-10-08, дополнено 2026-10-09).
+
+**Контекст.** Из трёх кандидатов `/design-lab` владелец выбрал «Полдень»
+с требованием сделать тёмную тему основной (не инверсией светлой, а
+отдельно подобранной палитрой), светлую — вторичной. Позже была
+проработана система Frosted/Liquid Glass для overlay; владелец отменил её
+полностью и окончательно.
+
+**Решение.**
+- `tokens.css`: `:root`/`[data-theme='light']` — светлый «Полдень»,
+  `[data-theme='dark']` — тёмный (default на `<html>`, inline no-flash
+  скрипт, выбор в `localStorage` `twomc.theme.v1`, `ThemeToggle`
+  Тёмная/Светлая/Как в системе).
+- Альтернативные направления (`ember`, `signal`), их токены, шрифты и
+  витрины удалены; атрибут `data-direction` больше не используется.
+- Шрифты self-hosted (`@fontsource-variable/*`), запросов к Google Fonts
+  нет (сборка в CI без сети, RU data residency).
+- Overlay-компоненты — solid `surface-overlay` + `border` + `shadow-lg` +
+  `edge-highlight`; backdrop модалок — затемнение без blur. Никаких
+  `backdrop-filter`, полупрозрачных glass-поверхностей, SVG-преломления.
+
+**Последствия.** Одна система, две темы; визуальная глубина достигается
+иерархией поверхностей (`background → surface → surface-raised →
+surface-overlay`), границами и тенями. Любое предложение «стекла»
+отклоняется без обсуждения.

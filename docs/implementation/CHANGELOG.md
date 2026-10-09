@@ -5,6 +5,51 @@
 
 ## [Unreleased]
 
+### Admin panel и тема «Полдень» (PHASE 21, часть 3)
+- Решение владельца: «Полдень» — единственная система, тёмная тема основная,
+  светлая вторичная, стекло запрещено (ADR-0055). Архивные направления
+  удалены; `ThemeProvider` + `ThemeToggle`, no-flash inline-скрипт.
+- Шрифты Onest / Literata / JetBrains Mono self-hosted (fontsource) — сборка
+  без обращения к Google Fonts.
+- `/login`, защищённая зона `/admin/*` (RequireAuth, permission-driven
+  сайдбар и палитра Ctrl+K, меню аккаунта с префиксом роли), экраны:
+  дашборд, пользователи (список, bulk бан/разбан, карточка: роли/эффективные
+  права/бейджи/наказания/сессии), роли (список, создание, редактирование,
+  матрица permissions, история), permissions, журнал аудита (+QuickView,
+  CSV), безопасность (сессии/входы/подозрительные IP/whitelist), настройки
+  (сайт + KV), объявления, контент, финансы (обзор/транзакции/возвраты),
+  экспорт CSV, личные инструменты (закладки/фильтры/расписания).
+- Overlay-компоненты переведены на solid-поверхности без backdrop-blur.
+- Ops-скрипт `apps/api/scripts/grant-role.ts` для первичной выдачи роли.
+
+### Design system и /design-lab (PHASE 21, дизайн)
+- Семантические design-токены (`apps/web/src/styles/tokens.css`) с тремя
+  кандидатами направления (`data-direction=ember|daylight|signal`, темы) и
+  Tailwind-маппингом — компоненты не знают hex (ADR-0053).
+- TwoMC UI-слой `components/ui` (~60 примитивов поверх radix-ui/vaul/sonner/
+  cmdk/lucide): floating (Tooltip simple/rich/shortcut/help/validation,
+  Toggletip, Hint, Popover, HoverCard, DropdownMenu, ContextMenu), overlays
+  (Dialog, AlertDialog/ConfirmDialog, Sheet, Drawer/BottomSheet/ActionSheet,
+  QuickView, FloatingPanel, DynamicIsland, Command/⌘K, toast/snackbar),
+  формы (Button, Input, Field, Select, Checkbox, RadioGroup/RadioCards,
+  Switch, Slider, SegmentedControl, Tabs, Accordion, NumberStepper/Steps,
+  OtpInput, Combobox, MultiSelect, DatePicker, FileDropzone, ColorPicker),
+  данные (Table, DataGrid, Pagination, TreeView, Resizable, AnimatedCounter,
+  Marquee, Carousel, FloatingDock, Lightbox, Wizard, MegaMenu, Badge/
+  StatusBadge, Avatar/AvatarStack, Skeleton, Progress/ProgressRing,
+  EmptyState, ErrorState/ForbiddenState, Breadcrumbs, Timeline, Kbd, Card).
+- `/design-lab` (internal, 404 в production без флага): карточка
+  направления, витрины «Раскалённое»/«Полдень»/«Пульт» на одном наборе
+  элементов, Interactions / Component lab, секция Role prefixes;
+  critique и рекомендация — `docs/design/DESIGN-CRITIQUE.md`, контракт —
+  `docs/design/VISUAL-DIRECTION.md`.
+- Графические префиксы ролей (ADR-0054): реестр 29 PNG по `Role.slug` в
+  `packages/shared`, `NEXT_PUBLIC_CDN_BASE_URL`, `RolePrefix`/
+  `UserRolesInline`, выбор основной роли по priority — только
+  визуализация, права решает backend.
+- 40 новых unit-тестов (примитивы, префиксы ролей), заглушки browser API
+  для Radix в jsdom.
+
 ### Frontend foundation (PHASE 21, часть 1)
 - `packages/shared` — API-контракт frontend ↔ backend (ADR-0051): типы
   ответов/запросов auth/users/roles/moderation/admin (dashboard, audit log,

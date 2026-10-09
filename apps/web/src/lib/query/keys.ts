@@ -10,7 +10,7 @@ export const queryKeys = {
   },
   users: {
     all: ['admin', 'users'] as const,
-    list: (params: Record<string, unknown>) => ['admin', 'users', 'list', params] as const,
+    list: (params: object) => ['admin', 'users', 'list', params] as const,
     detail: (id: string) => ['admin', 'users', 'detail', id] as const,
     effectivePermissions: (id: string) => ['admin', 'users', 'effective-permissions', id] as const,
     badges: (id: string) => ['admin', 'users', 'badges', id] as const,
@@ -26,7 +26,7 @@ export const queryKeys = {
   },
   auditLog: {
     all: ['admin', 'audit-log'] as const,
-    list: (params: Record<string, unknown>) => ['admin', 'audit-log', 'list', params] as const,
+    list: (params: object) => ['admin', 'audit-log', 'list', params] as const,
     stats: ['admin', 'audit-log', 'stats'] as const,
   },
   settings: {
@@ -34,19 +34,17 @@ export const queryKeys = {
     site: ['admin', 'settings', 'site'] as const,
   },
   security: {
-    sessions: (params: Record<string, unknown>) =>
-      ['admin', 'security', 'sessions', params] as const,
+    sessions: (params: object) => ['admin', 'security', 'sessions', params] as const,
     suspicious: ['admin', 'security', 'suspicious'] as const,
-    logins: (params: Record<string, unknown>) => ['admin', 'security', 'logins', params] as const,
+    logins: (params: object) => ['admin', 'security', 'logins', params] as const,
   },
   content: {
     dashboard: ['admin', 'content', 'dashboard'] as const,
   },
   finance: {
     overview: ['admin', 'finance', 'overview'] as const,
-    transactions: (params: Record<string, unknown>) =>
-      ['admin', 'finance', 'transactions', params] as const,
-    refunds: (params: Record<string, unknown>) => ['admin', 'finance', 'refunds', params] as const,
+    transactions: (params: object) => ['admin', 'finance', 'transactions', params] as const,
+    refunds: (params: object) => ['admin', 'finance', 'refunds', params] as const,
   },
   tools: {
     savedFilters: (page?: string) => ['admin', 'tools', 'saved-filters', page ?? 'all'] as const,
