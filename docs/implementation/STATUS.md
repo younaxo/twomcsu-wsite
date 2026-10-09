@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
-Current branch: feature/brand-tables-account (от main после PR #41)
+Current branch: feature/registration-otp (от main после PR #45)
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,6 +71,11 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
+- Пакет доработок владельца (mini-roadmap): слиты PR #41–#45 (оболочка, alias
+  входа, уровень доступа, плашка, соцсети, массовые права ролей, таблицы, окна,
+  вход через Discord/Telegram для привязанных аккаунтов). Регистрация с
+  подтверждением почты, реферальным кодом и согласиями (ADR-0070) — готова,
+  PR из `feature/registration-otp`. Доставка писем заблокирована DNS (R4).
 - PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
   дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,
   SVG оплаты владельца, favicon/manifest), ColorPicker z-index fix —
@@ -143,7 +148,7 @@ Checks (из корня монорепо, локально):
 lint: pass
 format:check: pass
 typecheck: pass
-tests: pass (api unit 1/1, web unit 61/61 — Vitest; e2e 23 suite / 195 тестов — auth + RBAC + users-domain +
+tests: pass (api unit 22/22, web unit 143/143 — Vitest; e2e 30 suite / 227 тестов — auth + registration-otp + social-auth + RBAC + users-domain +
 profiles + social + direct-messages + chat + notifications + news + events +
 topics + voting + streaming + forms + moderation + reports + store-catalog +
 store-checkout + minecraft + gamification + admin — roles+auth перепроверены локально

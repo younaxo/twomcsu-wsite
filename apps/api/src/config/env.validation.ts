@@ -73,6 +73,8 @@ export const envValidationSchema = Joi.object({
   TELEGRAM_BOT_USERNAME: Joi.string().allow('').optional(),
   TELEGRAM_BOT_TOKEN: Joi.string().allow('').optional(),
   STATUS_PAGE_URL: Joi.string().uri().default('https://status.twomc.su'),
+  /// Версия юридических документов, фиксируемая в согласиях (ADR-0070).
+  LEGAL_DOCS_VERSION: Joi.string().default('draft'),
   SMTP_FROM_EMAIL: Joi.string()
     .email({ tlds: false })
     .default('noreply@twomc.su'),

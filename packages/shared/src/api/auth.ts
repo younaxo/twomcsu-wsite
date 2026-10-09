@@ -126,3 +126,34 @@ export interface LinkedAccountDto {
   linkedAt: IsoDateString;
   lastLoginAt: IsoDateString | null;
 }
+
+// --- Регистрация с подтверждением почты (ADR-0070) -------------------------------
+
+export interface RegisterStartRequest {
+  email: string;
+  username: string;
+  referralCode?: string;
+  acceptTerms: boolean;
+  acceptPersonalData: boolean;
+  captchaToken?: string;
+}
+
+export interface RegisterVerificationState {
+  verificationId: string;
+  /// `yo***@example.com`
+  maskedEmail: string;
+  expiresAt: IsoDateString;
+  resendAvailableAt: IsoDateString;
+  resendsLeft: number;
+}
+
+export interface RegisterVerifyResponse {
+  completionToken: string;
+  email: string;
+}
+
+export interface RegisterCompleteRequest {
+  verificationId: string;
+  completionToken: string;
+  password: string;
+}

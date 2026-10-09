@@ -22,10 +22,17 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import {
+  RegisterCompleteDto,
+  RegisterResendDto,
+  RegisterStartDto,
+  RegisterVerifyDto,
+} from './dto/registration.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
+import { RegistrationService } from './registration.service';
 
 function requestContext(req: Request): RequestContext {
   return {
@@ -41,12 +48,61 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly permissions: PermissionService,
     private readonly config: ConfigService,
+    private readonly registration: RegistrationService,
   ) {}
 
   @Public()
   @Post('register')
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
+  }
+
+  // --- Регистрация с подтверждением почты (ADR-0070) -------------------------
+
+  // IP-лимит + Turnstile + не больше 5 кодов на e-mail в час (сервис).
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/start')
+  registerStart(@Body() dto: RegisterStartDto, @Req() req: Request) {
+    return this.registration.start(dto, requestContext(req));
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/resend')
+  registerResend(@Body() dto: RegisterResendDto) {
+    return this.registration.resend(dto);
+  }
+
+  // Перебор кода ограничен 5 попытками на запрос подтверждения (сервис).
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('register/verify')
+  registerVerify(@Body() dto: RegisterVerifyDto) {
+    return this.registration.verify(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('register/complete')
+  async registerComplete(
+    @Body() dto: RegisterCompleteDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.registration.complete(dto, requestContext(req));
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      result.refreshToken,
+      refreshCookieOptions(
+        this.config,
+        result.refreshTokenExpiresAt.getTime() - Date.now(),
+      ),
+    );
+    return { user: result.user, accessToken: result.accessToken };
   }
 
   @Public()

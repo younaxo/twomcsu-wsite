@@ -16,3 +16,11 @@ pnpm run test:e2e       # e2e-тесты (test/**/*.e2e-spec.ts), нужен DAT
 pnpm run db:migrate     # prisma migrate dev (использует корневой .env)
 pnpm run db:studio      # prisma studio
 ```
+
+e2e с переменными из корневого `.env`: там `NODE_ENV=development`, а тестам
+нужен режим автотестов (прямой `/auth/register`, без отправки писем,
+ADR-0070) — `NODE_ENV` задаётся явно, `dotenv` его не перезаписывает:
+
+```bash
+NODE_ENV=test TURNSTILE_DISABLED=true npx dotenv -e ../../.env -- jest --config ./test/jest-e2e.json
+```
