@@ -52,7 +52,7 @@
 - [ ] PHASE 32 — Initial accounts (bootstrap #0/#1/#2 из ENV)
 - [ ] PHASE 33 — Testing (unit/integration/e2e/security)
 - [ ] PHASE 34 — Performance (N+1, индексы, pagination)
-- [ ] PHASE 35 — Production infrastructure (Dockerfile, деплой, backup)
+- [~] PHASE 35 — Production infrastructure (Dockerfile, compose prod, deploy.sh с rollback, nginx-пример — готово; сам деплой ждёт данных хостинга, RISKS R8)
 - [ ] PHASE 36 — Final documentation (`docs/project/*`)
 - [ ] PHASE 37 — Final audit (`COVERAGE.md`, сверка с docs/technical)
 

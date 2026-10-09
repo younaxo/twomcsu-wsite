@@ -24,3 +24,8 @@ Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (�
 Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); в API включить `trust proxy` (S6). Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
 ## Backup
 PostgreSQL (обязательно), каталог `UPLOADS_DIR`/CDN-бакет (обязательно), Redis — по сути кеш (AOF включён, но критичного состояния нет: brute-force-счётчики и presence временные), secrets/`.env` — в менеджере секретов.
+
+## Актуально (PHASE 35)
+Контейнеризация реализована: `infrastructure/api.Dockerfile`, `web.Dockerfile`,
+`docker-compose.prod.yml`, `deploy.sh`, `nginx.twomc.su.conf.example` —
+см. `docs/implementation/phases/PHASE-35-production-infrastructure.md`.
