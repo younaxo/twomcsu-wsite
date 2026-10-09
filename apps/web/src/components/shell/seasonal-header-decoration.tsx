@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
-import { resolveSeasonalDecoration } from '@/lib/site/seasonal';
+import type { SeasonalCampaign } from '@/lib/site/seasonal';
+import { useSeasonal } from '@/lib/site/use-seasonal';
 
 /// Сезонное украшение верхней кромки шапки — из активной кампании реестра
 /// `lib/site/seasonal.ts` (сейчас ассет есть у Halloween).
@@ -13,15 +13,23 @@ import { resolveSeasonalDecoration } from '@/lib/site/seasonal';
 /// - Ассет — CSS background: если внешний файл недоступен, полоса просто
 ///   пустая (никакой «битой картинки»); повторяется по горизонтали, высота
 ///   фиксирована, пропорции из конфига.
-/// - Активный декор вычисляется после монтирования (дата клиента) — SSR и
-///   гидрация не зависят от часового пояса сервера.
+/// - Активный декор — из серверных настроек сезонов и серверного времени
+///   (`useSeasonal`, ADR-0079), после монтирования; флаг «Декор» в админке.
 /// - Без glass: никакого backdrop-filter, только изображение.
-export function SeasonalHeaderDecoration({ className }: { className?: string }) {
-  const [decoration, setDecoration] = useState<ReturnType<typeof resolveSeasonalDecoration>>(null);
-
-  useEffect(() => {
-    setDecoration(resolveSeasonalDecoration(new Date()));
-  }, []);
+export function SeasonalHeaderDecoration({
+  className,
+  campaign,
+}: {
+  className?: string;
+  /// Явная кампания (preview в админке); по умолчанию — активная на сайте.
+  campaign?: SeasonalCampaign | null;
+}) {
+  const seasonal = useSeasonal();
+  const source =
+    campaign === undefined ? (seasonal.showDecoration ? seasonal.campaign : null) : campaign;
+  const decoration = source?.headerDecoration
+    ? { id: source.id, ...source.headerDecoration }
+    : null;
 
   if (!decoration) {
     return null;

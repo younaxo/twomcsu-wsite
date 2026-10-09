@@ -16,6 +16,8 @@ vi.mock('next/navigation', () => ({ usePathname: () => '/admin' }));
 vi.mock('@/lib/notifications/hooks', () => ({ useNotificationsRealtime: () => undefined }));
 vi.mock('@/lib/site/hooks', () => ({
   useUnreadCount: () => ({ data: { count: unread.count } }),
+  // Без серверных настроек сезонов — fallback на реестр по дате (ADR-0079).
+  usePublicSiteSettings: () => ({ isPending: false, data: undefined }),
 }));
 
 function staff(accessLevel: number, priority: number): MeResponse {

@@ -20,6 +20,20 @@ import { UpdateScheduledExportDto } from './dto/update-scheduled-export.dto';
 import { UpdateSiteAlertDto } from './dto/update-site-alert.dto';
 import { UpdateSiteSettingsDto } from './dto/update-site-settings.dto';
 import { UserIdFilterQueryDto } from './dto/user-id-filter-query.dto';
+import {
+  SEASONAL_CAMPAIGN_IDS,
+  SEASONAL_EFFECT_IDS,
+  SEASONAL_MAX_EFFECTS,
+  UpdateSeasonalDto,
+} from './dto/update-seasonal.dto';
+
+/// Переопределение кампании в `seasonal_settings.campaigns` (ADR-0079).
+type SeasonalOverride = {
+  enabled?: boolean;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  effects?: string[] | null;
+};
 
 @Injectable()
 export class AdminToolsService {
@@ -400,6 +414,146 @@ export class AdminToolsService {
       changes: { before: current, after: updated },
     });
     return updated;
+  }
+
+  // --- Сезонная система (ADR-0079) -----------------------------------------
+
+  async getSeasonalSettings() {
+    return this.prisma.seasonalSettings.upsert({
+      where: { id: 'global' },
+      update: {},
+      create: { id: 'global' },
+    });
+  }
+
+  /// Для `/site/settings`: настройки + серверное время — кампанию по реестру
+  /// выбирает клиент, но по времени сервера (расписание не зависит от часов
+  /// браузера).
+  async getPublicSeasonal() {
+    const s = await this.getSeasonalSettings();
+    return {
+      enabled: s.enabled,
+      mode: s.mode,
+      forcedCampaignId: s.forcedCampaignId,
+      showWordmarkO: s.showWordmarkO,
+      showDecoration: s.showDecoration,
+      showEffects: s.showEffects,
+      showBanners: s.showBanners,
+      effectIntensity: s.effectIntensity,
+      campaigns: s.campaigns,
+      serverTime: new Date().toISOString(),
+    };
+  }
+
+  /// null — эффекты кампании по умолчанию; массив — свой набор (уникальные, ≤ 3).
+  private normalizeEffects(id: string, raw: unknown): string[] | null {
+    if (raw === null) return null;
+    if (
+      !Array.isArray(raw) ||
+      raw.some(
+        (item) => !(SEASONAL_EFFECT_IDS as readonly unknown[]).includes(item),
+      )
+    ) {
+      throw new BadRequestException(`${id}.effects — неизвестный эффект`);
+    }
+    const unique = [...new Set(raw as string[])];
+    if (unique.length > SEASONAL_MAX_EFFECTS) {
+      throw new BadRequestException(
+        `${id}.effects — не больше ${SEASONAL_MAX_EFFECTS} эффектов`,
+      );
+    }
+    return unique;
+  }
+
+  private normalizeCampaigns(input: Record<string, unknown>) {
+    const out: Record<string, SeasonalOverride> = {};
+    for (const [id, raw] of Object.entries(input)) {
+      if (!(SEASONAL_CAMPAIGN_IDS as readonly string[]).includes(id)) {
+        throw new BadRequestException(`Неизвестная кампания: ${id}`);
+      }
+      const value = (raw ?? {}) as Record<string, unknown>;
+      const entry: SeasonalOverride = {};
+      if (value.enabled !== undefined) {
+        if (typeof value.enabled !== 'boolean')
+          throw new BadRequestException('enabled — boolean');
+        entry.enabled = value.enabled;
+      }
+      for (const key of ['startsAt', 'endsAt'] as const) {
+        const date = value[key];
+        if (date === undefined || date === null || date === '') {
+          if (date === null || date === '') entry[key] = null;
+          continue;
+        }
+        if (typeof date !== 'string' || Number.isNaN(Date.parse(date))) {
+          throw new BadRequestException(`${id}.${key} — некорректная дата`);
+        }
+        entry[key] = new Date(date).toISOString();
+      }
+      if (value.effects !== undefined) {
+        entry.effects = this.normalizeEffects(id, value.effects);
+      }
+      if (entry.startsAt && entry.endsAt && entry.startsAt >= entry.endsAt) {
+        throw new BadRequestException(`${id}: начало должно быть раньше конца`);
+      }
+      out[id] = entry;
+    }
+    return out;
+  }
+
+  async updateSeasonalSettings(dto: UpdateSeasonalDto, actorId: string) {
+    const before = await this.getSeasonalSettings();
+    const mode = dto.mode ?? before.mode;
+    const forced =
+      dto.forcedCampaignId !== undefined
+        ? dto.forcedCampaignId
+        : before.forcedCampaignId;
+    if (mode === 'forced' && !forced) {
+      throw new BadRequestException(
+        'Для режима «принудительно» выберите кампанию',
+      );
+    }
+    const after = await this.prisma.seasonalSettings.update({
+      where: { id: 'global' },
+      data: {
+        enabled: dto.enabled,
+        mode: dto.mode,
+        forcedCampaignId: dto.forcedCampaignId,
+        showWordmarkO: dto.showWordmarkO,
+        showDecoration: dto.showDecoration,
+        showEffects: dto.showEffects,
+        showBanners: dto.showBanners,
+        effectIntensity: dto.effectIntensity,
+        campaigns: dto.campaigns
+          ? this.normalizeCampaigns(dto.campaigns)
+          : undefined,
+        updatedBy: actorId,
+      },
+    });
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const key of [
+      'enabled',
+      'mode',
+      'forcedCampaignId',
+      'showWordmarkO',
+      'showDecoration',
+      'showEffects',
+      'showBanners',
+      'effectIntensity',
+      'campaigns',
+    ] as const) {
+      if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+        changes[key] = { from: before[key], to: after[key] };
+      }
+    }
+    await this.audit.log({
+      actorId,
+      action: 'settings.seasonal.update',
+      targetType: 'SeasonalSettings',
+      targetId: 'global',
+      changes: changes as Prisma.InputJsonValue,
+      severity: 'info',
+    });
+    return after;
   }
 
   async updateIpWhitelist(dto: IpWhitelistDto, actorId: string) {

@@ -106,6 +106,30 @@ export interface CreateSiteSocialLinkRequest {
 }
 export type UpdateSiteSocialLinkRequest = Partial<CreateSiteSocialLinkRequest>;
 
+/// Эффекты сезонного движка (ADR-0079).
+export type SeasonalEffectId = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun';
+
+export interface SeasonalCampaignOverride {
+  enabled?: boolean;
+  startsAt?: IsoDateString | null;
+  endsAt?: IsoDateString | null;
+  /// Свой набор эффектов (до 3; `[]` — без эффектов); нет/null — по умолчанию кампании.
+  effects?: SeasonalEffectId[] | null;
+}
+
+export interface PublicSeasonalSettings {
+  enabled: boolean;
+  mode: 'auto' | 'forced';
+  forcedCampaignId: string | null;
+  showWordmarkO: boolean;
+  showDecoration: boolean;
+  showEffects: boolean;
+  showBanners: boolean;
+  effectIntensity: number;
+  campaigns: Record<string, SeasonalCampaignOverride>;
+  serverTime: IsoDateString;
+}
+
 export interface PublicSiteSettings {
   siteName: string;
   siteDescription: string | null;
@@ -125,6 +149,9 @@ export interface PublicSiteSettings {
   meta: { title: string | null; description: string | null; keywords: string[] };
   /// Глобальная плашка под шапкой; null — выключена.
   alert: PublicSiteAlert | null;
+  /// Сезонная система (ADR-0079): настройки + серверное время; кампанию по
+  /// реестру выбирает клиент, но по `serverTime`.
+  seasonal?: PublicSeasonalSettings;
   updatedAt: IsoDateString;
 }
 

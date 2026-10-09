@@ -5,12 +5,27 @@
 
 ## [Unreleased]
 
+### Сезонное оформление из админки
+
+- В «Настройки → Сезоны» можно включить или выключить сезоны целиком, выбрать
+  сезон принудительно, отключить отдельные элементы (буква «o», декор шапки,
+  эффекты, баннеры), задать даты и время кампаний (в своём часовом поясе) и
+  выбрать для каждой кампании свои эффекты — например, листья и дождь осенью.
+- Предпросмотр любой кампании до публикации: компьютер или телефон, тёмная или
+  светлая тема.
+- Сезонные эффекты: снег, сердечки, листья, лепестки, солнечные блики — не
+  мешают кликам, останавливаются в фоновой вкладке, упрощаются на слабых
+  устройствах и отключаются при настройке «уменьшить движение».
+- Сезон определяется по времени сервера, а не по часам на компьютере игрока.
+
 ### Админка: острова и графики
+
 - Боковое меню и шапка админки — аккуратные «острова» без рамок.
 - На главной админки — графики регистраций, жалоб и действий за 7/30/90 дней;
   в финансах — график выручки по дням. Только реальные данные.
 
 ### Своё контекстное меню
+
 - Правая кнопка мыши открывает меню twomc.su по месту клика: для текста, ссылок,
   игроков, товаров и страницы (назад, обновить, копировать адрес); Shift+ПКМ и
   поля ввода — системное меню.
@@ -18,14 +33,17 @@
   перетащить.
 
 ### Календарь: быстрый выбор месяца и года
+
 - Нажатие на заголовок календаря открывает выбор месяца, затем года — без
   долгого листания по месяцам.
 
 ### Свой курсор
+
 - Курсор в стиле twomc.su для мыши: обычный, ссылка/кнопка, текст, перетаскивание
   и «недоступно»; на телефонах и планшетах — системный.
 
 ### Уведомления: действия и мгновенное обновление
+
 - Страница «Уведомления» (все / непрочитанные, «Показать ещё») — раньше ссылка
   вела на несуществующую страницу.
 - Отметить прочитанным или непрочитанным, удалить, «Прочитать все», «Удалить
@@ -34,6 +52,7 @@
   обновляется сразу во всех открытых вкладках.
 
 ### Превью профиля по нику
+
 - Наведение (desktop) или нажатие (телефон) на ник открывает карточку игрока:
   роль, должность, онлайн или последняя активность, статистика (если не скрыта),
   друзья и достижения — только реальные данные; скрытый профиль так и показан.
@@ -41,6 +60,7 @@
   больше не раскрывают достижения.
 
 ### Tutorial регистрации, привязка Minecraft, аккуратнее auth и модули
+
 - Поверх входа и регистрации — пошаговое обучение из 6 этапов (скриншоты,
   команда `/site-connect` с копированием, видео YouTube/RuTube, когда будут ссылки).
 - Регистрация с привязкой Minecraft: `/site-connect` в игре → ссылка → код из
@@ -52,6 +72,7 @@
 - Модули по всему сайту больше не «обведены»: тени без рамок и верхней кромки.
 
 ### Единая auth-панель, Telegram OpenID Connect, экран результата соцвхода
+
 - Вход, регистрация, восстановление и сброс пароля — одна широкая панель:
   логотип, переключатель «Вход | Регистрация» без перезагрузки, форма слева и
   визуал проекта с живым онлайном справа; на mobile — компактный баннер (ADR-0071).
@@ -67,6 +88,7 @@
 - Design-lab: раздел «Auth» на production-компонентах.
 
 ### Регистрация с подтверждением почты
+
 - Регистрация на одной странице: e-mail, ник, пароль и повтор, необязательный
   реферальный код, Turnstile, два отдельных согласия → «Подтвердить почту» →
   6-значный код из письма → «Создать аккаунт» и сразу вход (ADR-0070).
@@ -80,6 +102,7 @@
   cookie, возвраты, юридическая информация), ссылки футера ведут на них.
 
 ### Вход через Discord и Telegram, связанные аккаунты
+
 - Кнопки «Продолжить через Discord / Telegram» на странице входа — только для
   аккаунтов, заранее привязанных в профиле; без привязки — понятное объяснение,
   новый аккаунт не создаётся (ADR-0069).
@@ -89,6 +112,7 @@
   Telegram, audit привязки/отвязки.
 
 ### Плашка из шапки, массовые права ролей, единые таблицы и окна, юр. данные
+
 - Верхняя плашка — продолжение шапки (HeaderStack), режимы «Обводка»/«Заливка»,
   плотный фон, расписание, свой SVG (проверка на сервере, показ как `<img>`);
   управление — «Объявления → Верхняя плашка», редактор с живым предпросмотром
@@ -106,6 +130,7 @@
   production-диалог.
 
 ### Глобальная плашка, соцсети списком, настройки без пустот
+
 - Глобальная плашка под шапкой (ADR-0066): текст, иконка из набора, стиль,
   ссылка; включается в админке с предпросмотром, не закрывается пользователем;
   права `settings.alert.*`, audit.
@@ -119,6 +144,7 @@
   chevron профиля в админке поворачивается при открытии.
 
 ### Вход по alias, уровень доступа, бренд, таблицы, Select, Checkbox, диалоги, тема
+
 - Вход `younaxo` → аккаунт `younaxo_` через точечный alias (ADR-0061); у всех
   остальных логин = ник, модель User не менялась.
 - Уровень доступа пользователя (ADR-0062): title админки `twomc.su | A [N]` /
@@ -136,6 +162,7 @@
 - Тема по умолчанию — как в системе (System/Dark/Light), без вспышки (ADR-0063).
 
 ### Auth, Turnstile, внешние ссылки, бейдж вкладки, мобильная навигация
+
 - Переработаны вход, регистрация, «Забыли пароль?», сброс пароля (`AuthShell`).
 - Cloudflare Turnstile вместо hCaptcha: backend Siteverify, `<Turnstile />` на всех
   auth-формах, тестовые ключи для dev (ADR-0059).
@@ -150,6 +177,7 @@
 - `next.config` подхватывает `NEXT_PUBLIC_*` из корневого `.env`.
 
 ### Главная страница и оболочка v2 (PHASE 31, часть 1)
+
 - Главная: hero (онлайн/статус/IP/версии по реальному ping, копирование адреса),
   showcase возможностей (1 крупная + 3), сервера (одна большая карточка при одном
   сервере), «Сейчас на twomc.su» (активный/следующий ивент с обратным отсчётом),
@@ -168,14 +196,17 @@
 - `GET /servers/overview`: `type/description/iconUrl/address/configuredVersion`.
 
 ### Bootstrap-аккаунты (PHASE 32, ADR-0006)
+
 - Seed создаёт #0 SYSTEM / #1 Owner / #2 Chief Curator только из
   `BOOTSTRAP_*` env; SYSTEM не может войти по паролю; sequence shortId выравнивается.
 
 ### Security
+
 - Prisma `omit: { user: { password: true } }` глобально (ADR-0057): хеш пароля
   больше не утекает через `include: { author/user: true }` в публичных ответах.
 
 ### Глобальная оболочка twomc.su (App Shell)
+
 - `components/shell/*`: фиксированный icon-only rail (общий онлайн по реальному ping,
   навигация из `lib/site/config.ts`, бонусы, соцсети, язык/валюта), header (логотип с CDN,
   twomc.su, навигация, уведомления, профиль), информационный footer (владелец из env,
@@ -186,23 +217,29 @@
 - Встроенный `ColorPicker` без системного color dialog: пресеты, HEX, палитра
   (область + оттенок), bottom sheet на mobile; используется в форме роли.
 - Тесты: shell (8), ColorPicker (7). Секции Global shell и ColorPicker в /design-lab.
+
 ### CDN / файловое хранилище (PHASE 23)
+
 - `modules/files`: StorageService (local → `/uploads`, s3 за CDN_BASE_URL), пресеты
   загрузок по типу с permission, pipeline magic-bytes → sharp → AVIF, модель File
   TEMP/ATTACHED/DELETED, orphan cleanup, `POST /files/upload`,
   `POST|DELETE /users/me/avatar|banner`. E2E `files` (6).
+
 ### Audit log (PHASE 22)
+
 - Глобальный `AuditInterceptor`: все успешные staff-мутации с `@RequirePermissions`
   пишутся в audit log (действие = ключ permission, цель, очищенные изменения,
   IP/UA/длительность, уровень по ключу); `@SkipAudit()` для ручных записей.
 - `AUDIT_RETENTION_DAYS` и ежедневная очистка в 04:00; `AuditModule` глобальный.
 
 ### Production infrastructure (PHASE 35)
+
 - `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,
   `deploy.sh` с prisma migrate deploy и автоматическим rollback, пример nginx,
   `.dockerignore`, `robots.txt` (закрыты /admin и /design-lab).
 
 ### Admin panel и тема «Полдень» (PHASE 21, часть 3)
+
 - Решение владельца: «Полдень» — единственная система, тёмная тема основная,
   светлая вторичная, стекло запрещено (ADR-0055). Архивные направления
   удалены; `ThemeProvider` + `ThemeToggle`, no-flash inline-скрипт.
@@ -220,6 +257,7 @@
 - Ops-скрипт `apps/api/scripts/grant-role.ts` для первичной выдачи роли.
 
 ### Design system и /design-lab (PHASE 21, дизайн)
+
 - Семантические design-токены (`apps/web/src/styles/tokens.css`) с тремя
   кандидатами направления (`data-direction=ember|daylight|signal`, темы) и
   Tailwind-маппингом — компоненты не знают hex (ADR-0053).
@@ -248,6 +286,7 @@
   для Radix в jsdom.
 
 ### Frontend foundation (PHASE 21, часть 1)
+
 - `packages/shared` — API-контракт frontend ↔ backend (ADR-0051): типы
   ответов/запросов auth/users/roles/moderation/admin (dashboard, audit log,
   broadcast, settings, saved-filters/bookmarks/scheduled-exports, security,
@@ -268,6 +307,7 @@
   корне `dist/`, `start:prod` работает.
 
 ### Infrastructure
+
 - Инициализирован pnpm monorepo: `apps/api` (NestJS 10), `apps/web` (Next.js 14 +
   Tailwind CSS), `packages/shared` (`@twomc/shared`).
 - Единые команды из корня: `lint`, `format`, `format:check`, `typecheck`, `test`,
@@ -278,6 +318,7 @@
   проверено реальным запуском (`pnpm db:up`), оба сервиса `healthy`.
 
 ### Database
+
 - Prisma-схема (`apps/api/prisma/schema.prisma`): 108 моделей, 53 enum, первая
   миграция (`20261004115235_init`) применена к реальной БД (проверено: 109
   таблиц, включая `_prisma_migrations`).
@@ -286,6 +327,7 @@
   `NODE_ENV`).
 
 ### Authentication
+
 - `POST /auth/register|login|refresh|logout`, `GET/DELETE /auth/sessions`,
   `DELETE /auth/sessions/:id`, `POST /auth/change-password`, `GET /auth/me`,
   `POST /auth/forgot-password|reset-password`.
@@ -300,6 +342,7 @@
   (100/60с глобально, 10/мин на login).
 
 ### RBAC
+
 - `PermissionService` (effective permissions, superuser, priority-иерархия,
   Redis-кеш `perm:user:{id}` с немедленной инвалидацией), `PermissionsGuard`,
   `@RequirePermissions(...)`.
@@ -311,6 +354,7 @@
   permission keys модуля `roles`.
 
 ### Users
+
 - Позиции (`/positions`, `/positions/manage`, CRUD + assign), отделы
   (`/admin/departments`, CRUD + assign/reorder), кастомные должности
   (`/admin/custom-positions`, CRUD + assign 1:1), админский список и карточка
@@ -319,11 +363,13 @@
   чистой БД.
 
 ### Profiles
+
 - `GET /users/:username/public` (фильтрация по приватности),
   `GET/PATCH /users/me/profile`, соцсети (`/users/me/social-links`),
   выбор декорации (`/users/me/decoration`, только из принадлежащих).
 
 ### Social system
+
 - Друзья: заявки/принятие/отклонение/отмена, список/блокировка,
   `friendRequestPolicy` (включая `FRIENDS_OF_FRIENDS`).
 - Комментарии профиля: создание/редактирование/soft-delete, реакции
@@ -334,6 +380,7 @@
   реальную запись активности (`FRIENDSHIP_STARTED`).
 
 ### Direct Messages
+
 - Личные и групповые беседы (`/messages/conversations/*`), идемпотентное
   создание личной беседы (`directKey`), сообщения (отправка/редактирование/
   soft-delete/реакции с несколькими emoji на пользователя), `markRead` с
@@ -352,6 +399,7 @@
   `/messages` с `cors.origin=true`).
 
 ### Chat
+
 - Публичный `/chat/*` (список каналов, история, онлайн, закреплённые) и
   `/admin/chat/*` под permissions (CRUD каналов, мут/бан листинг-снятие,
   поиск по сообщениям). Отправка сообщений — только через WebSocket.
@@ -362,6 +410,7 @@
   S12). Чат-бан проверяется при подключении и блокирует весь namespace.
 
 ### Notifications
+
 - `/notifications/*` (список/unread-count/read/read-all/remove, settings,
   push subscribe/unsubscribe, личный Discord-вебхук, digest test) и
   `/admin/notifications/*` (CRUD системных Discord-вебхуков, broadcast,
@@ -377,6 +426,7 @@
   единую точку `NotificationsService.create()`.
 
 ### News
+
 - Публичный `/news/*` (список/featured/latest/popular/categories/tags/RSS/
   деталь по slug с подсчётом просмотров/like/комментарии с toggle-реакциями)
   и `/admin/news/*` (CRUD с тегами, архивация вместо hard delete, pin/
@@ -386,6 +436,7 @@
   `NEWS_COMMENT_REPLY`/`NEWS_COMMENT_MENTION` через `NotificationsService`.
 
 ### Events / Topics / Voting / Streaming
+
 - `/events/*` (список/featured/mine/деталь, attendance с лимитом участников
   и дедлайном регистрации) и `/admin/events/*` (CRUD, publish/cancel) под
   permissions; изменение расписания/отмена опубликованного события создаёт
@@ -395,12 +446,13 @@
 - `/voting` (публичный обзор vote-сайтов с cooldown для viewer) и
   `/voting/webhook/:slug` (публичный, bcrypt-секрет вместо HMAC) с
   начислением `rewardCoins` в `PlayerStatistics.coins`; `/admin/voting/
-  sites/*` (CRUD, rotate-secret) под permissions.
+sites/*` (CRUD, rotate-secret) под permissions.
 - `/streams` (публичный список каналов) и `/admin/streams/*` (CRUD,
   refresh — честно сообщает об отсутствии Twitch/YouTube credentials) под
   permissions.
 
 ### Forms
+
 - `/forms/*` (список опубликованных форм с учётом видимости, мои формы/
   мои ответы, автоподстановка username/email, доступ по коду приглашения,
   деталь по slug, отправка ответа, сохранение черновика) и `/admin/forms/*`
@@ -417,6 +469,7 @@
   `ipHash` (SHA-256, не сырой IP) для анти-спам аналитики.
 
 ### Reports / Moderation
+
 - `/moderation/users/:userId/mute|warn|kick|ban` (quick moderation —
   создают `UserPunishment`; `kick` разрывает refresh-сессии, `ban`
   дополнительно выставляет `User.isBanned` с мгновенным эффектом на каждый
@@ -429,19 +482,20 @@
   профиль (`POST /users/:username/report`) добавлено в `profiles`.
 - Тикет-система обращений (`/reports/*`, `/moderation/reports/*`,
   `/admin/reports/*`, `/support/donation-problem`, `/admin/support/
-  donations`): создание с резолвом целей по username, переписка автора/
+donations`): создание с резолвом целей по username, переписка автора/
   staff, assign/status/verdict, заметки модератора (скрыты от автора),
   lock/unlock, архив (отдельный от удаления), `ReportBan` (бан в
   тикет-системе, независим от `User.isBanned`).
 - История наказаний (`UserPunishment`): `/users/me/punishments`, `/admin/
-  users/:username/punishments` (список), `/admin/users/:userId/
-  punishments` (выдача/редактирование) под `users.punishments`.
+users/:username/punishments` (список), `/admin/users/:userId/
+punishments` (выдача/редактирование) под `users.punishments`.
 - `users.change_role` не перенесён — заменён существующими `/admin/
-  users/:userId/roles/:roleId` (PHASE 06, many-to-many RBAC); game-report/
+users/:userId/roles/:roleId` (PHASE 06, many-to-many RBAC); game-report/
   game-punishment эндпоинты (внешняя интеграция с анти-чит плагинами) не
   реализованы — не описаны требованиями (NOT_APPLICABLE с PHASE 00).
 
 ### Store
+
 - Каталог: `/store/categories` (дерево), `/store/products` (+варианты
   цен по длительности, «часто покупают вместе» — реальная аналитика по
   завершённым заказам, `inWishlist` для viewer), `/store/bundles` (наборы
@@ -465,7 +519,7 @@
   (список/статистика/отмена/возврат).
 - `PaymentProvider`/`TestPaymentProvider`/`PaymentProviderRegistry` —
   заказ подтверждается только вебхуком (`POST /webhooks/payments/
-  :provider`, секрет в теле, constant-time, идемпотентно — ADR-0034);
+:provider`, секрет в теле, constant-time, идемпотентно — ADR-0034);
   `isUnique`-товары проверяются при оформлении заказа (ADR-0037); тестовый
   провайдер не регистрируется в production (RISKS.md R2).
 - `/admin/store/stats/*` — overview/sales-by-day/sales-by-category/
@@ -475,6 +529,7 @@
   текущей схемой (ADR-0041, уточнение ADR-0039).
 
 ### Minecraft servers
+
 - `modules/minecraft/slp/` — реальный клиент Server List Ping (TCP,
   без внешних ключей): `varint.ts` + `slp-client.ts` (handshake → status
   request → JSON-ответ → ping/pong для задержки). Недоступность сервера —
@@ -494,11 +549,12 @@
 - 9 новых permission-ключей (`server_categories.*`, `servers.*`).
 
 ### Gamification
+
 - `modules/achievements/` — `AchievementProgressService` реально считает
   прогресс по 17 из 19 `AchievementConditionType` из текущих данных БД
   (друзья/комментарии/реакции/заказы/подарки/жалобы/бейджи/возраст
   аккаунта и т.д.); пересчёт — явный `POST /admin/achievements/
-  check-all-users` (пакетная модель, ADR-0043), не событийный. Публичный
+check-all-users` (пакетная модель, ADR-0043), не событийный. Публичный
   `/achievements/*` (список с прогрессом viewer'а, секретные скрыты до
   разблокировки, деталь, stats), admin CRUD + check-all-users, ручная
   выдача/отзыв модератором (единственный путь для MANUAL/CUSTOM условий),
@@ -522,6 +578,7 @@
   `.awards`/`.badges`).
 
 ### Admin backend
+
 - `modules/admin/` — `/admin/dashboard` (реальные агрегаты: пользователи
   online/забанены/новые сегодня, pending-жалобы, последние 10 записей
   audit log), `/admin/audit-log` + `/audit-log/stats` (`AuditService`:

@@ -4,9 +4,10 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
-Current branch: feature/notifications-actions (от main после PR #49)
+Current branch: feature/seasonal-admin (стопка на feature/admin-islands, PR #54)
 
 Completed:
+
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
 - PHASE 01 — Project bootstrap (pnpm monorepo: apps/api, apps/web, packages/shared)
 - PHASE 02 — CI (GitHub Actions: lint/typecheck/test/build, CodeQL, gitleaks, actionlint, dependabot)
@@ -71,14 +72,17 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
+
 - Пакет доработок владельца (mini-roadmap): слиты PR #41–#45 (оболочка, alias
   входа, уровень доступа, плашка, соцсети, массовые права ролей, таблицы, окна,
   вход через Discord/Telegram для привязанных аккаунтов), #46 (регистрация с
   подтверждением почты, ADR-0070), #47 (единая auth-панель, Telegram OpenID
   Connect, экран результата соцвхода, ADR-0071), #48 (tutorial регистрации и
   привязка Minecraft через `/site-connect`, ADR-0072), #49 (превью профиля,
-  ADR-0073). Уведомления: действия, страница, мгновенное обновление (ADR-0074) —
-  PR из `feature/notifications-actions`.
+  ADR-0073), #50 (уведомления: действия, страница, мгновенное обновление,
+  ADR-0074), #51 (курсор, ADR-0075), #52 (Date Picker, ADR-0076), #53
+  (контекстное меню, ADR-0077). PR #54 — острова и графики админки (ADR-0078).
+  Сезонная система из админки и эффекты (ADR-0079) — `feature/seasonal-admin`.
   Блокеры: доставка писем (R4), Telegram OIDC в BotFather (R18), Minecraft-плагин (R20).
 - PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
   дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,
@@ -107,8 +111,9 @@ In progress:
   API, production-деплой (R8 — данных хостинга нет).
 
 Blocked:
+
 - Production deploy (PHASE 35 артефакты слиты, PR #36): нет данных хостинга — RISKS R8. (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
-R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
+  R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
 
 ## История веток (normalized, см. RISKS.md R12)
 
@@ -118,28 +123,28 @@ PHASE 00–07 изначально велись в одной ветке (`featu
 истории — см. RISKS.md R12 про единственную неоднозначную границу
 PHASE 04/05).
 
-| PHASE | Branch | Last commit | Status |
-|---|---|---|---|
-| PHASE 00–01 — Discovery, Project bootstrap | `feature/project-bootstrap` | `7a6779e` | completed |
-| PHASE 02–03 — CI, Local infrastructure | `feature/infrastructure` | `331ff09` | completed |
-| PHASE 04 — Database foundation | `feature/database-foundation` | `2346864` | completed |
-| PHASE 05 — Authentication | `feature/authentication` | `d5e05b8` | completed |
-| PHASE 06 — RBAC / Permissions | `feature/rbac-permissions` | `81699a7` | completed |
-| PHASE 07 — Users | `feature/users` | `4bee251` | completed |
-| PHASE 08 — Profiles | `feature/profiles` | merged (PR #18) | completed |
-| PHASE 09 — Social system | `feature/social-system` | merged (PR #19, `a63af67`) | completed |
-| PHASE 10 — Direct Messages | `feature/direct-messages` | merged (PR #20, `2c9ddba`) | completed |
-| PHASE 11 — Chat | `feature/chat` | merged (PR #21, `5b25b80`) | completed |
-| PHASE 12 — Notifications | `feature/notifications` | merged (PR #22, `b49866d`) | completed |
-| PHASE 13 — News | `feature/news` | merged (PR #23, `e3d8035`) | completed |
-| PHASE 14 — Events / Topics / Voting / Streaming | `feature/events` | merged (PR #24, `927fe35`) | completed |
-| PHASE 15 — Forms | `feature/forms` | merged (PR #25, `b44caa8`) | completed |
-| PHASE 16 — Reports / Moderation | `feature/reports-moderation` | merged (PR #26, `687cd20`) | completed |
-| PHASE 17 — Store | `feature/store` | merged (PR #27, `20b2dac`) | completed |
-| PHASE 18 — Minecraft servers | `feature/minecraft` | merged (PR #28, `289363a`) | completed |
-| PHASE 19 — Gamification | `feature/gamification` | merged (PR #29, `79bf5bb`) | completed |
-| PHASE 20 — Admin backend | `feature/admin-backend` | merged (PR #30, `5f8f59d`) | completed |
-| PHASE 21 — Admin panel (frontend) | `feature/admin-panel` (часть 1), `feature/frontend-design-system` (дизайн), `feature/polden-production-theme` (тема + экраны) | *(в работе)* | in progress |
+| PHASE                                           | Branch                                                                                                                        | Last commit                | Status      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------- |
+| PHASE 00–01 — Discovery, Project bootstrap      | `feature/project-bootstrap`                                                                                                   | `7a6779e`                  | completed   |
+| PHASE 02–03 — CI, Local infrastructure          | `feature/infrastructure`                                                                                                      | `331ff09`                  | completed   |
+| PHASE 04 — Database foundation                  | `feature/database-foundation`                                                                                                 | `2346864`                  | completed   |
+| PHASE 05 — Authentication                       | `feature/authentication`                                                                                                      | `d5e05b8`                  | completed   |
+| PHASE 06 — RBAC / Permissions                   | `feature/rbac-permissions`                                                                                                    | `81699a7`                  | completed   |
+| PHASE 07 — Users                                | `feature/users`                                                                                                               | `4bee251`                  | completed   |
+| PHASE 08 — Profiles                             | `feature/profiles`                                                                                                            | merged (PR #18)            | completed   |
+| PHASE 09 — Social system                        | `feature/social-system`                                                                                                       | merged (PR #19, `a63af67`) | completed   |
+| PHASE 10 — Direct Messages                      | `feature/direct-messages`                                                                                                     | merged (PR #20, `2c9ddba`) | completed   |
+| PHASE 11 — Chat                                 | `feature/chat`                                                                                                                | merged (PR #21, `5b25b80`) | completed   |
+| PHASE 12 — Notifications                        | `feature/notifications`                                                                                                       | merged (PR #22, `b49866d`) | completed   |
+| PHASE 13 — News                                 | `feature/news`                                                                                                                | merged (PR #23, `e3d8035`) | completed   |
+| PHASE 14 — Events / Topics / Voting / Streaming | `feature/events`                                                                                                              | merged (PR #24, `927fe35`) | completed   |
+| PHASE 15 — Forms                                | `feature/forms`                                                                                                               | merged (PR #25, `b44caa8`) | completed   |
+| PHASE 16 — Reports / Moderation                 | `feature/reports-moderation`                                                                                                  | merged (PR #26, `687cd20`) | completed   |
+| PHASE 17 — Store                                | `feature/store`                                                                                                               | merged (PR #27, `20b2dac`) | completed   |
+| PHASE 18 — Minecraft servers                    | `feature/minecraft`                                                                                                           | merged (PR #28, `289363a`) | completed   |
+| PHASE 19 — Gamification                         | `feature/gamification`                                                                                                        | merged (PR #29, `79bf5bb`) | completed   |
+| PHASE 20 — Admin backend                        | `feature/admin-backend`                                                                                                       | merged (PR #30, `5f8f59d`) | completed   |
+| PHASE 21 — Admin panel (frontend)               | `feature/admin-panel` (часть 1), `feature/frontend-design-system` (дизайн), `feature/polden-production-theme` (тема + экраны) | _(в работе)_               | in progress |
 
 `feature/project-bootstrap` сохранена как есть (указывает на `4bee251`, все
 коммиты PHASE 00–07 до нормализации) — согласно прямому указанию не удалять

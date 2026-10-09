@@ -16,10 +16,11 @@ export class SiteController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get('settings')
   async publicSettings() {
-    const [s, alert, socialLinks] = await Promise.all([
+    const [s, alert, socialLinks, seasonal] = await Promise.all([
       this.tools.getSiteSettings(),
       this.tools.getPublicSiteAlert(),
       this.socialLinks.listPublic(),
+      this.tools.getPublicSeasonal(),
     ]);
     return {
       siteName: s.siteName,
@@ -42,6 +43,7 @@ export class SiteController {
         keywords: s.metaKeywords,
       },
       alert,
+      seasonal,
       updatedAt: s.updatedAt,
     };
   }
