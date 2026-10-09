@@ -56,6 +56,7 @@ Rooms: личная комната пользователя (`userRoom(userId)`)
 |---|---|---|---|---|---|
 | C→S | — (handlers отсутствуют) | /notifications | — | — | namespace только серверный |
 | S→C | `notification:new` | /notifications | `Notification` (shared) | — | `NotificationsGateway.emitToUser(userId, notification)` из `NotificationsService` |
+| S→C | `notification:changed` | /notifications | `{ unreadCount: number }` | — | `NotificationsGateway.emitChanged` после создания, прочтения/непрочтения, удаления, «прочитать все», «удалить прочитанные», «очистить» (ADR-0074) |
 
 ## Reconnect / offline
 - Клиентская логика reconnect — стандартная Socket.IO; серверного буфера пропущенных событий нет. Пропущенные данные восстанавливаются повторным REST-запросом (React Query invalidation на фронте — см. 02-FRONTEND.md, в работе).
