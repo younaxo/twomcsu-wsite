@@ -34,6 +34,7 @@ import {
 import { siteKeys } from '@/lib/site/hooks';
 import { useAuthStore } from '../auth/store';
 import { queryKeys } from '../query/keys';
+import { api } from '../api/client';
 import { adminApi } from './api';
 
 /// Хуки TanStack Query для админки. Списки держат предыдущие данные при
@@ -513,4 +514,19 @@ export function useScheduledExportMutations() {
     onSuccess: invalidate,
   });
   return { create, update, remove };
+}
+
+// --- Графики дашборда (ADR-0078) -------------------------------------------------
+
+export interface DashboardTimeseries {
+  days: number;
+  series: Array<{ day: string; registrations: number; reports: number; auditActions: number }>;
+}
+
+/// Ряды по дням (UTC) за 7–90 дней — реальные данные API, дни без событий — 0.
+export function useDashboardTimeseries(days: number) {
+  return useQuery({
+    queryKey: [...queryKeys.dashboard.all, 'timeseries', days] as const,
+    queryFn: () => api.get<DashboardTimeseries>('/admin/dashboard/timeseries', { query: { days } }),
+  });
 }

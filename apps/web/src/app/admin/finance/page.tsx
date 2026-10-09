@@ -20,7 +20,6 @@ import { Can, PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { Input } from '@/components/ui/input';
 import { QuickView } from '@/components/ui/quick-view';
@@ -38,7 +37,8 @@ import { downloadExport } from '@/lib/admin/api';
 import { useFinanceOverview, useFinanceRefunds, useFinanceTransactions } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
-import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 
 const STATUS_META: Record<
   OrderStatus,
@@ -82,8 +82,6 @@ function OverviewTab() {
       }
     >
       {(data) => {
-        const days = data.salesByDay.slice(-30);
-        const max = Math.max(1, ...days.map((d) => Number(d.revenue)));
         return (
           <div className="flex flex-col gap-6">
             <StatGrid>
@@ -111,28 +109,14 @@ function OverviewTab() {
             </StatGrid>
             <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
               <PageSection title="Продажи по дням" description="Последние 30 дней">
-                <Card>
-                  {days.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Продаж пока нет.</p>
-                  ) : (
-                    <ul className="flex h-40 items-end gap-1" aria-label="Выручка по дням">
-                      {days.map((d) => (
-                        <li
-                          key={d.day}
-                          className="group relative flex min-w-0 flex-1 items-end"
-                          style={{ height: '100%' }}
-                        >
-                          <span
-                            className="w-full rounded-sm bg-primary/70 transition-colors group-hover:bg-primary"
-                            style={{ height: `${Math.max(2, (Number(d.revenue) / max) * 100)}%` }}
-                            role="img"
-                            aria-label={`${formatDate(d.day)}: ${formatMoney(d.revenue)}, ${formatNumber(d.count)} заказов`}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Card>
+                <div className="rounded-xl bg-surface p-5 shadow-sm">
+                  <TimeSeriesChart
+                    ariaLabel="Выручка по дням за 30 дней"
+                    data={fillSalesDays(data.salesByDay)}
+                    series={[{ key: 'revenue', label: 'Выручка', color: 'rgb(var(--primary))' }]}
+                    format={(value) => formatMoney(value)}
+                  />
+                </div>
               </PageSection>
               <PageSection title="Топ товаров">
                 <DataGrid
@@ -348,6 +332,23 @@ function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
       </QuickView>
     </>
   );
+}
+
+/// API отдаёт только дни с продажами (ADR-0078): строим полное окно 30 дней
+/// (UTC), дни без продаж — 0 (это отсутствие продаж, а не выдуманные данные).
+function fillSalesDays(
+  rows: Array<{ day: string; revenue: number | string; count: number | string }>,
+  span = 30,
+) {
+  const byDay = new Map(rows.map((row) => [String(row.day).slice(0, 10), row]));
+  const now = new Date();
+  return Array.from({ length: span }, (_, index) => {
+    const date = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (span - 1 - index)),
+    );
+    const day = date.toISOString().slice(0, 10);
+    return { day, revenue: Number(byDay.get(day)?.revenue ?? 0) };
+  });
 }
 
 export default function FinancePage() {
