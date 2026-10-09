@@ -41,6 +41,23 @@ const fullDateFormatter = new Intl.DateTimeFormat(LOCALE, {
   year: 'numeric',
 });
 const weekdayFormatter = new Intl.DateTimeFormat(LOCALE, { weekday: 'short' });
+const monthShortFormatter = new Intl.DateTimeFormat(LOCALE, { month: 'short' });
+const monthLongFormatter = new Intl.DateTimeFormat(LOCALE, { month: 'long' });
+/// Месяцы для быстрого выбора: «янв.» → «Янв» (без точки сокращения).
+const MONTHS = Array.from({ length: 12 }, (_, index) => {
+  const date = new Date(2024, index, 1);
+  return {
+    short: capitalizeFirst(monthShortFormatter.format(date).replace('.', '')),
+    long: capitalizeFirst(monthLongFormatter.format(date)),
+  };
+});
+const YEARS_PER_PAGE = 12;
+
+function capitalizeFirst(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+type View = 'days' | 'months' | 'years';
 
 /// 1 января 2024 — понедельник: отсюда берём «пн … вс» в нужном порядке.
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) =>
@@ -141,6 +158,8 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
     const today = useMemo(() => startOfDay(new Date()), []);
 
     const [viewMonth, setViewMonth] = useState<Date>(() => startOfMonth(selected ?? today));
+    /// Вид календаря: дни → (заголовок) месяцы → годы; выбор возвращает обратно.
+    const [view, setView] = useState<View>('days');
     /// Дата с tabIndex=0 в сетке (roving tabindex), `YYYY-MM-DD`.
     const [focused, setFocused] = useState<IsoDate>(() => toIsoDate(selected ?? today));
     const gridRef = useRef<HTMLDivElement>(null);
@@ -177,6 +196,7 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
     const handleOpenChange = (next: boolean) => {
       setOpen(next);
       if (next) {
+        setView('days');
         const base = selected ?? today;
         setViewMonth(startOfMonth(base));
         setFocused(toIsoDate(base));
@@ -226,8 +246,66 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
       );
     }, [viewMonth]);
 
-    const prevDisabled = minDate !== null && addDays(viewMonth, -1) < minDate;
-    const nextDisabled = maxDate !== null && addMonths(viewMonth, 1) > maxDate;
+    const viewYear = viewMonth.getFullYear();
+    /// Окно лет вокруг текущего: 5 лет назад и 6 вперёд, листание по 12.
+    const yearPageStart = viewYear - 5;
+    const monthOutOfRange = (year: number, month: number) =>
+      (minDate !== null && new Date(year, month + 1, 0) < minDate) ||
+      (maxDate !== null && new Date(year, month, 1) > maxDate);
+    const yearOutOfRange = (year: number) =>
+      (minDate !== null && year < minDate.getFullYear()) ||
+      (maxDate !== null && year > maxDate.getFullYear());
+
+    const step = view === 'days' ? 1 : view === 'months' ? 12 : 12 * YEARS_PER_PAGE;
+    const prevDisabled =
+      minDate !== null &&
+      (view === 'days'
+        ? addDays(viewMonth, -1) < minDate
+        : view === 'months'
+          ? viewYear - 1 < minDate.getFullYear()
+          : yearPageStart - 1 < minDate.getFullYear());
+    const nextDisabled =
+      maxDate !== null &&
+      (view === 'days'
+        ? addMonths(viewMonth, 1) > maxDate
+        : view === 'months'
+          ? viewYear + 1 > maxDate.getFullYear()
+          : yearPageStart + YEARS_PER_PAGE > maxDate.getFullYear());
+    const headingLabel =
+      view === 'days'
+        ? capitalize(monthFormatter.format(viewMonth))
+        : view === 'months'
+          ? String(viewYear)
+          : `${yearPageStart} – ${yearPageStart + YEARS_PER_PAGE - 1}`;
+    const prevLabel =
+      view === 'days'
+        ? 'Предыдущий месяц'
+        : view === 'months'
+          ? 'Предыдущий год'
+          : 'Предыдущие годы';
+    const nextLabel =
+      view === 'days' ? 'Следующий месяц' : view === 'months' ? 'Следующий год' : 'Следующие годы';
+
+    /// Клавиатура в сетках месяцев/лет (3 колонки): ←/→ ±1, ↑/↓ ±3.
+    const handleChoiceKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+      const delta =
+        event.key === 'ArrowLeft'
+          ? -1
+          : event.key === 'ArrowRight'
+            ? 1
+            : event.key === 'ArrowUp'
+              ? -3
+              : event.key === 'ArrowDown'
+                ? 3
+                : 0;
+      if (delta === 0) return;
+      event.preventDefault();
+      const buttons = Array.from(
+        event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+      );
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      buttons[Math.min(buttons.length - 1, Math.max(0, (index < 0 ? 0 : index) + delta))]?.focus();
+    };
     const todayAllowed = !isOutOfRange(today);
 
     return (
@@ -267,30 +345,119 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
             <div className="flex items-center justify-between gap-2 pb-2">
               <IconButton
                 size="sm"
-                aria-label="Предыдущий месяц"
+                aria-label={prevLabel}
                 disabled={prevDisabled}
-                onClick={() => setViewMonth(addMonths(viewMonth, -1))}
+                onClick={() => setViewMonth(addMonths(viewMonth, -step))}
               >
                 <ChevronLeft />
               </IconButton>
-              <span
+              <button
+                type="button"
                 id={headingId}
                 aria-live="polite"
-                className="text-sm font-medium text-foreground"
+                disabled={view === 'years'}
+                aria-label={
+                  view === 'days'
+                    ? `${headingLabel} — выбрать месяц и год`
+                    : view === 'months'
+                      ? `${headingLabel} — выбрать год`
+                      : headingLabel
+                }
+                onClick={() => setView(view === 'days' ? 'months' : 'years')}
+                className="rounded-sm px-2 py-1 text-sm font-medium text-foreground hover:bg-muted disabled:cursor-default disabled:hover:bg-transparent"
+                data-testid="date-picker-heading"
               >
-                {capitalize(monthFormatter.format(viewMonth))}
-              </span>
+                {headingLabel}
+              </button>
               <IconButton
                 size="sm"
-                aria-label="Следующий месяц"
+                aria-label={nextLabel}
                 disabled={nextDisabled}
-                onClick={() => setViewMonth(addMonths(viewMonth, 1))}
+                onClick={() => setViewMonth(addMonths(viewMonth, step))}
               >
                 <ChevronRight />
               </IconButton>
             </div>
 
+            {view === 'months' ? (
+              <div
+                role="group"
+                aria-label={`Месяцы ${viewYear}`}
+                onKeyDown={handleChoiceKeyDown}
+                className="grid w-[17.5rem] grid-cols-3 gap-1"
+                data-testid="date-picker-months"
+              >
+                {MONTHS.map((month, index) => {
+                  const isCurrent =
+                    selected !== null &&
+                    selected.getFullYear() === viewYear &&
+                    selected.getMonth() === index;
+                  return (
+                    <button
+                      key={month.long}
+                      type="button"
+                      aria-label={`${month.long} ${viewYear}`}
+                      aria-pressed={isCurrent}
+                      disabled={monthOutOfRange(viewYear, index)}
+                      onClick={() => {
+                        setViewMonth(new Date(viewYear, index, 1));
+                        setView('days');
+                      }}
+                      className={cn(
+                        'h-11 rounded-sm text-sm transition-[background-color,color] duration-fast hover:bg-muted',
+                        isCurrent &&
+                          'bg-primary font-medium text-primary-foreground hover:bg-primary-hover',
+                        'disabled:opacity-40 disabled:hover:bg-transparent',
+                      )}
+                    >
+                      {month.short}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {view === 'years' ? (
+              <div
+                role="group"
+                aria-label="Годы"
+                onKeyDown={handleChoiceKeyDown}
+                className="grid w-[17.5rem] grid-cols-3 gap-1"
+                data-testid="date-picker-years"
+              >
+                {Array.from({ length: YEARS_PER_PAGE }, (_, index) => yearPageStart + index).map(
+                  (year) => {
+                    const isCurrent = selected !== null && selected.getFullYear() === year;
+                    return (
+                      <button
+                        key={year}
+                        type="button"
+                        aria-pressed={isCurrent}
+                        disabled={yearOutOfRange(year)}
+                        onClick={() => {
+                          setViewMonth(new Date(year, viewMonth.getMonth(), 1));
+                          setView('months');
+                        }}
+                        className={cn(
+                          'h-11 rounded-sm text-sm tabular transition-[background-color,color] duration-fast hover:bg-muted',
+                          year === today.getFullYear() &&
+                            !isCurrent &&
+                            'font-semibold text-primary-soft-foreground',
+                          isCurrent &&
+                            'bg-primary font-medium text-primary-foreground hover:bg-primary-hover',
+                          'disabled:opacity-40 disabled:hover:bg-transparent',
+                        )}
+                      >
+                        {year}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            ) : null}
+
             <div
+              hidden={view !== 'days'}
               ref={gridRef}
               role="grid"
               aria-labelledby={headingId}
@@ -341,7 +508,7 @@ export const DatePicker = forwardRef<HTMLButtonElement, DatePickerProps>(
                             isToday && !isSelected && 'font-semibold text-primary-soft-foreground',
                             isSelected &&
                               'bg-primary font-medium text-primary-foreground hover:bg-primary-hover',
-                            'disabled:pointer-events-none disabled:opacity-40',
+                            'disabled:opacity-40 disabled:hover:bg-transparent',
                           )}
                         >
                           {day.getDate()}
