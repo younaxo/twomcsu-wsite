@@ -13,24 +13,36 @@ import { cn } from '@/lib/cn';
 import { formatMoney, formatNumber, plural } from '@/lib/format';
 import { cartCount, usePublicSiteSettings, useCart } from '@/lib/site/hooks';
 
+/// Глобальные плавающие действия «Полдня»: обычные круглые solid-кнопки в
+/// правом нижнем углу (без edge-peek и скрытых за краем контролов).
+/// Корзина — только в store-зоне, со счётчиком 1…99+; чат — аккуратное
+/// coming-soon состояние, пока нет frontend-клиента чата.
+
+export function formatCount(count: number): string {
+  return count > 99 ? '99+' : String(count);
+}
+
+const floatingButtonClassName =
+  'relative size-12 rounded-full border bg-surface-overlay text-foreground shadow-lg edge-highlight hover:bg-surface-hover';
+
 /// Корзина видна только в store-зоне (/shop*), для вошедших — с реальным
 /// счётчиком из GET /store/cart; анонимам — приглашение войти.
-export function CartButton() {
+export function CartButton({ className }: { className?: string }) {
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
   const cart = useCart(true);
   const count = cartCount(cart.data);
+  const label =
+    count > 0
+      ? `Корзина, ${count} ${plural(count, { one: 'товар', few: 'товара', many: 'товаров' })}`
+      : 'Корзина';
   return (
     <Popover>
       <Tooltip content="Корзина" side="left">
         <PopoverTrigger asChild>
           <IconButton
-            aria-label={
-              count > 0
-                ? `Корзина, ${count} ${plural(count, { one: 'товар', few: 'товара', many: 'товаров' })}`
-                : 'Корзина'
-            }
+            aria-label={label}
             variant="secondary"
-            className="relative size-12 rounded-full shadow-lg"
+            className={cn(floatingButtonClassName, className)}
             data-testid="cart-button"
           >
             <ShoppingCart />
@@ -39,7 +51,7 @@ export function CartButton() {
                 data-testid="cart-count"
                 className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-semibold text-primary-foreground tabular"
               >
-                {count > 99 ? '99+' : count}
+                {formatCount(count)}
               </span>
             ) : null}
           </IconButton>
@@ -109,9 +121,11 @@ export function CartButton() {
 }
 
 /// Кнопка чата: сайт-чат (PHASE 11 backend, WebSocket) ещё не имеет
-/// frontend-клиента — кнопка показывает честное состояние «скоро», без
-/// фейкового чата. Скрыта, если модуль чата выключен в настройках сайта.
-export function ChatButton() {
+/// frontend-клиента — аккуратное coming-soon состояние: кнопка приглушена,
+/// небольшая метка «скоро», без фейкового чата. Скрыта, если модуль чата
+/// выключен в настройках сайта. Когда клиент чата появится — сюда
+/// подключается реальный Chat.
+export function ChatButton({ className }: { className?: string }) {
   const settings = usePublicSiteSettings();
   if (settings.data && !settings.data.modules.chat) {
     return null;
@@ -120,20 +134,26 @@ export function ChatButton() {
     <Tooltip content="Чат — скоро" side="left">
       <IconButton
         aria-label="Чат (скоро)"
+        aria-disabled="true"
         variant="secondary"
-        className="size-12 rounded-full shadow-lg"
-        disabled
+        className={cn(floatingButtonClassName, 'text-muted-foreground', className)}
         data-testid="chat-button"
+        onClick={(event) => event.preventDefault()}
       >
         <MessageCircle />
+        <span
+          aria-hidden
+          className="absolute -right-1 -top-1 rounded-full border bg-surface px-1.5 text-[9px] font-semibold uppercase tracking-wide text-subtle-foreground"
+        >
+          скоро
+        </span>
       </IconButton>
     </Tooltip>
   );
 }
 
-/// Единая точка плавающих действий: показываем только нужное в контексте
-/// (корзина — в магазине), не больше 2–3 кнопок. Над футером и мобильной
-/// навигацией — отступ по safe-area.
+/// Единая точка плавающих действий: правый нижний угол, над футером и
+/// мобильной навигацией (safe-area), ниже модалок и тостов по z-index.
 export function GlobalFloatingActions({ className }: { className?: string }) {
   const pathname = usePathname();
   const inStore = pathname === '/shop' || pathname.startsWith('/shop/');
@@ -142,7 +162,7 @@ export function GlobalFloatingActions({ className }: { className?: string }) {
       data-testid="floating-actions"
       className={cn(
         'fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-floating flex flex-col items-end gap-3',
-        'max-lg:bottom-[calc(4rem+max(0.75rem,env(safe-area-inset-bottom)))]',
+        'max-lg:bottom-[calc(5.5rem+env(safe-area-inset-bottom))]',
         className,
       )}
     >

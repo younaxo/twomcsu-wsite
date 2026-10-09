@@ -47,7 +47,7 @@ const itemClassName = cn(
 );
 
 const activeClassName = cn(
-  'bg-primary-soft text-primary-soft-foreground hover:bg-primary-soft hover:text-primary-soft-foreground',
+  'bg-primary-soft text-primary shadow-sm hover:bg-primary-soft hover:text-primary',
   'before:absolute before:-left-3 before:top-1/2 before:h-6 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary',
 );
 
@@ -136,7 +136,9 @@ function RailLink({
 }
 
 /// Фиксированный navigation rail слева (desktop): только иконки, подписи —
-/// Tooltip справа, без collapse/expand и изменения ширины. Сверху — общий
+/// Tooltip справа, без collapse/expand и изменения ширины. Без рамки: цвет почти
+/// как фон страницы (часть общего canvas), активный пункт — оранжевый акцент
+/// на приподнятой подложке. Сверху — общий
 /// онлайн, затем разделы сайта, снизу — бонусы, соцсети, язык/валюта.
 export function SidebarRail({ className }: { className?: string }) {
   const pathname = usePathname();
@@ -148,7 +150,7 @@ export function SidebarRail({ className }: { className?: string }) {
     <aside
       data-testid="sidebar-rail"
       className={cn(
-        'fixed inset-y-0 left-0 z-sidebar hidden flex-col items-center border-r bg-surface py-3 lg:flex',
+        'fixed inset-y-0 left-0 z-sidebar hidden flex-col items-center bg-background-subtle py-3 lg:flex',
         RAIL_WIDTH_CLASS,
         className,
       )}

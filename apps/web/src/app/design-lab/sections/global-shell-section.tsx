@@ -9,7 +9,7 @@ import { PaymentMethodLogos } from '@/components/shell/payment-method-logos';
 import { ProfileMenu } from '@/components/shell/profile-menu';
 import { ServerStatusButton } from '@/components/shell/server-status-button';
 import { OnlineCounter, SidebarRail } from '@/components/shell/sidebar-rail';
-import { SiteFooter } from '@/components/shell/site-footer';
+import { MojangDisclaimer, SiteFooter } from '@/components/shell/site-footer';
 import { SiteHeader } from '@/components/shell/site-header';
 import { Card } from '@/components/ui/card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -28,7 +28,8 @@ const WIDTH: Record<string, string> = {
 };
 
 /// GLOBAL SHELL — те же production-компоненты оболочки (не демо-копии):
-/// rail, header, footer, уведомления, профиль, корзина, чат, язык/валюта,
+/// rail, плавающий header (без рамки) и прижатый к низу footer, кнопки
+/// чата/корзины, уведомления, профиль, язык/валюта,
 /// статус серверов, логотипы оплаты. Данные — реальные запросы к API;
 /// без API компоненты показывают честные loading/fallback-состояния.
 export function GlobalShellSection() {
@@ -44,23 +45,28 @@ export function GlobalShellSection() {
       <div className="overflow-x-auto rounded-lg border bg-background-subtle p-4 scrollbar-thin">
         <div
           className={cn(
-            'relative mx-auto flex min-h-[560px] overflow-hidden rounded-lg border bg-background',
+            'relative mx-auto flex min-h-[640px] overflow-hidden rounded-lg border bg-background',
             WIDTH[viewport],
           )}
         >
           {viewport === 'desktop' ? (
-            <SidebarRail className="!static !flex h-auto min-h-[560px]" />
+            <SidebarRail className="!static !flex h-auto min-h-[640px]" />
           ) : null}
           <div className="flex min-w-0 flex-1 flex-col">
-            <SiteHeader />
+            <SiteHeader className="!static" />
             <main className="flex-1 p-6 text-sm text-muted-foreground">Main content</main>
             <SiteFooter />
           </div>
-          {viewport !== 'desktop' ? (
+          {viewport === 'desktop' ? (
+            <div className="absolute bottom-4 right-4 flex flex-col items-end gap-3">
+              <CartButton />
+              <ChatButton />
+            </div>
+          ) : (
             <div className="absolute inset-x-0 bottom-0">
               <MobileNav />
             </div>
-          ) : null}
+          )}
         </div>
       </div>
 
@@ -83,7 +89,8 @@ export function GlobalShellSection() {
             <ChatButton />
           </div>
           <p className="text-xs text-muted-foreground">
-            Корзина показывается только в /shop*; чат — честное «скоро».
+            Обычные плавающие кнопки в правом нижнем углу; корзина только в /shop*, чат —
+            coming-soon состояние.
           </p>
         </Card>
         <Card className="flex flex-col gap-3">
@@ -94,11 +101,9 @@ export function GlobalShellSection() {
           </div>
         </Card>
         <Card className="flex flex-col gap-3">
-          <p className="text-sm font-semibold">Способы оплаты</p>
+          <p className="text-sm font-semibold">Способы оплаты · дисклеймер</p>
           <PaymentMethodLogos />
-          <p className="text-xs text-muted-foreground">
-            SVG владельца в public/assets/payment; без файла — текстовая подпись.
-          </p>
+          <MojangDisclaimer />
         </Card>
       </div>
     </div>

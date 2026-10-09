@@ -1,12 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/lib/auth/store';
 import { ThemeProvider } from '@/lib/theme/theme-provider';
 import { installFetchMock, jsonResponse, requestInfo, type FetchMock } from '@/test/http';
-import { CartButton } from './floating-actions';
+import { CartButton, ChatButton } from './floating-actions';
+import { LocalePopover } from './locale-popover';
+import { usePreferences } from '@/lib/site/preferences';
 import { SidebarRail } from './sidebar-rail';
 import { SiteFooter } from './site-footer';
 import { SiteHeader } from './site-header';
@@ -135,6 +138,14 @@ describe('SiteHeader', () => {
       '/login?next=%2Fshop%2Fcart',
     );
     expect(screen.queryByRole('button', { name: /Уведомления/ })).toBeNull();
+    const surface = screen.getByTestId('site-header-surface');
+    expect(surface.className).toMatch(/rounded-xl/);
+    expect(surface.className).toMatch(/shadow-lg/);
+    // Без рамки вокруг шапки и без glass; отступ сверху/по бокам сохранён.
+    expect(surface.className.split(' ')).not.toContain('border');
+    expect(surface.className).not.toMatch(/backdrop-blur/);
+    expect(screen.getByTestId('site-header').className).toMatch(/pt-3/);
+    expect(screen.getByTestId('site-header').className).toMatch(/px-3/);
   });
 
   it('вошедшему — профиль с префиксом роли и счётчик непрочитанных', async () => {
@@ -179,7 +190,11 @@ describe('SiteFooter', () => {
     route(fetchMock, { '/servers/overview': overview, '/site/settings': settings });
     render(<SiteFooter />, { wrapper: Providers });
     const legal = screen.getByRole('navigation', { name: 'Правовая информация' });
-    expect(within(legal).queryAllByRole('link')).toHaveLength(0);
+    // Единственная ссылка — внешний документ политики Mojang AB; остальное — «скоро».
+    const legalLinks = within(legal).getAllByRole('link');
+    expect(legalLinks).toHaveLength(1);
+    expect(legalLinks[0]).toHaveAttribute('href', 'https://reallyworld.ru/mojang.pdf');
+    expect(legalLinks[0]).toHaveAttribute('rel', 'noopener noreferrer');
     expect(within(legal).getByText('Политика конфиденциальности')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Discord' })).toHaveAttribute(
@@ -191,7 +206,49 @@ describe('SiteFooter', () => {
       'href',
       'mailto:support@twomc.su',
     );
-    expect(screen.getByRole('button', { name: 'Язык: Русский' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Язык и валюта: Русский · RUB ₽' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/настраиваются независимо/)).toBeNull();
+    // Поддержка: admin e-mail и кликабельный Telegram поддержки.
+    expect(screen.getByRole('link', { name: 'Администрация: admin@twomc.su' })).toHaveAttribute(
+      'href',
+      'mailto:admin@twomc.su',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Telegram поддержки: @twomcsu_support' }),
+    ).toHaveAttribute('href', 'https://t.me/twomcsu_support');
+    // Юридические данные владельца и дисклеймер Mojang AB.
+    expect(screen.getByTestId('legal-owner')).toHaveTextContent('Кирилл Игнатьевич Баранов');
+    expect(screen.getByTestId('legal-owner')).toHaveTextContent('ИНН 12321312333');
+    expect(screen.getByRole('link', { name: /политике Mojang AB/ })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
+    expect(screen.queryByText(/New-Era Anarchy/)).toBeNull();
+    // Футер — скруглён сверху, с боковыми отступами, прижат к низу: без margin/padding снизу.
+    const footer = screen.getByTestId('site-footer');
+    const surface = screen.getByTestId('site-footer-surface');
+    expect(surface.className).toMatch(/rounded-t-xl/);
+    expect(surface.className).toMatch(/border-b-0/);
+    expect(footer.className).toMatch(/px-3/);
+    expect(footer.className).toMatch(/mt-auto/);
+    expect(footer.className).not.toMatch(/pb-|mb-/);
+    // Все пять соцсетей, одинаковый размер; без ссылки — недоступны.
+    const socials = screen.getByRole('list', { name: 'Соцсети' });
+    expect(socials.querySelectorAll('[data-social]')).toHaveLength(5);
+    expect(within(socials).getByRole('link', { name: 'Telegram' })).toHaveAttribute(
+      'href',
+      'https://t.me/x',
+    );
+    expect(within(socials).getByRole('button', { name: 'YouTube (скоро)' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(within(socials).getByRole('button', { name: 'VK (скоро)' })).toBeInTheDocument();
+    // Telegram поддержки — официальная brand-иконка, кликабельная ссылка.
+    const supportTg = screen.getByRole('link', { name: 'Telegram поддержки: @twomcsu_support' });
+    expect(supportTg.querySelector('svg path')).not.toBeNull();
     await waitFor(() =>
       expect(screen.getByRole('link', { name: /Статус серверов/ })).toHaveAttribute(
         'data-health',
@@ -244,5 +301,63 @@ describe('CartButton', () => {
     render(<CartButton />, { wrapper: Providers });
     await waitFor(() => expect(screen.getByTestId('cart-count')).toHaveTextContent('3'));
     expect(screen.getByRole('button', { name: 'Корзина, 3 товара' })).toBeInTheDocument();
+  });
+
+  it('обычные плавающие кнопки без edge-peek: корзина 99+, чат — coming-soon', async () => {
+    route(fetchMock, {
+      '/site/settings': settings,
+      '/store/cart': { id: 'c', items: [{ id: 'i1', quantity: 150 }], total: '1' },
+    });
+    useAuthStore.setState({
+      status: 'authenticated',
+      user: {
+        id: 'u1',
+        shortId: 1,
+        tag: 'a#1',
+        email: 'a@b.c',
+        username: 'a',
+        accountType: 'DEFAULT',
+        mustChangePassword: false,
+        roles: [],
+        permissions: { superuser: false, permissions: [], maxPriority: null },
+      },
+    });
+    render(
+      <>
+        <CartButton />
+        <ChatButton />
+      </>,
+      { wrapper: Providers },
+    );
+    const cart = screen.getByTestId('cart-button');
+    expect(cart.className).not.toMatch(/translate-x|peek/);
+    expect(cart.className).toMatch(/rounded-full/);
+    await waitFor(() => expect(screen.getByTestId('cart-count')).toHaveTextContent('99+'));
+    const chat = await screen.findByTestId('chat-button');
+    expect(chat).toHaveAttribute('aria-disabled', 'true');
+    expect(chat.className).toMatch(/rounded-full/);
+    expect(chat).toHaveTextContent('скоро');
+  });
+});
+
+describe('LocalePopover', () => {
+  it('язык и валюта — независимые настройки; недоступные варианты помечены «скоро»', async () => {
+    const user = userEvent.setup();
+    usePreferences.setState({ locale: 'ru', currency: 'RUB' });
+    render(<LocalePopover variant="footer" />, { wrapper: Providers });
+    await user.click(screen.getByRole('button', { name: 'Язык и валюта: Русский · RUB ₽' }));
+    const locales = await screen.findByRole('listbox', { name: 'Язык' });
+    const currencies = screen.getByRole('listbox', { name: 'Валюта' });
+    expect(within(locales).getByRole('option', { name: 'Русский' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(locales).getByRole('button', { name: 'English' })).toBeDisabled();
+    expect(within(currencies).getByRole('button', { name: /USD/ })).toBeDisabled();
+    // Выбор недоступной валюты не меняет состояние; язык при этом не трогается.
+    usePreferences.getState().setCurrency('USD');
+    expect(usePreferences.getState()).toMatchObject({ locale: 'ru', currency: 'RUB' });
+    usePreferences.getState().setLocale('en');
+    expect(usePreferences.getState().locale).toBe('ru');
   });
 });

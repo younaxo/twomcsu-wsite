@@ -96,4 +96,12 @@
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--border-strong)) transparent;
   }
+
+  /* Лента без видимого скроллбара (прокрутка колесом/свайпом сохраняется). */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

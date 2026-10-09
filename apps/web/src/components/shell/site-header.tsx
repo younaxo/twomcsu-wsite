@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/auth/store';
 import { NotificationsPopover } from './notifications-popover';
 import { OnlineCounter } from './sidebar-rail';
 import { ProfileMenu } from './profile-menu';
+import { SeasonalHeaderDecoration } from './seasonal-header-decoration';
 import { SiteLogo } from './site-logo';
 
 const HEADER_ITEMS = SITE_NAVIGATION.filter((item) => item.header);
@@ -32,9 +33,8 @@ function HeaderNav({ className, onNavigate }: { className?: string; onNavigate?:
                 className={cn(
                   'relative flex h-10 items-center rounded px-3 text-sm font-medium transition-colors duration-fast',
                   active
-                    ? 'text-foreground after:absolute after:inset-x-3 after:-bottom-px after:hidden after:h-0.5 after:rounded-full after:bg-primary lg:after:block'
+                    ? 'bg-primary-soft text-primary-soft-foreground'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  active && 'bg-primary-soft/60 lg:bg-transparent',
                 )}
               >
                 {item.label}
@@ -47,16 +47,25 @@ function HeaderNav({ className, onNavigate }: { className?: string; onNavigate?:
   );
 }
 
-/// Единая шапка публичных страниц: логотип + twomc.su, центральная
-/// навигация, справа — уведомления (для вошедших) и профиль. На узких
-/// экранах навигация уезжает в sheet, колокольчик и аватар остаются.
-export function SiteHeader() {
+/// Шапка публичных страниц — отдельная плавающая solid-поверхность внутри
+/// области контента: отступы сверху/слева/справа, большие скругления; глубина —
+/// за счёт разницы поверхностей и тени, без рамки и без backdrop-filter. Содержимое: логотип + twomc.su,
+/// центральная навигация, справа — уведомления (для вошедших) и профиль.
+/// На узких экранах навигация уезжает в sheet.
+export function SiteHeader({ className }: { className?: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
 
   return (
-    <header className="sticky top-0 z-header border-b bg-surface">
-      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4 md:px-6">
+    <header
+      data-testid="site-header"
+      className={cn('sticky top-0 z-header px-3 pt-3 md:px-6 md:pt-4', className)}
+    >
+      <div
+        data-testid="site-header-surface"
+        className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-3 rounded-xl bg-surface px-3 shadow-lg edge-highlight md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
+      >
+        <SeasonalHeaderDecoration />
         <IconButton
           aria-label="Открыть меню"
           variant="outline"
@@ -66,8 +75,8 @@ export function SiteHeader() {
           <Menu />
         </IconButton>
         <SiteLogo />
-        <HeaderNav className="ml-6 hidden lg:block" />
-        <div className="ml-auto flex items-center gap-1">
+        <HeaderNav className="mx-auto hidden lg:block" />
+        <div className="ml-auto flex items-center gap-1 lg:ml-0">
           <div className="lg:hidden">
             <OnlineCounter compact />
           </div>

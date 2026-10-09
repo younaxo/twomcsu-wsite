@@ -11,10 +11,13 @@ import {
   FOOTER_LEGAL_LINKS,
   FOOTER_PLAYER_LINKS,
   LEGAL_OWNER,
-  resolveSocialLinks,
+  MOJANG_DISCLAIMER,
+  MOJANG_POLICY_URL,
+  resolveSocialSlots,
   resolveSupportEmail,
+  SITE_DESCRIPTION,
   SITE_NAME,
-  SITE_TAGLINE,
+  SUPPORT,
   type FooterLink,
 } from '@/lib/site/config';
 import { usePublicSiteSettings } from '@/lib/site/hooks';
@@ -70,12 +73,78 @@ function LinkColumn({ title, links }: { title: string; links: FooterLink[] }) {
   );
 }
 
-/// Информационный футер публичных страниц: бренд и владелец, e-mail,
-/// соцсети, ссылки игрокам, правовые документы, язык, статус серверов,
-/// тема, версия и способы оплаты. Лежит в области контента (правее rail).
+/// Информационное примечание о Mojang AB — ссылка на документ внешняя
+/// (проходит через External Link Modal, как и любой сторонний переход).
+export function MojangDisclaimer({ className }: { className?: string }) {
+  return (
+    <p className={cn('text-xs leading-relaxed text-muted-foreground', className)}>
+      {MOJANG_DISCLAIMER.before}
+      <a
+        href={MOJANG_POLICY_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-0.5 text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
+      >
+        {MOJANG_DISCLAIMER.link}
+        <ExternalLink aria-hidden className="size-3" />
+      </a>
+      {MOJANG_DISCLAIMER.after}
+    </p>
+  );
+}
+
+const socialButtonClassName =
+  'flex size-10 items-center justify-center rounded border bg-background text-muted-foreground transition-colors duration-fast [&_svg]:size-5';
+
+/// Все официальные соцсети (Telegram, Discord, YouTube, TikTok, VK) —
+/// официальные SVG (Simple Icons), одинаковая высота, aria-label, tooltip.
+/// Без ссылки (ещё не задана в настройках сайта/env) — честно недоступна.
+export function SocialIcons({ className }: { className?: string }) {
+  const settings = usePublicSiteSettings();
+  const slots = resolveSocialSlots(settings.data);
+  return (
+    <ul aria-label="Соцсети" className={cn('flex flex-wrap items-center gap-1.5', className)}>
+      {slots.map((social) => (
+        <li key={social.id}>
+          {social.url ? (
+            <Tooltip content={social.label}>
+              <a
+                href={social.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={social.label}
+                data-social={social.id}
+                className={cn(socialButtonClassName, 'hover:bg-muted hover:text-foreground')}
+              >
+                <BrandIcon id={social.id} />
+              </a>
+            </Tooltip>
+          ) : (
+            <Tooltip content={`${social.label} — ссылка появится скоро`}>
+              <button
+                type="button"
+                aria-label={`${social.label} (скоро)`}
+                aria-disabled="true"
+                data-social={social.id}
+                className={cn(socialButtonClassName, 'cursor-default opacity-50')}
+              >
+                <BrandIcon id={social.id} />
+              </button>
+            </Tooltip>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/// Футер публичных страниц — отдельная скруглённая solid-поверхность с
+/// боковыми отступами, которая ПРИЖАТА к нижней границе страницы: верхние
+/// углы скруглены, снизу ничего нет (ни margin, ни полосы фона). На коротких
+/// страницах AppShell (min-h-dvh, main flex-1) держит его у низа viewport;
+/// в потоке документа (не fixed/sticky).
 export function SiteFooter({ className }: { className?: string }) {
   const settings = usePublicSiteSettings();
-  const socials = resolveSocialLinks(settings.data);
   const email = resolveSupportEmail(settings.data);
   const year = new Date().getFullYear();
   const legalParts = [
@@ -86,49 +155,56 @@ export function SiteFooter({ className }: { className?: string }) {
   ].filter(Boolean);
 
   return (
-    <footer data-testid="site-footer" className={cn('border-t bg-surface', className)}>
-      <div className="mx-auto flex max-w-[1440px] flex-col gap-10 px-4 py-10 md:px-6">
-        <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-[1.4fr_1fr_1fr_1.2fr]">
+    <footer data-testid="site-footer" className={cn('mt-auto px-3 md:px-6', className)}>
+      <div
+        data-testid="site-footer-surface"
+        className="mx-auto flex max-w-[1440px] flex-col gap-10 rounded-t-xl border border-b-0 bg-surface px-5 pb-8 pt-10 shadow-lg edge-highlight max-lg:pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:px-8"
+      >
+        <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr_1fr_1.1fr]">
           <div className="flex flex-col gap-4">
             <SiteLogo size={32} />
-            <p className="text-sm text-muted-foreground">{SITE_TAGLINE}</p>
-            {legalParts.length > 0 ? (
-              <p className="text-xs text-muted-foreground">{legalParts.join(' · ')}</p>
-            ) : process.env.NODE_ENV !== 'production' ? (
-              <p className="text-xs text-subtle-foreground">
-                Юридические данные владельца не заданы (NEXT_PUBLIC_LEGAL_*). В production блок
-                скрыт.
-              </p>
-            ) : null}
-            {email ? (
-              <a
-                href={`mailto:${email}`}
-                className="inline-flex items-center gap-2 text-sm hover:text-primary-soft-foreground"
-              >
-                <Mail aria-hidden className="size-4" />
-                {email}
-              </a>
-            ) : null}
-            {socials.length > 0 ? (
-              <ul aria-label="Соцсети" className="flex items-center gap-1">
-                {socials.map((social) => (
-                  <li key={social.id}>
-                    <Tooltip content={social.label}>
-                      <a
-                        href={social.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={social.label}
-                        className="flex size-9 items-center justify-center rounded border bg-background text-muted-foreground hover:text-foreground"
-                      >
-                        <BrandIcon id={social.id} />
-                      </a>
-                    </Tooltip>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+            <p className="max-w-sm text-sm text-muted-foreground">{SITE_DESCRIPTION}</p>
+            <MojangDisclaimer className="max-w-sm" />
+            <SocialIcons />
           </div>
+
+          <nav aria-label="Поддержка" className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold">Поддержка</h2>
+            <ul className="flex flex-col gap-1.5 text-sm">
+              <li>
+                <a
+                  href={`mailto:${email}`}
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                >
+                  <Mail aria-hidden className="size-4" />
+                  {email}
+                </a>
+              </li>
+              <li>
+                <a
+                  href={`mailto:${SUPPORT.adminEmail}`}
+                  aria-label={`Администрация: ${SUPPORT.adminEmail}`}
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                >
+                  <Mail aria-hidden className="size-4" />
+                  {SUPPORT.adminEmail}
+                </a>
+              </li>
+              <li>
+                <a
+                  href={SUPPORT.telegram.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Telegram поддержки: ${SUPPORT.telegram.handle}`}
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                >
+                  <BrandIcon id="telegram" className="size-4" />
+                  {SUPPORT.telegram.handle}
+                  <ExternalLink aria-hidden className="size-3.5" />
+                </a>
+              </li>
+            </ul>
+          </nav>
 
           <LinkColumn title="Игрокам" links={FOOTER_PLAYER_LINKS} />
           <LinkColumn title="Правовая информация" links={FOOTER_LEGAL_LINKS} />
@@ -143,17 +219,12 @@ export function SiteFooter({ className }: { className?: string }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 border-t border-border-subtle pt-6 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-4 border-t border-border-subtle pt-6 text-xs text-muted-foreground">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p data-testid="legal-owner">{legalParts.join(' · ')}</p>
+            <PaymentMethodLogos className="md:justify-end" />
+          </div>
           <p>
-            {email ? (
-              <a href={`mailto:${email}`} className="hover:text-foreground">
-                Поддержка: {email}
-              </a>
-            ) : (
-              'Поддержка'
-            )}
-          </p>
-          <p className="md:text-center">
             © {year} {SITE_NAME} ·{' '}
             <Tooltip content={BUILD_SHA ? `Сборка ${BUILD_SHA.slice(0, 7)}` : 'Локальная сборка'}>
               <span className="font-mono tabular" tabIndex={0}>
@@ -161,7 +232,6 @@ export function SiteFooter({ className }: { className?: string }) {
               </span>
             </Tooltip>
           </p>
-          <PaymentMethodLogos className="md:justify-end" />
         </div>
       </div>
     </footer>
