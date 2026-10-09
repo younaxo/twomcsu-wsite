@@ -1,12 +1,19 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AuditLogSeverity,
   ListAuditLogQueryDto,
-} from './dto/list-audit-log-query.dto';
+} from '../admin/dto/list-audit-log-query.dto';
 
-const RETENTION_DAYS = 90;
+/// Час ежедневной очистки (локальное время сервера).
+const CLEANUP_HOUR = 4;
 
 export interface AuditLogInput {
   actorId: string;
@@ -21,15 +28,57 @@ export interface AuditLogInput {
 }
 
 /// Единая точка записи audit-событий (см. docs/technical/25-AUDIT-LOG.md).
-/// Полное ретроактивное покрытие всех staff-мутаций всех доменов — PHASE 22;
-/// здесь регистрируются только действия, появляющиеся в этой фазе
-/// (settings/broadcast/bulk-users/security), см. docs/implementation/ADR
-/// по PHASE 20.
+/// Автоматическое покрытие всех staff-мутаций — AuditInterceptor
+/// (PHASE 22, ADR-0056); явные вызовы `log()` — для обогащённых событий.
+/// Ретенция — AUDIT_RETENTION_DAYS (ENV), очистка ежедневно в 04:00 без
+/// внешнего планировщика (таймер процесса; в test-окружении отключён).
 @Injectable()
-export class AuditService {
+export class AuditService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AuditService.name);
+  private readonly retentionDays: number;
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {
+    this.retentionDays = this.config.get<number>('AUDIT_RETENTION_DAYS') ?? 90;
+  }
+
+  onModuleInit(): void {
+    if (this.config.get<string>('NODE_ENV') === 'test') {
+      return;
+    }
+    this.scheduleCleanup();
+  }
+
+  onModuleDestroy(): void {
+    if (this.cleanupTimer) {
+      clearTimeout(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /// Следующий запуск — ближайшие 04:00; после выполнения планируется заново.
+  private scheduleCleanup(): void {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(CLEANUP_HOUR, 0, 0, 0);
+    if (next <= now) {
+      next.setDate(next.getDate() + 1);
+    }
+    this.cleanupTimer = setTimeout(() => {
+      this.cleanupOld()
+        .then(({ deleted }) =>
+          this.logger.log(`Очистка audit log: удалено ${deleted}`),
+        )
+        .catch((error: Error) =>
+          this.logger.warn(`Очистка audit log не удалась: ${error.message}`),
+        )
+        .finally(() => this.scheduleCleanup());
+    }, next.getTime() - now.getTime());
+    this.cleanupTimer.unref();
+  }
 
   /// Ошибка записи для severity info/warning проглатывается (аудит не
   /// гарантирован) — но падает для critical, чтобы критичное действие не
@@ -128,11 +177,11 @@ export class AuditService {
     };
   }
 
-  /// Удаляет записи старше RETENTION_DAYS. Периодический вызов (04:00) —
-  /// PHASE 29 (нет cron-инфраструктуры); метод реализован и протестирован
-  /// уже сейчас, вызывается вручную/из теста до появления планировщика.
-  async cleanupOld(): Promise<{ deleted: number }> {
-    const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 3_600_000);
+  /// Удаляет записи старше AUDIT_RETENTION_DAYS (по умолчанию 90).
+  async cleanupOld(
+    retentionDays: number = this.retentionDays,
+  ): Promise<{ deleted: number }> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 3_600_000);
     const result = await this.prisma.auditLog.deleteMany({
       where: { createdAt: { lt: cutoff } },
     });

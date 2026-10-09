@@ -8,7 +8,6 @@ import { AdminPanelController } from './admin-panel.controller';
 import { AdminToolsService } from './admin-tools.service';
 import { AdminUsersBulkController } from './admin-users-bulk.controller';
 import { AdminUsersBulkService } from './admin-users-bulk.service';
-import { AuditService } from './audit.service';
 import { DashboardService } from './dashboard.service';
 import { ExportController } from './export.controller';
 import { ExportService } from './export.service';
@@ -22,13 +21,11 @@ import { ExportService } from './export.service';
     ExportController,
   ],
   providers: [
-    AuditService,
     DashboardService,
     AdminToolsService,
     AdminFinanceService,
     AdminUsersBulkService,
     ExportService,
   ],
-  exports: [AuditService],
 })
 export class AdminModule {}

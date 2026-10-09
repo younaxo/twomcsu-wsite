@@ -36,7 +36,7 @@
 - [x] PHASE 19 — Gamification (achievements с реальным пересчётом прогресса, awards, badges, leaderboards; admin-дашборд — PHASE 20)
 - [x] PHASE 20 — Admin backend (dashboard, audit log read/stats, saved-filters/bookmarks/scheduled-exports, security, content/finance, bulk users, CSV export; полное ретроактивное покрытие audit log — PHASE 22, cron для scheduled-exports — PHASE 29)
 - [~] PHASE 21 — Admin panel (frontend, permission-driven меню; часть 1 — фундамент; часть 2 — дизайн-система «Полдень» dark-first; часть 3 — admin-shell, /login и все core-экраны; осталось: тесты страниц, QA с API, merge)
-- [ ] PHASE 22 — Audit log (обязательные события, retention)
+- [x] PHASE 22 — Audit log (AuditInterceptor по @RequirePermissions — все staff-мутации; уровни по ключу; AUDIT_RETENTION_DAYS + ежедневная очистка; ADR-0056)
 - [x] PHASE 23 — CDN / file storage (StorageService local/s3, 20 типов загрузок, magic-bytes + sharp → AVIF, File TEMP/ATTACHED, orphan cleanup, /users/me/avatar|banner; привязка в доменах — по мере экранов)
 - [ ] PHASE 24 — Redis / cache (централизованные ключи, инвалидация)
 - [ ] PHASE 25 — System (settings, maintenance, feature flags)

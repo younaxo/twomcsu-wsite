@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditService } from './audit.service';
+import { AuditService } from '../audit/audit.service';
 import { BroadcastDto } from './dto/broadcast.dto';
 import { UpsertSettingsDto } from './dto/upsert-settings.dto';
 

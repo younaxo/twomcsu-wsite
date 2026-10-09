@@ -45,6 +45,8 @@ export const envValidationSchema = Joi.object({
   STORAGE_SECRET_KEY: Joi.string()
     .allow('')
     .when('STORAGE_DRIVER', { is: 's3', then: Joi.string().required() }),
+  /// Срок хранения audit log в днях (PHASE 22); очистка — ежедневно в 04:00.
+  AUDIT_RETENTION_DAYS: Joi.number().integer().min(1).max(3650).default(90),
 
   HCAPTCHA_DISABLED: Joi.boolean().default(false),
   HCAPTCHA_SECRET: Joi.string()

@@ -97,6 +97,11 @@ describe('Direct Messages (e2e)', () => {
 
   afterAll(async () => {
     if (alice && bob && carol) {
+      await prisma.auditLog.deleteMany({
+        where: {
+          actor: { email: { in: [alice.email, bob.email, carol.email] } },
+        },
+      });
       await prisma.user.deleteMany({
         where: { email: { in: [alice.email, bob.email, carol.email] } },
       });
