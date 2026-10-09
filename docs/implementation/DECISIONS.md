@@ -960,6 +960,7 @@ Frontend-меню должно строиться из effective permissions
 (44-TARGET-ARCHITECTURE.md §2), но `GET /auth/me` их не отдавал.
 
 **Decision.**
+
 1. `GET /auth/me` расширен полями `roles[]` и `permissions`
    (`EffectivePermissions` из `PermissionService` — тот же Redis-кеш с
    немедленной инвалидацией, что и у `PermissionsGuard`; `maxPriority`
@@ -968,7 +969,7 @@ Frontend-меню должно строиться из effective permissions
    приложения вместо двух.
 2. Access-token хранится только в памяти (`lib/api/token-store.ts`), не в
    localStorage/cookie. Восстановление сессии при загрузке — `POST
-   /auth/refresh` по cookie, затем `/auth/me`.
+/auth/refresh` по cookie, затем `/auth/me`.
 3. `refreshAccessToken()` и `bootstrap()` — single-flight (один промис на
    модуль): параллельные 401 и двойной вызов эффектов в React StrictMode
    не порождают два refresh с одним cookie (иначе reuse detection отозвал
@@ -995,6 +996,7 @@ Frontend-меню должно строиться из effective permissions
 владельца и только потом перенос на страницы.
 
 **Decision.**
+
 1. **Токены** (`apps/web/src/styles/tokens.css`) — только семантические
    (`surface/primary/border/ring/success…`, радиусы, тени, шрифты,
    плотность, движение), RGB-каналами для alpha; Tailwind маппится на
@@ -1065,6 +1067,7 @@ assets фиксированы.
 полностью и окончательно.
 
 **Решение.**
+
 - `tokens.css`: `:root`/`[data-theme='light']` — светлый «Полдень»,
   `[data-theme='dark']` — тёмный (default на `<html>`, inline no-flash
   скрипт, выбор в `localStorage` `twomc.theme.v1`, `ThemeToggle`
@@ -1282,6 +1285,7 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
 
 **Decision.** Три шага на `/register`: данные → «Подтвердить почту» → код →
 «Создать аккаунт».
+
 - `POST /auth/register/start` — без пароля. Проверяет Turnstile,
   `registrationEnabled`, согласия (`acceptTerms`, `acceptPersonalData` строго
   `true`), свободны ли e-mail и ник (409 `email_taken` / `username_taken`; ник
@@ -1335,6 +1339,7 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
 должен видеть понятный экран результата, а не редирект/JSON.
 
 **Decision.**
+
 - Страницы входа, регистрации, восстановления/сброса пароля и `/auth/result`
   — в группе маршрутов `app/(auth)` с общим layout (`AuthLayout` → `AuthPanel`):
   остров `max-w-[1120px]`, слева логотип, `AuthModeSwitch` (две ссылки с
@@ -1357,7 +1362,7 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
 - Telegram — OpenID Connect (core.telegram.org/bots/telegram-login):
   `GET /auth/telegram/start` / `POST /auth/telegram/link-url` → редирект на
   `https://oauth.telegram.org/auth` (`response_type=code`, `scope=openid
-  profile`, `state`, `nonce`, PKCE `S256`; verifier — в httpOnly-cookie
+profile`, `state`, `nonce`, PKCE `S256`; verifier — в httpOnly-cookie
   `social_pkce`, path `/auth`, 10 минут) → `GET /auth/telegram/callback`:
   проверка state/nonce-cookie, обмен кода на `https://oauth.telegram.org/token`
   (Basic `client_id:client_secret` + `code_verifier`), проверка `id_token`
@@ -1380,7 +1385,7 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
   иконка статуса, заголовок, описание, действия («Продолжить» с автопереходом
   через 4 с, «Вернуться ко входу», «Вернуться в настройки», «Повторить»).
 - Design-lab, раздел «Auth» — те же компоненты (`AuthPanel`, `LoginForm
-  preview`, `RegisterForm previewStep="code"`, `SocialAuthResult`).
+preview`, `RegisterForm previewStep="code"`, `SocialAuthResult`).
 
 **Consequences.** Telegram-вход заработает после настройки BotFather (Login
 Widget → OpenID Connect, Allowed URL callback, Client Secret в env) —
@@ -1398,6 +1403,7 @@ server-authoritative; поля регистрации без пустот, ре�
 в старом, ни в новом проекте (ADR-0041: RCON нет, плагина нет).
 
 **Decision.**
+
 - Tutorial — production Dialog (`AuthTutorial`, ~860px, desktop: скриншот слева,
   mobile: сверху; «Этап N из 6», полоса прогресса, Назад/Далее/Понятно, стрелки,
   Esc, focus trap Radix). Вся конфигурация — `lib/auth/tutorial.ts`: этапы,
@@ -1529,3 +1535,27 @@ DropdownMenu с виртуальным якорем), клавиатура и Es
 **Consequences.** Ряда онлайна игроков нет: `ServerStatusLog` пишется только при
 запросе статуса, без периодического сборщика — график онлайна не рисуется, пока
 не появится сборщик (Product Completion).
+
+## ADR-0079 — Сезонная система: настройки в админке, серверное время, эффекты
+
+**Decision.** Реестр кампаний (окна по умолчанию, приоритеты, сезонная «o»,
+декор, эффект) остаётся в web `lib/site/seasonal.ts`. Сервер хранит только
+настройки — singleton `SeasonalSettings` (`seasonal_settings`, id `global`):
+ON/OFF целиком, режим `auto | forced` (+ `forcedCampaignId`), флаги
+`showWordmarkO / showDecoration / showEffects / showBanners`, плотность эффектов
+1–3 и переопределения кампаний `{ enabled, startsAt, endsAt }` (JSON).
+`GET/PATCH /admin/settings/seasonal` — права `settings.seasonal.view/edit`,
+изменение пишется в аудит `settings.seasonal.update` с diff полей.
+`/site/settings.seasonal` отдаёт настройки и `serverTime`; кампанию выбирает
+клиент по реестру, но по времени сервера (api не импортирует `@twomc/shared`,
+список id продублирован в DTO для валидации). `useSeasonal()` считает состояние
+только после монтирования — SSR и гидрация всегда без сезонных элементов.
+Эффекты — один canvas (`pointer-events: none`, `z-effects` = 40: поверх
+оболочки, ниже модалок), rAF с паузой в скрытой вкладке, частиц
+`плотность × ширина / 40 ≤ 120`, DPR ≤ 2, при `prefers-reduced-motion` не
+рисуются; отдельный чанк `next/dynamic` (`ssr: false`). Основной логотип
+сезоны не меняют.
+
+**Consequences.** Новая кампания = запись в реестре web + id в
+`SEASONAL_CAMPAIGN_IDS` DTO. Сезонные баннеры пока только флаг — компонента
+баннеров нет (Product Completion). Миграция аддитивная (CREATE TABLE).

@@ -5,6 +5,10 @@ import { resolveSeasonalDecoration } from '@/lib/site/seasonal';
 import { MOBILE_NAV_ITEMS, MobileNav } from './mobile-nav';
 import { SeasonalHeaderDecoration } from './seasonal-header-decoration';
 
+// Настройки сезонов с сервера отсутствуют — fallback на реестр по дате (ADR-0079).
+vi.mock('@/lib/site/hooks', () => ({
+  usePublicSiteSettings: () => ({ isPending: false, data: undefined }),
+}));
 vi.mock('next/navigation', () => ({
   usePathname: () => '/rules',
 }));

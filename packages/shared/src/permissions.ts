@@ -573,6 +573,16 @@ export const PERMISSIONS = [
     module: 'settings',
     description: 'Включение, выключение и редактирование глобальной плашки сайта',
   },
+  {
+    key: 'settings.seasonal.view',
+    module: 'settings',
+    description: 'Просмотр настроек сезонной системы',
+  },
+  {
+    key: 'settings.seasonal.edit',
+    module: 'settings',
+    description: 'Управление сезонной системой: включение, сезон, эффекты, расписание',
+  },
 
   {
     key: 'saved_filters.view',

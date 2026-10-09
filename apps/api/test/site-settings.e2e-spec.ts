@@ -89,6 +89,93 @@ describe('Site settings: alert bar & social links (e2e)', () => {
     await app.close();
   });
 
+  it('сезоны: права, валидация, публикация в /site/settings с серверным временем, audit', async () => {
+    const plain = await createUser('sp');
+    const editor = await createUser('se');
+    await grant(editor.id, [
+      'settings.seasonal.view',
+      'settings.seasonal.edit',
+    ]);
+    const http = () => request(app.getHttpServer());
+
+    await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', plain.auth)
+      .send({ enabled: false })
+      .expect(403);
+    await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', editor.auth)
+      .send({ campaigns: { unknown: { enabled: true } } })
+      .expect(400);
+    await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', editor.auth)
+      .send({ mode: 'forced', forcedCampaignId: null })
+      .expect(400);
+    await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', editor.auth)
+      .send({
+        campaigns: {
+          halloween: {
+            startsAt: '2026-11-01T00:00:00Z',
+            endsAt: '2026-10-01T00:00:00Z',
+          },
+        },
+      })
+      .expect(400);
+
+    const saved = await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', editor.auth)
+      .send({
+        enabled: true,
+        mode: 'forced',
+        forcedCampaignId: 'halloween',
+        showEffects: false,
+        effectIntensity: 3,
+        campaigns: { 'new-year': { enabled: false } },
+      })
+      .expect(200);
+    expect(saved.body).toMatchObject({
+      mode: 'forced',
+      forcedCampaignId: 'halloween',
+      showEffects: false,
+    });
+
+    const pub = await http().get('/site/settings').expect(200);
+    expect(pub.body.seasonal).toMatchObject({
+      enabled: true,
+      mode: 'forced',
+      forcedCampaignId: 'halloween',
+      showEffects: false,
+      effectIntensity: 3,
+      campaigns: { 'new-year': { enabled: false } },
+    });
+    expect(
+      Math.abs(Date.parse(pub.body.seasonal.serverTime) - Date.now()),
+    ).toBeLessThan(60_000);
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { actorId: editor.id, action: 'settings.seasonal.update' },
+    });
+    expect(audit).not.toBeNull();
+
+    // Вернуть автоматический режим, чтобы не влиять на другие наборы.
+    await http()
+      .patch('/admin/settings/seasonal')
+      .set('Authorization', editor.auth)
+      .send({
+        mode: 'auto',
+        forcedCampaignId: null,
+        showEffects: true,
+        effectIntensity: 2,
+        campaigns: {},
+      })
+      .expect(200);
+  });
+
   it('плашка: права, валидация, публикация в /site/settings, audit', async () => {
     const plain = await createUser('pl');
     const editor = await createUser('ed');

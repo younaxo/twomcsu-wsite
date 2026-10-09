@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { UpdateSeasonalDto } from './dto/update-seasonal.dto';
 import { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -256,6 +257,24 @@ export class AdminPanelController {
   ) {
     await this.tools.updateSiteAlert(dto, admin.id);
     return this.tools.getSiteAlertForAdmin();
+  }
+
+  // --- Сезонная система (ADR-0079) -----------------------------------------
+
+  @Get('settings/seasonal')
+  @RequirePermissions('settings.seasonal.view')
+  async seasonal() {
+    return this.tools.getSeasonalSettings();
+  }
+
+  @Patch('settings/seasonal')
+  @RequirePermissions('settings.seasonal.edit')
+  @SkipAudit()
+  async updateSeasonal(
+    @Body() dto: UpdateSeasonalDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.tools.updateSeasonalSettings(dto, admin.id);
   }
 
   // --- Security ---------------------------------------------------------------

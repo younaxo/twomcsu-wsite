@@ -121,6 +121,8 @@ const config: Config = {
         header: '20',
         sidebar: '30',
         floating: '35',
+        // Сезонные эффекты (canvas, pointer-events: none): поверх оболочки, ниже модалок.
+        effects: '40',
         overlay: '50',
         modal: '50',
         // Popover/dropdown строго выше modal: открываются из диалогов (ColorPicker

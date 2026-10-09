@@ -1,3 +1,4 @@
+import type { PublicSeasonalSettings } from '@twomc/shared';
 import { cdnUrl } from '../env';
 
 /// Сезонное оформление — единый реестр кампаний. Компоненты (BrandWordmark,
@@ -52,7 +53,11 @@ export interface SeasonalCampaign {
   wordmarkO?: string;
   /// Полоса декора над шапкой.
   headerDecoration?: SeasonalImageAsset;
+  /// Эффект на фоне сайта (ADR-0079); нет — без эффекта.
+  effect?: SeasonalEffect;
 }
+
+export type SeasonalEffect = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun';
 
 /// Чёрная пятница — последняя пятница ноября и выходные после неё.
 function isBlackFridayWindow(date: Date): boolean {
@@ -66,42 +71,49 @@ function isBlackFridayWindow(date: Date): boolean {
 export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
   {
     id: 'new-year',
+    effect: 'snow',
     name: 'Новый год',
     priority: 80,
     window: { from: { month: 12, day: 15 }, to: { month: 1, day: 10 } },
   },
   {
     id: 'valentine',
+    effect: 'hearts',
     name: '14 февраля',
     priority: 60,
     window: { from: { month: 2, day: 10 }, to: { month: 2, day: 15 } },
   },
   {
     id: 'defender-day',
+    effect: 'snow',
     name: '23 февраля',
     priority: 60,
     window: { from: { month: 2, day: 20 }, to: { month: 2, day: 24 } },
   },
   {
     id: 'womens-day',
+    effect: 'blossom',
     name: '8 марта',
     priority: 60,
     window: { from: { month: 3, day: 5 }, to: { month: 3, day: 9 } },
   },
   {
     id: 'victory-day',
+    effect: 'sun',
     name: 'День Победы',
     priority: 70,
     window: { from: { month: 5, day: 5 }, to: { month: 5, day: 10 } },
   },
   {
     id: 'knowledge-day',
+    effect: 'leaves',
     name: '1 сентября',
     priority: 50,
     window: { from: { month: 8, day: 29 }, to: { month: 9, day: 2 } },
   },
   {
     id: 'halloween',
+    effect: 'leaves',
     name: 'Хэллоуин',
     priority: 60,
     window: { from: { month: 10, day: 1 }, to: { month: 11, day: 7 } },
@@ -162,4 +174,33 @@ export function resolveSeasonalDecoration(
       ? resolveSeasonalCampaign(date)
       : resolveSeasonalCampaign(date, override);
   return campaign?.headerDecoration ? { id: campaign.id, ...campaign.headerDecoration } : null;
+}
+
+/// Кампания по серверным настройкам (ADR-0079): выключено → нет; принудительно
+/// → выбранная; авто → реестр с переопределениями (выключенная кампания
+/// пропускается, явные даты заменяют окно). `now` — серверное время. Без
+/// настроек — прежний fallback на env.
+export function resolveSeasonalFromSettings(
+  settings: PublicSeasonalSettings | undefined,
+  now: Date,
+): SeasonalCampaign | null {
+  if (!settings) return resolveSeasonalCampaign(now);
+  if (!settings.enabled) return null;
+  if (settings.mode === 'forced') {
+    return SEASONAL_CAMPAIGNS.find((item) => item.id === settings.forcedCampaignId) ?? null;
+  }
+  const time = now.getTime();
+  return (
+    SEASONAL_CAMPAIGNS.filter((item) => {
+      const override = settings.campaigns?.[item.id];
+      if (override?.enabled === false) return false;
+      if (override?.startsAt || override?.endsAt) {
+        return (
+          (!override.startsAt || time >= Date.parse(override.startsAt)) &&
+          (!override.endsAt || time <= Date.parse(override.endsAt))
+        );
+      }
+      return inWindow(item, now);
+    }).sort((a, b) => b.priority - a.priority)[0] ?? null
+  );
 }

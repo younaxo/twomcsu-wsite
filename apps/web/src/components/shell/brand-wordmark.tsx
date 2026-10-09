@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { SITE_NAME } from '@/lib/site/config';
-import { resolveSeasonalCampaign } from '@/lib/site/seasonal';
+import { useSeasonal } from '@/lib/site/use-seasonal';
 
 /// Визуальный wordmark «twomc.su» с фирменной буквой «o».
 ///
@@ -82,11 +82,14 @@ function DefaultO() {
 }
 
 /// Сезонная «o» активной кампании (или null — базовая).
+/// Из серверных настроек сезонов (ADR-0079), после монтирования — без
+/// расхождения SSR и клиента; флаг «Сезонная «o»» в админке.
 export function useSeasonalWordmarkO(): { id: string; src: string } | null {
-  return useMemo(() => {
-    const campaign = resolveSeasonalCampaign(new Date());
-    return campaign?.wordmarkO ? { id: campaign.id, src: campaign.wordmarkO } : null;
-  }, []);
+  const seasonal = useSeasonal();
+  const campaign = seasonal.campaign;
+  return seasonal.showWordmarkO && campaign?.wordmarkO
+    ? { id: campaign.id, src: campaign.wordmarkO }
+    : null;
 }
 
 export function BrandWordmark({

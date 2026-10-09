@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { DocumentBadge } from './document-badge';
@@ -8,6 +9,12 @@ import { MobileNav } from './mobile-nav';
 import { RAIL_OFFSET_CLASS, SidebarRail } from './sidebar-rail';
 import { SiteFooter } from './site-footer';
 import { SiteHeader } from './site-header';
+
+/// Сезонные эффекты — отдельный чанк только на клиенте (ADR-0079).
+const SeasonalEffects = dynamic(
+  () => import('@/components/seasonal/seasonal-effects').then((m) => m.SeasonalEffects),
+  { ssr: false },
+);
 
 /// Глобальная оболочка публичных страниц twomc.su:
 ///
@@ -39,6 +46,7 @@ export function AppShell({ children, className }: { children: ReactNode; classNa
       </div>
       <GlobalFloatingActions />
       <MobileNav />
+      <SeasonalEffects />
     </div>
   );
 }

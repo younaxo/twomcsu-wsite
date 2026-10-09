@@ -1761,6 +1761,29 @@ model SiteAlert {
   @@map("site_alert")
 }
 
+/// Сезонная система (ADR-0079), singleton `global`. Время — серверное.
+/// `mode=auto` — кампания по окну дат и priority; `forced` — `forcedCampaignId`.
+/// `campaigns` — переопределения по кампаниям: `{ [id]: { enabled?, startsAt?, endsAt? } }`.
+/// Основной логотип сезоны не меняют никогда (ADR-0065) — только «o», декор,
+/// эффекты и баннеры.
+model SeasonalSettings {
+  id               String   @id @default("global")
+  enabled          Boolean  @default(true)
+  mode             String   @default("auto") @db.VarChar(16)
+  forcedCampaignId String?  @db.VarChar(32)
+  showWordmarkO    Boolean  @default(true)
+  showDecoration   Boolean  @default(true)
+  showEffects      Boolean  @default(true)
+  showBanners      Boolean  @default(true)
+  /// 1–3: плотность эффектов (1 — мало частиц).
+  effectIntensity  Int      @default(2)
+  campaigns        Json     @default("{}")
+  updatedBy        String?
+  updatedAt        DateTime @updatedAt
+
+  @@map("seasonal_settings")
+}
+
 model AdminBookmark {
   id        String   @id @default(cuid())
   userId    String
