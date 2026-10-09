@@ -150,7 +150,7 @@ export function SiteFooter({ className }: { className?: string }) {
   const legalParts = [
     LEGAL_OWNER.name,
     LEGAL_OWNER.inn && `ИНН ${LEGAL_OWNER.inn}`,
-    LEGAL_OWNER.ogrnip && `ОГРНИП ${LEGAL_OWNER.ogrnip}`,
+    LEGAL_OWNER.status,
     LEGAL_OWNER.address,
   ].filter(Boolean);
 

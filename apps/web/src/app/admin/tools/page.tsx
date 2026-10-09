@@ -6,11 +6,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader, PageSection } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
-import { QueryBoundary } from '@/components/admin/query-boundary';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button, IconButton } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import {
   Dialog,
   DialogBody,
@@ -20,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Field } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
 import {
@@ -31,14 +29,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SwitchField } from '@/components/ui/switch';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import {
@@ -72,7 +62,9 @@ function BookmarksTab() {
   const [url, setUrl] = useState('');
   const [deleting, setDeleting] = useState<BookmarkDto | null>(null);
 
-  const move = async (list: BookmarkDto[], index: number, delta: number) => {
+  const list = bookmarks.data ?? [];
+
+  const move = async (index: number, delta: number) => {
     const next = [...list];
     const [item] = next.splice(index, 1);
     next.splice(index + delta, 0, item!);
@@ -82,6 +74,65 @@ function BookmarksTab() {
       toast.error(getErrorMessage(error));
     }
   };
+
+  const bookmarkColumns: DataGridColumn<BookmarkDto>[] = [
+    {
+      key: 'bookmark',
+      header: 'Закладка',
+      truncate: true,
+      width: '32rem',
+      cell: (b) => (
+        <>
+          <Link href={b.url} className="font-medium underline-offset-4 hover:underline">
+            {b.title}
+          </Link>
+          <p className="truncate font-mono text-xs text-subtle-foreground">{b.url}</p>
+        </>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Действия</span>,
+      align: 'right',
+      width: 128,
+      cell: (b) => {
+        const index = list.findIndex((item) => item.id === b.id);
+        return (
+          <>
+            {can('bookmarks.reorder') ? (
+              <>
+                <IconButton
+                  aria-label="Выше"
+                  size="sm"
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp />
+                </IconButton>
+                <IconButton
+                  aria-label="Ниже"
+                  size="sm"
+                  disabled={index === list.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown />
+                </IconButton>
+              </>
+            ) : null}
+            {can('bookmarks.delete') ? (
+              <IconButton
+                aria-label={`Удалить ${b.title}`}
+                size="sm"
+                onClick={() => setDeleting(b)}
+              >
+                <Trash2 />
+              </IconButton>
+            ) : null}
+          </>
+        );
+      },
+    },
+  ];
 
   return (
     <PageSection
@@ -95,64 +146,16 @@ function BookmarksTab() {
         ) : null
       }
     >
-      <Card flush>
-        <QueryBoundary query={bookmarks}>
-          {(list) =>
-            list.length === 0 ? (
-              <EmptyState size="sm" title="Закладок нет" />
-            ) : (
-              <Table>
-                <TableBody>
-                  {list.map((b, index) => (
-                    <TableRow key={b.id}>
-                      <TableCell>
-                        <Link
-                          href={b.url}
-                          className="font-medium underline-offset-4 hover:underline"
-                        >
-                          {b.title}
-                        </Link>
-                        <p className="font-mono text-xs text-subtle-foreground">{b.url}</p>
-                      </TableCell>
-                      <TableCell className="w-32 text-right">
-                        {can('bookmarks.reorder') ? (
-                          <>
-                            <IconButton
-                              aria-label="Выше"
-                              size="sm"
-                              disabled={index === 0}
-                              onClick={() => move(list, index, -1)}
-                            >
-                              <ArrowUp />
-                            </IconButton>
-                            <IconButton
-                              aria-label="Ниже"
-                              size="sm"
-                              disabled={index === list.length - 1}
-                              onClick={() => move(list, index, 1)}
-                            >
-                              <ArrowDown />
-                            </IconButton>
-                          </>
-                        ) : null}
-                        {can('bookmarks.delete') ? (
-                          <IconButton
-                            aria-label={`Удалить ${b.title}`}
-                            size="sm"
-                            onClick={() => setDeleting(b)}
-                          >
-                            <Trash2 />
-                          </IconButton>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={bookmarkColumns}
+        rows={list}
+        getRowId={(b) => b.id}
+        loading={bookmarks.isPending}
+        error={bookmarks.isError ? bookmarks.error : undefined}
+        onRetry={() => bookmarks.refetch()}
+        emptyTitle="Закладок нет"
+        caption="Закладки: название и адрес, действия (порядок, удаление)"
+      />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -238,6 +241,57 @@ function SavedFiltersTab() {
     }
   })();
 
+  const filterColumns: DataGridColumn<SavedFilterDto>[] = [
+    {
+      key: 'name',
+      header: 'Название',
+      cell: (f) => (
+        <span className="font-medium">
+          {f.name} {f.isDefault ? <Badge tone="primary">по умолчанию</Badge> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'page',
+      header: 'Страница',
+      cell: (f) => PAGES.find((p) => p.value === f.page)?.label ?? f.page,
+    },
+    {
+      key: 'filters',
+      header: 'Фильтры',
+      truncate: true,
+      width: 288,
+      hideOnMobile: true,
+      cell: (f) => (
+        <span className="font-mono text-xs text-muted-foreground">{JSON.stringify(f.filters)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Действия</span>,
+      align: 'right',
+      cell: (f) => (
+        <>
+          {can('saved_filters.edit') && !f.isDefault ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={update.isPending}
+              onClick={() => update.mutate({ id: f.id, isDefault: true })}
+            >
+              Сделать основным
+            </Button>
+          ) : null}
+          {can('saved_filters.delete') ? (
+            <IconButton aria-label={`Удалить ${f.name}`} size="sm" onClick={() => setDeleting(f)}>
+              <Trash2 />
+            </IconButton>
+          ) : null}
+        </>
+      ),
+    },
+  ];
+
   return (
     <PageSection
       description="Наборы фильтров для списков. Применение из таблиц — следующая итерация."
@@ -250,62 +304,16 @@ function SavedFiltersTab() {
         ) : null
       }
     >
-      <Card flush>
-        <QueryBoundary query={filters}>
-          {(list) =>
-            list.length === 0 ? (
-              <EmptyState size="sm" title="Фильтров нет" />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Название</TableHead>
-                    <TableHead>Страница</TableHead>
-                    <TableHead>Фильтры</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.map((f) => (
-                    <TableRow key={f.id}>
-                      <TableCell className="font-medium">
-                        {f.name} {f.isDefault ? <Badge tone="primary">по умолчанию</Badge> : null}
-                      </TableCell>
-                      <TableCell>
-                        {PAGES.find((p) => p.value === f.page)?.label ?? f.page}
-                      </TableCell>
-                      <TableCell className="max-w-72 truncate font-mono text-xs text-muted-foreground">
-                        {JSON.stringify(f.filters)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {can('saved_filters.edit') && !f.isDefault ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            loading={update.isPending}
-                            onClick={() => update.mutate({ id: f.id, isDefault: true })}
-                          >
-                            Сделать основным
-                          </Button>
-                        ) : null}
-                        {can('saved_filters.delete') ? (
-                          <IconButton
-                            aria-label={`Удалить ${f.name}`}
-                            size="sm"
-                            onClick={() => setDeleting(f)}
-                          >
-                            <Trash2 />
-                          </IconButton>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={filterColumns}
+        rows={filters.data ?? []}
+        getRowId={(f) => f.id}
+        loading={filters.isPending}
+        error={filters.isError ? filters.error : undefined}
+        onRetry={() => filters.refetch()}
+        emptyTitle="Фильтров нет"
+        caption="Сохранённые фильтры: название, страница, параметры фильтра, действия"
+      />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -400,6 +408,58 @@ function ScheduledExportsTab() {
   const [email, setEmail] = useState('');
   const [deleting, setDeleting] = useState<ScheduledExportDto | null>(null);
 
+  const exportColumns: DataGridColumn<ScheduledExportDto>[] = [
+    { key: 'name', header: 'Название', cell: (e) => <span className="font-medium">{e.name}</span> },
+    {
+      key: 'page',
+      header: 'Страница',
+      hideOnMobile: true,
+      cell: (e) => PAGES.find((p) => p.value === e.page)?.label ?? e.page,
+    },
+    {
+      key: 'schedule',
+      header: 'Расписание',
+      cell: (e) => <span className="font-mono text-xs">{e.schedule}</span>,
+    },
+    {
+      key: 'email',
+      header: 'E-mail',
+      truncate: true,
+      hideOnMobile: true,
+      cell: (e) => e.email ?? '—',
+    },
+    {
+      key: 'lastRun',
+      header: 'Последний запуск',
+      hideOnMobile: true,
+      cell: (e) => (e.lastRunAt ? formatDateTime(e.lastRunAt) : '—'),
+    },
+    {
+      key: 'active',
+      header: 'Активен',
+      cell: (e) => (
+        <SwitchField
+          label=""
+          aria-label={`Активен: ${e.name}`}
+          checked={e.isActive}
+          disabled={!can('exports.scheduled.edit') || update.isPending}
+          onCheckedChange={(v) => update.mutate({ id: e.id, isActive: v })}
+        />
+      ),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Действия</span>,
+      align: 'right',
+      cell: (e) =>
+        can('exports.scheduled.delete') ? (
+          <IconButton aria-label={`Удалить ${e.name}`} size="sm" onClick={() => setDeleting(e)}>
+            <Trash2 />
+          </IconButton>
+        ) : null,
+    },
+  ];
+
   return (
     <PageSection
       description="Расписание в формате cron. Фактическое выполнение появится в PHASE 29 (ADR-0048) — пока только настройка."
@@ -412,62 +472,16 @@ function ScheduledExportsTab() {
         ) : null
       }
     >
-      <Card flush>
-        <QueryBoundary query={exportsQuery}>
-          {(list) =>
-            list.length === 0 ? (
-              <EmptyState size="sm" title="Запланированных экспортов нет" />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Название</TableHead>
-                    <TableHead>Страница</TableHead>
-                    <TableHead>Расписание</TableHead>
-                    <TableHead>E-mail</TableHead>
-                    <TableHead>Последний запуск</TableHead>
-                    <TableHead>Активен</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell className="font-medium">{e.name}</TableCell>
-                      <TableCell>
-                        {PAGES.find((p) => p.value === e.page)?.label ?? e.page}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{e.schedule}</TableCell>
-                      <TableCell>{e.email ?? '—'}</TableCell>
-                      <TableCell>{e.lastRunAt ? formatDateTime(e.lastRunAt) : '—'}</TableCell>
-                      <TableCell>
-                        <SwitchField
-                          label=""
-                          aria-label={`Активен: ${e.name}`}
-                          checked={e.isActive}
-                          disabled={!can('exports.scheduled.edit') || update.isPending}
-                          onCheckedChange={(v) => update.mutate({ id: e.id, isActive: v })}
-                        />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {can('exports.scheduled.delete') ? (
-                          <IconButton
-                            aria-label={`Удалить ${e.name}`}
-                            size="sm"
-                            onClick={() => setDeleting(e)}
-                          >
-                            <Trash2 />
-                          </IconButton>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={exportColumns}
+        rows={exportsQuery.data ?? []}
+        getRowId={(e) => e.id}
+        loading={exportsQuery.isPending}
+        error={exportsQuery.isError ? exportsQuery.error : undefined}
+        onRetry={() => exportsQuery.refetch()}
+        emptyTitle="Запланированных экспортов нет"
+        caption="Запланированные экспорты: название, страница, cron-расписание, e-mail, последний запуск, активность, действия"
+      />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>

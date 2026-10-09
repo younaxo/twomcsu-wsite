@@ -60,7 +60,19 @@ export const envValidationSchema = Joi.object({
   SMTP_SECURE: Joi.boolean().default(false),
   SMTP_USER: Joi.string().allow('').optional(),
   SMTP_PASSWORD: Joi.string().allow('').optional(),
-  SMTP_FROM_NAME: Joi.string().default('TwoMC'),
+  SMTP_FROM_NAME: Joi.string().default('twomc.su'),
+  /// Полный адрес отправителя «Имя <email>»; приоритетнее SMTP_FROM_*.
+  MAIL_FROM: Joi.string().allow('').optional(),
+
+  /// Вход через Discord/Telegram (ADR-0069). Пусто — провайдер выключен.
+  DISCORD_CLIENT_ID: Joi.string().allow('').optional(),
+  DISCORD_CLIENT_SECRET: Joi.string().allow('').optional(),
+  DISCORD_REDIRECT_URI: Joi.string()
+    .uri()
+    .default('http://localhost:4000/auth/discord/callback'),
+  TELEGRAM_BOT_USERNAME: Joi.string().allow('').optional(),
+  TELEGRAM_BOT_TOKEN: Joi.string().allow('').optional(),
+  STATUS_PAGE_URL: Joi.string().uri().default('https://status.twomc.su'),
   SMTP_FROM_EMAIL: Joi.string()
     .email({ tlds: false })
     .default('noreply@twomc.su'),

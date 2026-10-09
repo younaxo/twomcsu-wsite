@@ -37,7 +37,12 @@ import { useSocialLinkMutations, useSocialLinks } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { SOCIAL_PLATFORM_LABELS } from '@/lib/site/config';
-import { SettingsAside, SettingsIsland, SettingsLayout, SummaryRow } from './layout';
+import {
+  SettingsAside,
+  SettingsIsland,
+  SettingsLayout,
+  SummaryRow,
+} from '@/components/admin/islands';
 
 const URL_HINT: Record<SiteSocialPlatform, string> = {
   telegram: 'https://t.me/…',
@@ -58,7 +63,7 @@ interface Draft {
   isEnabled: boolean;
 }
 
-function SocialLinkDialog({
+export function SocialLinkDialog({
   open,
   onOpenChange,
   initial,
@@ -101,7 +106,7 @@ function SocialLinkDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="sm">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{initial ? 'Редактировать соцсеть' : 'Добавить соцсеть'}</DialogTitle>
           <DialogDescription>
@@ -109,50 +114,59 @@ function SocialLinkDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="flex flex-col gap-4">
-          <Field label="Платформа" required>
-            <Select
-              value={draft.platform}
-              onValueChange={(value) =>
-                setDraft((d) => ({ ...d, platform: value as SiteSocialPlatform }))
-              }
-            >
-              <SelectTrigger aria-label="Платформа">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SITE_SOCIAL_PLATFORMS.map((platform) => (
-                  <SelectItem key={platform} value={platform}>
-                    <span className="inline-flex items-center gap-2">
-                      <BrandIcon id={platform} />
-                      {SOCIAL_PLATFORM_LABELS[platform]}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Платформа" required>
+              <Select
+                value={draft.platform}
+                onValueChange={(value) =>
+                  setDraft((d) => ({ ...d, platform: value as SiteSocialPlatform }))
+                }
+              >
+                <SelectTrigger aria-label="Платформа">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SITE_SOCIAL_PLATFORMS.map((platform) => (
+                    <SelectItem key={platform} value={platform}>
+                      <span className="inline-flex items-center gap-2">
+                        <BrandIcon id={platform} />
+                        {SOCIAL_PLATFORM_LABELS[platform]}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Подпись" hint={`Пусто — «${SOCIAL_PLATFORM_LABELS[draft.platform]}»`}>
+              <Input
+                maxLength={60}
+                placeholder={SOCIAL_PLATFORM_LABELS[draft.platform]}
+                value={draft.title}
+                onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+              />
+            </Field>
+          </div>
           <Field
             label="Ссылка"
             required
+            hint={`Домен: ${URL_HINT[draft.platform]
+              .replace(/^https:\/\//, '')
+              .replace('/…', '')
+              .replace('/@…', '')}`}
             error={draft.url && !urlValid ? 'Нужна ссылка вида https://…' : undefined}
           >
             <Input
               type="url"
               inputMode="url"
+              leading={<BrandIcon id={draft.platform} />}
               placeholder={URL_HINT[draft.platform]}
               value={draft.url}
               onChange={(e) => setDraft((d) => ({ ...d, url: e.target.value }))}
             />
           </Field>
-          <Field label="Подпись" hint={`Пусто — «${SOCIAL_PLATFORM_LABELS[draft.platform]}»`}>
-            <Input
-              maxLength={60}
-              value={draft.title}
-              onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-            />
-          </Field>
           <SwitchField
             label="Показывать на сайте"
+            description="Скрытая соцсеть сохраняется, но не видна игрокам"
             checked={draft.isEnabled}
             onCheckedChange={(value) => setDraft((d) => ({ ...d, isEnabled: value }))}
           />

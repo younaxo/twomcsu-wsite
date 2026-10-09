@@ -5,6 +5,10 @@ import type { DecimalString, IsoDateString } from './common';
 export const SITE_ALERT_VARIANTS = ['danger', 'warning', 'info', 'success'] as const;
 export type SiteAlertVariant = (typeof SITE_ALERT_VARIANTS)[number];
 
+/// Режим отображения плашки — независим от семантического типа.
+export const SITE_ALERT_STYLES = ['outline', 'filled'] as const;
+export type SiteAlertStyle = (typeof SITE_ALERT_STYLES)[number];
+
 /// Разрешённые иконки плашки — ключи, а не SVG-код: исключает SVG-инъекции.
 export const SITE_ALERT_ICONS = [
   'alert-triangle',
@@ -19,29 +23,51 @@ export const SITE_ALERT_ICONS = [
   'gift',
   'calendar',
   'check-circle',
+  /// Свой SVG (customIcon) — показывается только как <img>.
+  'custom',
 ] as const;
 export type SiteAlertIcon = (typeof SITE_ALERT_ICONS)[number];
 
 export interface SiteAlertDto {
   enabled: boolean;
   variant: SiteAlertVariant;
+  displayStyle: SiteAlertStyle;
   icon: SiteAlertIcon;
   title: string | null;
   message: string;
   linkUrl: string | null;
   linkLabel: string | null;
+  customIcon: string | null;
+  /// Окно показа (UTC, серверное время); null — без ограничения.
+  startsAt: IsoDateString | null;
+  endsAt: IsoDateString | null;
   updatedBy: string | null;
+  /// Ник автора последнего изменения (только в админском ответе).
+  updatedByUsername: string | null;
   updatedAt: IsoDateString;
 }
 
 /// Публичная часть: только включённая плашка, без служебных полей.
 export type PublicSiteAlert = Pick<
   SiteAlertDto,
-  'variant' | 'icon' | 'title' | 'message' | 'linkUrl' | 'linkLabel'
+  'variant' | 'displayStyle' | 'icon' | 'title' | 'message' | 'linkUrl' | 'linkLabel' | 'customIcon'
 >;
 
 export type UpdateSiteAlertRequest = Partial<
-  Pick<SiteAlertDto, 'enabled' | 'variant' | 'icon' | 'title' | 'message' | 'linkUrl' | 'linkLabel'>
+  Pick<
+    SiteAlertDto,
+    | 'enabled'
+    | 'variant'
+    | 'displayStyle'
+    | 'icon'
+    | 'title'
+    | 'message'
+    | 'linkUrl'
+    | 'linkLabel'
+    | 'customIcon'
+    | 'startsAt'
+    | 'endsAt'
+  >
 >;
 
 /// Соцсети проекта (ADR-0067): пресеты платформ — иконка и название

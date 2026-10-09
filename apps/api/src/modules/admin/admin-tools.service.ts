@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { svgProblems } from '../../common/svg-safety.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { AuditService } from '../audit/audit.service';
@@ -241,6 +242,18 @@ export class AdminToolsService {
     });
   }
 
+  /// Для админки: плюс ник того, кто менял плашку последним.
+  async getSiteAlertForAdmin() {
+    const alert = await this.getSiteAlert();
+    const author = alert.updatedBy
+      ? await this.prisma.user.findUnique({
+          where: { id: alert.updatedBy },
+          select: { username: true },
+        })
+      : null;
+    return { ...alert, updatedByUsername: author?.username ?? null };
+  }
+
   /// Плашка для публичных настроек: только включённая и с текстом.
   async getPublicSiteAlert() {
     const alert = await this.prisma.siteAlert.findUnique({
@@ -249,9 +262,25 @@ export class AdminToolsService {
     if (!alert || !alert.enabled || alert.message.trim() === '') {
       return null;
     }
+    // Расписание — по серверному времени.
+    const now = new Date();
+    if (
+      (alert.startsAt && alert.startsAt > now) ||
+      (alert.endsAt && alert.endsAt <= now)
+    ) {
+      return null;
+    }
+    const custom =
+      alert.icon === 'custom' && alert.customIcon ? alert.customIcon : null;
     return {
       variant: alert.variant,
-      icon: alert.icon,
+      displayStyle: alert.displayStyle,
+      icon: custom
+        ? 'custom'
+        : alert.icon === 'custom'
+          ? 'alert-triangle'
+          : alert.icon,
+      customIcon: custom,
       title: alert.title,
       message: alert.message,
       linkUrl: alert.linkUrl,
@@ -263,7 +292,36 @@ export class AdminToolsService {
   /// содержимого, в changes — только изменившиеся поля (before → after).
   async updateSiteAlert(dto: UpdateSiteAlertDto, actorId: string) {
     const current = await this.getSiteAlert();
-    const next = { ...current, ...dto };
+    const next = {
+      ...current,
+      ...dto,
+      startsAt:
+        dto.startsAt === undefined
+          ? current.startsAt
+          : dto.startsAt
+            ? new Date(dto.startsAt)
+            : null,
+      endsAt:
+        dto.endsAt === undefined
+          ? current.endsAt
+          : dto.endsAt
+            ? new Date(dto.endsAt)
+            : null,
+    };
+    if (dto.customIcon) {
+      const problems = svgProblems(dto.customIcon);
+      if (problems.length > 0) {
+        throw new BadRequestException(`SVG отклонён: ${problems.join(', ')}`);
+      }
+    }
+    if (next.icon === 'custom' && !next.customIcon) {
+      throw new BadRequestException('Для своей иконки загрузите SVG');
+    }
+    if (next.startsAt && next.endsAt && next.endsAt <= next.startsAt) {
+      throw new BadRequestException(
+        'Окончание показа должно быть позже начала',
+      );
+    }
     if (next.enabled && next.message.trim() === '') {
       throw new BadRequestException(
         'Нельзя включить плашку без текста сообщения',
@@ -274,12 +332,18 @@ export class AdminToolsService {
     }
     const updated = await this.prisma.siteAlert.update({
       where: { id: 'global' },
-      data: { ...dto, updatedBy: actorId },
+      data: {
+        ...dto,
+        startsAt: next.startsAt,
+        endsAt: next.endsAt,
+        updatedBy: actorId,
+      },
     });
 
     const fields = [
       'enabled',
       'variant',
+      'displayStyle',
       'icon',
       'title',
       'message',
@@ -291,6 +355,18 @@ export class AdminToolsService {
       if (current[field] !== updated[field]) {
         diff[field] = { from: current[field], to: updated[field] };
       }
+    }
+    // SVG в audit не пишется целиком — только факт изменения.
+    if (current.customIcon !== updated.customIcon) {
+      diff.customIcon = {
+        from: current.customIcon ? 'svg' : null,
+        to: updated.customIcon ? 'svg' : null,
+      };
+    }
+    for (const field of ['startsAt', 'endsAt'] as const) {
+      const from = current[field]?.toISOString() ?? null;
+      const to = updated[field]?.toISOString() ?? null;
+      if (from !== to) diff[field] = { from, to };
     }
     if (Object.keys(diff).length > 0) {
       const toggled = 'enabled' in diff;

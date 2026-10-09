@@ -15,15 +15,29 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { SkeletonRows } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { usePermissionsCatalog } from '@/lib/admin/hooks';
 import { permissionModuleLabel } from '@/lib/admin/permission-modules';
 import { formatNumber } from '@/lib/format';
 
 type CatalogEntry = Pick<PermissionDto, 'key' | 'module' | 'description'>;
+
+const CATALOG_COLUMNS: DataGridColumn<CatalogEntry>[] = [
+  {
+    key: 'key',
+    header: 'Ключ',
+    width: '18rem',
+    cell: (item) => <span className="font-mono text-xs">{item.key}</span>,
+  },
+  {
+    key: 'description',
+    header: 'Описание',
+    cell: (item) => <span className="text-muted-foreground">{item.description}</span>,
+  },
+];
 
 function Catalog({ entries, fallback }: { entries: CatalogEntry[]; fallback: boolean }) {
   const [query, setQuery] = useState('');
@@ -82,18 +96,12 @@ function Catalog({ entries, fallback }: { entries: CatalogEntry[]; fallback: boo
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <Table>
-                    <TableBody>
-                      {items.map((item) => (
-                        <TableRow key={item.key}>
-                          <TableCell className="w-72 font-mono text-xs">{item.key}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {item.description}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                  <DataGrid
+                    columns={CATALOG_COLUMNS}
+                    rows={items}
+                    getRowId={(item) => item.key}
+                    caption={`Права модуля ${permissionModuleLabel(module)}: ключ и описание`}
+                  />
                 </AccordionContent>
               </AccordionItem>
             ))}

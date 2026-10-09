@@ -8,12 +8,15 @@ import {
 } from 'react';
 import { cn } from '@/lib/cn';
 
+/// Поле «Полдня»: слегка утопленная solid-поверхность с тонкой рамкой
+/// (на островах `bg-surface` поле читается без контрастной обводки), радиус
+/// меньше, чем у островов; фокус — оранжевый акцент.
 export const inputClassName = cn(
-  'flex w-full min-w-0 rounded border border-border bg-surface px-control-px text-sm text-foreground',
+  'flex w-full min-w-0 rounded border border-border-subtle bg-background-subtle px-3.5 text-sm text-foreground',
   'placeholder:text-subtle-foreground',
-  'transition-[border-color,box-shadow] duration-fast',
-  'hover:border-border-strong',
-  'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+  'transition-[border-color,box-shadow,background-color] duration-fast',
+  'hover:border-border',
+  'focus-visible:border-primary/60 focus-visible:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20',
   'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/30',
   'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:opacity-60',
   'read-only:bg-surface-sunken',
@@ -80,7 +83,7 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, invalid, rows = 4, ...props }, ref) => (
+  ({ className, invalid, rows = 3, ...props }, ref) => (
     <textarea
       ref={ref}
       rows={rows}

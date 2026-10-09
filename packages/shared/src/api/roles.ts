@@ -73,3 +73,17 @@ export interface RoleAssignmentLogDto {
 export interface AssignRoleRequest {
   reason?: string;
 }
+
+/// `POST /admin/roles/bulk/permissions` (ADR-0068): add/remove по умолчанию,
+/// replace — только с `confirmReplace: true`. Операция атомарна.
+export interface BulkRolePermissionsRequest {
+  roleIds: string[];
+  add?: string[];
+  remove?: string[];
+  replace?: string[];
+  confirmReplace?: boolean;
+}
+
+export interface BulkRolePermissionsResult {
+  updated: { id: string; name: string; added: string[]; removed: string[] }[];
+}

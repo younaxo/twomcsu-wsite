@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  BulkRolePermissionsRequest,
   CreateSiteSocialLinkRequest,
   UpdateSiteAlertRequest,
   UpdateSiteSocialLinkRequest,
@@ -23,7 +24,13 @@ import type {
   UpsertSettingsRequest,
   UserBadgeType,
 } from '@twomc/shared';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { siteKeys } from '@/lib/site/hooks';
 import { useAuthStore } from '../auth/store';
 import { queryKeys } from '../query/keys';
@@ -168,6 +175,25 @@ export function useRevokeRole(userId: string) {
 
 export function useRoles(enabled = true) {
   return useQuery({ queryKey: queryKeys.roles.list, queryFn: adminApi.roles, enabled });
+}
+
+/// Детали нескольких ролей (права для предпросмотра массового изменения).
+export function useRoleDetails(ids: string[], enabled = true) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: queryKeys.roles.detail(id),
+      queryFn: () => adminApi.role(id),
+      enabled,
+    })),
+  });
+}
+
+export function useBulkRolePermissions() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: BulkRolePermissionsRequest) => adminApi.bulkRolePermissions(body),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.roles.all }),
+  });
 }
 
 export function useRole(id: string) {

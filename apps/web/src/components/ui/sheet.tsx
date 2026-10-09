@@ -91,7 +91,12 @@ export const SheetContent = forwardRef<ElementRef<typeof RadixDialog.Content>, S
           {children}
           {hideClose ? null : (
             <RadixDialog.Close asChild>
-              <IconButton aria-label="Закрыть" size="sm" className="absolute right-3 top-3">
+              <IconButton
+                aria-label="Закрыть"
+                size="sm"
+                variant="ghost"
+                className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+              >
                 <X />
               </IconButton>
             </RadixDialog.Close>

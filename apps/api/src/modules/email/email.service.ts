@@ -46,14 +46,15 @@ export class EmailService {
       return;
     }
 
-    const fromName = this.config.get<string>('SMTP_FROM_NAME', 'TwoMC');
+    const mailFrom = this.config.get<string>('MAIL_FROM', '');
+    const fromName = this.config.get<string>('SMTP_FROM_NAME', 'twomc.su');
     const fromEmail = this.config.get<string>(
       'SMTP_FROM_EMAIL',
       'noreply@twomc.su',
     );
 
     await this.transporter.sendMail({
-      from: `"${fromName}" <${fromEmail}>`,
+      from: mailFrom || `"${fromName}" <${fromEmail}>`,
       to: input.to,
       subject: input.subject,
       html: input.html,

@@ -1,4 +1,6 @@
 import type {
+  BulkRolePermissionsRequest,
+  BulkRolePermissionsResult,
   CreateSiteSocialLinkRequest,
   SiteAlertDto,
   SiteSocialLinkDto,
@@ -122,6 +124,8 @@ export const adminApi = {
 
   roles: () => api.get<RoleDto[]>('/admin/roles'),
   role: (id: string) => api.get<RoleWithPermissions>(`/admin/roles/${id}`),
+  bulkRolePermissions: (body: BulkRolePermissionsRequest) =>
+    api.post<BulkRolePermissionsResult>('/admin/roles/bulk/permissions', body),
   roleHistory: (id: string) => api.get<RoleAssignmentLogDto[]>(`/admin/roles/${id}/history`),
   permissions: () => api.get<PermissionDto[]>('/admin/permissions'),
   createRole: (body: CreateRoleRequest) => api.post<RoleDto>('/admin/roles', body),

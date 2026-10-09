@@ -244,7 +244,7 @@ export class AdminPanelController {
   @Get('settings/alert')
   @RequirePermissions('settings.alert.view')
   async siteAlert() {
-    return this.tools.getSiteAlert();
+    return this.tools.getSiteAlertForAdmin();
   }
 
   @Patch('settings/alert')
@@ -254,7 +254,8 @@ export class AdminPanelController {
     @Body() dto: UpdateSiteAlertDto,
     @CurrentUser() admin: AuthenticatedUser,
   ) {
-    return this.tools.updateSiteAlert(dto, admin.id);
+    await this.tools.updateSiteAlert(dto, admin.id);
+    return this.tools.getSiteAlertForAdmin();
   }
 
   // --- Security ---------------------------------------------------------------

@@ -1,26 +1,17 @@
 'use client';
 
-import type { AdminSessionDto } from '@twomc/shared';
+import type { AdminSessionDto, SuspiciousIpDto } from '@twomc/shared';
 import { Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PageHeader, PageSection } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
-import { QueryBoundary } from '@/components/admin/query-boundary';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { Button, IconButton } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { EmptyState } from '@/components/ui/empty-state';
+import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import {
@@ -43,45 +34,15 @@ function useDebounced<T>(value: T, delay = 300): T {
   return debounced;
 }
 
-function SessionsTable({ rows, kind }: { rows: AdminSessionDto[]; kind: 'sessions' | 'logins' }) {
-  if (rows.length === 0) {
-    return (
-      <EmptyState size="sm" title={kind === 'sessions' ? 'Активных сессий нет' : 'Входов нет'} />
-    );
-  }
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Пользователь</TableHead>
-          <TableHead>IP</TableHead>
-          <TableHead>Устройство</TableHead>
-          <TableHead>{kind === 'sessions' ? 'Создана' : 'Вход'}</TableHead>
-          <TableHead>Истекает</TableHead>
-          <TableHead>Статус</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((s) => (
-          <TableRow key={s.id}>
-            <TableCell className="font-medium">{s.user.username}</TableCell>
-            <TableCell className="font-mono text-xs">{s.ipAddress ?? '—'}</TableCell>
-            <TableCell truncate className="max-w-56 text-xs text-muted-foreground">
-              {s.userAgent ?? '—'}
-            </TableCell>
-            <TableCell>{formatDateTime(s.createdAt)}</TableCell>
-            <TableCell>{formatRelative(s.expiresAt)}</TableCell>
-            <TableCell>
-              <StatusBadge status={s.revokedAt ? 'blocked' : 'active'}>
-                {s.revokedAt ? 'Отозвана' : 'Активна'}
-              </StatusBadge>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
+const SESSION_STATUS_COLUMN: DataGridColumn<AdminSessionDto> = {
+  key: 'status',
+  header: 'Статус',
+  cell: (s) => (
+    <StatusBadge status={s.revokedAt ? 'blocked' : 'active'}>
+      {s.revokedAt ? 'Отозвана' : 'Активна'}
+    </StatusBadge>
+  ),
+};
 
 function SessionsTab({ kind }: { kind: 'sessions' | 'logins' }) {
   const [userId, setUserId] = useState('');
@@ -89,6 +50,40 @@ function SessionsTab({ kind }: { kind: 'sessions' | 'logins' }) {
   const sessions = useSecuritySessions(debounced || undefined, kind === 'sessions');
   const logins = useSecurityLogins(debounced || undefined, kind === 'logins');
   const query = kind === 'sessions' ? sessions : logins;
+
+  const columns: DataGridColumn<AdminSessionDto>[] = [
+    {
+      key: 'user',
+      header: 'Пользователь',
+      cell: (s) => <span className="font-medium">{s.user.username}</span>,
+    },
+    {
+      key: 'ip',
+      header: 'IP',
+      cell: (s) => <span className="font-mono text-xs">{s.ipAddress ?? '—'}</span>,
+    },
+    {
+      key: 'device',
+      header: 'Устройство',
+      width: 224,
+      truncate: true,
+      hideOnMobile: true,
+      cell: (s) => <span className="text-xs text-muted-foreground">{s.userAgent ?? '—'}</span>,
+    },
+    {
+      key: 'created',
+      header: kind === 'sessions' ? 'Создана' : 'Вход',
+      cell: (s) => formatDateTime(s.createdAt),
+    },
+    {
+      key: 'expires',
+      header: 'Истекает',
+      hideOnMobile: true,
+      cell: (s) => formatRelative(s.expiresAt),
+    },
+    SESSION_STATUS_COLUMN,
+  ];
+
   return (
     <PageSection
       actions={
@@ -104,14 +99,52 @@ function SessionsTab({ kind }: { kind: 'sessions' | 'logins' }) {
         </div>
       }
     >
-      <Card flush>
-        <QueryBoundary query={query}>
-          {(rows) => <SessionsTable rows={rows} kind={kind} />}
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={columns}
+        rows={query.data ?? []}
+        getRowId={(s) => s.id}
+        loading={query.isPending}
+        error={query.isError ? query.error : undefined}
+        onRetry={() => query.refetch()}
+        emptyTitle={kind === 'sessions' ? 'Активных сессий нет' : 'Входов нет'}
+        caption={
+          kind === 'sessions'
+            ? 'Сессии: пользователь, IP, устройство, дата создания, срок действия, статус'
+            : 'История входов: пользователь, IP, устройство, время входа, срок действия, статус'
+        }
+      />
     </PageSection>
   );
 }
+
+const SUSPICIOUS_COLUMNS: DataGridColumn<SuspiciousIpDto>[] = [
+  {
+    key: 'ip',
+    header: 'IP',
+    cell: (row) => <span className="font-mono text-xs">{row.ip}</span>,
+  },
+  {
+    key: 'failed',
+    header: 'Неудачных попыток',
+    align: 'right',
+    cell: (row) => formatNumber(row.failedAttempts),
+  },
+  {
+    key: 'status',
+    header: 'Статус',
+    cell: (row) => (
+      <StatusBadge status={row.isBlocked ? 'blocked' : 'warning'}>
+        {row.isBlocked ? 'Заблокирован' : 'Под наблюдением'}
+      </StatusBadge>
+    ),
+  },
+  {
+    key: 'block',
+    header: 'Блокировка',
+    cell: (row) =>
+      row.blockedTtlSeconds !== null ? `ещё ${Math.ceil(row.blockedTtlSeconds / 60)} мин` : '—',
+  },
+];
 
 function SuspiciousTab() {
   const suspicious = useSuspiciousIps();
@@ -130,44 +163,16 @@ function SuspiciousTab() {
         </Button>
       }
     >
-      <Card flush>
-        <QueryBoundary query={suspicious}>
-          {(rows) =>
-            rows.length === 0 ? (
-              <EmptyState size="sm" title="Подозрительной активности нет" />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>IP</TableHead>
-                    <TableHead numeric>Неудачных попыток</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Блокировка</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.ip}>
-                      <TableCell className="font-mono text-xs">{row.ip}</TableCell>
-                      <TableCell numeric>{formatNumber(row.failedAttempts)}</TableCell>
-                      <TableCell>
-                        <StatusBadge status={row.isBlocked ? 'blocked' : 'warning'}>
-                          {row.isBlocked ? 'Заблокирован' : 'Под наблюдением'}
-                        </StatusBadge>
-                      </TableCell>
-                      <TableCell>
-                        {row.blockedTtlSeconds !== null
-                          ? `ещё ${Math.ceil(row.blockedTtlSeconds / 60)} мин`
-                          : '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={SUSPICIOUS_COLUMNS}
+        rows={suspicious.data ?? []}
+        getRowId={(row) => row.ip}
+        loading={suspicious.isPending}
+        error={suspicious.isError ? suspicious.error : undefined}
+        onRetry={() => suspicious.refetch()}
+        emptyTitle="Подозрительной активности нет"
+        caption="Подозрительные IP: адрес, число неудачных попыток, статус, остаток блокировки"
+      />
     </PageSection>
   );
 }

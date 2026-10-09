@@ -13,6 +13,12 @@ import { IconButton } from './button';
 
 /// Dialog — обычное интерактивное модальное окно (формы, детали, quick view).
 /// Для подтверждения опасных действий — `AlertDialog` (отдельный компонент).
+///
+/// Единая структура окон «Полдня» (ADR-0064): Header (заголовок, описание,
+/// крестик справа) → Body (форма/контент) → Footer (вторичное слева от
+/// основного действия, на отдельной тихой подложке). Solid raised surface,
+/// крупное скругление, тень, без рамки и blur; тёмный scrim; закрытие по Esc,
+/// клику вне окна и крестику.
 
 export const Dialog = RadixDialog.Root;
 export const DialogTrigger = RadixDialog.Trigger;
@@ -41,12 +47,18 @@ export interface DialogContentProps extends ComponentPropsWithoutRef<typeof Radi
   hideClose?: boolean;
 }
 
+/// Ширины: sm — короткие формы (2–4 поля), md — обычные формы, lg — формы с
+/// предпросмотром/списками, xl — таблицы и сложные редакторы.
 const sizeClass: Record<NonNullable<DialogContentProps['size']>, string> = {
-  sm: 'max-w-sm',
-  md: 'max-w-lg',
-  lg: 'max-w-2xl',
-  xl: 'max-w-4xl',
+  sm: 'max-w-[26rem]',
+  md: 'max-w-[32rem]',
+  lg: 'max-w-[42rem]',
+  xl: 'max-w-[56rem]',
 };
+
+/// Общая поверхность модальных окон (Dialog/AlertDialog).
+export const modalSurfaceClassName =
+  'rounded-xl bg-surface-overlay text-foreground shadow-xl edge-highlight';
 
 export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, DialogContentProps>(
   ({ className, size = 'md', hideClose = false, children, ...props }, ref) => (
@@ -58,7 +70,7 @@ export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, 
           // Центрирование через CSS-свойство `translate` (не `transform`): keyframes
           // pop-in/pop-out задают свой transform и не должны сбивать позицию.
           'fixed left-1/2 top-1/2 z-50 flex w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] flex-col [translate:-50%_-50%]',
-          'rounded-lg border bg-surface-overlay text-foreground shadow-lg edge-highlight',
+          modalSurfaceClassName,
           'overscroll-contain focus:outline-none',
           'data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out [--pop-y:8px]',
           sizeClass[size],
@@ -69,7 +81,12 @@ export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, 
         {children}
         {hideClose ? null : (
           <RadixDialog.Close asChild>
-            <IconButton aria-label="Закрыть" size="sm" className="absolute right-3 top-3">
+            <IconButton
+              aria-label="Закрыть"
+              size="sm"
+              variant="ghost"
+              className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+            >
               <X />
             </IconButton>
           </RadixDialog.Close>
@@ -80,29 +97,23 @@ export const DialogContent = forwardRef<ElementRef<typeof RadixDialog.Content>, 
 );
 DialogContent.displayName = 'DialogContent';
 
+export const modalHeaderClassName = 'flex shrink-0 flex-col gap-1.5 px-6 pb-4 pt-5 pr-14';
+export const modalBodyClassName =
+  'min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-1 scrollbar-thin';
+/// Футер — тихая подложка вместо случайной линии: явно отделяет действия.
+export const modalFooterClassName =
+  'flex shrink-0 flex-col-reverse gap-2 rounded-b-xl bg-background-subtle px-6 py-4 sm:flex-row sm:items-center sm:justify-end';
+
 export function DialogHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1 p-card-p pb-0 pr-12', className)} {...props} />;
+  return <div className={cn(modalHeaderClassName, className)} {...props} />;
 }
 
 export function DialogBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn('min-h-0 flex-1 overflow-y-auto p-card-p scrollbar-thin', className)}
-      {...props}
-    />
-  );
+  return <div className={cn(modalBodyClassName, className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn(
-        'flex flex-col-reverse gap-2 border-t border-border-subtle p-card-p pt-4 sm:flex-row sm:justify-end',
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div className={cn(modalFooterClassName, className)} {...props} />;
 }
 
 export const DialogTitle = forwardRef<
@@ -111,7 +122,7 @@ export const DialogTitle = forwardRef<
 >(({ className, ...props }, ref) => (
   <RadixDialog.Title
     ref={ref}
-    className={cn('font-display text-lg font-semibold leading-tight', className)}
+    className={cn('font-display text-lg font-semibold leading-snug tracking-tight', className)}
     {...props}
   />
 ));
@@ -123,7 +134,7 @@ export const DialogDescription = forwardRef<
 >(({ className, ...props }, ref) => (
   <RadixDialog.Description
     ref={ref}
-    className={cn('text-sm text-muted-foreground', className)}
+    className={cn('text-sm leading-relaxed text-muted-foreground', className)}
     {...props}
   />
 ));

@@ -175,9 +175,9 @@ export function resolveSupportEmail(settings: PublicSiteSettings | null | undefi
   return settings?.contactEmail || SUPPORT.email;
 }
 
-/// Публичная status page (отдельный проект twomcsu-statuspagewebsite);
-/// пока URL не задан — внутренний маршрут /status.
-export const STATUS_PAGE_URL = process.env.NEXT_PUBLIC_STATUS_PAGE_URL || '/status';
+/// Публичная status page (отдельный проект twomcsu-statuspagewebsite,
+/// https://status.twomc.su); переопределяется NEXT_PUBLIC_STATUS_PAGE_URL.
+export const STATUS_PAGE_URL = process.env.NEXT_PUBLIC_STATUS_PAGE_URL || 'https://status.twomc.su';
 
 export interface FooterLink {
   href: string;
@@ -209,13 +209,12 @@ export const FOOTER_LEGAL_LINKS: FooterLink[] = [
 ];
 
 /// Юридические данные владельца. Значения предоставлены владельцем (ФИО, ИНН)
-/// и используются буквально; ОГРНИП/адрес/форма — только из env, не
-/// выдумываются. Перед production владелец подтверждает данные
-/// (docs/implementation/phases/PHASE-31 — legal checklist).
+/// и используются буквально. Владелец — самозанятый (плательщик НПД):
+/// ОГРНИП/ИП/ООО не указываются и не выдумываются; адрес — только из env.
 export const LEGAL_OWNER = {
-  name: process.env.NEXT_PUBLIC_LEGAL_NAME || 'Кирилл Игнатьевич Баранов',
-  inn: process.env.NEXT_PUBLIC_LEGAL_INN || '12321312333',
-  ogrnip: process.env.NEXT_PUBLIC_LEGAL_OGRNIP || null,
+  name: process.env.NEXT_PUBLIC_LEGAL_NAME || 'Кирилл Алексеевич Баранов',
+  inn: process.env.NEXT_PUBLIC_LEGAL_INN || '230815487140',
+  status: process.env.NEXT_PUBLIC_LEGAL_STATUS || 'Самозанятый (плательщик НПД)',
   address: process.env.NEXT_PUBLIC_LEGAL_ADDRESS || null,
 };
 

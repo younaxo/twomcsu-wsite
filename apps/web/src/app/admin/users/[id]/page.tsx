@@ -2,8 +2,10 @@
 
 import {
   USER_BADGE_TYPES,
+  type AdminSessionDto,
   type AdminUserFull,
   type PunishmentDto,
+  type UserBadgeDto,
   type UserBadgeType,
 } from '@twomc/shared';
 import { Ban, Copy, Pencil, Shield, ShieldCheck, Trash2 } from 'lucide-react';
@@ -23,6 +25,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { Button, IconButton } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { DatePicker, type IsoDate } from '@/components/ui/date-picker';
 import {
   Dialog,
@@ -46,14 +49,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SkeletonRows } from '@/components/ui/skeleton';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Timeline, TimelineItem } from '@/components/ui/timeline';
 import { toast } from '@/components/ui/toast';
@@ -251,6 +246,49 @@ function RolesTab({ user }: { user: AdminUserFull }) {
   const revoke = useRevokeRole(user.id);
   const effective = useUserEffectivePermissions(user.id, can('roles.view'));
   const revoking = user.roles.find((r) => r.roleId === revokeId);
+  const roles = [...user.roles].sort((a, b) => b.role.priority - a.role.priority);
+
+  const roleColumns: DataGridColumn<AdminUserFull['roles'][number]>[] = [
+    {
+      key: 'role',
+      header: 'Роль',
+      cell: (entry) => (
+        <span className="inline-flex items-center gap-2">
+          <RolePrefix role={entry.role} size="xs" />
+          <span>{entry.role.displayName}</span>
+          {entry.role.isSuperuser ? <Badge tone="primary">superuser</Badge> : null}
+        </span>
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Приоритет',
+      align: 'right',
+      cell: (entry) => entry.role.priority,
+    },
+    {
+      key: 'assigned',
+      header: 'Выдана',
+      hideOnMobile: true,
+      cell: (entry) => formatDate(entry.assignedAt),
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Действия</span>,
+      align: 'right',
+      visible: canAssign,
+      cell: (entry) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setRevokeId(entry.roleId)}
+          aria-label={`Снять роль ${entry.role.displayName}`}
+        >
+          Снять
+        </Button>
+      ),
+    },
+  ];
 
   const groups = effective.data
     ? effective.data.permissions.reduce<Record<string, string[]>>((acc, key) => {
@@ -273,51 +311,14 @@ function RolesTab({ user }: { user: AdminUserFull }) {
           ) : null
         }
       >
-        <Card flush>
-          {user.roles.length === 0 ? (
-            <EmptyState size="sm" title="Ролей нет" description="Пользователь — обычный игрок." />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Роль</TableHead>
-                  <TableHead numeric>Приоритет</TableHead>
-                  <TableHead>Выдана</TableHead>
-                  {canAssign ? <TableHead /> : null}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[...user.roles]
-                  .sort((a, b) => b.role.priority - a.role.priority)
-                  .map((entry) => (
-                    <TableRow key={entry.roleId}>
-                      <TableCell>
-                        <span className="inline-flex items-center gap-2">
-                          <RolePrefix role={entry.role} size="xs" />
-                          <span>{entry.role.displayName}</span>
-                          {entry.role.isSuperuser ? <Badge tone="primary">superuser</Badge> : null}
-                        </span>
-                      </TableCell>
-                      <TableCell numeric>{entry.role.priority}</TableCell>
-                      <TableCell>{formatDate(entry.assignedAt)}</TableCell>
-                      {canAssign ? (
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setRevokeId(entry.roleId)}
-                            aria-label={`Снять роль ${entry.role.displayName}`}
-                          >
-                            Снять
-                          </Button>
-                        </TableCell>
-                      ) : null}
-                    </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
-          )}
-        </Card>
+        <DataGrid
+          columns={roleColumns}
+          rows={roles}
+          getRowId={(entry) => entry.roleId}
+          emptyTitle="Ролей нет"
+          emptyDescription="Пользователь — обычный игрок."
+          caption="Роли пользователя: название, приоритет, дата выдачи"
+        />
       </PageSection>
 
       <Can requirement="roles.view">
@@ -400,6 +401,40 @@ function BadgesTab({ user }: { user: AdminUserFull }) {
   const [expires, setExpires] = useState<IsoDate | null>(null);
   const [revokeType, setRevokeType] = useState<UserBadgeType | null>(null);
 
+  const badgeColumns: DataGridColumn<UserBadgeDto>[] = [
+    { key: 'type', header: 'Бейдж', cell: (badge) => BADGE_LABEL[badge.type] },
+    {
+      key: 'granted',
+      header: 'Выдан',
+      hideOnMobile: true,
+      cell: (badge) => formatDate(badge.grantedAt),
+    },
+    {
+      key: 'expires',
+      header: 'Истекает',
+      cell: (badge) => (badge.expiresAt ? formatDate(badge.expiresAt) : 'бессрочно'),
+    },
+    {
+      key: 'status',
+      header: 'Статус',
+      cell: (badge) => <StatusBadge status={badge.isActive ? 'active' : 'idle'} />,
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Действия</span>,
+      align: 'right',
+      cell: (badge) => (
+        <IconButton
+          aria-label={`Снять бейдж ${BADGE_LABEL[badge.type]}`}
+          size="sm"
+          onClick={() => setRevokeType(badge.type)}
+        >
+          <Trash2 />
+        </IconButton>
+      ),
+    },
+  ];
+
   return (
     <PageSection
       title="Бейджи"
@@ -409,50 +444,16 @@ function BadgesTab({ user }: { user: AdminUserFull }) {
         </Button>
       }
     >
-      <Card flush>
-        <QueryBoundary query={badges} size="sm">
-          {(data) =>
-            data.length === 0 ? (
-              <EmptyState size="sm" title="Бейджей нет" />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Бейдж</TableHead>
-                    <TableHead>Выдан</TableHead>
-                    <TableHead>Истекает</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.map((badge) => (
-                    <TableRow key={badge.id}>
-                      <TableCell>{BADGE_LABEL[badge.type]}</TableCell>
-                      <TableCell>{formatDate(badge.grantedAt)}</TableCell>
-                      <TableCell>
-                        {badge.expiresAt ? formatDate(badge.expiresAt) : 'бессрочно'}
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={badge.isActive ? 'active' : 'idle'} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <IconButton
-                          aria-label={`Снять бейдж ${BADGE_LABEL[badge.type]}`}
-                          size="sm"
-                          onClick={() => setRevokeType(badge.type)}
-                        >
-                          <Trash2 />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )
-          }
-        </QueryBoundary>
-      </Card>
+      <DataGrid
+        columns={badgeColumns}
+        rows={badges.data ?? []}
+        getRowId={(badge) => badge.id}
+        loading={badges.isPending}
+        error={badges.isError ? badges.error : undefined}
+        onRetry={() => badges.refetch()}
+        emptyTitle="Бейджей нет"
+        caption="Бейджи пользователя: тип, дата выдачи, срок действия, статус, действия"
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -570,47 +571,55 @@ function PunishmentsTab({ user }: { user: AdminUserFull }) {
   );
 }
 
+const SESSION_COLUMNS: DataGridColumn<AdminSessionDto>[] = [
+  {
+    key: 'device',
+    header: 'Устройство',
+    width: 256,
+    truncate: true,
+    cell: (s) => s.userAgent ?? '—',
+  },
+  {
+    key: 'ip',
+    header: 'IP',
+    cell: (s) => <span className="font-mono text-xs">{s.ipAddress ?? '—'}</span>,
+  },
+  {
+    key: 'created',
+    header: 'Создана',
+    hideOnMobile: true,
+    cell: (s) => formatDateTime(s.createdAt),
+  },
+  {
+    key: 'expires',
+    header: 'Истекает',
+    hideOnMobile: true,
+    cell: (s) => formatDateTime(s.expiresAt),
+  },
+  {
+    key: 'status',
+    header: 'Статус',
+    cell: (s) => (
+      <StatusBadge status={s.revokedAt ? 'blocked' : 'active'}>
+        {s.revokedAt ? 'Отозвана' : 'Активна'}
+      </StatusBadge>
+    ),
+  },
+];
+
 function SessionsTab({ user }: { user: AdminUserFull }) {
   const sessions = useUserSessions(user.id);
   return (
-    <Card flush>
-      <QueryBoundary query={sessions} size="sm">
-        {(data) =>
-          data.length === 0 ? (
-            <EmptyState size="sm" title="Сессий нет" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Устройство</TableHead>
-                  <TableHead>IP</TableHead>
-                  <TableHead>Создана</TableHead>
-                  <TableHead>Истекает</TableHead>
-                  <TableHead>Статус</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell truncate className="max-w-64">
-                      {s.userAgent ?? '—'}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{s.ipAddress ?? '—'}</TableCell>
-                    <TableCell>{formatDateTime(s.createdAt)}</TableCell>
-                    <TableCell>{formatDateTime(s.expiresAt)}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={s.revokedAt ? 'blocked' : 'active'}>
-                        {s.revokedAt ? 'Отозвана' : 'Активна'}
-                      </StatusBadge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )
-        }
-      </QueryBoundary>
-    </Card>
+    <DataGrid
+      columns={SESSION_COLUMNS}
+      rows={sessions.data ?? []}
+      getRowId={(s) => s.id}
+      loading={sessions.isPending}
+      error={sessions.isError ? sessions.error : undefined}
+      onRetry={() => sessions.refetch()}
+      emptyTitle="Сессий нет"
+      caption="Сессии пользователя: устройство, IP, дата создания, срок действия, статус"
+    />
   );
 }
 

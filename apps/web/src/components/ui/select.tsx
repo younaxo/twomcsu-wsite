@@ -20,10 +20,11 @@ export const SelectValue = RadixSelect.Value;
 /// DatePicker/ColorPicker, чтобы все «поля-кнопки» выглядели одинаково.
 export const selectTriggerVariants = cva(
   [
-    'flex w-full min-w-0 items-center justify-between gap-2 rounded border border-border bg-surface px-control-px text-left text-foreground',
-    'transition-[border-color,box-shadow] duration-fast',
-    'hover:border-border-strong',
-    'focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+    'flex w-full min-w-0 items-center justify-between gap-2 rounded border border-border-subtle bg-background-subtle px-3.5 text-left text-foreground',
+    'transition-[border-color,box-shadow,background-color] duration-fast',
+    'hover:border-border',
+    'focus-visible:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20',
+    'data-[state=open]:border-primary/60',
     'aria-[invalid=true]:border-destructive aria-[invalid=true]:focus-visible:ring-destructive/30',
     'data-[invalid]:border-destructive data-[invalid]:focus-visible:ring-destructive/30',
     'disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:opacity-60',

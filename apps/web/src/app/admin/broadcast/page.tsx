@@ -5,6 +5,8 @@ import { Megaphone, Send } from 'lucide-react';
 import { useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GlobalAlertEditor } from './_components/global-alert-editor';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,7 +33,8 @@ const TYPE_META: Record<
   danger: { label: 'Важно / опасность', tone: 'destructive' },
 };
 
-export default function BroadcastPage() {
+/// Рассылка объявления-уведомления (backend broadcast).
+function BroadcastPanel() {
   const { can } = usePermissions();
   const roles = useRoles(can('roles.view'));
   const broadcast = useBroadcast();
@@ -77,12 +80,7 @@ export default function BroadcastPage() {
   };
 
   return (
-    <PermissionGate requirement="broadcast.create">
-      <PageHeader
-        title="Объявления"
-        breadcrumbs={[{ label: 'Объявления' }]}
-        description="Объявление на сайте и уведомление всем или пользователям с выбранной ролью."
-      />
+    <>
       <div className="grid gap-6 xl:grid-cols-[3fr_2fr]">
         <Card className="flex flex-col gap-4">
           <Field label="Заголовок" required>
@@ -198,6 +196,47 @@ export default function BroadcastPage() {
         loading={broadcast.isPending}
         onConfirm={send}
       />
+    </>
+  );
+}
+
+/// «Объявления» (Коммуникации): рассылка уведомлений и верхняя
+/// информационная плашка сайта (ADR-0066).
+export default function AnnouncementsPage() {
+  const { can } = usePermissions();
+  const tabs = [
+    can('broadcast.create') && {
+      value: 'broadcast',
+      label: 'Рассылка',
+      content: <BroadcastPanel />,
+    },
+    can('settings.alert.view') && {
+      value: 'alert',
+      label: 'Верхняя плашка',
+      content: <GlobalAlertEditor />,
+    },
+  ].filter((tab): tab is { value: string; label: string; content: JSX.Element } => Boolean(tab));
+  return (
+    <PermissionGate requirement={['broadcast.create', 'settings.alert.view']}>
+      <PageHeader
+        title="Объявления"
+        breadcrumbs={[{ label: 'Объявления' }]}
+        description="Уведомления пользователям и информационная плашка под шапкой сайта."
+      />
+      <Tabs defaultValue={tabs[0]?.value} variant="line">
+        <TabsList aria-label="Разделы объявлений">
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {tabs.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value}>
+            {tab.content}
+          </TabsContent>
+        ))}
+      </Tabs>
     </PermissionGate>
   );
 }

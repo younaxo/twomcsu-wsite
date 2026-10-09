@@ -15,7 +15,6 @@ import { toast } from '@/components/ui/toast';
 import { useKvSettings, useSiteSettings, useUpsertKvSettings } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
-import { AlertTab } from './_components/alert-tab';
 import { GeneralTab, ModerationTab, ModulesTab } from './_components/site-tabs';
 import { SocialLinksTab } from './_components/social-links-tab';
 import { useSiteSettingsForm } from './_components/use-site-settings-form';
@@ -193,11 +192,6 @@ export default function SettingsPage() {
   const site = useSiteSettings(can('settings.site.view'));
   const kv = useKvSettings(can('settings.view'));
   const extraTabs = [
-    can('settings.alert.view') && {
-      value: 'alert',
-      label: 'Плашка',
-      content: <AlertTab />,
-    },
     can('settings.view') && {
       value: 'kv',
       label: 'Ключ-значение',
@@ -208,11 +202,11 @@ export default function SettingsPage() {
   ].filter((t): t is { value: string; label: string; content: JSX.Element } => Boolean(t));
 
   return (
-    <PermissionGate requirement={['settings.view', 'settings.site.view', 'settings.alert.view']}>
+    <PermissionGate requirement={['settings.view', 'settings.site.view']}>
       <PageHeader
         title="Настройки"
         breadcrumbs={[{ label: 'Настройки' }]}
-        description="Регистрация, соцсети, модерация, модули сайта и глобальная плашка."
+        description="Регистрация, соцсети, модерация и модули сайта."
       />
       {can('settings.site.view') ? (
         <QueryBoundary query={site}>

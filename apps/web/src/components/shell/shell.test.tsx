@@ -125,6 +125,33 @@ describe('SidebarRail', () => {
 });
 
 describe('SiteHeader', () => {
+  it('глобальная плашка — часть sticky-шапки (HeaderStack), уже шапки, без закрытия', async () => {
+    route(fetchMock, {
+      '/servers/overview': overview,
+      '/site/settings': {
+        ...settings,
+        alert: {
+          variant: 'danger',
+          displayStyle: 'filled',
+          icon: 'wrench',
+          customIcon: null,
+          title: null,
+          message: 'Технические работы в 22:00',
+          linkUrl: null,
+          linkLabel: null,
+        },
+      },
+    });
+    render(<SiteHeader />, { wrapper: Providers });
+    const bar = await screen.findByRole('region', { name: 'Объявление сайта' });
+    const header = screen.getByTestId('site-header');
+    expect(header.className).toMatch(/sticky/);
+    expect(header.contains(bar)).toBe(true);
+    expect(bar.className).toMatch(/rounded-b-xl/);
+    expect(bar.className).toMatch(/mx-5/);
+    expect(within(bar).queryByRole('button')).toBeNull();
+  });
+
   it('анониму — логотип twomc.su, навигация и кнопка «Войти», без колокольчика', async () => {
     route(fetchMock, { '/servers/overview': overview, '/site/settings': settings });
     render(<SiteHeader />, { wrapper: Providers });
@@ -224,8 +251,10 @@ describe('SiteFooter', () => {
       screen.getByRole('link', { name: 'Telegram поддержки: @twomcsu_support' }),
     ).toHaveAttribute('href', 'https://t.me/twomcsu_support');
     // Юридические данные владельца и дисклеймер Mojang AB.
-    expect(screen.getByTestId('legal-owner')).toHaveTextContent('Кирилл Игнатьевич Баранов');
-    expect(screen.getByTestId('legal-owner')).toHaveTextContent('ИНН 12321312333');
+    expect(screen.getByTestId('legal-owner')).toHaveTextContent('Кирилл Алексеевич Баранов');
+    expect(screen.getByTestId('legal-owner')).toHaveTextContent('ИНН 230815487140');
+    expect(screen.getByTestId('legal-owner')).toHaveTextContent('Самозанятый');
+    expect(screen.getByTestId('legal-owner')).not.toHaveTextContent('ОГРНИП');
     expect(screen.getByRole('link', { name: /политике Mojang AB/ })).toHaveAttribute(
       'target',
       '_blank',
@@ -262,7 +291,7 @@ describe('SiteFooter', () => {
     );
     expect(screen.getByRole('link', { name: /Статус серверов/ })).toHaveAttribute(
       'href',
-      '/status',
+      'https://status.twomc.su',
     );
     expect(
       within(screen.getByRole('list', { name: 'Способы оплаты' })).getAllByRole('listitem'),
