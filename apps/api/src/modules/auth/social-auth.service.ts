@@ -12,6 +12,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, RequestContext } from './auth.service';
+import { IdTokenError, Jwk, verifyIdToken } from './oidc-jwt.util';
 
 export type ExternalProvider = 'discord' | 'telegram';
 
@@ -31,19 +32,27 @@ export interface SocialState {
   exp: number;
 }
 
-/// Telegram Login Widget payload.
-export interface TelegramAuthPayload {
-  id: number | string;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number | string;
-  hash: string;
-}
+/// Итог привязки: новая привязка или этот же аккаунт уже был привязан.
+export type LinkOutcome = 'linked' | 'already_linked';
 
 const STATE_TTL_MS = 10 * 60_000;
-const TELEGRAM_MAX_AGE_S = 24 * 60 * 60;
+
+/// Telegram Login — OpenID Connect (core.telegram.org/bots/telegram-login):
+/// Authorization Code + PKCE (S256), id_token проверяется по JWKS.
+export const TELEGRAM_OIDC = {
+  issuer: 'https://oauth.telegram.org',
+  authorize: 'https://oauth.telegram.org/auth',
+  token: 'https://oauth.telegram.org/token',
+  jwks: 'https://oauth.telegram.org/.well-known/jwks.json',
+} as const;
+const JWKS_TTL_MS = 60 * 60_000;
+
+/// PKCE: verifier (43 символа base64url) и challenge = BASE64URL(SHA256).
+export function createPkce(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  return { verifier, challenge };
+}
 
 /// Безопасный внутренний путь возврата: только `/…`, без `//` и схем.
 export function safeNextPath(value: unknown, fallback = '/'): string {
@@ -66,6 +75,7 @@ export function safeNextPath(value: unknown, fallback = '/'): string {
 @Injectable()
 export class SocialAuthService {
   private readonly logger = new Logger(SocialAuthService.name);
+  private jwksCache: { keys: Jwk[]; fetchedAt: number } | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -83,25 +93,28 @@ export class SocialAuthService {
     );
   }
 
-  telegramConfigured(): boolean {
+  /// Client ID из BotFather (Login Widget → OpenID Connect) — id бота; если
+  /// не задан явно, берётся из префикса токена бота.
+  telegramClientId(): string {
+    const explicit = this.config.get<string>('TELEGRAM_CLIENT_ID', '');
+    if (explicit) return explicit;
     return (
-      !!this.config.get<string>('TELEGRAM_BOT_TOKEN') &&
-      !!this.config.get<string>('TELEGRAM_BOT_USERNAME')
+      this.config.get<string>('TELEGRAM_BOT_TOKEN', '').split(':')[0] ?? ''
     );
   }
 
-  /// Публичные сведения для кнопок входа (без секретов: id бота публичен).
+  telegramConfigured(): boolean {
+    return (
+      !!this.telegramClientId() &&
+      !!this.config.get<string>('TELEGRAM_CLIENT_SECRET')
+    );
+  }
+
+  /// Какие кнопки показывать (без секретов).
   providers() {
-    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN', '');
     return {
       discord: { enabled: this.discordConfigured() },
-      telegram: {
-        enabled: this.telegramConfigured(),
-        botUsername: this.telegramConfigured()
-          ? this.config.get<string>('TELEGRAM_BOT_USERNAME', '')
-          : null,
-        botId: this.telegramConfigured() ? token.split(':')[0] : null,
-      },
+      telegram: { enabled: this.telegramConfigured() },
     };
   }
 
@@ -219,52 +232,130 @@ export class SocialAuthService {
     };
   }
 
-  // --- Telegram ------------------------------------------------------------
+  // --- Telegram (OpenID Connect) ------------------------------------------
 
-  /// Проверка подписи Telegram Login Widget: secret = SHA256(bot_token),
-  /// hash = HMAC_SHA256(data_check_string, secret); данные не старше суток.
-  verifyTelegram(payload: TelegramAuthPayload): ExternalProfile {
-    const token = this.config.get<string>('TELEGRAM_BOT_TOKEN', '');
+  telegramAuthorizeUrl(
+    state: string,
+    nonce: string,
+    challenge: string,
+  ): string {
     if (!this.telegramConfigured()) {
       throw new ServiceUnavailableException('telegram_disabled');
     }
-    if (!payload || typeof payload.hash !== 'string' || !payload.id) {
-      throw new BadRequestException('telegram_invalid');
+    const params = new URLSearchParams({
+      client_id: this.telegramClientId(),
+      redirect_uri: this.config.get<string>('TELEGRAM_REDIRECT_URI', ''),
+      response_type: 'code',
+      scope: 'openid profile',
+      state,
+      nonce,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+    });
+    return `${TELEGRAM_OIDC.authorize}?${params.toString()}`;
+  }
+
+  private async telegramKeys(force = false): Promise<Jwk[]> {
+    if (
+      !force &&
+      this.jwksCache &&
+      Date.now() - this.jwksCache.fetchedAt < JWKS_TTL_MS
+    ) {
+      return this.jwksCache.keys;
     }
-    const fields = Object.entries(payload)
-      .filter(
-        ([key, value]) =>
-          key !== 'hash' && value !== undefined && value !== null,
-      )
-      .map(([key, value]) => `${key}=${value}`)
-      .sort();
-    const secret = createHash('sha256').update(token).digest();
-    const expected = createHmac('sha256', secret)
-      .update(fields.join('\n'))
-      .digest('hex');
-    const a = Buffer.from(payload.hash);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      throw new ForbiddenException({
-        code: 'telegram_invalid',
-        message: 'Подпись Telegram не прошла проверку',
-      });
+    const res = await fetch(TELEGRAM_OIDC.jwks, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      this.logger.warn(`Telegram JWKS: HTTP ${res.status}`);
+      throw new BadRequestException('telegram_failed');
     }
-    const age = Math.floor(Date.now() / 1000) - Number(payload.auth_date);
-    if (!Number.isFinite(age) || age > TELEGRAM_MAX_AGE_S || age < -300) {
-      throw new ForbiddenException({
-        code: 'telegram_expired',
-        message: 'Данные Telegram устарели — повторите вход',
-      });
+    const body = (await res.json()) as { keys?: Jwk[] };
+    const keys = Array.isArray(body.keys) ? body.keys : [];
+    this.jwksCache = { keys, fetchedAt: Date.now() };
+    return keys;
+  }
+
+  /// Обмен кода на токены (Basic client_id:client_secret + PKCE verifier) и
+  /// проверка id_token: подпись по JWKS, iss, aud = client id, exp, nonce.
+  async exchangeTelegramCode(
+    code: string,
+    verifier: string,
+    nonce: string,
+  ): Promise<ExternalProfile> {
+    const clientId = this.telegramClientId();
+    const secret = this.config.get<string>('TELEGRAM_CLIENT_SECRET', '');
+    const basic = Buffer.from(`${clientId}:${secret}`).toString('base64');
+    const tokenRes = await fetch(TELEGRAM_OIDC.token, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        authorization: `Basic ${basic}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: this.config.get<string>('TELEGRAM_REDIRECT_URI', ''),
+        client_id: clientId,
+        code_verifier: verifier,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!tokenRes.ok) {
+      this.logger.warn(
+        `Telegram token exchange failed: HTTP ${tokenRes.status}`,
+      );
+      throw new BadRequestException('telegram_failed');
     }
-    const name = [payload.first_name, payload.last_name]
-      .filter(Boolean)
-      .join(' ');
-    return {
-      providerUserId: String(payload.id),
-      username: payload.username ?? null,
-      displayName: name || null,
+    const token = (await tokenRes.json()) as { id_token?: string };
+    if (!token.id_token) {
+      throw new BadRequestException('telegram_failed');
+    }
+    const expected = {
+      issuer: TELEGRAM_OIDC.issuer,
+      audience: clientId,
+      nonce,
     };
+    const claims = await this.verifyTelegramIdToken(token.id_token, expected);
+    // `id` (scope profile) — числовой Telegram user id, тот же, что у привязок
+    // через прежний виджет; `sub` — непрозрачный идентификатор.
+    const telegramId = claims.id;
+    if (typeof telegramId !== 'number' && typeof telegramId !== 'string') {
+      throw new BadRequestException('telegram_failed');
+    }
+    return {
+      providerUserId: String(telegramId),
+      username:
+        typeof claims.preferred_username === 'string'
+          ? claims.preferred_username
+          : null,
+      displayName: typeof claims.name === 'string' ? claims.name : null,
+    };
+  }
+
+  private async verifyTelegramIdToken(
+    idToken: string,
+    expected: { issuer: string; audience: string; nonce: string },
+  ) {
+    try {
+      return verifyIdToken(idToken, await this.telegramKeys(), expected);
+    } catch (error) {
+      try {
+        // Ротация ключей: один повтор со свежим JWKS.
+        if (error instanceof IdTokenError && error.reason === 'unknown_key') {
+          return verifyIdToken(
+            idToken,
+            await this.telegramKeys(true),
+            expected,
+          );
+        }
+        throw error;
+      } catch (final) {
+        const reason = final instanceof IdTokenError ? final.reason : 'invalid';
+        this.logger.warn(`Telegram id_token rejected: ${reason}`);
+        throw new BadRequestException('telegram_failed');
+      }
+    }
   }
 
   // --- Вход и привязка -----------------------------------------------------
@@ -305,11 +396,15 @@ export class SocialAuthService {
     return session;
   }
 
+  /// Привязка из профиля. Тот же внешний аккаунт уже у этого пользователя —
+  /// `already_linked` (не ошибка); у другого пользователя — 409
+  /// `external_taken`; у пользователя уже другой аккаунт этого сервиса — 409
+  /// `provider_slot_taken`.
   async link(
     userId: string,
     provider: ExternalProvider,
     profile: ExternalProfile,
-  ) {
+  ): Promise<LinkOutcome> {
     const taken = await this.prisma.userExternalAccount.findUnique({
       where: {
         provider_providerUserId: {
@@ -325,14 +420,14 @@ export class SocialAuthService {
       });
     }
     if (taken) {
-      return taken;
+      return 'already_linked';
     }
     const existing = await this.prisma.userExternalAccount.findUnique({
       where: { userId_provider: { userId, provider } },
     });
     if (existing) {
       throw new ConflictException({
-        code: 'already_linked',
+        code: 'provider_slot_taken',
         message:
           'К вашему аккаунту уже привязан другой аккаунт этого сервиса — сначала отвяжите его',
       });
@@ -354,7 +449,7 @@ export class SocialAuthService {
       severity: 'warning',
       changes: { provider, username: profile.username },
     });
-    return created;
+    return 'linked';
   }
 
   async unlink(userId: string, provider: ExternalProvider) {

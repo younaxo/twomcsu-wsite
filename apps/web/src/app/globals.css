@@ -23,6 +23,13 @@
     @apply border-border;
   }
 
+  /* Недоступные элементы: курсор показывает недоступность (fallback, пока нет
+     собственного курсора проекта). */
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
   ::selection {
     background: rgb(var(--primary) / 0.28);
   }

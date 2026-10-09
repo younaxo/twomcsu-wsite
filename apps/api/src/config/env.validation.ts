@@ -72,6 +72,13 @@ export const envValidationSchema = Joi.object({
     .default('http://localhost:4000/auth/discord/callback'),
   TELEGRAM_BOT_USERNAME: Joi.string().allow('').optional(),
   TELEGRAM_BOT_TOKEN: Joi.string().allow('').optional(),
+  /// Telegram Login через OpenID Connect (ADR-0071): Client ID/Secret из
+  /// BotFather → Login Widget; redirect URI — в Allowed URLs бота.
+  TELEGRAM_CLIENT_ID: Joi.string().allow('').optional(),
+  TELEGRAM_CLIENT_SECRET: Joi.string().allow('').optional(),
+  TELEGRAM_REDIRECT_URI: Joi.string()
+    .uri()
+    .default('http://localhost:4000/auth/telegram/callback'),
   STATUS_PAGE_URL: Joi.string().uri().default('https://status.twomc.su'),
   /// Версия юридических документов, фиксируемая в согласиях (ADR-0070).
   LEGAL_DOCS_VERSION: Joi.string().default('draft'),

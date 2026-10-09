@@ -1268,6 +1268,10 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
 `auth.external.link/unlink` в audit. Секреты — только в env (`DISCORD_*`,
 `TELEGRAM_*`), во frontend уходит лишь `botId`/`botUsername`.
 
+**Update (ADR-0071).** Telegram Login Widget (legacy, Telegram показывает
+«deprecated») заменён на OpenID Connect; результат входа/привязки — экран
+`/auth/result` вместо редиректов с `?social_error=`/`?link_error=`.
+
 ## ADR-0070 — Регистрация с подтверждением почты, реферальным кодом и согласиями
 
 **Context.** Владелец требует: аккаунт создаётся только после подтверждения
@@ -1319,3 +1323,67 @@ nonce в httpOnly-cookie против CSRF. Telegram — Login Widget (popup
 Незавершённые `EmailVerification` копятся до очистки (политика хранения — в
 задаче «Хранилище и журналы»). Доставка кода зависит от SMTP (RISKS R4).
 Согласия пишутся с версией `draft`, пока не опубликованы тексты документов.
+
+## ADR-0071 — Единая auth-панель, Telegram OpenID Connect, экран результата соцвхода
+
+**Context.** Владелец: auth-экраны должны быть одной широкой горизонтальной
+панелью с визуалом проекта; переключение «Вход | Регистрация» без перезагрузки;
+код подтверждения — внутри той же панели, поля остаются видны и заблокированы;
+у любых недоступных элементов — курсор недоступности. Telegram Login Widget
+(`oauth.telegram.org/auth` с `bot_id`) Telegram помечает как deprecated —
+нужен актуальный официальный механизм. После Discord/Telegram пользователь
+должен видеть понятный экран результата, а не редирект/JSON.
+
+**Decision.**
+- Страницы входа, регистрации, восстановления/сброса пароля и `/auth/result`
+  — в группе маршрутов `app/(auth)` с общим layout (`AuthLayout` → `AuthPanel`):
+  остров `max-w-[1120px]`, слева логотип, `AuthModeSwitch` (две ссылки с
+  `aria-current`, скользящая подложка, `motion-reduce` без анимации) и шаг
+  (`AuthShell` — заголовок/описание/содержимое), справа `AuthVisual` —
+  основной логотип (постоянный, ADR-0065), векторный узор из блоков и живой
+  онлайн серверов (реальный Server List Ping; нет данных — строка скрыта). На
+  mobile визуал — компактный баннер сверху, на ширине < 380px скрыт. Layout
+  не перемонтируется при переходах — переключение без перезагрузки.
+- Регистрация: одна форма на все шаги; после «Подтвердить почту» поля и
+  согласия `disabled`, ниже — «Код подтверждения», «Отправить повторно через
+  N с» (недоступная кнопка) → «Отправить код повторно»; основная кнопка:
+  «Подтвердить почту» → «Подтвердить код» → «Создать аккаунт». Реферальный код
+  — «Необязательно», placeholder «Введите код», без примеров.
+- Недоступные элементы: `Button`/`SegmentedControl` больше не используют
+  `pointer-events-none` (с ним курсор не меняется) — `cursor: not-allowed`, у
+  недоступных hover/active сброшены; загрузка — `cursor: wait`; глобальный
+  fallback `:disabled, [aria-disabled=true] { cursor: not-allowed }` до
+  собственного курсора проекта.
+- Telegram — OpenID Connect (core.telegram.org/bots/telegram-login):
+  `GET /auth/telegram/start` / `POST /auth/telegram/link-url` → редирект на
+  `https://oauth.telegram.org/auth` (`response_type=code`, `scope=openid
+  profile`, `state`, `nonce`, PKCE `S256`; verifier — в httpOnly-cookie
+  `social_pkce`, path `/auth`, 10 минут) → `GET /auth/telegram/callback`:
+  проверка state/nonce-cookie, обмен кода на `https://oauth.telegram.org/token`
+  (Basic `client_id:client_secret` + `code_verifier`), проверка `id_token`
+  по JWKS (`node:crypto`, RS256/ES256/EdDSA; `none`/HS* запрещены; `iss`,
+  `aud` = Client ID, `exp`, `nonce`; при неизвестном `kid` — один повтор со
+  свежим JWKS). Telegram user id — claim `id` (тот же, что у прежних
+  привязок). Env: `TELEGRAM_CLIENT_ID` (по умолчанию id бота из токена),
+  `TELEGRAM_CLIENT_SECRET`, `TELEGRAM_REDIRECT_URI`. Без секрета провайдер
+  выключен (кнопка не показывается). Legacy `POST /auth/telegram/{login,link}`
+  удалены.
+- Discord и Telegram — один обработчик `GET /auth/:provider/callback`; режим
+  login/link — в подписанном state. Итог — редирект на
+  `/auth/result?provider&mode&status&next` (статусы `success`, `linked`,
+  `already_linked`, `not_linked`, `taken`, `slot_taken`, `cancelled`,
+  `expired`, `unavailable`, `error`). В URL нет токенов, кодов, секретов и
+  ответов провайдера; сессия — только httpOnly refresh-cookie. `link()` для
+  того же аккаунта возвращает `already_linked` (не ошибка); другой аккаунт
+  этого сервиса у пользователя — `provider_slot_taken`.
+- `SocialAuthResult` — общий компонент: логотип twomc.su + логотип провайдера,
+  иконка статуса, заголовок, описание, действия («Продолжить» с автопереходом
+  через 4 с, «Вернуться ко входу», «Вернуться в настройки», «Повторить»).
+- Design-lab, раздел «Auth» — те же компоненты (`AuthPanel`, `LoginForm
+  preview`, `RegisterForm previewStep="code"`, `SocialAuthResult`).
+
+**Consequences.** Telegram-вход заработает после настройки BotFather (Login
+Widget → OpenID Connect, Allowed URL callback, Client Secret в env) —
+RISKS R18. Локально Telegram OIDC не проверить (localhost в Allowed URLs не
+принимается) — поток покрыт unit-тестами (подпись, claims, PKCE) и e2e с
+подменённым обменом кода.

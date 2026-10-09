@@ -10,24 +10,29 @@ export const buttonVariants = cva(
   [
     'inline-flex shrink-0 select-none items-center justify-center gap-2 whitespace-nowrap',
     'rounded font-medium transition-[background-color,color,border-color,box-shadow] duration-fast',
-    'disabled:pointer-events-none disabled:opacity-50',
+    // Недоступность видна курсором (не pointer-events-none — иначе курсор не
+    // меняется); у недоступных hover/active сброшены к исходному виду в вариантах.
+    // Во время загрузки — курсор ожидания.
+    'disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+    'data-[loading=true]:cursor-wait',
     '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   ],
   {
     variants: {
       variant: {
         primary:
-          'bg-primary text-primary-foreground shadow-edge hover:bg-primary-hover active:bg-primary-active',
+          'bg-primary text-primary-foreground shadow-edge hover:bg-primary-hover active:bg-primary-active disabled:hover:bg-primary aria-disabled:hover:bg-primary disabled:active:bg-primary aria-disabled:active:bg-primary',
         secondary:
-          'border border-border bg-surface text-foreground shadow-sm hover:bg-muted active:bg-surface-sunken',
-        ghost: 'text-foreground hover:bg-muted active:bg-surface-sunken',
+          'border border-border bg-surface text-foreground shadow-sm hover:bg-muted active:bg-surface-sunken disabled:hover:bg-surface aria-disabled:hover:bg-surface disabled:active:bg-surface aria-disabled:active:bg-surface',
+        ghost:
+          'text-foreground hover:bg-muted active:bg-surface-sunken disabled:hover:bg-transparent aria-disabled:hover:bg-transparent disabled:active:bg-transparent aria-disabled:active:bg-transparent',
         outline:
-          'border border-border-strong bg-transparent text-foreground hover:bg-muted active:bg-surface-sunken',
+          'border border-border-strong bg-transparent text-foreground hover:bg-muted active:bg-surface-sunken disabled:hover:bg-transparent aria-disabled:hover:bg-transparent disabled:active:bg-transparent aria-disabled:active:bg-transparent',
         destructive:
-          'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95',
+          'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95 disabled:hover:brightness-100 aria-disabled:hover:brightness-100 disabled:active:brightness-100 aria-disabled:active:brightness-100',
         'destructive-outline':
-          'border border-destructive/40 bg-transparent text-destructive hover:bg-destructive-soft',
-        link: 'h-auto px-0 text-primary-soft-foreground underline-offset-4 hover:underline',
+          'border border-destructive/40 bg-transparent text-destructive hover:bg-destructive-soft disabled:hover:bg-transparent aria-disabled:hover:bg-transparent',
+        link: 'h-auto px-0 text-primary-soft-foreground underline-offset-4 hover:underline disabled:hover:no-underline aria-disabled:hover:no-underline',
       },
       size: {
         sm: 'h-control-sm px-3 text-sm',

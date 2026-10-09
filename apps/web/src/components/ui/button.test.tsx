@@ -47,4 +47,20 @@ describe('Button', () => {
     const button = screen.getByRole('button', { name: 'Закрыть' });
     expect(button.className).toContain('size-[var(--control-h)]');
   });
+
+  it('недоступная кнопка: курсор not-allowed (без pointer-events-none), клик не срабатывает', async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <Button disabled onClick={onClick}>
+        Отправить
+      </Button>,
+    );
+    const button = screen.getByRole('button', { name: 'Отправить' });
+    expect(button).toBeDisabled();
+    expect(button.className).toContain('disabled:cursor-not-allowed');
+    expect(button.className).not.toContain('disabled:pointer-events-none');
+    await user.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
 });

@@ -7,9 +7,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/// /register — регистрация по реальному контракту `POST /auth/register`
-/// (e-mail, ник, пароль, Turnstile). Реферального кода в контракте нет —
-/// поле не выдумываем.
+/// /register — регистрация с подтверждением почты (ADR-0070): данные,
+/// реферальный код, Turnstile, согласия → код из письма → создание аккаунта.
 export default function RegisterPage() {
   return (
     <Suspense fallback={null}>
