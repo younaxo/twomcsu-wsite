@@ -55,3 +55,8 @@ model File { id String @id @default(cuid()); key String @unique; mime String; si
 Orphan cleanup (cron): `TEMP` старше 24 ч и `DELETED` удаляются из storage. Права: загрузка — authenticated + permission по `uploadType` (например `news.upload_image`), удаление — владелец или `files.delete`.
 ## Backup
 Файлы CDN входят в бэкап наравне с PostgreSQL (33-DEPLOYMENT.md).
+
+## Актуально (PHASE 23)
+Схема B реализована в `apps/api/src/modules/files` — см.
+`docs/implementation/phases/PHASE-23-cdn-files.md`. Раздел A выше описывает
+старый проект и больше не соответствует коду.

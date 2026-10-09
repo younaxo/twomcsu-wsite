@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### CDN / файловое хранилище (PHASE 23)
+- `modules/files`: StorageService (local → `/uploads`, s3 за CDN_BASE_URL), пресеты
+  загрузок по типу с permission, pipeline magic-bytes → sharp → AVIF, модель File
+  TEMP/ATTACHED/DELETED, orphan cleanup, `POST /files/upload`,
+  `POST|DELETE /users/me/avatar|banner`. E2E `files` (6).
+
 ### Production infrastructure (PHASE 35)
 - `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,
   `deploy.sh` с prisma migrate deploy и автоматическим rollback, пример nginx,

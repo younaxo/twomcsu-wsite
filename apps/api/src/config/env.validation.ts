@@ -30,6 +30,22 @@ export const envValidationSchema = Joi.object({
   COOKIE_SECURE: Joi.boolean().default(false),
   COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
 
+  /// Файловое хранилище (PHASE 23, ADR-0008).
+  STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
+  CDN_BASE_URL: Joi.string().uri().default('http://localhost:4000/uploads'),
+  UPLOADS_DIR: Joi.string().default('./uploads'),
+  STORAGE_BUCKET: Joi.string()
+    .allow('')
+    .when('STORAGE_DRIVER', { is: 's3', then: Joi.string().required() }),
+  STORAGE_ENDPOINT: Joi.string().uri().allow('').optional(),
+  STORAGE_REGION: Joi.string().allow('').optional(),
+  STORAGE_ACCESS_KEY: Joi.string()
+    .allow('')
+    .when('STORAGE_DRIVER', { is: 's3', then: Joi.string().required() }),
+  STORAGE_SECRET_KEY: Joi.string()
+    .allow('')
+    .when('STORAGE_DRIVER', { is: 's3', then: Joi.string().required() }),
+
   HCAPTCHA_DISABLED: Joi.boolean().default(false),
   HCAPTCHA_SECRET: Joi.string()
     .allow('')
