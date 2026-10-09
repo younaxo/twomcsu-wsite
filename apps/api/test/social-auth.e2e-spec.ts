@@ -143,7 +143,6 @@ describe('Social login (e2e)', () => {
   it.each(['discord', 'telegram'] as const)(
     '%s: непривязанный аккаунт — экран «не привязан», аккаунт не создаётся',
     async (provider) => {
-      const usersBefore = await prisma.user.count();
       const { result, callback } = await flow(provider);
       expect(result.pathname).toBe('/auth/result');
       expect(Object.fromEntries(result.searchParams)).toEqual({
@@ -155,7 +154,21 @@ describe('Social login (e2e)', () => {
       expect(String(callback.headers['set-cookie'])).not.toContain(
         'refresh_token=',
       );
-      expect(await prisma.user.count()).toBe(usersBefore);
+      // Точечно (параллельные наборы e2e создают своих пользователей): ни
+      // привязки этого внешнего аккаунта, ни пользователя с его ником.
+      expect(
+        await prisma.userExternalAccount.count({
+          where: {
+            provider,
+            providerUserId: profiles[provider].providerUserId,
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.user.count({
+          where: { username: profiles[provider].username ?? '' },
+        }),
+      ).toBe(0);
     },
   );
 
