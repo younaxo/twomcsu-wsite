@@ -34,6 +34,20 @@ export interface RegisterRequest {
   captchaToken?: string;
 }
 
+/// `POST /auth/forgot-password` — ответ всегда нейтральный (204), существование
+/// аккаунта не раскрывается.
+export interface ForgotPasswordRequest {
+  email: string;
+  captchaToken?: string;
+}
+
+/// `POST /auth/reset-password` — токен из письма + новый пароль.
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+  captchaToken?: string;
+}
+
 /// Effective permissions пользователя (PermissionService.getEffectivePermissions).
 /// `superuser === true` ⇒ wildcard, `permissions` при этом пусто.
 /// `maxPriority === null` ⇒ у пользователя нет ни одной роли.

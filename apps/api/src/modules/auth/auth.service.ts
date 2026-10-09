@@ -137,11 +137,11 @@ export class AuthService {
       );
     }
 
-    if (await this.bruteForce.requiresCaptcha(context.ip)) {
-      const captchaOk = await this.captcha.verify(dto.captchaToken);
-      if (!captchaOk) {
-        throw new ForbiddenException({ requiresCaptcha: true });
-      }
+    // Turnstile на каждом входе (anti-bot); после серии неудач с IP — тот же
+    // ответ `requiresCaptcha`, чтобы frontend обновил виджет.
+    const captchaOk = await this.captcha.verify(dto.captchaToken, context.ip);
+    if (!captchaOk) {
+      throw new ForbiddenException({ requiresCaptcha: true });
     }
 
     const identifier = dto.emailOrUsername.toLowerCase();
@@ -327,6 +327,10 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
+    const captchaOk = await this.captcha.verify(dto.captchaToken);
+    if (!captchaOk) {
+      throw new ForbiddenException('Проверка captcha не пройдена');
+    }
     const email = dto.email.toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
