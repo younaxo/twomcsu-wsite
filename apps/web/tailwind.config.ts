@@ -120,9 +120,10 @@ const config: Config = {
         floating: '35',
         overlay: '50',
         modal: '50',
-        // Popover/dropdown ≥ modal: открываются из диалогов и должны быть поверх.
-        dropdown: '50',
-        popover: '50',
+        // Popover/dropdown строго выше modal: открываются из диалогов (ColorPicker
+        // в форме роли) и должны быть поверх overlay/содержимого диалога.
+        dropdown: '55',
+        popover: '55',
         tooltip: '60',
         toast: '70',
       },

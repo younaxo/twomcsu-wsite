@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from './dialog';
 import { ColorPicker, hexToHsv, hsvToHex } from './color-picker';
 
 function Harness({ initial = null }: { initial?: string | null }) {
@@ -106,5 +107,50 @@ describe('ColorPicker', () => {
     for (const hex of ['#000000', '#ffffff', '#f26a1b', '#30a46c', '#3e63dd']) {
       expect(hsvToHex(hexToHsv(hex))).toBe(hex);
     }
+  });
+
+  it('внутри модального Dialog: открывается, виден, в портале над диалогом, без clipping', async () => {
+    const user = userEvent.setup();
+    function DialogHarness() {
+      const [value, setValue] = useState<string | null>('#f26a1b');
+      return (
+        <Dialog open>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Новая роль</DialogTitle>
+            </DialogHeader>
+            <DialogBody className="overflow-hidden">
+              <ColorPicker aria-label="Цвет" value={value} onChange={setValue} />
+              <output data-testid="value">{value ?? 'null'}</output>
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      );
+    }
+    render(<DialogHarness />);
+    const dialog = screen.getByRole('dialog', { name: 'Новая роль' });
+    const trigger = within(dialog).getByRole('button', { name: 'Цвет' });
+    await user.click(trigger);
+
+    const panel = await screen.findByTestId('color-panel');
+    expect(panel).toBeInTheDocument();
+    expect(panel).toBeVisible();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    // Портал: панель не внутри DOM диалога (overflow диалога её не режет) …
+    expect(dialog.contains(panel)).toBe(false);
+    // … и z-index popover выше модалки (z-50): класс из шкалы tailwind.
+    const content = panel.parentElement as HTMLElement;
+    expect(content.className).toMatch(/(^|\s)z-popover(\s|$)/);
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+
+    // Взаимодействие внутри панели не закрывает диалог и меняет значение.
+    await user.click(within(panel).getByRole('button', { name: 'Зелёный' }));
+    expect(screen.getByTestId('value')).toHaveTextContent('#30a46c');
+    expect(screen.getByRole('dialog', { name: 'Новая роль' })).toBeInTheDocument();
+
+    // Escape закрывает только picker, диалог остаётся.
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('color-panel')).toBeNull());
+    expect(screen.getByRole('dialog', { name: 'Новая роль' })).toBeInTheDocument();
   });
 });
