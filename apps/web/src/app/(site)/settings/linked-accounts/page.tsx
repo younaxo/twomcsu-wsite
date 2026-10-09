@@ -2,10 +2,10 @@
 
 import type { ExternalProvider, LinkedAccountDto } from '@twomc/shared';
 import { Link2, ShieldCheck } from 'lucide-react';
-import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { RequireSession } from '@/components/auth/require-session';
+import { PROVIDER_COLOR } from '@/components/auth/social-auth-result';
 import { BrandIcon } from '@/components/shell/brand-icon';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -14,16 +14,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { getErrorMessage } from '@/lib/api/errors';
 import {
-  describeSocialError,
   PROVIDER_LABEL,
-  requestTelegramAuth,
+  PROVIDERS,
   useLinkedAccountMutations,
   useLinkedAccounts,
   useSocialProviders,
 } from '@/lib/auth/social';
+import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
-
-const PROVIDERS: ExternalProvider[] = ['discord', 'telegram'];
 
 function ProviderRow({
   provider,
@@ -42,7 +40,12 @@ function ProviderRow({
 }) {
   return (
     <li className="flex flex-wrap items-center gap-4 py-4" data-provider={provider}>
-      <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-background-subtle [&_svg]:size-5">
+      <span
+        className={cn(
+          'flex size-11 shrink-0 items-center justify-center rounded-lg bg-background-subtle [&_svg]:size-5',
+          PROVIDER_COLOR[provider],
+        )}
+      >
         <BrandIcon id={provider} />
       </span>
       <div className="min-w-0 flex-1">
@@ -85,16 +88,11 @@ function ProviderRow({
 }
 
 function LinkedAccounts() {
-  const searchParams = useSearchParams();
   const providers = useSocialProviders();
   const linked = useLinkedAccounts();
-  const { linkTelegram, discordLinkUrl, unlink } = useLinkedAccountMutations();
+  const { linkUrl, unlink } = useLinkedAccountMutations();
   const [unlinking, setUnlinking] = useState<ExternalProvider | null>(null);
-  const notice = describeSocialError(searchParams.get('link_error'));
-  const linkedNow = searchParams.get('linked');
-  useEffect(() => {
-    if (linkedNow === 'discord') toast.success('Discord подключён');
-  }, [linkedNow]);
+  const [connecting, setConnecting] = useState<ExternalProvider | null>(null);
 
   const accounts = new Map((linked.data ?? []).map((a) => [a.provider, a]));
   const enabled = (provider: ExternalProvider) =>
@@ -102,20 +100,15 @@ function LinkedAccounts() {
       ? (providers.data?.discord.enabled ?? false)
       : (providers.data?.telegram.enabled ?? false);
 
+  /// Подключение — переход к провайдеру (state с mode=link и id пользователя);
+  /// итог показывает /auth/result («Успешно!», «Уже подключено», …).
   const connect = async (provider: ExternalProvider) => {
+    setConnecting(provider);
     try {
-      if (provider === 'discord') {
-        const { url } = await discordLinkUrl.mutateAsync();
-        window.location.assign(url);
-        return;
-      }
-      const botId = providers.data?.telegram.botId;
-      if (!botId) return;
-      const payload = await requestTelegramAuth(botId);
-      if (!payload) return;
-      await linkTelegram.mutateAsync(payload);
-      toast.success('Telegram подключён');
+      const { url } = await linkUrl.mutateAsync(provider);
+      window.location.assign(url);
     } catch (error) {
+      setConnecting(null);
       toast.error(getErrorMessage(error));
     }
   };
@@ -123,14 +116,6 @@ function LinkedAccounts() {
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <section className="rounded-xl bg-surface px-5 py-2 shadow-sm edge-highlight md:px-6">
-        {notice ? (
-          <p
-            role="alert"
-            className="mt-3 rounded bg-destructive-soft px-3 py-2 text-sm text-destructive"
-          >
-            {notice}
-          </p>
-        ) : null}
         {linked.isPending || providers.isPending ? (
           <div className="flex flex-col gap-3 py-4">
             <Skeleton className="h-12 w-full" />
@@ -144,10 +129,7 @@ function LinkedAccounts() {
                 provider={provider}
                 account={accounts.get(provider)}
                 enabled={enabled(provider)}
-                pending={
-                  (provider === 'discord' && discordLinkUrl.isPending) ||
-                  (provider === 'telegram' && linkTelegram.isPending)
-                }
+                pending={connecting === provider}
                 onConnect={() => void connect(provider)}
                 onDisconnect={() => setUnlinking(provider)}
               />

@@ -202,6 +202,16 @@ Halloween-декор шапки перенесён на собственный C
 `https://cdn-files.twomc.su/assets/images/halloween_assets.webp` (2728×146).
 Сторонний домен больше не используется; override — `NEXT_PUBLIC_SEASONAL_HALLOWEEN_SRC`.
 
+## R18 — Telegram Login (OpenID Connect): настройка BotFather — OPEN (нужен владелец)
+
+Код входа/привязки через Telegram OIDC готов (ADR-0071), но без настройки бота
+кнопка Telegram не показывается. **Нужно от владельца:** @BotFather → бот
+`@twomcsu_testbot` (или production-бот) → Login Widget → переключить на
+OpenID Connect; в Allowed URLs добавить `https://api.twomc.su/auth/telegram/callback`;
+Client ID и Client Secret — в env (`TELEGRAM_CLIENT_ID`, `TELEGRAM_CLIENT_SECRET`,
+`TELEGRAM_REDIRECT_URI`), не в git. localhost в Allowed URLs Telegram не
+принимает — полная проверка только на домене.
+
 ## R17 — Ключи Cloudflare Turnstile для production — OPEN
 
 Нужны реальные `NEXT_PUBLIC_TURNSTILE_SITE_KEY` и `TURNSTILE_SECRET_KEY` из Cloudflare

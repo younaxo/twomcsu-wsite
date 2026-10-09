@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Delete,
   Get,
@@ -20,17 +19,35 @@ import type { CookieOptions, Request, Response } from 'express';
 import { RequestContext } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
-import { TelegramAuthDto } from './dto/telegram-auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
 import {
+  createPkce,
   ExternalProvider,
   safeNextPath,
   SocialAuthService,
+  SocialState,
 } from './social-auth.service';
 
 const NONCE_COOKIE = 'social_nonce';
+const PKCE_COOKIE = 'social_pkce';
+const LINK_NEXT = '/settings/linked-accounts';
+
+/// Итог входа/привязки для страницы результата на frontend. В URL — только
+/// провайдер, режим, статус и внутренний путь возврата: никаких токенов,
+/// кодов, секретов и ответов провайдера.
+export type SocialResultStatus =
+  | 'success'
+  | 'linked'
+  | 'already_linked'
+  | 'not_linked'
+  | 'taken'
+  | 'slot_taken'
+  | 'cancelled'
+  | 'expired'
+  | 'unavailable'
+  | 'error';
 
 function requestContext(req: Request): RequestContext {
   return {
@@ -39,24 +56,57 @@ function requestContext(req: Request): RequestContext {
   };
 }
 
-/// Код ошибки для редиректа на frontend (без текста исключения).
-function errorCode(error: unknown, fallback: string): string {
+/// Код исключения (без текста) → статус результата.
+export function resultStatus(error: unknown): SocialResultStatus {
+  let code = '';
   if (error instanceof HttpException) {
     const response = error.getResponse();
     if (typeof response === 'object' && response && 'code' in response) {
-      return String((response as { code: unknown }).code);
-    }
-    if (typeof response === 'object' && response && 'message' in response) {
-      const message = (response as { message: unknown }).message;
-      if (typeof message === 'string' && /^[a-z_]+$/.test(message))
-        return message;
+      code = String((response as { code: unknown }).code);
+    } else if (
+      typeof response === 'object' &&
+      response &&
+      'message' in response
+    ) {
+      code = String((response as { message: unknown }).message);
     }
   }
-  return fallback;
+  if (code.endsWith('_not_linked')) return 'not_linked';
+  switch (code) {
+    case 'external_taken':
+      return 'taken';
+    case 'provider_slot_taken':
+      return 'slot_taken';
+    case 'invalid_state':
+    case 'state_expired':
+      return 'expired';
+    case 'cancelled':
+      return 'cancelled';
+    case 'discord_disabled':
+    case 'telegram_disabled':
+      return 'unavailable';
+    default:
+      return 'error';
+  }
 }
 
-/// Вход через Discord/Telegram и привязка аккаунтов (ADR-0069). Вход —
-/// только по уже существующей привязке; привязка — только из своего профиля.
+/// Режим из state без проверки подписи — только чтобы показать правильный
+/// экран результата, если сам state отклонён (действий по нему не выполняется).
+function modeHint(state: unknown): 'login' | 'link' {
+  if (typeof state !== 'string') return 'login';
+  try {
+    const body = JSON.parse(
+      Buffer.from(state.split('.')[0] ?? '', 'base64url').toString('utf8'),
+    ) as { mode?: unknown };
+    return body.mode === 'link' ? 'link' : 'login';
+  } catch {
+    return 'login';
+  }
+}
+
+/// Вход через Discord/Telegram и привязка аккаунтов (ADR-0069, ADR-0071).
+/// Вход — только по уже существующей привязке; привязка — только из своего
+/// профиля. Режим login/link зашит в подписанный state.
 @Controller('auth')
 @UseGuards(JwtAuthGuard)
 export class SocialAuthController {
@@ -65,21 +115,121 @@ export class SocialAuthController {
     private readonly config: ConfigService,
   ) {}
 
-  private frontend(path: string): string {
-    return `${this.config.get<string>('FRONTEND_URL', 'http://localhost:3000')}${path}`;
+  private resultUrl(
+    provider: ExternalProvider,
+    mode: 'login' | 'link',
+    status: SocialResultStatus,
+    next?: string,
+  ): string {
+    const params = new URLSearchParams({ provider, mode, status });
+    if (next && next !== '/') params.set('next', next);
+    const base = this.config.get<string>(
+      'FRONTEND_URL',
+      'http://localhost:3000',
+    );
+    return `${base}/auth/result?${params.toString()}`;
   }
 
-  private nonceCookieOptions(): CookieOptions {
+  private shortCookie(): CookieOptions {
     const base = refreshCookieOptions(this.config, 10 * 60_000);
     return { ...base, path: '/auth' };
   }
 
-  private setSession(res: Response, refreshToken: string, expiresAt: Date) {
-    res.cookie(
-      REFRESH_COOKIE_NAME,
-      refreshToken,
-      refreshCookieOptions(this.config, expiresAt.getTime() - Date.now()),
-    );
+  private clearFlowCookies(res: Response) {
+    const options = { ...this.shortCookie(), maxAge: undefined };
+    res.clearCookie(NONCE_COOKIE, options);
+    res.clearCookie(PKCE_COOKIE, options);
+  }
+
+  /// Подписанный state + nonce-cookie (и PKCE verifier для Telegram) → URL
+  /// авторизации провайдера.
+  private beginFlow(
+    provider: ExternalProvider,
+    input: Omit<SocialState, 'nonce' | 'exp'>,
+    res: Response,
+  ): string {
+    const { state, nonce } = this.social.createState(input);
+    if (provider === 'discord') {
+      const url = this.social.discordAuthorizeUrl(state);
+      res.cookie(NONCE_COOKIE, nonce, this.shortCookie());
+      return url;
+    }
+    const pkce = createPkce();
+    const url = this.social.telegramAuthorizeUrl(state, nonce, pkce.challenge);
+    res.cookie(NONCE_COOKIE, nonce, this.shortCookie());
+    res.cookie(PKCE_COOKIE, pkce.verifier, this.shortCookie());
+    return url;
+  }
+
+  private async finishFlow(
+    provider: ExternalProvider,
+    query: { code?: string; state?: string; error?: string },
+    req: Request,
+    res: Response,
+  ) {
+    let mode = modeHint(query.state);
+    let next = mode === 'link' ? LINK_NEXT : '/';
+    try {
+      const state = this.social.verifyState(
+        query.state,
+        req.cookies?.[NONCE_COOKIE],
+      );
+      mode = state.mode;
+      next = state.mode === 'link' ? LINK_NEXT : safeNextPath(state.next);
+      const verifier = req.cookies?.[PKCE_COOKIE];
+      this.clearFlowCookies(res);
+      if (query.error === 'access_denied' || (!query.error && !query.code)) {
+        throw new BadRequestException('cancelled');
+      }
+      if (query.error || !query.code) {
+        throw new BadRequestException(`${provider}_failed`);
+      }
+      const profile =
+        provider === 'discord'
+          ? await this.social.exchangeDiscordCode(query.code)
+          : await this.social.exchangeTelegramCode(
+              query.code,
+              typeof verifier === 'string' ? verifier : '',
+              state.nonce,
+            );
+      if (state.mode === 'link') {
+        if (!state.userId) throw new BadRequestException('invalid_state');
+        const outcome = await this.social.link(state.userId, provider, profile);
+        return res.redirect(
+          HttpStatus.FOUND,
+          this.resultUrl(provider, 'link', outcome, next),
+        );
+      }
+      const session = await this.social.loginWithExternal(
+        provider,
+        profile,
+        requestContext(req),
+      );
+      res.cookie(
+        REFRESH_COOKIE_NAME,
+        session.refreshToken,
+        refreshCookieOptions(
+          this.config,
+          session.refreshTokenExpiresAt.getTime() - Date.now(),
+        ),
+      );
+      return res.redirect(
+        HttpStatus.FOUND,
+        this.resultUrl(provider, 'login', 'success', next),
+      );
+    } catch (error) {
+      return res.redirect(
+        HttpStatus.FOUND,
+        this.resultUrl(provider, mode, resultStatus(error), next),
+      );
+    }
+  }
+
+  private parseProvider(value: string): ExternalProvider {
+    if (value !== 'discord' && value !== 'telegram') {
+      throw new BadRequestException('Неизвестный провайдер');
+    }
+    return value;
   }
 
   @Public()
@@ -88,123 +238,65 @@ export class SocialAuthController {
     return this.social.providers();
   }
 
-  // --- Discord -------------------------------------------------------------
-
-  /// Вход: браузер переходит сюда со страницы /login.
+  /// Вход: браузер переходит сюда со страницы /login. Провайдер не настроен —
+  /// сразу экран результата, а не JSON-ошибка.
   @Public()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @Get('discord/start')
-  discordStart(@Query('next') next: string | undefined, @Res() res: Response) {
-    const { state, nonce } = this.social.createState({
-      mode: 'login',
-      next: safeNextPath(next),
-    });
-    res.cookie(NONCE_COOKIE, nonce, this.nonceCookieOptions());
-    res.redirect(HttpStatus.FOUND, this.social.discordAuthorizeUrl(state));
+  @Get(':provider/start')
+  start(
+    @Param('provider') providerParam: string,
+    @Query('next') next: string | undefined,
+    @Res() res: Response,
+  ) {
+    const provider = this.parseProvider(providerParam);
+    const target = safeNextPath(next);
+    try {
+      const url = this.beginFlow(
+        provider,
+        { mode: 'login', next: target },
+        res,
+      );
+      return res.redirect(HttpStatus.FOUND, url);
+    } catch (error) {
+      return res.redirect(
+        HttpStatus.FOUND,
+        this.resultUrl(provider, 'login', resultStatus(error), target),
+      );
+    }
   }
 
   /// Привязка: только для вошедшего пользователя — URL с подписанным state,
   /// куда зашит его id (браузер затем переходит по URL).
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('discord/link-url')
+  @Post(':provider/link-url')
   @HttpCode(HttpStatus.OK)
-  discordLinkUrl(
+  linkUrl(
+    @Param('provider') providerParam: string,
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { state, nonce } = this.social.createState({
-      mode: 'link',
-      userId: user.id,
-      next: '/settings/linked-accounts',
-    });
-    res.cookie(NONCE_COOKIE, nonce, this.nonceCookieOptions());
-    return { url: this.social.discordAuthorizeUrl(state) };
+    const provider = this.parseProvider(providerParam);
+    const url = this.beginFlow(
+      provider,
+      { mode: 'link', userId: user.id, next: LINK_NEXT },
+      res,
+    );
+    return { url };
   }
 
   @Public()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  @Get('discord/callback')
-  async discordCallback(
+  @Get(':provider/callback')
+  callback(
+    @Param('provider') providerParam: string,
     @Query('code') code: string | undefined,
-    @Query('state') stateParam: string | undefined,
-    @Query('error') oauthError: string | undefined,
+    @Query('state') state: string | undefined,
+    @Query('error') error: string | undefined,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    let mode: 'login' | 'link' = 'login';
-    try {
-      const state = this.social.verifyState(
-        stateParam,
-        req.cookies?.[NONCE_COOKIE],
-      );
-      mode = state.mode;
-      res.clearCookie(NONCE_COOKIE, {
-        ...this.nonceCookieOptions(),
-        maxAge: undefined,
-      });
-      if (oauthError || !code) {
-        throw new BadRequestException('discord_cancelled');
-      }
-      const profile = await this.social.exchangeDiscordCode(code);
-      if (state.mode === 'link') {
-        if (!state.userId) throw new BadRequestException('invalid_state');
-        await this.social.link(state.userId, 'discord', profile);
-        return res.redirect(
-          HttpStatus.FOUND,
-          this.frontend('/settings/linked-accounts?linked=discord'),
-        );
-      }
-      const session = await this.social.loginWithExternal(
-        'discord',
-        profile,
-        requestContext(req),
-      );
-      this.setSession(res, session.refreshToken, session.refreshTokenExpiresAt);
-      return res.redirect(
-        HttpStatus.FOUND,
-        this.frontend(`/auth/complete?next=${encodeURIComponent(state.next)}`),
-      );
-    } catch (error) {
-      const code = errorCode(error, 'discord_failed');
-      const target =
-        mode === 'link'
-          ? `/settings/linked-accounts?link_error=${code}`
-          : `/login?social_error=${code}`;
-      return res.redirect(HttpStatus.FOUND, this.frontend(target));
-    }
-  }
-
-  // --- Telegram ------------------------------------------------------------
-
-  @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('telegram/login')
-  @HttpCode(HttpStatus.OK)
-  async telegramLogin(
-    @Body() dto: TelegramAuthDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const profile = this.social.verifyTelegram(dto.payload);
-    const session = await this.social.loginWithExternal(
-      'telegram',
-      profile,
-      requestContext(req),
-    );
-    this.setSession(res, session.refreshToken, session.refreshTokenExpiresAt);
-    return { user: session.user, accessToken: session.accessToken };
-  }
-
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  @Post('telegram/link')
-  @HttpCode(HttpStatus.OK)
-  async telegramLink(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: TelegramAuthDto,
-  ) {
-    const profile = this.social.verifyTelegram(dto.payload);
-    await this.social.link(user.id, 'telegram', profile);
-    return this.social.list(user.id);
+    const provider = this.parseProvider(providerParam);
+    return this.finishFlow(provider, { code, state, error }, req, res);
   }
 
   // --- Связанные аккаунты -----------------------------------------------------
@@ -217,12 +309,10 @@ export class SocialAuthController {
   @Delete('linked-accounts/:provider')
   async unlink(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('provider') provider: string,
+    @Param('provider') providerParam: string,
   ) {
-    if (provider !== 'discord' && provider !== 'telegram') {
-      throw new BadRequestException('Неизвестный провайдер');
-    }
-    await this.social.unlink(user.id, provider as ExternalProvider);
+    const provider = this.parseProvider(providerParam);
+    await this.social.unlink(user.id, provider);
     return this.social.list(user.id);
   }
 }

@@ -82,11 +82,11 @@ export const SegmentedControl = forwardRef<HTMLDivElement, SegmentedControlProps
             className={cn(
               'inline-flex min-w-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-sm font-medium text-muted-foreground',
               'transition-[background-color,color,box-shadow] duration-fast',
-              'hover:text-foreground',
+              'enabled:hover:text-foreground',
               // Активный пункт — приподнятая поверхность с оранжевым акцентом текста.
               'data-[state=on]:bg-surface-raised data-[state=on]:text-primary data-[state=on]:shadow-sm',
               'focus-visible:z-10',
-              'disabled:pointer-events-none disabled:opacity-50',
+              'disabled:cursor-not-allowed disabled:opacity-50',
               '[&_svg]:size-4 [&_svg]:shrink-0',
               sizeClass[size],
               fullWidth && 'flex-1',

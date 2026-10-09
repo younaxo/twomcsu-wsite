@@ -7,7 +7,15 @@ import type {
   RegisterVerificationState,
   RegisterVerifyResponse,
 } from '@twomc/shared';
-import { MailCheck, Pencil, RotateCw, ShieldCheck, UserPlus } from 'lucide-react';
+import {
+  CircleCheck,
+  Clock,
+  MailCheck,
+  Pencil,
+  RotateCw,
+  ShieldCheck,
+  UserPlus,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
@@ -110,27 +118,43 @@ function useCountdown(target: string | null): number {
 
 type Step = 'details' | 'code' | 'create';
 
-export function RegisterForm() {
+/// Состояние «код отправлен» для превью в design-lab (письмо не отправляется).
+function previewVerification(): RegisterVerificationState {
+  return {
+    verificationId: 'design-lab-preview',
+    maskedEmail: 'pl***@twomc.su',
+    expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+    resendAvailableAt: new Date(Date.now() + 31_000).toISOString(),
+    resendsLeft: 4,
+  };
+}
+
+export function RegisterForm({ previewStep }: { previewStep?: 'code' } = {}) {
   const router = useRouter();
   const acceptSession = useAuthStore((state) => state.acceptSession);
-  const [values, setValues] = useState({
-    email: '',
-    username: '',
-    password: '',
-    confirm: '',
+  const preview = previewStep === 'code';
+  const [values, setValues] = useState(() => ({
+    email: preview ? 'player@twomc.su' : '',
+    username: preview ? 'player' : '',
+    password: preview ? 'design-lab-pass' : '',
+    confirm: preview ? 'design-lab-pass' : '',
     referral: '',
-  });
-  const [consents, setConsents] = useState({ terms: false, personalData: false });
+  }));
+  const [consents, setConsents] = useState({ terms: preview, personalData: preview });
   const [touched, setTouched] = useState<Partial<Record<Fields | 'consents', boolean>>>({});
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [step, setStep] = useState<Step>('details');
-  const [verification, setVerification] = useState<RegisterVerificationState | null>(null);
+  const [step, setStep] = useState<Step>(preview ? 'code' : 'details');
+  const [verification, setVerification] = useState<RegisterVerificationState | null>(() =>
+    preview ? previewVerification() : null,
+  );
   const [completionToken, setCompletionToken] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const turnstileRef = useRef<TurnstileHandle>(null);
   const errorId = useId();
+  const otpLabelId = useId();
+  const emailRef = useRef<HTMLInputElement>(null);
   const resendIn = useCountdown(verification?.resendAvailableAt ?? null);
 
   const errors = validateRegister(values);
@@ -231,6 +255,8 @@ export function RegisterForm() {
     setCompletionToken(null);
     setCode('');
     setError(null);
+    // Поля снова доступны — фокус в e-mail после перерисовки.
+    window.requestAnimationFrame(() => emailRef.current?.focus());
   };
 
   const createAccount = async () => {
@@ -266,44 +292,52 @@ export function RegisterForm() {
     </p>
   );
 
+  /// После «Подтвердить почту» данные остаются видны, но заблокированы:
+  /// изменить их можно только через «Изменить E-mail».
+  const locked = step !== 'details';
+  const legalLink =
+    'text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground';
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (step === 'details') {
+      void startVerification(event);
+      return;
+    }
+    event.preventDefault();
+    if (step === 'code') {
+      void verifyCode();
+    } else {
+      void createAccount();
+    }
+  };
+
   return (
     <AuthShell
-      title={
-        step === 'details'
-          ? 'Регистрация'
-          : step === 'code'
-            ? 'Подтвердите почту'
-            : 'Почта подтверждена'
-      }
+      title={step === 'create' ? 'Почта подтверждена' : 'Создайте аккаунт'}
       description={
         step === 'details'
           ? 'Один аккаунт для сайта, магазина и серверов twomc.su.'
           : step === 'code'
-            ? 'Введите 6-значный код из письма.'
-            : 'Осталось создать аккаунт.'
-      }
-      footer={
-        <p>
-          Уже есть аккаунт?{' '}
-          <Link href="/login" className="font-medium text-foreground hover:underline">
-            Войти
-          </Link>
-        </p>
+            ? 'Шаг 2 из 3 — введите код из письма.'
+            : 'Шаг 3 из 3 — осталось создать аккаунт.'
       }
     >
-      {step === 'details' ? (
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={startVerification}
-          noValidate
-          data-testid="register-form"
-        >
+      <form
+        className="flex flex-col gap-5"
+        onSubmit={onSubmit}
+        noValidate
+        data-testid="register-form"
+        data-step={step}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="E-mail" required error={shown('email')}>
             <Input
+              ref={emailRef}
               type="email"
               name="email"
               autoComplete="email"
-              autoFocus
+              autoFocus={!preview}
+              disabled={locked}
               value={values.email}
               invalid={!!shown('email')}
               onChange={update('email')}
@@ -313,12 +347,13 @@ export function RegisterForm() {
           <Field
             label="Ник"
             required
-            hint="Он же логин и игровой ник: 3–16 символов, латиница, цифры, _"
+            hint="Логин и игровой ник: 3–16 символов, a–z, 0–9, _"
             error={shown('username')}
           >
             <Input
               name="username"
               autoComplete="username"
+              disabled={locked}
               value={values.username}
               invalid={!!shown('username')}
               onChange={update('username')}
@@ -330,6 +365,7 @@ export function RegisterForm() {
             name="password"
             autoComplete="new-password"
             hint="От 8 до 72 символов"
+            disabled={locked}
             value={values.password}
             error={shown('password')}
             onChange={update('password')}
@@ -339,6 +375,7 @@ export function RegisterForm() {
             label="Повторите пароль"
             name="confirm"
             autoComplete="new-password"
+            disabled={locked}
             value={values.confirm}
             error={shown('confirm')}
             onChange={update('confirm')}
@@ -346,15 +383,16 @@ export function RegisterForm() {
           />
           <Field
             label="Реферальный код"
-            labelAddon={<span className="text-xs text-subtle-foreground">необязательно</span>}
+            labelAddon={<span className="text-xs text-subtle-foreground">Необязательно</span>}
             error={shown('referral')}
           >
             <Input
               name="referral"
               autoComplete="off"
               spellCheck={false}
-              placeholder="YOUNAXO"
-              className="font-mono uppercase tracking-wider"
+              placeholder="Введите код"
+              className="font-mono uppercase tracking-wider placeholder:font-sans placeholder:normal-case placeholder:tracking-normal"
+              disabled={locked}
               value={values.referral}
               invalid={!!shown('referral')}
               onChange={(event) =>
@@ -363,150 +401,166 @@ export function RegisterForm() {
               onBlur={touch('referral')}
             />
           </Field>
-          <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
-          <fieldset className="flex flex-col gap-1" aria-label="Согласия">
-            <CheckboxField
-              checked={consents.terms}
-              onCheckedChange={(value) => setConsents((c) => ({ ...c, terms: value === true }))}
-              invalid={touched.consents && !consents.terms}
-              data-testid="consent-terms"
-              label={
-                <>
-                  Я принимаю{' '}
-                  <Link
-                    href="/legal/terms"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                  >
-                    Пользовательское соглашение
-                  </Link>{' '}
-                  и{' '}
-                  <Link href="/rules" className="text-primary hover:underline" target="_blank">
-                    Правила проекта
-                  </Link>
-                  .
-                </>
-              }
-            />
-            <CheckboxField
-              checked={consents.personalData}
-              onCheckedChange={(value) =>
-                setConsents((c) => ({ ...c, personalData: value === true }))
-              }
-              invalid={touched.consents && !consents.personalData}
-              data-testid="consent-personal-data"
-              label={
-                <>
-                  Я даю{' '}
-                  <Link
-                    href="/legal/personal-data"
-                    className="text-primary hover:underline"
-                    target="_blank"
-                  >
-                    согласие на обработку персональных данных
-                  </Link>
-                  .
-                </>
-              }
-            />
-            <p className="pl-7 text-xs text-subtle-foreground">
-              <Link
-                href="/legal/privacy"
-                className="hover:text-foreground hover:underline"
-                target="_blank"
-              >
-                Политика конфиденциальности
-              </Link>
-            </p>
-            {touched.consents && !consentsOk ? (
-              <p className="text-xs text-destructive">Оба согласия обязательны.</p>
-            ) : null}
-          </fieldset>
-          {errorBlock}
-          <Button
-            type="submit"
-            size="lg"
-            loading={pending}
-            disabled={!captchaReady}
-            data-testid="start-verification"
-          >
-            <MailCheck />
-            Подтвердить почту
-          </Button>
-        </form>
-      ) : null}
+        </div>
 
-      {step === 'code' && verification ? (
-        <div className="flex flex-col gap-4" data-testid="otp-step">
-          <p className="text-sm text-muted-foreground">
-            Код отправлен на:{' '}
-            <span className="font-medium text-foreground">{verification.maskedEmail}</span>
-          </p>
-          <OtpInput
-            autoFocus
-            size="lg"
-            value={code}
-            onChange={(next) => {
-              setCode(next);
-              // Новый ввод после ошибки — снимаем подсветку и сообщение.
-              if (next && error) {
-                setError(null);
-              }
-            }}
-            onComplete={(value) => void verifyCode(value)}
-            invalid={!!error}
-            disabled={pending}
-            aria-describedby={error ? errorId : undefined}
+        {step === 'details' ? (
+          <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
+        ) : null}
+
+        <fieldset className="flex flex-col gap-2" aria-label="Согласия" disabled={locked}>
+          <CheckboxField
+            checked={consents.terms}
+            disabled={locked}
+            onCheckedChange={(value) => setConsents((c) => ({ ...c, terms: value === true }))}
+            invalid={touched.consents && !consents.terms}
+            data-testid="consent-terms"
+            label={
+              <span className="text-muted-foreground">
+                Я принимаю{' '}
+                <Link href="/legal/terms" className={legalLink} target="_blank">
+                  Пользовательское соглашение
+                </Link>{' '}
+                и{' '}
+                <Link href="/rules" className={legalLink} target="_blank">
+                  Правила проекта
+                </Link>
+              </span>
+            }
           />
-          {errorBlock}
-          <Button
-            size="lg"
-            onClick={() => void verifyCode()}
-            loading={pending}
-            disabled={code.length !== 6}
+          <CheckboxField
+            checked={consents.personalData}
+            disabled={locked}
+            onCheckedChange={(value) =>
+              setConsents((c) => ({ ...c, personalData: value === true }))
+            }
+            invalid={touched.consents && !consents.personalData}
+            data-testid="consent-personal-data"
+            label={
+              <span className="text-muted-foreground">
+                Я даю{' '}
+                <Link href="/legal/personal-data" className={legalLink} target="_blank">
+                  согласие на обработку персональных данных
+                </Link>
+              </span>
+            }
+          />
+          <p className="pl-7 text-xs text-subtle-foreground">
+            Как мы храним данные —{' '}
+            <Link
+              href="/legal/privacy"
+              className="underline underline-offset-2 hover:text-foreground"
+              target="_blank"
+            >
+              Политика конфиденциальности
+            </Link>
+          </p>
+          {touched.consents && !consentsOk ? (
+            <p className="text-xs text-destructive">Оба согласия обязательны.</p>
+          ) : null}
+        </fieldset>
+
+        {step === 'code' && verification ? (
+          <section
+            aria-labelledby={otpLabelId}
+            className="flex flex-col gap-3 border-t border-border-subtle pt-5"
+            data-testid="otp-step"
           >
-            <ShieldCheck />
-            Подтвердить код
-          </Button>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 id={otpLabelId} className="text-[13px] font-medium text-foreground/90">
+                Код подтверждения
+              </h2>
+              <Button variant="ghost" size="sm" onClick={changeEmail}>
+                <Pencil />
+                Изменить E-mail
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              Код отправлен на{' '}
+              <span className="font-medium text-foreground">{verification.maskedEmail}</span>. Он
+              действует 10 минут.
+            </p>
+            <OtpInput
+              autoFocus={!preview}
+              size="lg"
+              value={code}
+              onChange={(next) => {
+                setCode(next);
+                // Новый ввод после ошибки — снимаем подсветку и сообщение.
+                if (next && error) {
+                  setError(null);
+                }
+              }}
+              onComplete={(value) => void verifyCode(value)}
+              invalid={!!error}
+              disabled={pending}
+              aria-describedby={error ? errorId : undefined}
+            />
             <Button
               variant="ghost"
               size="sm"
+              className="self-start"
               onClick={() => void resend()}
               disabled={resendIn > 0 || pending || verification.resendsLeft === 0}
+              data-testid="otp-resend"
             >
-              <RotateCw />
-              {resendIn > 0 ? `Отправить повторно через ${resendIn} с` : 'Отправить повторно'}
+              {resendIn > 0 ? <Clock /> : <RotateCw />}
+              {verification.resendsLeft === 0
+                ? 'Лимит отправок исчерпан'
+                : resendIn > 0
+                  ? `Отправить повторно через ${resendIn} с`
+                  : 'Отправить код повторно'}
             </Button>
-            <Button variant="ghost" size="sm" onClick={changeEmail}>
-              <Pencil />
-              Изменить E-mail
-            </Button>
-          </div>
-        </div>
-      ) : null}
+          </section>
+        ) : null}
 
-      {step === 'create' ? (
-        <div className="flex flex-col gap-4" data-testid="create-step">
-          <p className="flex items-center gap-2 rounded bg-success-soft px-3 py-2 text-sm text-foreground">
-            <ShieldCheck aria-hidden className="size-4 text-success" />
+        {step === 'create' ? (
+          <p
+            className="flex items-center gap-2 border-t border-border-subtle pt-5 text-sm"
+            data-testid="create-step"
+            role="status"
+          >
+            <CircleCheck aria-hidden className="size-4 shrink-0 text-success" />
             Почта {verification?.maskedEmail} подтверждена.
           </p>
-          {errorBlock}
-          <Button size="lg" onClick={() => void createAccount()} loading={pending}>
-            <UserPlus />
-            Создать аккаунт
+        ) : null}
+
+        {errorBlock}
+
+        <Button
+          type="submit"
+          size="lg"
+          loading={pending}
+          disabled={
+            step === 'details' ? !captchaReady : step === 'code' ? code.length !== 6 : false
+          }
+          data-testid="register-primary"
+        >
+          {step === 'details' ? (
+            <>
+              <MailCheck />
+              Подтвердить почту
+            </>
+          ) : step === 'code' ? (
+            <>
+              <ShieldCheck />
+              Подтвердить код
+            </>
+          ) : (
+            <>
+              <UserPlus />
+              Создать аккаунт
+            </>
+          )}
+        </Button>
+        {/* Ник/e-mail успели занять или подтверждение устарело — вернуться к
+            форме (введённые данные сохраняются) и пройти подтверждение заново. */}
+        {step === 'create' && error && !pending ? (
+          <Button variant="ghost" size="sm" className="self-start" onClick={changeEmail}>
+            <Pencil />
+            Изменить данные
           </Button>
-          {/* Ник/e-mail успели занять или подтверждение устарело — вернуться к
-              форме (введённые данные сохраняются) и пройти подтверждение заново. */}
-          {error && !pending ? (
-            <Button variant="ghost" size="sm" className="self-start" onClick={changeEmail}>
-              <Pencil />
-              Изменить данные
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </form>
     </AuthShell>
   );
 }

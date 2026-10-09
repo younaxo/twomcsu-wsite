@@ -104,19 +104,24 @@ export type ExternalProvider = 'discord' | 'telegram';
 /// `GET /auth/social/providers` — какие кнопки показывать (без секретов).
 export interface SocialProvidersResponse {
   discord: { enabled: boolean };
-  telegram: { enabled: boolean; botUsername: string | null; botId: string | null };
+  telegram: { enabled: boolean };
 }
 
-/// Данные Telegram Login Widget (проверяются на backend по подписи).
-export interface TelegramAuthPayload {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
-}
+export type SocialAuthMode = 'login' | 'link';
+
+/// Итог входа/привязки (`/auth/result?provider&mode&status&next`, ADR-0071).
+/// В URL нет токенов: сессия — только в httpOnly refresh-cookie.
+export type SocialResultStatus =
+  | 'success'
+  | 'linked'
+  | 'already_linked'
+  | 'not_linked'
+  | 'taken'
+  | 'slot_taken'
+  | 'cancelled'
+  | 'expired'
+  | 'unavailable'
+  | 'error';
 
 /// `GET /auth/linked-accounts`.
 export interface LinkedAccountDto {

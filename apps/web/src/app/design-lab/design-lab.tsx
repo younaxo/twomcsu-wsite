@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
+import { AuthSection } from './sections/auth-section';
 import { BrandSection } from './sections/brand-section';
 import { GlobalShellSection } from './sections/global-shell-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
@@ -16,6 +17,7 @@ const SECTIONS = [
   { id: 'lab', label: 'Interactions / Component lab' },
   { id: 'shell', label: 'Global shell' },
   { id: 'brand', label: 'Бренд и плашка' },
+  { id: 'auth', label: 'Auth' },
   { id: 'prefixes', label: 'Role prefixes' },
 ] as const;
 
@@ -98,6 +100,14 @@ export function DesignLab() {
             description="Основной логотип и wordmark (базовая и сезонная «o», размеры sm–xl), глобальная плашка outline/filled для info, warning, danger и production-диалог — те же компоненты, что на сайте."
           />
           <BrandSection />
+        </section>
+
+        <section id="auth" className="scroll-mt-20">
+          <SectionHeading
+            title="Auth"
+            description="Единая auth-панель: вход, регистрация, код подтверждения и итог входа/привязки Discord и Telegram — те же компоненты, что на /login, /register и /auth/result."
+          />
+          <AuthSection />
         </section>
 
         <section id="prefixes" className="scroll-mt-20">
