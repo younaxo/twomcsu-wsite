@@ -37,7 +37,7 @@ export function HomeCommunity() {
       ) : (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {socials.map((social) => (
-            <li key={social.id}>
+            <li key={social.key}>
               <a
                 href={social.url}
                 target="_blank"
@@ -45,7 +45,7 @@ export function HomeCommunity() {
                 className="group flex h-full items-center gap-4 rounded-xl border bg-surface p-5 shadow transition-colors duration-fast hover:bg-surface-hover edge-highlight"
               >
                 <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground [&_svg]:size-6">
-                  <BrandIcon id={social.id} />
+                  <BrandIcon id={social.platform} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1 font-semibold">
@@ -53,7 +53,7 @@ export function HomeCommunity() {
                     <ExternalLink aria-hidden className="size-3.5 text-subtle-foreground" />
                   </span>
                   <span className="block text-sm text-muted-foreground">
-                    {DESCRIPTION[social.id] ?? ''}
+                    {DESCRIPTION[social.platform] ?? ''}
                   </span>
                 </span>
               </a>

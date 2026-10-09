@@ -32,6 +32,8 @@ export const queryKeys = {
   settings: {
     kv: ['admin', 'settings', 'kv'] as const,
     site: ['admin', 'settings', 'site'] as const,
+    alert: ['admin', 'settings', 'alert'] as const,
+    socialLinks: ['admin', 'settings', 'social-links'] as const,
   },
   security: {
     sessions: (params: object) => ['admin', 'security', 'sessions', params] as const,

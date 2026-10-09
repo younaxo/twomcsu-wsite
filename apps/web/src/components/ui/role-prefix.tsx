@@ -89,7 +89,7 @@ export function RolePrefix({
       content={
         <span className="block">
           <span className="block font-medium">{label}</span>
-          <span className="block text-background/80">Роль команды twomc.su</span>
+          <span className="block text-muted-foreground">Роль команды twomc.su</span>
         </span>
       }
     >

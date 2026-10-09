@@ -7,6 +7,7 @@ import { GlobalFloatingActions } from './floating-actions';
 import { MobileNav } from './mobile-nav';
 import { RAIL_OFFSET_CLASS, SidebarRail } from './sidebar-rail';
 import { SiteFooter } from './site-footer';
+import { GlobalAlertBar } from './global-alert-bar';
 import { SiteHeader } from './site-header';
 
 /// Глобальная оболочка публичных страниц twomc.su:
@@ -32,6 +33,8 @@ export function AppShell({ children, className }: { children: ReactNode; classNa
       <SidebarRail />
       <div className={cn('flex min-h-dvh flex-col', RAIL_OFFSET_CLASS)}>
         <SiteHeader />
+        {/* Глобальная плашка (ADR-0066): часть layout, сразу под шапкой. */}
+        <GlobalAlertBar />
         <main id="main" className="flex-1">
           {children}
         </main>

@@ -1604,6 +1604,45 @@ model SiteSettings {
   @@map("site_settings_config")
 }
 
+/// Соцсети проекта (ADR-0067) — расширяемый список вместо фиксированных
+/// колонок SiteSettings (старые колонки оставлены для совместимости данных,
+/// перенесены миграцией). `platform` — ключ пресета (иконка/название),
+/// `title` — необязательная подпись. На сайте — только isEnabled, по sortOrder.
+model SiteSocialLink {
+  id        String   @id @default(cuid())
+  platform  String   @db.VarChar(32)
+  title     String?  @db.VarChar(60)
+  url       String   @db.VarChar(500)
+  isEnabled Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sortOrder])
+  @@map("site_social_links")
+}
+
+/// Глобальная плашка под шапкой (ADR-0066): одна на сайт, пользователь не
+/// может её закрыть — показывается, пока включена в админке. Иконка — ключ из
+/// разрешённого набора (никакого произвольного SVG от клиента).
+model SiteAlert {
+  id        String   @id @default("global")
+  enabled   Boolean  @default(false)
+  /// info | warning | danger | success
+  variant   String   @default("danger") @db.VarChar(16)
+  /// Ключ иконки из SITE_ALERT_ICONS.
+  icon      String   @default("alert-triangle") @db.VarChar(32)
+  title     String?  @db.VarChar(80)
+  message   String   @default("") @db.VarChar(500)
+  /// https://… или внутренний путь `/…`.
+  linkUrl   String?  @db.VarChar(500)
+  linkLabel String?  @db.VarChar(40)
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@map("site_alert")
+}
+
 model AdminBookmark {
   id        String   @id @default(cuid())
   userId    String

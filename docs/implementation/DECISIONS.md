@@ -1202,3 +1202,30 @@ z-index (popover/dropdown 55 > modal 50, tooltip 60), без рамок и blur.
 8 марта, День Победы, 1 сентября, Хэллоуин, Чёрная пятница; приоритет при
 пересечении, одна кампания за раз) могут менять только «o», декор, эффекты и
 баннеры. Система выключается целиком (`off`).
+
+## ADR-0066 — Глобальная плашка сайта
+
+**Decision.** Синглтон `SiteAlert` (`site_alert`, id `global`): enabled, variant
+(danger/warning/info/success — семантические токены), icon (ключ из разрешённого
+набора `SITE_ALERT_ICONS`, не SVG-код — исключает SVG-инъекции), title, message,
+ссылка (только `https://…` или внутренний `/…`) с подписью. Показывается в
+`AppShell` сразу под шапкой всем посетителям, пока включена; пользователь закрыть
+её не может (ни крестика, ни dismiss в storage). Публичная часть — поле `alert` в
+`GET /site/settings` (null, если выключена). Управление — вкладка «Плашка» в
+настройках с live-preview; `settings.alert.view` / `settings.alert.edit`; audit:
+`settings.alert.enable` / `disable` / `update` с diff изменённых полей.
+
+## ADR-0067 — Соцсети проекта списком
+
+**Decision.** Фиксированные колонки `SiteSettings.discordInvite/vkGroup/
+telegramChannel/youtubeChannel` заменены расширяемым списком `SiteSocialLink`
+(platform из пресетов `SITE_SOCIAL_PLATFORMS` — Telegram, Discord, YouTube,
+TikTok, VK, Twitch, Instagram, X, Facebook; title, url, isEnabled, sortOrder).
+Миграция переносит сохранённые ссылки; старые колонки не удаляются. URL — только
+https на домен выбранной платформы. Публично — `socialLinks` (только включённые,
+по порядку) в `GET /site/settings`; футер, rail и «Сообщество» читают только его
+(env — fallback для основных платформ). Из формы настроек убраны название,
+описание, контактный e-mail, логотип и favicon (бренд фиксирован, ADR-0065).
+apps/api не импортирует `@twomc/shared` даже типами (ESLint
+`no-restricted-imports`): иначе tsc втягивает исходники пакета и `dist/main`
+оказывается не на месте.

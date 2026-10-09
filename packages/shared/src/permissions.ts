@@ -558,6 +558,16 @@ export const PERMISSIONS = [
     module: 'settings',
     description: 'Редактирование структурированных настроек сайта',
   },
+  {
+    key: 'settings.alert.view',
+    module: 'settings',
+    description: 'Просмотр глобальной плашки сайта',
+  },
+  {
+    key: 'settings.alert.edit',
+    module: 'settings',
+    description: 'Включение, выключение и редактирование глобальной плашки сайта',
+  },
 
   {
     key: 'saved_filters.view',

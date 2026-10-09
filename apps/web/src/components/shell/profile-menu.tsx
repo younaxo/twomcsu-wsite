@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ProfileTrigger } from './profile-trigger';
-import { RolePrefix } from '@/components/ui/role-prefix';
+import { UserIdentity } from '@/components/ui/user-identity';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ADMIN_ENTRY_REQUIREMENT } from '@/lib/admin/navigation';
 import { useAuthStore } from '@/lib/auth/store';
@@ -62,10 +62,7 @@ export function ProfileMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex flex-col gap-1">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            {primary ? <RolePrefix role={primary} size="xs" /> : null}
-            <span className="truncate">{user.username}</span>
-          </span>
+          <UserIdentity username={user.username} role={primary} />
           <span className="text-xs font-normal text-muted-foreground">
             {primary?.displayName ?? 'Игрок'}
           </span>

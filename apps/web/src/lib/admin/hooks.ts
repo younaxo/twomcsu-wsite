@@ -1,6 +1,9 @@
 'use client';
 
 import type {
+  CreateSiteSocialLinkRequest,
+  UpdateSiteAlertRequest,
+  UpdateSiteSocialLinkRequest,
   AssignRoleRequest,
   BroadcastRequest,
   BulkUsersRequest,
@@ -21,6 +24,7 @@ import type {
   UserBadgeType,
 } from '@twomc/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { siteKeys } from '@/lib/site/hooks';
 import { useAuthStore } from '../auth/store';
 import { queryKeys } from '../query/keys';
 import { adminApi } from './api';
@@ -267,6 +271,67 @@ export function useUpdateSiteSettings() {
     mutationFn: (body: UpdateSiteSettingsRequest) => adminApi.updateSiteSettings(body),
     onSuccess: (data) => client.setQueryData(queryKeys.settings.site, data),
   });
+}
+
+/// Публичные настройки (футер, плашка) перечитываются после правок в админке.
+function useInvalidatePublicSettings() {
+  const client = useQueryClient();
+  return () => client.invalidateQueries({ queryKey: siteKeys.settings });
+}
+
+export function useSiteAlert(enabled = true) {
+  return useQuery({ queryKey: queryKeys.settings.alert, queryFn: adminApi.siteAlert, enabled });
+}
+
+export function useUpdateSiteAlert() {
+  const client = useQueryClient();
+  const invalidatePublic = useInvalidatePublicSettings();
+  return useMutation({
+    mutationFn: (body: UpdateSiteAlertRequest) => adminApi.updateSiteAlert(body),
+    onSuccess: (data) => {
+      client.setQueryData(queryKeys.settings.alert, data);
+      void invalidatePublic();
+    },
+  });
+}
+
+export function useSocialLinks(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.settings.socialLinks,
+    queryFn: adminApi.socialLinks,
+    enabled,
+  });
+}
+
+export function useSocialLinkMutations() {
+  const client = useQueryClient();
+  const invalidatePublic = useInvalidatePublicSettings();
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: queryKeys.settings.socialLinks });
+    void invalidatePublic();
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateSiteSocialLinkRequest) => adminApi.createSocialLink(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: UpdateSiteSocialLinkRequest & { id: string }) =>
+        adminApi.updateSocialLink(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => adminApi.deleteSocialLink(id),
+      onSuccess: refresh,
+    }),
+    reorder: useMutation({
+      mutationFn: (ids: string[]) => adminApi.reorderSocialLinks(ids),
+      onSuccess: (data) => {
+        client.setQueryData(queryKeys.settings.socialLinks, data);
+        void invalidatePublic();
+      },
+    }),
+  };
 }
 
 // --- Security --------------------------------------------------------------------

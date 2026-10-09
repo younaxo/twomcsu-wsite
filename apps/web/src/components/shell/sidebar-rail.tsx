@@ -31,7 +31,7 @@ export const RAIL_WIDTH_CLASS = 'w-16';
 /// Отступ контента под фиксированный rail (desktop).
 export const RAIL_OFFSET_CLASS = 'lg:pl-16';
 
-const ICONS: Record<Exclude<SiteIconName, SocialLink['id']>, LucideIcon> = {
+const ICONS: Record<Exclude<SiteIconName, SocialLink['platform']>, LucideIcon> = {
   home: Home,
   shop: ShoppingBag,
   rules: BookOpen,
@@ -184,10 +184,10 @@ export function SidebarRail({ className }: { className?: string }) {
           >
             {socials.map((social) => (
               <RailLink
-                key={social.id}
+                key={social.key}
                 href={social.url}
                 label={social.label}
-                icon={<BrandIcon id={social.id} className="size-[18px]" />}
+                icon={<BrandIcon id={social.platform} className="size-[18px]" />}
                 external
               />
             ))}

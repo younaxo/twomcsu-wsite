@@ -105,7 +105,7 @@ export function SocialIcons({ className }: { className?: string }) {
   return (
     <ul aria-label="Соцсети" className={cn('flex flex-wrap items-center gap-1.5', className)}>
       {slots.map((social) => (
-        <li key={social.id}>
+        <li key={social.key}>
           {social.url ? (
             <Tooltip content={social.label}>
               <a
@@ -113,10 +113,10 @@ export function SocialIcons({ className }: { className?: string }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={social.label}
-                data-social={social.id}
+                data-social={social.platform}
                 className={cn(socialButtonClassName, 'hover:bg-muted hover:text-foreground')}
               >
-                <BrandIcon id={social.id} />
+                <BrandIcon id={social.platform} />
               </a>
             </Tooltip>
           ) : (
@@ -125,10 +125,10 @@ export function SocialIcons({ className }: { className?: string }) {
                 type="button"
                 aria-label={`${social.label} (скоро)`}
                 aria-disabled="true"
-                data-social={social.id}
+                data-social={social.platform}
                 className={cn(socialButtonClassName, 'cursor-default opacity-50')}
               >
-                <BrandIcon id={social.id} />
+                <BrandIcon id={social.platform} />
               </button>
             </Tooltip>
           )}

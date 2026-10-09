@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UseGuards,
@@ -31,6 +32,13 @@ import { sendCsv } from './csv.util';
 import { UpdateBookmarkDto } from './dto/update-bookmark.dto';
 import { UpdateSavedFilterDto } from './dto/update-saved-filter.dto';
 import { UpdateScheduledExportDto } from './dto/update-scheduled-export.dto';
+import {
+  CreateSiteSocialLinkDto,
+  ReorderSiteSocialLinksDto,
+  UpdateSiteSocialLinkDto,
+} from './dto/site-social-link.dto';
+import { UpdateSiteAlertDto } from './dto/update-site-alert.dto';
+import { SiteSocialLinksService } from './site-social-links.service';
 import { UpdateSiteSettingsDto } from './dto/update-site-settings.dto';
 import { UserIdFilterQueryDto } from './dto/user-id-filter-query.dto';
 
@@ -41,6 +49,7 @@ export class AdminPanelController {
     private readonly tools: AdminToolsService,
     private readonly finance: AdminFinanceService,
     private readonly exportService: ExportService,
+    private readonly siteSocial: SiteSocialLinksService,
   ) {}
 
   // --- Saved filters ------------------------------------------------------
@@ -179,6 +188,73 @@ export class AdminPanelController {
     @CurrentUser() admin: AuthenticatedUser,
   ) {
     return this.tools.updateSiteSettings(dto, admin.id);
+  }
+
+  // --- Соцсети проекта (ADR-0067) -------------------------------------------
+
+  @Get('settings/social-links')
+  @RequirePermissions('settings.site.view')
+  async socialLinks() {
+    return this.siteSocial.list();
+  }
+
+  @Post('settings/social-links')
+  @RequirePermissions('settings.site.edit')
+  @SkipAudit()
+  async createSocialLink(
+    @Body() dto: CreateSiteSocialLinkDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.siteSocial.create(dto, admin.id);
+  }
+
+  @Put('settings/social-links/order')
+  @RequirePermissions('settings.site.edit')
+  @SkipAudit()
+  async reorderSocialLinks(
+    @Body() dto: ReorderSiteSocialLinksDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.siteSocial.reorder(dto.ids, admin.id);
+  }
+
+  @Patch('settings/social-links/:id')
+  @RequirePermissions('settings.site.edit')
+  @SkipAudit()
+  async updateSocialLink(
+    @Param('id') id: string,
+    @Body() dto: UpdateSiteSocialLinkDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.siteSocial.update(id, dto, admin.id);
+  }
+
+  @Delete('settings/social-links/:id')
+  @RequirePermissions('settings.site.edit')
+  @SkipAudit()
+  async deleteSocialLink(
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.siteSocial.remove(id, admin.id);
+  }
+
+  // --- Глобальная плашка (ADR-0066) ----------------------------------------
+
+  @Get('settings/alert')
+  @RequirePermissions('settings.alert.view')
+  async siteAlert() {
+    return this.tools.getSiteAlert();
+  }
+
+  @Patch('settings/alert')
+  @RequirePermissions('settings.alert.edit')
+  @SkipAudit()
+  async updateSiteAlert(
+    @Body() dto: UpdateSiteAlertDto,
+    @CurrentUser() admin: AuthenticatedUser,
+  ) {
+    return this.tools.updateSiteAlert(dto, admin.id);
   }
 
   // --- Security ---------------------------------------------------------------

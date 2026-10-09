@@ -53,7 +53,11 @@ const settings = {
   siteDescription: null,
   siteLogo: null,
   contactEmail: 'support@twomc.su',
-  socials: { discord: 'https://discord.gg/x', vk: null, telegram: 'https://t.me/x', youtube: null },
+  socialLinks: [
+    { id: 's1', platform: 'telegram', title: null, url: 'https://t.me/x' },
+    { id: 's2', platform: 'discord', title: null, url: 'https://discord.gg/x' },
+  ],
+  alert: null,
   registrationEnabled: true,
   modules: { chat: true, friends: true, store: true, comments: true, news: true, reports: true },
   meta: { title: null, description: null, keywords: [] },

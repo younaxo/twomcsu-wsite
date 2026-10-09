@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Kbd } from '@/components/ui/kbd';
-import { RolePrefix } from '@/components/ui/role-prefix';
+import { UserIdentity } from '@/components/ui/user-identity';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -200,13 +200,7 @@ function SidebarUser() {
   return (
     <div className="flex items-center gap-3 border-t border-border-subtle p-4">
       <Avatar name={user.username} size="sm" shape="round" />
-      <div className="min-w-0">
-        <p className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-          {primary ? <RolePrefix role={primary} size="xs" /> : null}
-          <span className="truncate">{user.username}</span>
-        </p>
-        <p className="truncate font-mono text-xs text-subtle-foreground">{user.tag}</p>
-      </div>
+      <UserIdentity username={user.username} role={primary} tag={user.tag} />
     </div>
   );
 }
@@ -259,11 +253,7 @@ function AccountMenu() {
       </Tooltip>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex flex-col gap-1">
-          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            {primary ? <RolePrefix role={primary} size="xs" /> : null}
-            <span className="truncate">{user.username}</span>
-          </span>
-          <span className="font-mono text-xs font-normal text-subtle-foreground">{user.tag}</span>
+          <UserIdentity username={user.username} role={primary} tag={user.tag} />
           {user.roles.length > 0 ? (
             <span className="text-xs font-normal text-muted-foreground">
               {user.roles.map((role) => role.displayName).join(' · ')}

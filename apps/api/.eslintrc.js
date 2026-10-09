@@ -22,5 +22,18 @@ module.exports = {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'error',
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    // Любой импорт @twomc/shared (даже `import type`) втягивает исходники
+    // пакета в сборку Nest и сдвигает `dist/main` → API не стартует.
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [
+          {
+            name: '@twomc/shared',
+            message: 'apps/api не импортирует @twomc/shared — держите локальное зеркало значений/типов.',
+          },
+        ],
+      },
+    ],
   },
 };
