@@ -1,6 +1,25 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+
+/// Монорепо держит единый `.env` в корне, а Next.js читает `.env` только из
+/// apps/web. Подхватываем из корневого файла ТОЛЬКО публичные `NEXT_PUBLIC_*`
+/// (секреты API в бандл не попадают). Уже заданные переменные окружения
+/// (CI, Docker build args) имеют приоритет.
+function loadRootPublicEnv() {
+  const file = new URL('../../.env', import.meta.url);
+  if (!existsSync(file)) return;
+  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const match = /^\s*(NEXT_PUBLIC_[A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+    if (!match) continue;
+    const [, key, raw] = match;
+    const value = raw.replace(/^(['"])(.*)\1$/, '$2');
+    if (process.env[key] === undefined && value !== '') {
+      process.env[key] = value;
+    }
+  }
+}
+loadRootPublicEnv();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

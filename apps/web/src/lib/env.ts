@@ -19,3 +19,8 @@ export const CDN_BASE_URL = stripTrailingSlash(
 export function cdnUrl(relativePath: string): string {
   return `${CDN_BASE_URL}/${relativePath.replace(/^\/+/, '')}`;
 }
+
+/// Публичный site key Cloudflare Turnstile (dev — тестовый ключ Cloudflare,
+/// который всегда проходит). Пустой ключ → виджет не рендерится, а форма
+/// честно сообщает, что защита не настроена.
+export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';

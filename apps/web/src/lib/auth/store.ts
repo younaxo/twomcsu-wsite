@@ -19,13 +19,13 @@ export interface AuthState {
   clear: () => void;
 }
 
-/// Сервер требует captcha (после 3 неудачных попыток с IP). hCaptcha-виджет
-/// на frontend не подключён (RISKS.md R5, ключей нет) — показываем явное
-/// сообщение вместо тихого «неверный пароль».
+/// Сервер отверг captcha (Turnstile-токен отсутствует или не прошёл Siteverify,
+/// ADR-0059). Форма входа сбрасывает виджет и показывает явное сообщение
+/// вместо тихого «неверный пароль».
 export class CaptchaRequiredError extends Error {
   constructor() {
     super(
-      'Слишком много неудачных попыток входа — требуется проверка captcha. Повторите через 15 минут.',
+      'Проверка Cloudflare не пройдена. Подтвердите, что вы не робот, и повторите.',
     );
     this.name = 'CaptchaRequiredError';
   }
