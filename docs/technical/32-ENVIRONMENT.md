@@ -18,8 +18,8 @@
 | `JWT_REFRESH_SECRET` | api | yes | **yes** | `<SECRET>` | HMAC refresh-хешей |
 | `JWT_ACCESS_EXPIRES` | api | no (`15m`) | no | `15m` | TTL access |
 | `JWT_REFRESH_EXPIRES` | api | no (`30d`) | no | `30d` | TTL refresh |
-| `HCAPTCHA_SECRET` | api | prod | **yes** | `<SECRET>` | hCaptcha server key |
-| `HCAPTCHA_DISABLED` | api | no | no | `false` | отключает капчу |
+| `TURNSTILE_SECRET_KEY` | api | prod | **yes** | `<SECRET>` | Cloudflare Turnstile secret (dev — тестовый `1x0000000000000000000000000000000AA`) |
+| `TURNSTILE_DISABLED` | api | no | no | `false` | отключает проверку — только CI e2e |
 | `COOKIE_DOMAIN` | api | prod | no | `.twomc.su` | default `localhost` |
 | `COOKIE_SECURE` | api | prod | no | `true` | default false |
 | `COOKIE_SAMESITE` | api | no (`lax`) | no | `lax` | `lax/strict/none` |
@@ -33,13 +33,13 @@
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | api | optional | PRIVATE yes | — | Web Push (`PushService`) |
 | `SEED_OWNER_EMAIL/USERNAME/PASSWORD` | seed | yes для seed | PASSWORD yes | — | owner-аккаунт seed (без них seed падает) |
 | `NEXT_PUBLIC_API_URL` | web | yes | no | `https://api.twomc.su` | базовый URL API (default `http://localhost:4000`); также в middleware |
-| `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` | web | prod | no | — | публичный ключ hCaptcha |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | web | prod | **yes** | — | публичный ключ Turnstile (dev — `1x00000000000000000000AA`) |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | web | optional | no | — | подписка на push |
 | `ANALYZE` | web build | no | no | `true` | bundle analyzer |
 
 ## Окружения
-- **dev**: `.env` из `.env.example`, `docker compose up postgres redis`, `HCAPTCHA_DISABLED=true`.
+- **dev**: `.env` из `.env.example`, `docker compose up postgres redis`, тестовые ключи Turnstile из `.env.example`.
 - **test**: тестового окружения и тестов в репозитории нет (46-TESTING.md).
-- **staging/production**: окружения в репозитории не описаны; обязательны secrets (`JWT_*`, `DATABASE_URL`, `REDIS_PASSWORD`, `HCAPTCHA_SECRET`, SMTP), `COOKIE_DOMAIN/SECURE`, `WEB_ORIGIN`, `FRONTEND_URL`; не запускать seed без новых `BOOTSTRAP_*` (S1).
+- **staging/production**: окружения в репозитории не описаны; обязательны secrets (`JWT_*`, `DATABASE_URL`, `REDIS_PASSWORD`, `TURNSTILE_SECRET_KEY`, SMTP), `COOKIE_DOMAIN/SECURE`, `WEB_ORIGIN`, `FRONTEND_URL`; не запускать seed без новых `BOOTSTRAP_*` (S1).
 ## Новые переменные (PROPOSED)
 `CDN_BASE_URL`, `STORAGE_DRIVER`, `STORAGE_BUCKET/ENDPOINT/ACCESS_KEY/SECRET_KEY`, `BOOTSTRAP_SYSTEM_PASSWORD`, `BOOTSTRAP_OWNER_PASSWORD`, `BOOTSTRAP_CHIEF_CURATOR_PASSWORD`, `PAYMENTS_MOCK_ENABLED`, `TRUST_PROXY`.

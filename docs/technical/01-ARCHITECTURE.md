@@ -12,7 +12,7 @@ NestJS API (apps/api, :4000) ── helmet, cookie-parser, CORS(WEB_ORIGIN), Val
   │ Controllers (73) → Guards (JwtAuth/OptionalJwt/Roles) → Services → PrismaService / CacheService / RedisService
   │ Gateways (3): /chat, /messages, /notifications
   ▼
-PostgreSQL 16 (105 моделей)   Redis 7 (cache, bruteforce, presence)   Local disk /uploads   External: hCaptcha, SMTP, Web Push, Twitch/YouTube, Minecraft servers
+PostgreSQL 16 (105 моделей)   Redis 7 (cache, bruteforce, presence)   Local disk /uploads   External: Cloudflare Turnstile, SMTP, Web Push, Twitch/YouTube, Minecraft servers
 ```
 CDN как отдельный сервис **не используется** (цель: `cdn-files.twomc.su`, см. 26-CDN-FILES.md).
 

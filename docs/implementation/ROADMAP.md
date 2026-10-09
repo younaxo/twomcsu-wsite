@@ -48,8 +48,8 @@
 
 ## Контент и запуск
 
-- [ ] PHASE 31 — All pages (143 страницы фронтенда)
-- [ ] PHASE 32 — Initial accounts (bootstrap #0/#1/#2 из ENV)
+- [~] PHASE 31 — All pages (143 страницы фронтенда; главная и оболочка v2 — готово, остальное в работе)
+- [x] PHASE 32 — Initial accounts (bootstrap #0/#1/#2 из ENV — seed, ADR-0006; staff-роли Admin/Moderator/Helper — позже)
 - [ ] PHASE 33 — Testing (unit/integration/e2e/security)
 - [ ] PHASE 34 — Performance (N+1, индексы, pagination)
 - [~] PHASE 35 — Production infrastructure (Dockerfile, compose prod, deploy.sh с rollback, nginx-пример — готово; сам деплой ждёт данных хостинга, RISKS R8)

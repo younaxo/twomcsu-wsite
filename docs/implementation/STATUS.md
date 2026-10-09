@@ -3,8 +3,8 @@
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
-Current phase: PHASE 21 — Admin panel (frontend)
-Current branch: feature/audit-log (PHASE 22); PHASE 21 (PR #32, #35) и PHASE 35 (PR #36) слиты
+Current phase: PHASE 31 — All pages (главная + оболочка v2, первый срез)
+Current branch: feature/home-shell-v2 (от feature/global-shell, PR #40); PHASE 21/22/23/35 слиты
 
 Completed:
 - PHASE 00 — Discovery (документация прочитана, roadmap/decisions/risks созданы)
@@ -71,6 +71,12 @@ Completed:
   priority-проверкой, CSV-экспорт 5 доменов — 16 e2e-тестов)
 
 In progress:
+- PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
+  дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,
+  SVG оплаты владельца, favicon/manifest), ColorPicker z-index fix —
+  `docs/implementation/phases/PHASE-31-public-pages.md`.
+- PHASE 32 — Bootstrap #0/#1/#2 из env реализован (seed), локальный dev-вход
+  younaxo_ проверен — `PHASE-32-bootstrap-accounts.md`.
 - Глобальная оболочка twomc.su (App Shell, `feature/global-shell`): rail/header/footer/
   overlays/mobile nav, публичные страницы /shop /rules /servers /status на реальных
   API, ColorPicker без нативного диалога. Не хватает от владельца: SVG способов оплаты

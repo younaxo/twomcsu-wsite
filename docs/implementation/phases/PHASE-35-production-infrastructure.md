@@ -31,7 +31,7 @@ twomc.su на уже предоставленный хостинг сразу п
    `COOKIE_SECURE=true`, `COOKIE_DOMAIN=.twomc.su`, `WEB_ORIGIN`/
    `FRONTEND_URL`/`PUBLIC_SITE_URL=https://twomc.su`,
    `NEXT_PUBLIC_API_URL=https://api.twomc.su`, `TRUST_PROXY=true`,
-   JWT-секреты, `HCAPTCHA_*`, `BOOTSTRAP_*` (PHASE 32).
+   JWT-секреты, `TURNSTILE_*`, `BOOTSTRAP_*` (PHASE 32).
 3. `infrastructure/deploy.sh`.
 4. Reverse proxy по примеру nginx (или адаптация существующего).
 5. Health check: `https://twomc.su`, `/login`, `https://api.twomc.su/health`,
