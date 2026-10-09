@@ -90,6 +90,14 @@ export class ServersService {
         id: s.server.id,
         slug: s.server.slug,
         name: s.server.name,
+        type: s.server.type,
+        description: s.server.description,
+        iconUrl: s.server.iconUrl,
+        address:
+          s.server.port === 25565
+            ? s.server.address
+            : `${s.server.address}:${s.server.port}`,
+        configuredVersion: s.server.version,
         ...s.status,
       })),
     };
