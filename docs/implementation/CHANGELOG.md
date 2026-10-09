@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Audit log (PHASE 22)
+- Глобальный `AuditInterceptor`: все успешные staff-мутации с `@RequirePermissions`
+  пишутся в audit log (действие = ключ permission, цель, очищенные изменения,
+  IP/UA/длительность, уровень по ключу); `@SkipAudit()` для ручных записей.
+- `AUDIT_RETENTION_DAYS` и ежедневная очистка в 04:00; `AuditModule` глобальный.
+
 ### Production infrastructure (PHASE 35)
 - `infrastructure/api.Dockerfile`, `web.Dockerfile` (standalone), `docker-compose.prod.yml`,
   `deploy.sh` с prisma migrate deploy и автоматическим rollback, пример nginx,

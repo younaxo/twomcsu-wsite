@@ -153,6 +153,13 @@ describe('Forms (e2e)', () => {
       await prisma.role.deleteMany({
         where: { slug: { in: cleanupRoleSlugs } },
       });
+      await prisma.auditLog.deleteMany({
+        where: {
+          actor: {
+            email: { in: [admin.email, helper.email, alice.email, bob.email] },
+          },
+        },
+      });
       await prisma.user.deleteMany({
         where: {
           email: { in: [admin.email, helper.email, alice.email, bob.email] },

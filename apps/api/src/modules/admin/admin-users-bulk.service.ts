@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { QuickModerationService } from '../moderation/quick-moderation.service';
 import { PermissionService } from '../roles/permission.service';
-import { AuditService } from './audit.service';
+import { AuditService } from '../audit/audit.service';
 import { BulkUserAction, BulkUsersDto } from './dto/bulk-users.dto';
 
 export interface BulkUsersResult {
