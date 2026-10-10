@@ -3,6 +3,7 @@
 import type { DecimalString, Paginated } from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Gift, ShoppingBag } from 'lucide-react';
+import Link from 'next/link';
 import { ProtectedImage } from '@/components/ui/protected-image';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
@@ -96,7 +97,11 @@ function ShopPageContent() {
           <div>
             <p className="text-sm font-semibold">Бонусы</p>
             <p className="text-sm text-muted-foreground">
-              Ежедневные бонусы и награды за голосование появятся здесь.
+              Монеты за голосование на сайтах-рейтингах —{' '}
+              <Link href="/vote" className="font-medium text-primary hover:underline">
+                на странице «Голосование»
+              </Link>
+              .
             </p>
           </div>
         </Card>

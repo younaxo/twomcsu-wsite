@@ -197,6 +197,7 @@ export const FOOTER_PLAYER_LINKS: FooterLink[] = [
   { href: '/rules', label: 'Правила', available: true },
   { href: '/wiki', label: 'Wiki', available: false },
   { href: '/news', label: 'Новости', available: true },
+  { href: '/vote', label: 'Голосование', available: true },
 ];
 
 /// Правовые документы: маршруты зафиксированы, тексты — отдельное ТЗ
