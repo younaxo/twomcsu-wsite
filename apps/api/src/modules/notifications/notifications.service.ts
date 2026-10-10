@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
 import { EmailService } from '../email/email.service';
@@ -13,6 +14,7 @@ import { NotificationsGateway } from './notifications.gateway';
 import { PushService } from './push.service';
 import { PushSubscribeDto } from './dto/push-subscribe.dto';
 import { buildPushPayload, shouldSendPush } from './push-policy';
+import { escapeToHtml } from '../../common/html.util';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -102,11 +104,9 @@ export class NotificationsService {
     const quiet = this.settings.isQuietHoursNow(settings);
     const suppressed = quiet && !isUrgent;
 
-    if (
-      settings.emailEnabled &&
-      settings.digestMode === 'INSTANT' &&
-      !suppressed
-    ) {
+    // Сводки по расписанию пока нет (ADR-0110): любой digestMode — письмо
+    // сразу, иначе сохранённый ранее HOURLY/DAILY/WEEKLY молча терял бы письма.
+    if (settings.emailEnabled && !suppressed) {
       const user = await this.prisma.user.findUnique({
         where: { id: notification.userId },
       });
@@ -115,7 +115,8 @@ export class NotificationsService {
           .send({
             to: user.email,
             subject: notification.title,
-            html: `<p>${notification.message ?? notification.title}</p>`,
+            // Текст уведомления может содержать чужой ввод — только экранированный.
+            html: `<p>${escapeToHtml(notification.message ?? notification.title)}</p>`,
             text: notification.message ?? notification.title,
           })
           .then(
@@ -397,10 +398,21 @@ export class NotificationsService {
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
+    if (!this.email.configured) {
+      throw new ServiceUnavailableException({
+        code: 'email_unavailable',
+        message: 'Отправка писем пока не настроена на сервере',
+      });
+    }
     if (unread.length === 0) {
       return { sent: false, count: 0 };
     }
-    const html = `<ul>${unread.map((n) => `<li>${n.title}${n.message ? ` — ${n.message}` : ''}</li>`).join('')}</ul>`;
+    const html = `<ul>${unread
+      .map(
+        (n) =>
+          `<li>${escapeToHtml(n.title)}${n.message ? ` — ${escapeToHtml(n.message)}` : ''}</li>`,
+      )
+      .join('')}</ul>`;
     await this.email.send({
       to: user.email,
       subject: `twomc.su: ${unread.length} непрочитанных уведомлений`,

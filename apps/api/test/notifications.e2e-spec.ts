@@ -8,6 +8,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { EmailService } from '../src/modules/email/email.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом; этот
 // файл дополнительно поднимает реальный TCP-листенер для Socket.IO.
@@ -388,12 +389,28 @@ describe('Notifications (e2e)', () => {
       })
       .expect(201);
     expect(saved.body.discordEnabled).toBe(true);
+    // ADR-0110: токен вебхука в ответ не уходит — только маска.
+    expect(JSON.stringify(saved.body)).not.toContain(`${unique}-token`);
+    expect(saved.body.discordWebhookHint).toBe(
+      'discord.com/api/webhooks/123456789/••••',
+    );
+    expect(saved.body.userId).toBeUndefined();
 
+    // Отправка: без упоминаний (@everyone из чужого текста не пингует), без редиректов.
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     const tested = await request(app.getHttpServer())
       .post('/notifications/discord/webhook/test')
       .set('Authorization', auth(alice))
       .expect(201);
-    expect(typeof tested.body.sent).toBe('boolean');
+    expect(tested.body.sent).toBe(true);
+    const [, init] = fetchSpy.mock.calls[0]!;
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      allowed_mentions: { parse: [] },
+    });
+    expect(init?.redirect).toBe('error');
+    fetchSpy.mockRestore();
 
     await request(app.getHttpServer())
       .delete('/notifications/discord/webhook')
@@ -401,7 +418,18 @@ describe('Notifications (e2e)', () => {
       .expect(200);
   });
 
-  it('digest: test без непрочитанных не шлёт письмо, с непрочитанными — шлёт', async () => {
+  it('digest: без SMTP — честный 503; без непрочитанных не шлёт; с непрочитанными — шлёт с экранированием', async () => {
+    const email = app.get(EmailService);
+    const configured = jest
+      .spyOn(email, 'configured', 'get')
+      .mockReturnValue(false);
+    await request(app.getHttpServer())
+      .post('/notifications/digest/test')
+      .set('Authorization', auth(alice))
+      .expect(503)
+      .expect((res) => expect(res.body.code).toBe('email_unavailable'));
+    configured.mockReturnValue(true);
+    const sendSpy = jest.spyOn(email, 'send').mockResolvedValue(undefined);
     await prisma.friendship.deleteMany({
       where: { requesterId: bob.id, addresseeId: alice.id },
     });
@@ -426,6 +454,40 @@ describe('Notifications (e2e)', () => {
       .expect(201);
     expect(digest.body.sent).toBe(true);
     expect(digest.body.count).toBeGreaterThan(0);
+
+    // Пользовательский текст в письме — только экранированный.
+    await prisma.notification.create({
+      data: {
+        userId: alice.id,
+        type: 'SYSTEM',
+        title: 'Тест <b>заголовка</b>',
+        message: '<script>alert(1)</script>',
+      },
+    });
+    sendSpy.mockClear();
+    await request(app.getHttpServer())
+      .post('/notifications/digest/test')
+      .set('Authorization', auth(alice))
+      .expect(201);
+    const html = String(sendSpy.mock.calls[0]?.[0]?.html);
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('Тест &lt;b&gt;заголовка&lt;/b&gt;');
+    configured.mockRestore();
+    sendSpy.mockRestore();
+
+    // Сводки по расписанию пока нет — такой режим не сохраняется (ADR-0110).
+    await request(app.getHttpServer())
+      .patch('/notifications/digest')
+      .set('Authorization', auth(alice))
+      .send({ digestMode: 'DAILY', digestTime: '09:00' })
+      .expect(400);
+    const instant = await request(app.getHttpServer())
+      .patch('/notifications/digest')
+      .set('Authorization', auth(alice))
+      .send({ digestMode: 'INSTANT' })
+      .expect(200);
+    expect(instant.body.digestMode).toBe('INSTANT');
 
     await prisma.friendship.deleteMany({
       where: { requesterId: bob.id, addresseeId: alice.id },

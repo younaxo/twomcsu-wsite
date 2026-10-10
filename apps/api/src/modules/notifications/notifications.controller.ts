@@ -21,11 +21,16 @@ import { PushSubscribeDto } from './dto/push-subscribe.dto';
 import { UpdateDigestDto } from './dto/update-digest.dto';
 import { UpdateNotificationSettingsDto } from './dto/update-notification-settings.dto';
 import { UpdateTypeSettingDto } from './dto/update-type-setting.dto';
-import { NotificationSettingsService } from './notification-settings.service';
+import {
+  NotificationSettingsService,
+  settingsView,
+} from './notification-settings.service';
+import { EmailService } from '../email/email.service';
 import { NotificationsService } from './notifications.service';
 import { PushService } from './push.service';
 import { SiteModule } from '../system/site-module.decorator';
 import { PushUnsubscribeDto } from './dto/push-unsubscribe.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @SiteModule('notifications')
 @Controller('notifications')
@@ -35,7 +40,13 @@ export class NotificationsController {
     private readonly notifications: NotificationsService,
     private readonly settings: NotificationSettingsService,
     private readonly push: PushService,
+    private readonly email: EmailService,
   ) {}
+
+  /// Все ответы настроек — без токена вебхука (ADR-0110).
+  private view(row: Parameters<typeof settingsView>[0]) {
+    return settingsView(row, this.email.configured);
+  }
 
   @Get()
   async list(
@@ -58,7 +69,7 @@ export class NotificationsController {
 
   @Get('settings')
   async getSettings(@CurrentUser() user: AuthenticatedUser) {
-    return this.settings.getOrCreate(user.id);
+    return this.view(await this.settings.getOrCreate(user.id));
   }
 
   @Patch('settings')
@@ -66,7 +77,7 @@ export class NotificationsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateNotificationSettingsDto,
   ) {
-    return this.settings.update(user.id, dto);
+    return this.view(await this.settings.update(user.id, dto));
   }
 
   @Patch('settings/type/:type')
@@ -75,12 +86,14 @@ export class NotificationsController {
     @Param('type', new ParseEnumPipe(NotificationType)) type: NotificationType,
     @Body() dto: UpdateTypeSettingDto,
   ) {
-    return this.settings.updateType(user.id, type, dto.enabled);
+    return this.view(
+      await this.settings.updateType(user.id, type, dto.enabled),
+    );
   }
 
   @Post('settings/reset')
   async resetSettings(@CurrentUser() user: AuthenticatedUser) {
-    return this.settings.reset(user.id);
+    return this.view(await this.settings.reset(user.id));
   }
 
   @Get('push/vapid-key')
@@ -121,19 +134,22 @@ export class NotificationsController {
     return { success: true };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('discord/webhook')
   async saveDiscordWebhook(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: DiscordPersonalWebhookDto,
   ) {
-    return this.settings.saveDiscordWebhook(user.id, dto.url);
+    return this.view(await this.settings.saveDiscordWebhook(user.id, dto.url));
   }
 
   @Delete('discord/webhook')
   async deleteDiscordWebhook(@CurrentUser() user: AuthenticatedUser) {
-    return this.settings.deleteDiscordWebhook(user.id);
+    return this.view(await this.settings.deleteDiscordWebhook(user.id));
   }
 
+  /// Проверочные отправки — не чаще 5 раз в 10 минут (не канал для спама).
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
   @Post('discord/webhook/test')
   async testDiscordWebhook(@CurrentUser() user: AuthenticatedUser) {
     return this.notifications.testDiscordWebhook(user.id);
@@ -144,9 +160,10 @@ export class NotificationsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateDigestDto,
   ) {
-    return this.settings.updateDigest(user.id, dto);
+    return this.view(await this.settings.updateDigest(user.id, dto));
   }
 
+  @Throttle({ default: { limit: 5, ttl: 600_000 } })
   @Post('digest/test')
   async testDigest(@CurrentUser() user: AuthenticatedUser) {
     return this.notifications.sendDigestForUser(user.id);
