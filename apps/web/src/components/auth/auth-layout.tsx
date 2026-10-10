@@ -8,6 +8,7 @@ import { SiteLogo } from '@/components/shell/site-logo';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/cn';
+import { useOnboardingQueue } from '@/lib/onboarding';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { shouldShowAuthTutorial, TUTORIAL_SHOWN_KEY } from '@/lib/auth/tutorial';
 import { AuthTutorial } from './auth-tutorial';
@@ -53,16 +54,23 @@ function useRegistrationSpotlight() {
     // на ещё не гидрированную разметку.
     const id = window.setTimeout(() => {
       markShown();
+      // Регистрация — самая важная подсказка в очереди onboarding (ADR-0097).
+      useOnboardingQueue.getState().claim('registration');
       setSpotlight(true);
     }, 350);
     return () => window.clearTimeout(id);
   }, [pathname]);
+  const release = () => useOnboardingQueue.getState().release('registration');
   return {
     spotlight,
     tutorial,
-    dismiss: () => setSpotlight(false),
+    dismiss: () => {
+      setSpotlight(false);
+      release();
+    },
     openTutorial: () => {
       setSpotlight(false);
+      release();
       setTutorial(true);
     },
     setTutorial,

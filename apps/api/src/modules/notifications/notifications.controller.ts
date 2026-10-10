@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseEnumPipe,
   Patch,
@@ -24,6 +25,7 @@ import { NotificationSettingsService } from './notification-settings.service';
 import { NotificationsService } from './notifications.service';
 import { PushService } from './push.service';
 import { SiteModule } from '../system/site-module.decorator';
+import { PushUnsubscribeDto } from './dto/push-unsubscribe.dto';
 
 @SiteModule('notifications')
 @Controller('notifications')
@@ -93,6 +95,21 @@ export class NotificationsController {
     @Body() dto: PushSubscribeDto,
   ) {
     return this.notifications.subscribePush(user.id, dto);
+  }
+
+  @Get('push/subscriptions')
+  pushSubscriptions(@CurrentUser() user: AuthenticatedUser) {
+    return this.notifications.listPushSubscriptions(user.id);
+  }
+
+  @Post('push/unsubscribe')
+  @HttpCode(200)
+  async unsubscribeEndpoint(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: PushUnsubscribeDto,
+  ) {
+    await this.notifications.unsubscribePushByEndpoint(user.id, dto.endpoint);
+    return { success: true };
   }
 
   @Delete('push/subscribe/:id')

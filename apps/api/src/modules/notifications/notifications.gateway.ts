@@ -2,9 +2,12 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
   OnGatewayInit,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
@@ -16,8 +19,10 @@ function userRoom(userId: string): string {
   return `user:${userId}`;
 }
 
-/// Namespace только серверный (docs/technical/06-WEBSOCKET.md): клиент не
-/// шлёт никаких событий, только получает `notification:new`. Та же модель
+/// Namespace в основном серверный (docs/technical/06-WEBSOCKET.md): клиент
+/// получает `notification:new` / `notification:changed` и шлёт только
+/// `presence:visibility` (видна ли вкладка) — для политики push (ADR-0097):
+/// есть видимая вкладка — системный push не нужен. Та же модель
 /// аутентификации через namespace-middleware, что и в Chat/DirectMessages
 /// гейтвеях (PHASE 10/11) — исключает гонку между connection и обработкой
 /// события у клиента, который бы подписался раньше завершения handshake.
@@ -29,6 +34,9 @@ export class NotificationsGateway
   server!: Server;
 
   private readonly logger = new Logger(NotificationsGateway.name);
+  /// userId → (socketId → вкладка видна). Только в памяти процесса: при
+  /// нескольких инстансах API нужен общий стор (Redis) — см. RISKS.
+  private readonly visibility = new Map<string, Map<string, boolean>>();
 
   constructor(
     private readonly jwt: JwtService,
@@ -73,8 +81,33 @@ export class NotificationsGateway
     }
   }
 
-  handleDisconnect(): void {
+  handleDisconnect(client: Socket): void {
     // Socket.IO сам удаляет сокет из всех комнат при дисконнекте.
+    const userId = client.data?.userId as string | undefined;
+    const sockets = userId ? this.visibility.get(userId) : undefined;
+    if (!userId || !sockets) return;
+    sockets.delete(client.id);
+    if (sockets.size === 0) this.visibility.delete(userId);
+  }
+
+  @SubscribeMessage('presence:visibility')
+  onVisibility(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { visible?: unknown } | undefined,
+  ): void {
+    const userId = client.data?.userId as string | undefined;
+    if (!userId) return;
+    const sockets = this.visibility.get(userId) ?? new Map<string, boolean>();
+    sockets.set(client.id, body?.visible === true);
+    this.visibility.set(userId, sockets);
+  }
+
+  /// Есть ли у пользователя видимая вкладка сайта прямо сейчас.
+  isForeground(userId: string): boolean {
+    const sockets = this.visibility.get(userId);
+    if (!sockets) return false;
+    for (const visible of sockets.values()) if (visible) return true;
+    return false;
   }
 
   emitToUser(userId: string, notification: unknown): void {
