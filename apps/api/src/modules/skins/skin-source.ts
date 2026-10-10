@@ -23,22 +23,32 @@ const MAX_TEXTURE_BYTES = 64 * 1024;
 const TEXTURE_HOST = 'textures.minecraft.net';
 
 /// PNG нужного размера: сигнатура + IHDR (ширина/высота в байтах 16–23).
-export function readPngSize(data: Buffer): { width: number; height: number } | null {
+export function readPngSize(
+  data: Buffer,
+): { width: number; height: number } | null {
   const signature = '89504e470d0a1a0a';
-  if (data.length < 24 || data.subarray(0, 8).toString('hex') !== signature) return null;
+  if (data.length < 24 || data.subarray(0, 8).toString('hex') !== signature)
+    return null;
   if (data.subarray(12, 16).toString('ascii') !== 'IHDR') return null;
   return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
 }
 
 export function isSkinPng(data: Buffer): boolean {
   const size = readPngSize(data);
-  return !!size && size.width === 64 && (size.height === 64 || size.height === 32);
+  return (
+    !!size && size.width === 64 && (size.height === 64 || size.height === 32)
+  );
 }
 
 export function isCapePng(data: Buffer): boolean {
   const size = readPngSize(data);
   // Плащи: 64×32 и HD-варианты кратного размера (22×17 полезной области).
-  return !!size && size.width >= 22 && size.width <= 512 && size.height * 2 === size.width;
+  return (
+    !!size &&
+    size.width >= 22 &&
+    size.width <= 512 &&
+    size.height * 2 === size.width
+  );
 }
 
 interface TexturesPayload {
@@ -57,7 +67,9 @@ export function parseTexturesProperty(value: string): {
 } {
   let payload: TexturesPayload;
   try {
-    payload = JSON.parse(Buffer.from(value, 'base64').toString('utf8')) as TexturesPayload;
+    payload = JSON.parse(
+      Buffer.from(value, 'base64').toString('utf8'),
+    ) as TexturesPayload;
   } catch {
     return { skinUrl: null, capeUrl: null, model: 'classic' };
   }
@@ -75,7 +87,8 @@ export function parseTexturesProperty(value: string): {
   return {
     skinUrl: safe(payload.textures?.SKIN?.url),
     capeUrl: safe(payload.textures?.CAPE?.url),
-    model: payload.textures?.SKIN?.metadata?.model === 'slim' ? 'slim' : 'classic',
+    model:
+      payload.textures?.SKIN?.metadata?.model === 'slim' ? 'slim' : 'classic',
   };
 }
 
@@ -90,7 +103,9 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 async function getTexture(url: string): Promise<Buffer | null> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
   if (!response.ok) return null;
   const length = Number(response.headers.get('content-length') ?? 0);
   if (length > MAX_TEXTURE_BYTES) return null;
@@ -106,8 +121,12 @@ export class MojangSkinSource implements SkinSource {
     if (!profile?.id || !/^[0-9a-f]{32}$/i.test(profile.id)) return null;
     const session = await getJson<{
       properties?: { name: string; value: string }[];
-    }>(`https://sessionserver.mojang.com/session/minecraft/profile/${profile.id}`);
-    const property = session?.properties?.find((item) => item.name === 'textures');
+    }>(
+      `https://sessionserver.mojang.com/session/minecraft/profile/${profile.id}`,
+    );
+    const property = session?.properties?.find(
+      (item) => item.name === 'textures',
+    );
     if (!property) return null;
     const parsed = parseTexturesProperty(property.value);
     if (!parsed.skinUrl) return null;

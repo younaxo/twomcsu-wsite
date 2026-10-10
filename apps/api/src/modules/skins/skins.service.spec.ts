@@ -28,7 +28,8 @@ function service(
       findFirst: jest.fn(
         async ({ where }: { where: { username: { equals: string } } }) => {
           const key = Object.keys(users).find(
-            (name) => name.toLowerCase() === where.username.equals.toLowerCase(),
+            (name) =>
+              name.toLowerCase() === where.username.equals.toLowerCase(),
           );
           if (!key) return null;
           const user = users[key]!;
@@ -44,7 +45,11 @@ function service(
   return new SkinsService(prisma as never, source);
 }
 
-const textures: SkinTextures = { model: 'slim', skin: png(64, 64), cape: png(64, 32) };
+const textures: SkinTextures = {
+  model: 'slim',
+  skin: png(64, 64),
+  cape: png(64, 32),
+};
 
 describe('скины (ADR-0089)', () => {
   it('textures из sessionserver: только textures.minecraft.net, https, модель slim', () => {
@@ -82,7 +87,10 @@ describe('скины (ADR-0089)', () => {
       { Steve: { profileVisibility: 'EVERYONE', mc: 'SteveMC' } },
       { fetchByName },
     );
-    const [a, b] = await Promise.all([skins.getSkin('steve'), skins.getSkin('STEVE')]);
+    const [a, b] = await Promise.all([
+      skins.getSkin('steve'),
+      skins.getSkin('STEVE'),
+    ]);
     expect(a).toBe(b);
     expect(fetchByName).toHaveBeenCalledTimes(1);
     expect(fetchByName).toHaveBeenCalledWith('SteveMC');

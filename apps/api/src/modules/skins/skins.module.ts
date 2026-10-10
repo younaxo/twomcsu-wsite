@@ -5,6 +5,9 @@ import { SkinsService } from './skins.service';
 
 @Module({
   controllers: [SkinsController],
-  providers: [SkinsService, { provide: SKIN_SOURCE, useClass: MojangSkinSource }],
+  providers: [
+    SkinsService,
+    { provide: SKIN_SOURCE, useClass: MojangSkinSource },
+  ],
 })
 export class SkinsModule {}

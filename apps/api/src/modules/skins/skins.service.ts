@@ -56,7 +56,12 @@ export class SkinsService {
       },
     });
     const name = user?.minecraftAccount?.name ?? user?.username;
-    if (!user || user.profileVisibility === 'NOBODY' || !name || !NICK.test(name)) {
+    if (
+      !user ||
+      user.profileVisibility === 'NOBODY' ||
+      !name ||
+      !NICK.test(name)
+    ) {
       throw new NotFoundException('Скин не найден');
     }
     return name;
@@ -112,7 +117,12 @@ export class SkinsService {
   async meta(username: string): Promise<SkinMeta> {
     const skin = await this.getSkin(username);
     return skin
-      ? { available: true, model: skin.model, cape: !!skin.cape, version: skin.version }
+      ? {
+          available: true,
+          model: skin.model,
+          cape: !!skin.cape,
+          version: skin.version,
+        }
       : { available: false, model: null, cape: false, version: null };
   }
 }

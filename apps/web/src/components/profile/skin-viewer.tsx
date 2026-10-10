@@ -166,7 +166,10 @@ function SkinCanvas({
 
   return (
     <div className="flex flex-col gap-2">
-      <div ref={holder} className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-surface-sunken">
+      <div
+        ref={holder}
+        className="relative aspect-[3/4] w-full overflow-hidden rounded-xl bg-surface-sunken"
+      >
         <canvas
           ref={canvas}
           aria-label={`3D-модель скина ${username}: перетащите, чтобы повернуть; колесо или щипок — приблизить`}
@@ -190,20 +193,37 @@ function SkinCanvas({
           </div>
         ) : null}
         {state === 'error' ? (
-          <p className="absolute inset-x-3 bottom-3 text-center text-sm text-muted-foreground" role="status">
+          <p
+            className="absolute inset-x-3 bottom-3 text-center text-sm text-muted-foreground"
+            role="status"
+          >
             Не удалось показать 3D-скин.
           </p>
         ) : null}
       </div>
       {state === 'ready' ? (
-        <div className="flex items-center justify-center gap-1" role="toolbar" aria-label="Управление 3D-скином">
+        <div
+          className="flex items-center justify-center gap-1"
+          role="toolbar"
+          aria-label="Управление 3D-скином"
+        >
           <Tooltip content="Повернуть влево">
-            <IconButton size="sm" variant="ghost" aria-label="Повернуть влево" onClick={() => rotate(-ROTATE_STEP)}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Повернуть влево"
+              onClick={() => rotate(-ROTATE_STEP)}
+            >
               <RotateCcw />
             </IconButton>
           </Tooltip>
           <Tooltip content="Повернуть вправо">
-            <IconButton size="sm" variant="ghost" aria-label="Повернуть вправо" onClick={() => rotate(ROTATE_STEP)}>
+            <IconButton
+              size="sm"
+              variant="ghost"
+              aria-label="Повернуть вправо"
+              onClick={() => rotate(ROTATE_STEP)}
+            >
               <RotateCw />
             </IconButton>
           </Tooltip>
@@ -245,7 +265,11 @@ function SkinCanvas({
 export function SkinViewer({ username, className }: { username: string; className?: string }) {
   const meta = useSkinMeta(username);
   return (
-    <section className={cn('flex flex-col gap-3', className)} aria-label="Скин Minecraft" data-testid="skin-viewer">
+    <section
+      className={cn('flex flex-col gap-3', className)}
+      aria-label="Скин Minecraft"
+      data-testid="skin-viewer"
+    >
       <h2 className="text-sm font-semibold">Скин Minecraft</h2>
       {meta.isPending ? (
         <Skeleton className="aspect-[3/4] w-full rounded-xl" />
@@ -264,9 +288,7 @@ export function SkinViewer({ username, className }: { username: string; classNam
         <Frame>
           <div className="flex flex-col items-center gap-2 p-4 text-center">
             <Box aria-hidden className="size-8 text-subtle-foreground" />
-            <p className="text-sm text-muted-foreground">
-              Для этого ника нет скина в Minecraft.
-            </p>
+            <p className="text-sm text-muted-foreground">Для этого ника нет скина в Minecraft.</p>
             <p className="text-xs text-subtle-foreground">
               Скин появится, когда у ника есть лицензионный профиль Minecraft.
             </p>
