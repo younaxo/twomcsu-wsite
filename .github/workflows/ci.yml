@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PNPM_VERSION: "9.15.9"
-  NODE_VERSION: "20"
+  PNPM_VERSION: '9.15.9'
+  NODE_VERSION: '20'
 
 jobs:
   quality:
@@ -43,11 +43,12 @@ jobs:
     env:
       DATABASE_URL: postgresql://twomc:ci_password@localhost:5432/twomc
       REDIS_HOST: localhost
-      REDIS_PORT: "6379"
-      REDIS_PASSWORD: ""
+      REDIS_PORT: '6379'
+      REDIS_PASSWORD: ''
       JWT_ACCESS_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci
       JWT_REFRESH_SECRET: ci-ci-ci-ci-ci-not-a-real-secret-ci-ci-ci-2
-      TURNSTILE_DISABLED: "true"
+      TURNSTILE_DISABLED: 'true'
+      TWO_FACTOR_ENCRYPTION_KEY: ci-ci-ci-ci-ci-not-a-real-2fa-key-ci-ci-ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4

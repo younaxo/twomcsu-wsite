@@ -18,7 +18,14 @@ export class PrismaService
       // Хеш пароля никогда не попадает в результаты запросов по умолчанию —
       // include: { author: true } и подобные в публичных ответах безопасны.
       // Где hash действительно нужен (login, смена пароля) — omit: { password: false }.
-      omit: { user: { password: true } },
+      // Секреты 2FA (ADR-0109) — так же: читаются только TwoFactorService.
+      omit: {
+        user: {
+          password: true,
+          twoFactorSecret: true,
+          twoFactorPendingSecret: true,
+        },
+      },
       log:
         process.env.PRISMA_DEBUG === 'true'
           ? [

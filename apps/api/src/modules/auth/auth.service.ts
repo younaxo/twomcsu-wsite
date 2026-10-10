@@ -27,6 +27,7 @@ import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { resolveUserIdByHandle } from '../profiles/handle';
 import { ForgotLookupDto } from './dto/forgot-lookup.dto';
 import { maskEmailStrict } from './email-mask';
+import { TwoFactorService } from './two-factor/two-factor.service';
 
 export interface RequestContext {
   ip: string;
@@ -60,6 +61,7 @@ export class AuthService {
     private readonly bruteForce: BruteForceService,
     private readonly captcha: CaptchaService,
     private readonly email: EmailService,
+    private readonly twoFactor: TwoFactorService,
   ) {}
 
   private get bcryptRounds(): number {
@@ -236,7 +238,10 @@ export class AuthService {
   async login(
     dto: LoginDto,
     context: RequestContext,
-  ): Promise<{ user: AuthenticatedUser } & TokenPair> {
+  ): Promise<
+    | ({ user: AuthenticatedUser } & TokenPair)
+    | { twoFactorRequired: true; challengeId: string }
+  > {
     if (await this.bruteForce.isBlocked(context.ip)) {
       throw new HttpException(
         'Слишком много попыток входа. Повторите позже.',
@@ -290,6 +295,14 @@ export class AuthService {
 
     await this.bruteForce.reset(context.ip);
 
+    // 2FA (ADR-0109): пароль верен — сессия только после кода.
+    if (user.twoFactorEnabled) {
+      return {
+        twoFactorRequired: true,
+        challengeId: await this.twoFactor.createChallenge(user.id),
+      };
+    }
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date(), lastLoginIp: context.ip },
@@ -297,6 +310,34 @@ export class AuthService {
 
     const tokens = await this.issueTokenPair(user.id, context);
     return { user: this.toAuthenticatedUser(user), ...tokens };
+  }
+
+  /// Второй шаг входа: код TOTP или резервный код для челленджа из cookie.
+  /// Неверный код считается неудачей входа с этого IP (brute force).
+  async completeTwoFactorLogin(
+    challengeId: string | undefined,
+    code: string,
+    context: RequestContext,
+  ): Promise<{ user: AuthenticatedUser } & TokenPair> {
+    if (await this.bruteForce.isBlocked(context.ip)) {
+      throw new HttpException(
+        'Слишком много попыток входа. Повторите позже.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    try {
+      const { userId } = await this.twoFactor.completeChallenge(
+        challengeId,
+        code,
+      );
+      await this.bruteForce.reset(context.ip);
+      return await this.issueSessionForUser(userId, context);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        await this.bruteForce.registerFailure(context.ip);
+      }
+      throw error;
+    }
   }
 
   /// Сессия для уже установленной личности (вход через привязанный внешний

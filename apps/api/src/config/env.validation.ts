@@ -110,6 +110,14 @@ export const envValidationSchema = Joi.object({
   VAPID_PRIVATE_KEY: Joi.string().allow('').default(''),
   VAPID_SUBJECT: Joi.string().default('mailto:admin@twomc.su'),
 
+  /// Ключ шифрования секретов 2FA (ADR-0109): строка ≥ 32 символов
+  /// (`openssl rand -base64 32`). Пусто — 2FA на сайте недоступна (настройка
+  /// честно сообщает причину), `requireAdmin2fa` не применяется. Смена ключа
+  /// делает уже включённую 2FA нерабочей — только вместе со сбросом 2FA.
+  TWO_FACTOR_ENCRYPTION_KEY: Joi.alternatives()
+    .try(Joi.string().valid(''), Joi.string().min(32))
+    .default(''),
+
   /// Без credentials реальный опрос Twitch/YouTube не выполняется (CRUD
   /// каналов и закэшированный в БД статус работают) — см. RISKS.md R6.
   TWITCH_CLIENT_ID: Joi.string().allow('').default(''),

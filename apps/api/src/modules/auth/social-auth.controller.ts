@@ -23,7 +23,12 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
-import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
+import {
+  REFRESH_COOKIE_NAME,
+  TWO_FACTOR_COOKIE_NAME,
+  refreshCookieOptions,
+  twoFactorCookieOptions,
+} from './refresh-cookie';
 import {
   createPkce,
   ExternalProvider,
@@ -54,6 +59,8 @@ export type SocialResultStatus =
   | 'cancelled'
   | 'expired'
   | 'unavailable'
+  /// Включена 2FA: нужен код (челлендж — в httpOnly cookie, ADR-0109).
+  | 'two_factor'
   | 'error';
 
 function requestContext(req: Request): RequestContext {
@@ -212,6 +219,17 @@ export class SocialAuthController {
         profile,
         requestContext(req),
       );
+      if ('twoFactorChallenge' in session) {
+        res.cookie(
+          TWO_FACTOR_COOKIE_NAME,
+          session.twoFactorChallenge,
+          twoFactorCookieOptions(this.config),
+        );
+        return res.redirect(
+          HttpStatus.FOUND,
+          this.resultUrl(provider, 'login', 'two_factor', next),
+        );
+      }
       res.cookie(
         REFRESH_COOKIE_NAME,
         session.refreshToken,

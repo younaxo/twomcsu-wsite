@@ -80,6 +80,7 @@ const STATUSES: SocialResultStatus[] = [
   'linked',
   'already_linked',
   'not_linked',
+  'two_factor',
   'taken',
   'slot_taken',
   'cancelled',

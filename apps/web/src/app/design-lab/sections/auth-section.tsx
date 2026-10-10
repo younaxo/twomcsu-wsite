@@ -7,13 +7,37 @@ import { RegisterForm } from '@/app/(auth)/register/register-form';
 import { AuthPanel } from '@/components/auth/auth-layout';
 import { AuthTutorial, TutorialNav, TutorialStepView } from '@/components/auth/auth-tutorial';
 import { MinecraftLinkStep } from '@/components/auth/minecraft-link-step';
+import { TwoFactorLoginStep } from '@/components/auth/two-factor-login-step';
+import { BackupCodesDialog } from '@/components/auth/two-factor-settings';
 import { Button } from '@/components/ui/button';
 import { TUTORIAL_STEPS } from '@/lib/auth/tutorial';
 import { SocialAuthResult } from '@/components/auth/social-auth-result';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 
 type View =
-  'login' | 'register' | 'otp' | 'mc-code' | 'mc-confirm' | 'success' | 'tutorial' | 'result';
+  | 'login'
+  | 'two-factor'
+  | 'register'
+  | 'otp'
+  | 'mc-code'
+  | 'mc-confirm'
+  | 'success'
+  | 'tutorial'
+  | 'result';
+
+/// Демонстрационные резервные коды (Design Lab) — не настоящие.
+const DEMO_BACKUP_CODES = [
+  'abcd-2345',
+  'efgh-6789',
+  'jkmn-2468',
+  'pqrs-3579',
+  'tuvw-2357',
+  'xyza-4682',
+  'bcde-9753',
+  'fghj-8642',
+  'kmnp-7531',
+  'qrst-6420',
+];
 
 const RESULTS: Array<{
   key: string;
@@ -74,6 +98,7 @@ export function AuthSection() {
           onValueChange={(value) => setView(value as View)}
           options={[
             { value: 'login', label: 'Вход' },
+            { value: 'two-factor', label: 'Код 2FA' },
             { value: 'register', label: 'Регистрация' },
             { value: 'otp', label: 'Код подтверждения' },
             { value: 'mc-code', label: 'Код Minecraft' },
@@ -110,6 +135,10 @@ export function AuthSection() {
           {view === 'login' ? (
             <AuthPanel mode="login">
               <LoginForm preview />
+            </AuthPanel>
+          ) : view === 'two-factor' ? (
+            <AuthPanel mode="login">
+              <TwoFactorDemo />
             </AuthPanel>
           ) : view === 'register' ? (
             <AuthPanel mode="register">
@@ -182,6 +211,29 @@ export function AuthSection() {
         </Suspense>
       </div>
       <AuthTutorial open={tutorialOpen} onOpenChange={setTutorialOpen} />
+    </div>
+  );
+}
+
+/// Второй шаг входа при 2FA (ADR-0109) и окно резервных кодов. В Design Lab
+/// челленджа нет — отправка кода честно покажет «время истекло».
+function TwoFactorDemo() {
+  const [codes, setCodes] = useState<string[] | null>(null);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h3 className="font-display text-2xl font-bold leading-tight tracking-tight">
+          Подтверждение входа
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Аккаунт защищён двухфакторной аутентификацией.
+        </p>
+      </div>
+      <TwoFactorLoginStep onDone={() => undefined} onRestart={() => undefined} />
+      <Button variant="secondary" size="sm" onClick={() => setCodes(DEMO_BACKUP_CODES)}>
+        Окно резервных кодов (после включения 2FA)
+      </Button>
+      <BackupCodesDialog codes={codes} onClose={() => setCodes(null)} />
     </div>
   );
 }

@@ -86,6 +86,7 @@ const me: MeResponse = {
   accountType: 'DEFAULT',
   accessLevel: 0,
   mustChangePassword: false,
+  twoFactorEnabled: false,
   roles: [],
   permissions: { superuser: false, permissions: [], maxPriority: null },
 };

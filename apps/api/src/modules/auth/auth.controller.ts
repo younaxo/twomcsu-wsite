@@ -35,7 +35,13 @@ import {
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
-import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
+import {
+  REFRESH_COOKIE_NAME,
+  TWO_FACTOR_COOKIE_NAME,
+  refreshCookieOptions,
+  twoFactorCookieOptions,
+} from './refresh-cookie';
+import { TwoFactorLoginDto } from './two-factor/two-factor.dto';
 import { RegistrationService } from './registration.service';
 import { StorageService } from '../files/storage.service';
 import { formatDiscriminator } from '../users/public-tag';
@@ -148,6 +154,47 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.login(dto, requestContext(req));
+    if ('twoFactorRequired' in result) {
+      // 2FA (ADR-0109): сессии ещё нет — челлендж только в httpOnly cookie.
+      res.cookie(
+        TWO_FACTOR_COOKIE_NAME,
+        result.challengeId,
+        twoFactorCookieOptions(this.config),
+      );
+      return { twoFactorRequired: true };
+    }
+    res.cookie(
+      REFRESH_COOKIE_NAME,
+      result.refreshToken,
+      refreshCookieOptions(
+        this.config,
+        result.refreshTokenExpiresAt.getTime() - Date.now(),
+      ),
+    );
+    return { user: result.user, accessToken: result.accessToken };
+  }
+
+  /// Второй шаг входа (пароль или внешний аккаунт → код). Челлендж — из cookie.
+  /// Основная защита от перебора — ≤ 5 попыток на челлендж и блокировка IP
+  /// после 10 неудач (BruteForceService); throttle — дополнительный слой.
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('login/2fa')
+  async loginTwoFactor(
+    @Body() dto: TwoFactorLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.completeTwoFactorLogin(
+      req.cookies?.[TWO_FACTOR_COOKIE_NAME],
+      dto.code,
+      requestContext(req),
+    );
+    res.clearCookie(
+      TWO_FACTOR_COOKIE_NAME,
+      twoFactorCookieOptions(this.config, false),
+    );
     res.cookie(
       REFRESH_COOKIE_NAME,
       result.refreshToken,
@@ -254,6 +301,7 @@ export class AuthController {
       accessLevel: fullUser.accessLevel,
       accountType: fullUser.accountType,
       mustChangePassword: fullUser.mustChangePassword,
+      twoFactorEnabled: fullUser.twoFactorEnabled,
       roles: fullUser.roles.map(({ role }) => ({
         id: role.id,
         name: role.name,
