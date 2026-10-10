@@ -52,11 +52,30 @@ export function inAppDecision(notification: NotificationDto, ctx: InAppContext):
   return { toast: true, sound: ctx.soundEnabled ? 'normal' : null };
 }
 
-/// Внутренняя ссылка уведомления (раздел «Сообщения» ещё не выпущен —
-/// диалоги ведут в Центр уведомлений).
+/// Раздел «Сообщения» (диалоги) ещё не выпущен — ссылки на диалоги никуда не
+/// ведут, чтобы не открывать 404 (как и `MESSAGES_ROUTE_AVAILABLE` в API).
+export const MESSAGES_ROUTE_AVAILABLE = false;
+
+function unavailable(link: string): boolean {
+  return !MESSAGES_ROUTE_AVAILABLE && link.startsWith('/messages/');
+}
+
+/// Ссылка пункта в Центре уведомлений и в окне колокольчика: null — пункт не
+/// кликабельный (нет ссылки или раздел ещё не выпущен). Внешние адреса
+/// проходят через подтверждение внешних ссылок.
+export function notificationHref(
+  notification: Pick<NotificationDto, 'link' | 'actionUrl'>,
+): string | null {
+  const link = notification.actionUrl ?? notification.link;
+  if (!link || unavailable(link)) return null;
+  return link;
+}
+
+/// Внутренняя ссылка для тоста и системного push: только путь сайта; диалоги
+/// (раздел ещё не выпущен) и внешние адреса — Центр уведомлений.
 export function inAppLink(notification: Pick<NotificationDto, 'link' | 'actionUrl'>): string {
   const link = notification.actionUrl ?? notification.link;
-  if (!link || !link.startsWith('/') || link.startsWith('//') || link.startsWith('/messages/')) {
+  if (!link || !link.startsWith('/') || link.startsWith('//') || unavailable(link)) {
     return '/notifications';
   }
   return link;
