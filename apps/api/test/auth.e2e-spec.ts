@@ -154,6 +154,64 @@ describe('Auth (e2e)', () => {
     await agent.post('/auth/refresh').expect(401);
   });
 
+  it('сессии (срез 1.2): «это устройство», свою не завершить, «остальные», смена пароля', async () => {
+    const login = () =>
+      request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ emailOrUsername: email, password })
+        .expect(200);
+    const a = await login();
+    const b = await login();
+    const auth = `Bearer ${a.body.accessToken}`;
+    const cookieB = b.headers['set-cookie'];
+
+    const list = await request(app.getHttpServer())
+      .get('/auth/sessions')
+      .set('Authorization', auth)
+      .expect(200);
+    const current = list.body.filter((s: { current: boolean }) => s.current);
+    expect(current).toHaveLength(1);
+    // Своё устройство отсюда не завершается.
+    await request(app.getHttpServer())
+      .delete(`/auth/sessions/${current[0].id}`)
+      .set('Authorization', auth)
+      .expect(400);
+
+    const others = await request(app.getHttpServer())
+      .delete('/auth/sessions/others')
+      .set('Authorization', auth)
+      .expect(200);
+    expect(others.body.count).toBeGreaterThanOrEqual(1);
+    // Осталась только сессия этого устройства. (Обновление с отозванным
+    // cookie B не проверяем: это «повторное использование» и по замыслу
+    // отзывает все сессии — см. полный цикл выше.)
+    const rest = await request(app.getHttpServer())
+      .get('/auth/sessions')
+      .set('Authorization', auth)
+      .expect(200);
+    expect(rest.body).toEqual([expect.objectContaining({ current: true })]);
+    expect(cookieB).toBeDefined();
+
+    // Смена пароля разлогинивает остальные устройства, текущее остаётся.
+    await login();
+    const before = await request(app.getHttpServer())
+      .get('/auth/sessions')
+      .set('Authorization', auth)
+      .expect(200);
+    expect(before.body).toHaveLength(2);
+    await request(app.getHttpServer())
+      .post('/auth/change-password')
+      .set('Authorization', auth)
+      .send({ currentPassword: password, newPassword: password })
+      .expect(200);
+    const after = await request(app.getHttpServer())
+      .get('/auth/sessions')
+      .set('Authorization', auth)
+      .expect(200);
+    expect(after.body).toHaveLength(1);
+    expect(after.body[0].current).toBe(true);
+  });
+
   it('восстановление по нику (A13): маска e-mail, ссылка — только при совпадении полного адреса', async () => {
     const sent: SendEmailInput[] = [];
     jest.spyOn(emailService, 'send').mockImplementation(async (input) => {

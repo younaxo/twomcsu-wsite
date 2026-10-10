@@ -191,7 +191,7 @@ export class AuthController {
 
   @Get('sessions')
   async sessions(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.listSessions(user.id);
+    return this.authService.listSessions(user.id, user.sessionId ?? null);
   }
 
   @Delete('sessions')
@@ -200,12 +200,22 @@ export class AuthController {
     return { success: true };
   }
 
+  /// Завершить все сессии, кроме текущего устройства (срез 1.2). Объявлен до
+  /// `sessions/:id`, чтобы «others» не принимался за id.
+  @Delete('sessions/others')
+  async logoutOthers(@CurrentUser() user: AuthenticatedUser) {
+    return this.authService.revokeOtherSessions(
+      user.id,
+      user.sessionId ?? null,
+    );
+  }
+
   @Delete('sessions/:id')
   async revokeSession(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    await this.authService.revokeSession(user.id, id);
+    await this.authService.revokeSession(user.id, id, user.sessionId ?? null);
     return { success: true };
   }
 
@@ -215,7 +225,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
   ) {
-    await this.authService.changePassword(user.id, dto);
+    await this.authService.changePassword(user.id, dto, user.sessionId ?? null);
     return { success: true };
   }
 

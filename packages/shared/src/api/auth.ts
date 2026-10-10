@@ -103,6 +103,8 @@ export interface SessionSummary {
   ipAddress: string | null;
   createdAt: IsoDateString;
   expiresAt: IsoDateString;
+  /// Сессия этого устройства (срез 1.2): её нельзя завершить отсюда — только «Выйти».
+  current: boolean;
 }
 
 export interface ChangePasswordRequest {

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   GoneException,
@@ -44,6 +45,8 @@ export interface SessionSummary {
   ipAddress: string | null;
   createdAt: Date;
   expiresAt: Date;
+  /// Сессия этого устройства (по sid access-токена).
+  current: boolean;
 }
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 час
@@ -326,8 +329,6 @@ export class AuthService {
     userId: string,
     context: RequestContext,
   ): Promise<TokenPair> {
-    const accessToken = await this.jwt.signAsync({ sub: userId });
-
     const rawRefreshToken = randomBytes(64).toString('hex');
     const refreshExpiresIn = this.config.get<string>(
       'JWT_REFRESH_EXPIRES',
@@ -337,7 +338,7 @@ export class AuthService {
       Date.now() + parseDurationMs(refreshExpiresIn),
     );
 
-    await this.prisma.refreshToken.create({
+    const session = await this.prisma.refreshToken.create({
       data: {
         tokenHash: this.hashRefreshToken(rawRefreshToken),
         userId,
@@ -345,6 +346,12 @@ export class AuthService {
         ipAddress: context.ip,
         expiresAt: refreshTokenExpiresAt,
       },
+      select: { id: true },
+    });
+    // sid — id сессии этого устройства (метка «Это устройство», ADR-0105).
+    const accessToken = await this.jwt.signAsync({
+      sub: userId,
+      sid: session.id,
     });
 
     return {
@@ -415,7 +422,10 @@ export class AuthService {
     });
   }
 
-  async listSessions(userId: string): Promise<SessionSummary[]> {
+  async listSessions(
+    userId: string,
+    currentSessionId: string | null = null,
+  ): Promise<SessionSummary[]> {
     const sessions = await this.prisma.refreshToken.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
@@ -427,10 +437,22 @@ export class AuthService {
         expiresAt: true,
       },
     });
-    return sessions;
+    return sessions.map((session) => ({
+      ...session,
+      current: session.id === currentSessionId,
+    }));
   }
 
-  async revokeSession(userId: string, sessionId: string): Promise<void> {
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    currentSessionId: string | null = null,
+  ): Promise<void> {
+    if (currentSessionId && sessionId === currentSessionId) {
+      throw new BadRequestException(
+        'Это текущее устройство — чтобы выйти, используйте «Выйти»',
+      );
+    }
     const result = await this.prisma.refreshToken.updateMany({
       where: { id: sessionId, userId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -447,7 +469,27 @@ export class AuthService {
     });
   }
 
-  async changePassword(userId: string, dto: ChangePasswordDto): Promise<void> {
+  /// Завершить все сессии, кроме текущей (срез 1.2). Без sid — все.
+  async revokeOtherSessions(
+    userId: string,
+    currentSessionId: string | null,
+  ): Promise<{ count: number }> {
+    const result = await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        ...(currentSessionId ? { id: { not: currentSessionId } } : {}),
+      },
+      data: { revokedAt: new Date() },
+    });
+    return { count: result.count };
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+    currentSessionId: string | null = null,
+  ): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       omit: { password: false },
@@ -461,6 +503,8 @@ export class AuthService {
       where: { id: userId },
       data: { password: passwordHash, mustChangePassword: false },
     });
+    // Смена пароля разлогинивает остальные устройства; текущее остаётся.
+    await this.revokeOtherSessions(userId, currentSessionId);
   }
 
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
