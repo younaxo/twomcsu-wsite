@@ -2,7 +2,6 @@ import { ReportType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
-  ArrayMinSize,
   IsArray,
   IsEmail,
   IsEnum,
@@ -19,8 +18,9 @@ export class CreateReportDto {
   @IsEnum(ReportType)
   type!: ReportType;
 
+  /// Нарушители — обязательны только для жалоб на игрока/администрацию
+  /// (проверяет сервис, ADR-0120); у остальных типов целей может не быть.
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => ReportTargetDto)

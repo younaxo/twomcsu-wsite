@@ -8,6 +8,7 @@ import type {
 } from '@twomc/shared';
 import {
   Heart,
+  LifeBuoy,
   MessageSquare,
   Package,
   Settings,
@@ -62,6 +63,7 @@ export function miniProfileEntries(
     },
     // Разделы волн Social (2) и Store (4) — появятся вместе с функцией.
     { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: '/messages' },
+    { key: 'support', label: 'Обращения', icon: LifeBuoy, href: '/support' },
     { key: 'favorites', label: 'Избранное', icon: Heart, href: null },
     { key: 'orders', label: 'Заказы', icon: Package, href: null },
   ];

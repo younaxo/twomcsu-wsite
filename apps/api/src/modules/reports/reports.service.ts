@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -121,6 +122,11 @@ export class ReportsService {
 
   async createReport(authorId: string, dto: CreateReportDto) {
     await this.requireNotBanned(authorId);
+    const complaint =
+      dto.type === 'PLAYER_COMPLAINT' || dto.type === 'ADMIN_COMPLAINT';
+    if (complaint && dto.targets.length === 0) {
+      throw new BadRequestException('Укажите ник нарушителя');
+    }
     const usernames = dto.targets.map((t) => t.username);
     const targetUsers = await this.prisma.user.findMany({
       where: { username: { in: usernames, mode: 'insensitive' } },
