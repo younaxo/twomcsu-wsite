@@ -39,3 +39,12 @@ describe('emoji в интерфейсе (ТЗ §20)', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('числовые поля (ADR-0087)', () => {
+  it('в исходниках нет type="number" — у него нативные стрелки браузера; вместо — NumberStepper или inputMode="numeric"', () => {
+    const offenders = sources(join(__dirname, '..', '..')).filter((file) =>
+      /type=["']number["']/.test(readFileSync(file, 'utf-8')),
+    );
+    expect(offenders).toEqual([]);
+  });
+});

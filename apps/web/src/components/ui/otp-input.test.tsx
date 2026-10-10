@@ -86,4 +86,57 @@ describe('OtpInput', () => {
     await user.keyboard('1');
     expect(screen.getByTestId('code')).toHaveTextContent(/^1$/);
   });
+
+  it('без нативного number: type=text + inputMode=numeric + pattern; one-time-code на первой ячейке', () => {
+    render(<Harness />);
+    for (let n = 1; n <= 6; n += 1) {
+      expect(cell(n)).toHaveAttribute('type', 'text');
+      expect(cell(n)).toHaveAttribute('inputmode', 'numeric');
+      expect(cell(n)).toHaveAttribute('pattern', '[0-9]*');
+    }
+    expect(cell(1)).toHaveAttribute('autocomplete', 'one-time-code');
+    expect(document.querySelector('input[type="number"]')).toBeNull();
+  });
+
+  it('стрелки, Home/End, Delete; новая цифра заменяет старую; на пустую ячейку дальше первой пустой не встать', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.keyboard('123');
+    await user.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(cell(2)).toHaveFocus();
+    await user.keyboard('9');
+    expect(screen.getByTestId('code')).toHaveTextContent(/^193$/);
+    await user.keyboard('{Home}');
+    expect(cell(1)).toHaveFocus();
+    await user.keyboard('{Delete}');
+    expect(screen.getByTestId('code')).toHaveTextContent(/^93$/);
+    await user.keyboard('{End}');
+    expect(cell(3)).toHaveFocus();
+    await user.click(cell(6));
+    expect(cell(3)).toHaveFocus();
+  });
+
+  it('состояния: invalid, success, loading (ячейки недоступны, aria-busy), disabled', () => {
+    const { rerender } = render(<OtpInput value="12" invalid />);
+    const group = screen.getByRole('group', { name: 'Код подтверждения' });
+    expect(group).toHaveAttribute('data-state', 'invalid');
+    expect(cell(1)).toHaveAttribute('aria-invalid', 'true');
+    rerender(<OtpInput value="123456" success />);
+    expect(group).toHaveAttribute('data-state', 'success');
+    rerender(<OtpInput value="123456" loading />);
+    expect(group).toHaveAttribute('data-state', 'loading');
+    expect(group).toHaveAttribute('aria-busy', 'true');
+    expect(cell(1)).toBeDisabled();
+    rerender(<OtpInput disabled />);
+    expect(cell(6)).toBeDisabled();
+  });
+
+  it('неконтролируемый режим и скрытое поле для формы', async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    render(<OtpInput autoFocus name="code" length={4} onComplete={onComplete} />);
+    await user.keyboard('4321');
+    expect(onComplete).toHaveBeenCalledWith('4321');
+    expect(document.querySelector('input[type="hidden"][name="code"]')).toHaveValue('4321');
+  });
 });

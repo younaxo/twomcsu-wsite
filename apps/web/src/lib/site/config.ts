@@ -176,9 +176,11 @@ export function resolveSupportEmail(settings: PublicSiteSettings | null | undefi
   return settings?.contactEmail || SUPPORT.email;
 }
 
-/// Публичная status page (отдельный проект twomcsu-statuspagewebsite,
-/// https://status.twomc.su); переопределяется NEXT_PUBLIC_STATUS_PAGE_URL.
-export const STATUS_PAGE_URL = process.env.NEXT_PUBLIC_STATUS_PAGE_URL || 'https://status.twomc.su';
+/// Публичная status page. Отдельный проект (twomcsu-statuspagewebsite,
+/// https://status.twomc.su) подключается через NEXT_PUBLIC_STATUS_PAGE_URL,
+/// когда он реально развёрнут; до этого — встроенная страница `/status`
+/// (внешний хост сейчас недоступен — не ведём на мёртвый адрес).
+export const STATUS_PAGE_URL = process.env.NEXT_PUBLIC_STATUS_PAGE_URL || '/status';
 
 export interface FooterLink {
   href: string;

@@ -82,14 +82,14 @@ export function GeneralTab({ settings, api, editable }: TabProps) {
             </div>
             <Field label="Лимит аккаунтов" hint="Пусто — без лимита" className="max-w-xs">
               <Input
-                type="number"
-                min={0}
                 inputMode="numeric"
+                pattern="[0-9]*"
                 value={form.maxUsersLimit ?? ''}
                 disabled={!editable}
-                onChange={(e) =>
-                  api.setLimit(e.target.value === '' ? null : Number(e.target.value))
-                }
+                onChange={(e) => {
+                  const digits = e.target.value.replace(/\D/g, '');
+                  api.setLimit(digits === '' ? null : Number(digits));
+                }}
               />
             </Field>
           </SettingsIsland>
