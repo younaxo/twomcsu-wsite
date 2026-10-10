@@ -147,6 +147,10 @@ export class EventsService {
 
   async attend(userId: string, eventId: string, dto: EventAttendanceDto) {
     const event = await this.requireAttendable(eventId, userId);
+    // Прошедшее событие (ADR-0118): записаться нельзя, выйти — можно (leave).
+    if ((event.endsAt ?? event.startsAt) < new Date()) {
+      throw new ForbiddenException('Событие уже прошло');
+    }
 
     if (event.maxParticipants && dto.status === 'GOING') {
       const existing = await this.prisma.eventParticipant.findUnique({
