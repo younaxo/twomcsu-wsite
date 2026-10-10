@@ -4,6 +4,7 @@ import {
   IsArray,
   IsInt,
   IsOptional,
+  IsString,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -20,4 +21,9 @@ export class SaveDraftDto {
   @IsInt()
   @Min(0)
   currentStep?: number;
+
+  /// Для формы по приглашению (INVITE_ONLY) — те же проверки, что у отправки.
+  @IsOptional()
+  @IsString()
+  inviteCode?: string;
 }
