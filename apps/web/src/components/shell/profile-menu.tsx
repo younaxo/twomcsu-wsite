@@ -78,9 +78,11 @@ export function ProfileMenu() {
             Настройки
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <Shield />
-          Безопасность и сессии
+        <DropdownMenuItem asChild>
+          <Link href="/settings/security">
+            <Shield />
+            Безопасность и сессии
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/settings/linked-accounts">
