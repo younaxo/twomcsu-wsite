@@ -5,10 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
+import { AuthAdditionsSection } from './sections/auth-additions-section';
 import { AuthSection } from './sections/auth-section';
 import { BrandSection } from './sections/brand-section';
 import { CursorsSection } from './sections/cursors-section';
 import { GlobalShellSection } from './sections/global-shell-section';
+import { IdentitySeasonalSection } from './sections/identity-seasonal-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
 
@@ -19,8 +21,10 @@ const SECTIONS = [
   { id: 'shell', label: 'Global shell' },
   { id: 'brand', label: 'Бренд и плашка' },
   { id: 'auth', label: 'Auth' },
+  { id: 'auth-extra', label: 'Auth: коды и восстановление' },
   { id: 'cursors', label: 'Курсоры' },
   { id: 'prefixes', label: 'Role prefixes' },
+  { id: 'identity', label: 'Профиль и сезоны' },
 ] as const;
 
 function useViewportWidth(): number | null {
@@ -112,6 +116,14 @@ export function DesignLab() {
           <AuthSection />
         </section>
 
+        <section id="auth-extra" className="scroll-mt-20">
+          <SectionHeading
+            title="Auth: spotlight, коды и восстановление"
+            description="Подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), «Забыли пароль?» по e-mail и по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу» — production-компоненты, без запросов к API."
+          />
+          <AuthAdditionsSection />
+        </section>
+
         <section id="cursors" className="scroll-mt-20">
           <SectionHeading
             title="Курсоры"
@@ -126,6 +138,14 @@ export function DesignLab() {
             description="Официальные PNG-префиксы ролей из resource pack (CDN). Только визуализация роли — права определяет backend."
           />
           <RolePrefixesSection />
+        </section>
+
+        <section id="identity" className="scroll-mt-20">
+          <SectionHeading
+            title="Профиль и сезоны"
+            description="Публичный профиль (свой и чужой), 3D-голова, просмотры и оценки, привязанные аккаунты и соцсети, mini profile, баннеры, бейджи и украшения, украшение шапки ON/OFF и ошибка ассета, независимые сезон и эффект, звёзды Дня Победы — production-компоненты на демо-данных."
+          />
+          <IdentitySeasonalSection />
         </section>
       </main>
     </div>

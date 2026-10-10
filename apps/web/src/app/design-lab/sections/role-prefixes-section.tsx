@@ -110,16 +110,16 @@ export function RolePrefixesSection() {
         </table>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
           <p className="text-sm font-medium">UserIdentity — длинные ник и роль</p>
-          <div className="w-56">
+          <div className="w-56 max-w-full">
             <UserIdentity
               username="very_long_name16"
               tag="very_long_name16#a1b2"
               role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
             />
           </div>
-          <div className="w-56">
+          <div className="w-56 max-w-full">
             <UserIdentity
               username="very_long_name16"
               variant="inline"
@@ -131,9 +131,9 @@ export function RolePrefixesSection() {
             многоточием (полное значение в title).
           </p>
         </div>
-        <div className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
           <p className="text-sm font-medium">Превью профиля (пример данных)</p>
-          <div className="w-80 rounded-lg bg-surface-overlay p-4 shadow-lg">
+          <div className="w-80 max-w-full rounded-lg bg-surface-overlay p-4 shadow-lg">
             <ProfilePreviewCard
               username="player"
               loading={false}

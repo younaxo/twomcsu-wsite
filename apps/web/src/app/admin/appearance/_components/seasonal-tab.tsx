@@ -3,13 +3,8 @@
 import type { PublicSeasonalSettings, SeasonalCampaignOverride } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { EffectsCanvas } from '@/components/seasonal/seasonal-effects';
-import { BrandWordmark } from '@/components/shell/brand-wordmark';
-import {
-  SeasonalHeaderDecoration,
-  type DecorationStatus,
-} from '@/components/shell/seasonal-header-decoration';
+import { useEffect, useMemo, useState } from 'react';
+import { SeasonalPreviewFrame } from '@/components/seasonal/seasonal-preview-frame';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
@@ -28,7 +23,6 @@ import { toast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
-import { cn } from '@/lib/cn';
 import { usePublicSiteSettings } from '@/lib/site/hooks';
 import { isoToLocalParts, localPartsToIso, timezoneLabel } from '@/lib/site/local-datetime';
 import {
@@ -42,7 +36,6 @@ import {
   type SeasonalCampaign,
   type SeasonalEffect,
 } from '@/lib/site/seasonal';
-import { usePrefersReducedMotion } from '@/lib/use-media-query';
 
 type SeasonalForm = Omit<PublicSeasonalSettings, 'serverTime'>;
 const KEY = ['admin', 'settings', 'seasonal'] as const;
@@ -428,13 +421,6 @@ function FallingEffectSection({
   );
 }
 
-const DECORATION_STATUS: Record<DecorationStatus, string> = {
-  none: 'у этой кампании нет украшения',
-  loading: 'загружается…',
-  loaded: 'показано',
-  error: 'ассет не загрузился',
-};
-
 function SeasonalPreview({
   form,
   active,
@@ -448,15 +434,6 @@ function SeasonalPreview({
   // Комбинации без активации реального сезона: оформление и эффект — отдельно.
   const [seasonOn, setSeasonOn] = useState(true);
   const [effectOn, setEffectOn] = useState(true);
-  const [decoration, setDecoration] = useState<{
-    status: DecorationStatus;
-    src: string | null;
-  }>({ status: 'none', src: null });
-  const onDecoration = useCallback(
-    (status: DecorationStatus, src: string | null) => setDecoration({ status, src }),
-    [],
-  );
-  const reduced = usePrefersReducedMotion();
   const campaign =
     campaignId === 'site'
       ? active
@@ -467,11 +444,6 @@ function SeasonalPreview({
     season: seasonOn,
     effect: effectOn,
   });
-  const wordmarkO =
-    view.showWordmarkO && view.campaign?.wordmarkO
-      ? { id: view.campaign.id, src: view.campaign.wordmarkO }
-      : null;
-  const effects = view.effects;
 
   return (
     <section className={island}>
@@ -520,57 +492,7 @@ function SeasonalPreview({
         />
         <SwitchField label="Падающий эффект" checked={effectOn} onCheckedChange={setEffectOn} />
       </div>
-      <div
-        data-theme={theme}
-        data-device={device}
-        data-testid="seasonal-preview-frame"
-        aria-hidden
-        className={cn(
-          'relative mx-auto overflow-hidden rounded-lg bg-background text-foreground shadow-sm',
-          device === 'desktop' ? 'aspect-[16/10] w-full' : 'h-80 w-44',
-        )}
-      >
-        <div className="relative m-2 flex h-9 items-center rounded-md bg-surface px-2.5 shadow-sm">
-          <SeasonalHeaderDecoration
-            campaign={view.showDecoration ? view.campaign : null}
-            preview
-            onStatus={onDecoration}
-            className="h-3 rounded-t-md md:h-3"
-          />
-          <span className="relative z-[1]">
-            <BrandWordmark size="sm" seasonalO={wordmarkO} />
-          </span>
-        </div>
-        <div className="mx-2 flex flex-col gap-1.5">
-          <div className="h-14 rounded-md bg-surface" />
-          <div className="h-2 w-3/4 rounded-full bg-surface-raised" />
-          <div className="h-2 w-1/2 rounded-full bg-surface-raised" />
-        </div>
-        <EffectsCanvas
-          contained
-          effects={effects}
-          intensity={view.effectIntensity}
-          speed={view.effectSpeed}
-        />
-      </div>
-      <p className="text-xs text-muted-foreground" data-testid="seasonal-preview-decoration">
-        {!view.campaign
-          ? 'Оформление сезона: нет.'
-          : !view.showDecoration
-            ? 'Украшение шапки: выключено.'
-            : `Украшение шапки: ${DECORATION_STATUS[decoration.status]}.`}
-        {view.showDecoration && decoration.status === 'error' && decoration.src ? (
-          <span className="block break-all text-destructive">Адрес: {decoration.src}</span>
-        ) : null}
-      </p>
-      <p className="text-xs text-muted-foreground" data-testid="seasonal-preview-effects">
-        {effects.length === 0
-          ? 'Падающий эффект: нет.'
-          : `Падающий эффект: ${effects.map(effectLabel).join(', ')}.`}
-        {reduced && effects.length > 0
-          ? ' В системе включено «уменьшение движения» — анимация здесь не показывается.'
-          : ''}
-      </p>
+      <SeasonalPreviewFrame view={view} device={device} theme={theme} />
     </section>
   );
 }

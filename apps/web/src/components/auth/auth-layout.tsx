@@ -69,6 +69,88 @@ function useRegistrationSpotlight() {
   };
 }
 
+/// Содержимое подсказки spotlight (A11) — и на сайте, и в design-lab.
+export function SpotlightCoachmark({
+  onTutorial,
+  onDismiss,
+}: {
+  onTutorial: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-semibold">Впервые здесь?</p>
+        <p className="text-sm text-muted-foreground">
+          Посмотрите короткую инструкцию по регистрации.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={onTutorial}>
+          Как зарегистрироваться
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          Мне понятно
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/// Кнопка «Как зарегистрироваться» и spotlight вокруг неё (A11): coachmark —
+/// production Popover у самой кнопки, сплошное затемнение (без blur/glass)
+/// под ней; клик по затемнению или Escape — закрыть. И в шапке auth, и в
+/// design-lab.
+export function RegistrationSpotlight({
+  active,
+  onTutorial,
+  onDismiss,
+}: {
+  active: boolean;
+  onTutorial: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <>
+      <Popover open={active} onOpenChange={(open) => (open ? null : onDismiss())}>
+        <PopoverAnchor asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-spotlight={active || undefined}
+            onClick={onTutorial}
+            className={cn(
+              active &&
+                'relative z-dropdown bg-surface-raised shadow-lg ring-2 ring-primary hover:bg-surface-raised',
+            )}
+          >
+            <BookOpen />
+            Как зарегистрироваться
+          </Button>
+        </PopoverAnchor>
+        <PopoverContent
+          side="bottom"
+          align="end"
+          arrow
+          className="w-72"
+          aria-label="Подсказка по регистрации"
+          data-testid="registration-spotlight"
+        >
+          <SpotlightCoachmark onTutorial={onTutorial} onDismiss={onDismiss} />
+        </PopoverContent>
+      </Popover>
+      {active ? (
+        <div
+          aria-hidden
+          data-testid="auth-spotlight-dim"
+          className="fixed inset-0 z-overlay bg-black/45 animate-fade-in motion-reduce:animate-none"
+          onClick={onDismiss}
+        />
+      ) : null}
+    </>
+  );
+}
+
 export function AuthLayout({ children }: { children: ReactNode }) {
   const flow = useRegistrationSpotlight();
   return (
@@ -82,60 +164,14 @@ export function AuthLayout({ children }: { children: ReactNode }) {
           На сайт
         </Link>
         <div className="flex items-center gap-1">
-          <Popover open={flow.spotlight} onOpenChange={(open) => (open ? null : flow.dismiss())}>
-            <PopoverAnchor asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                data-spotlight={flow.spotlight || undefined}
-                onClick={flow.openTutorial}
-                className={cn(
-                  flow.spotlight &&
-                    'relative z-dropdown bg-surface-raised shadow-lg ring-2 ring-primary hover:bg-surface-raised',
-                )}
-              >
-                <BookOpen />
-                Как зарегистрироваться
-              </Button>
-            </PopoverAnchor>
-            <PopoverContent
-              side="bottom"
-              align="end"
-              arrow
-              className="w-72"
-              aria-label="Подсказка по регистрации"
-              data-testid="registration-spotlight"
-            >
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-semibold">Впервые здесь?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Посмотрите короткую инструкцию по регистрации.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={flow.openTutorial}>
-                    Как зарегистрироваться
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={flow.dismiss}>
-                    Мне понятно
-                  </Button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <RegistrationSpotlight
+            active={flow.spotlight}
+            onTutorial={flow.openTutorial}
+            onDismiss={flow.dismiss}
+          />
           <ThemeToggle />
         </div>
       </header>
-      {flow.spotlight ? (
-        // Сплошное затемнение (без blur/glass); клик — закрыть подсказку.
-        <div
-          aria-hidden
-          data-testid="auth-spotlight-dim"
-          className="fixed inset-0 z-overlay bg-black/45 animate-fade-in motion-reduce:animate-none"
-          onClick={flow.dismiss}
-        />
-      ) : null}
       <AuthTutorial open={flow.tutorial} onOpenChange={flow.setTutorial} />
       <main className="flex flex-1 items-start justify-center px-3 pb-6 sm:px-4 md:items-center md:px-6">
         <AuthPanel>{children}</AuthPanel>
