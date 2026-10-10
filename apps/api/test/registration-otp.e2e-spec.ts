@@ -237,6 +237,33 @@ describe('Registration with e-mail OTP (e2e)', () => {
     });
   });
 
+  it('ADR-0125: достигнут maxUsersLimit — регистрация закрыта', async () => {
+    // В CI seed не создаёт SiteSettings — строку создают лениво; без неё
+    // updateMany ничего не изменит.
+    if ((await prisma.siteSettings.count()) === 0) {
+      await prisma.siteSettings.create({ data: {} });
+    }
+    const site = await prisma.siteSettings.findFirst({
+      select: { id: true, maxUsersLimit: true },
+    });
+    const users = await prisma.user.count({
+      where: { accountType: { not: 'SYSTEM' } },
+    });
+    await prisma.siteSettings.updateMany({ data: { maxUsersLimit: users } });
+    try {
+      const closed = await start(baseBody('limit')).expect(403);
+      expect(closed.body.code).toBe('registration_closed');
+      await prisma.siteSettings.updateMany({
+        data: { maxUsersLimit: users + 1000 },
+      });
+      await start(baseBody('limitok')).expect(200);
+    } finally {
+      await prisma.siteSettings.updateMany({
+        data: { maxUsersLimit: site?.maxUsersLimit ?? null },
+      });
+    }
+  });
+
   it('повторная отправка: cooldown, новый код заменяет старый', async () => {
     const body = baseBody('rs');
     const started = await start(body).expect(200);
