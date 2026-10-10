@@ -171,6 +171,10 @@ describe('News (e2e)', () => {
 
   it('черновик недоступен публично (404), виден админу по id', async () => {
     await request(app.getHttpServer()).get(`/news/${slug}`).expect(404);
+    // ADR-0117: комментарии черновика тоже не читаются.
+    await request(app.getHttpServer())
+      .get(`/news/${slug}/comments`)
+      .expect(404);
 
     await request(app.getHttpServer())
       .get(`/admin/news/${newsId}`)
@@ -346,14 +350,14 @@ describe('News (e2e)', () => {
     const reacted = await request(app.getHttpServer())
       .post(`/news/${slug}/comments/${commentId}/reactions`)
       .set('Authorization', auth(bob))
-      .send({ emoji: '🔥' })
+      .send({ emoji: 'fire' })
       .expect(201);
     expect(reacted.body.reacted).toBe(true);
 
     const unreacted = await request(app.getHttpServer())
       .post(`/news/${slug}/comments/${commentId}/reactions`)
       .set('Authorization', auth(bob))
-      .send({ emoji: '🔥' })
+      .send({ emoji: 'fire' })
       .expect(201);
     expect(unreacted.body.reacted).toBe(false);
   });

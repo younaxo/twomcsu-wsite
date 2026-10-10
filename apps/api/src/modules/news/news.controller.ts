@@ -90,8 +90,15 @@ export class NewsController {
   async listComments(
     @Param('slug') slug: string,
     @Query() query: ListNewsQueryDto,
+    @Req() req: Request,
   ) {
-    return this.news.listComments(slug, query.page ?? 1, query.limit ?? 20);
+    const viewer = (req as Request & { user?: AuthenticatedUser }).user;
+    return this.news.listComments(
+      slug,
+      query.page ?? 1,
+      query.limit ?? 20,
+      viewer?.id ?? null,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

@@ -196,7 +196,7 @@ export const FOOTER_PLAYER_LINKS: FooterLink[] = [
   { href: '/servers', label: 'Серверы', available: true },
   { href: '/rules', label: 'Правила', available: true },
   { href: '/wiki', label: 'Wiki', available: false },
-  { href: '/news', label: 'Новости', available: false },
+  { href: '/news', label: 'Новости', available: true },
 ];
 
 /// Правовые документы: маршруты зафиксированы, тексты — отдельное ТЗ
