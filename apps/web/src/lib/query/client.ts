@@ -1,6 +1,7 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { SITE_UNAVAILABLE_CODES } from '@twomc/shared';
 import { ApiError } from '../api/errors';
+import { useConnectivity } from '../site/connectivity';
 
 /// Ключ публичного статуса сайта (техработы, выключенные модули, ADR-0082).
 export const SITE_STATUS_KEY = ['site', 'status'] as const;
@@ -20,6 +21,8 @@ export function isSiteUnavailable(error: unknown): boolean {
 export function createQueryClient(): QueryClient {
   const onError = (error: unknown) => {
     if (isSiteUnavailable(error)) void client.invalidateQueries({ queryKey: SITE_STATUS_KEY });
+    // Сеть или 502/503/504 — проверить связь (плашка «нет связи», ADR-0086).
+    useConnectivity.getState().reportFailure(error);
   };
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({ onError }),

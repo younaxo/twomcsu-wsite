@@ -1,8 +1,8 @@
 'use client';
 
-import { CircleAlert, ShieldAlert, WifiOff } from 'lucide-react';
+import { CircleAlert, PowerOff, ShieldAlert, WifiOff, Wrench } from 'lucide-react';
 import type { HTMLAttributes, ReactNode } from 'react';
-import { getErrorMessage, NetworkError } from '@/lib/api/errors';
+import { ApiError, getErrorMessage, NetworkError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
 import { Button } from './button';
 
@@ -29,7 +29,26 @@ export function ErrorState({
   ...props
 }: ErrorStateProps) {
   const isNetwork = error instanceof NetworkError;
-  const Icon = isNetwork ? WifiOff : CircleAlert;
+  // 503 с кодом недоступности (ADR-0082) и прочие 5xx — понятные тексты.
+  const unavailable =
+    error instanceof ApiError && error.status === 503 ? (error.code ?? null) : null;
+  const isServer = error instanceof ApiError && error.status >= 500 && !unavailable;
+  const Icon = isNetwork
+    ? WifiOff
+    : unavailable === 'MAINTENANCE'
+      ? Wrench
+      : unavailable === 'MODULE_DISABLED'
+        ? PowerOff
+        : CircleAlert;
+  const fallbackTitle = isNetwork
+    ? 'Нет соединения с сервером'
+    : unavailable === 'MAINTENANCE'
+      ? 'Идут технические работы'
+      : unavailable === 'MODULE_DISABLED'
+        ? 'Раздел временно недоступен'
+        : isServer
+          ? 'Сервер временно не отвечает'
+          : 'Не удалось загрузить данные';
   return (
     <div
       role="alert"
@@ -44,7 +63,7 @@ export function ErrorState({
         <Icon className="size-6" />
       </div>
       <p className={cn('font-medium', size === 'md' ? 'text-base' : 'text-sm')}>
-        {title ?? (isNetwork ? 'Нет соединения с сервером' : 'Не удалось загрузить данные')}
+        {title ?? fallbackTitle}
       </p>
       <p className="max-w-sm text-sm text-muted-foreground">
         {description ?? (error ? getErrorMessage(error) : 'Попробуйте обновить страницу.')}

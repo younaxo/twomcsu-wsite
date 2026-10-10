@@ -35,6 +35,18 @@ const nextConfig = {
     NEXT_PUBLIC_BUILD_SHA: process.env.NEXT_PUBLIC_BUILD_SHA ?? process.env.GITHUB_SHA ?? '',
   },
   transpilePackages: ['@twomc/shared'],
+  // Service Worker (ADR-0086): всегда свежая версия, область — весь сайт.
+  async headers() {
+    return [
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'cdn-files.twomc.su' },
