@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { DIRECTION } from './direction';
 import { ComponentLab } from './sections/component-lab';
+import { AuthAdditionsSection } from './sections/auth-additions-section';
 import { AuthSection } from './sections/auth-section';
 import { BrandSection } from './sections/brand-section';
 import { CursorsSection } from './sections/cursors-section';
@@ -20,6 +21,7 @@ const SECTIONS = [
   { id: 'shell', label: 'Global shell' },
   { id: 'brand', label: 'Бренд и плашка' },
   { id: 'auth', label: 'Auth' },
+  { id: 'auth-extra', label: 'Auth: коды и восстановление' },
   { id: 'cursors', label: 'Курсоры' },
   { id: 'prefixes', label: 'Role prefixes' },
   { id: 'identity', label: 'Профиль и сезоны' },
@@ -112,6 +114,14 @@ export function DesignLab() {
             description="Единая auth-панель: вход, регистрация, код подтверждения и итог входа/привязки Discord и Telegram — те же компоненты, что на /login, /register и /auth/result."
           />
           <AuthSection />
+        </section>
+
+        <section id="auth-extra" className="scroll-mt-20">
+          <SectionHeading
+            title="Auth: spotlight, коды и восстановление"
+            description="Подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), восстановление по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу», активность профиля — production-компоненты."
+          />
+          <AuthAdditionsSection />
         </section>
 
         <section id="cursors" className="scroll-mt-20">

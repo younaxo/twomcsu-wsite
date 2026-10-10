@@ -69,6 +69,34 @@ function useRegistrationSpotlight() {
   };
 }
 
+/// Содержимое подсказки spotlight (A11) — и на сайте, и в design-lab.
+export function SpotlightCoachmark({
+  onTutorial,
+  onDismiss,
+}: {
+  onTutorial: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-semibold">Впервые здесь?</p>
+        <p className="text-sm text-muted-foreground">
+          Посмотрите короткую инструкцию по регистрации.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={onTutorial}>
+          Как зарегистрироваться
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDismiss}>
+          Мне понятно
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AuthLayout({ children }: { children: ReactNode }) {
   const flow = useRegistrationSpotlight();
   return (
@@ -106,22 +134,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
               aria-label="Подсказка по регистрации"
               data-testid="registration-spotlight"
             >
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <p className="text-sm font-semibold">Впервые здесь?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Посмотрите короткую инструкцию по регистрации.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={flow.openTutorial}>
-                    Как зарегистрироваться
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={flow.dismiss}>
-                    Мне понятно
-                  </Button>
-                </div>
-              </div>
+              <SpotlightCoachmark onTutorial={flow.openTutorial} onDismiss={flow.dismiss} />
             </PopoverContent>
           </Popover>
           <ThemeToggle />

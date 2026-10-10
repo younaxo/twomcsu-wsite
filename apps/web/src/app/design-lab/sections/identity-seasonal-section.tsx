@@ -212,13 +212,15 @@ function EffectsPreview() {
       title="Seasonal effects"
       note="Один движок на canvas; «Красные звёзды» — День Победы. Не перехватывают клики, с «уменьшением движения» выключены."
     >
-      <SegmentedControl
-        size="sm"
-        aria-label="Эффект"
-        value={effect}
-        onValueChange={(value) => setEffect(value as SeasonalEffect)}
-        options={SEASONAL_EFFECTS.map((item) => ({ value: item.id, label: item.label }))}
-      />
+      <div className="-mx-1 max-w-full overflow-x-auto px-1 pb-1 scrollbar-thin">
+        <SegmentedControl
+          size="sm"
+          aria-label="Эффект"
+          value={effect}
+          onValueChange={(value) => setEffect(value as SeasonalEffect)}
+          options={SEASONAL_EFFECTS.map((item) => ({ value: item.id, label: item.label }))}
+        />
+      </div>
       <div
         className="relative h-56 overflow-hidden rounded-lg bg-background shadow-sm"
         data-testid="effects-preview"
