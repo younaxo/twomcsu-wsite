@@ -207,6 +207,34 @@ describe('Social login (e2e)', () => {
     },
   );
 
+  it('2FA (ADR-0109): вход через Discord при включённой 2FA — только челлендж, без сессии', async () => {
+    const owner = await createUser('2f');
+    const profile: ExternalProfile = {
+      providerUserId: `7${Date.now()}`.slice(0, 18),
+      username: `dc2fa_${unique}`,
+      displayName: 'Discord 2FA',
+    };
+    await prisma.userExternalAccount.create({
+      data: {
+        userId: owner.id,
+        provider: 'discord',
+        providerUserId: profile.providerUserId,
+        username: profile.username,
+      },
+    });
+    await prisma.user.update({
+      where: { id: owner.id },
+      data: { twoFactorEnabled: true },
+    });
+    jest.spyOn(social, 'exchangeDiscordCode').mockResolvedValueOnce(profile);
+    const login = await flow('discord');
+    expect(login.result.searchParams.get('status')).toBe('two_factor');
+    const cookies = String(login.callback.headers['set-cookie']);
+    expect(cookies).not.toContain('refresh_token=');
+    expect(cookies).toMatch(/two_factor_challenge=[^;]+;.*HttpOnly/i);
+    expect(login.callback.headers.location).not.toMatch(/token|challenge/i);
+  });
+
   it('у пользователя уже другой Telegram — «сначала отключите»; после отвязки вход закрыт', async () => {
     const owner = await createUser('tgs');
     const saved = profiles.telegram;

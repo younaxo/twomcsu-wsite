@@ -27,6 +27,37 @@ export interface LoginCaptchaRequired {
   requiresCaptcha: true;
 }
 
+/// Ответ `POST /auth/login` при включённой 2FA (ADR-0109): пароль верен, сессии
+/// ещё нет; челлендж — в httpOnly cookie. Код — `POST /auth/login/2fa`.
+export interface LoginTwoFactorRequired {
+  twoFactorRequired: true;
+}
+
+/// `POST /auth/login/2fa` — 6 цифр из приложения или резервный код.
+export interface LoginTwoFactorRequest {
+  code: string;
+}
+
+/// `GET /auth/2fa` — статус 2FA своего аккаунта.
+export interface TwoFactorStatusDto {
+  /// Сервер настроен (есть ключ шифрования); нет — включить нельзя.
+  available: boolean;
+  enabled: boolean;
+  enabledAt: IsoDateString | null;
+  backupCodesRemaining: number;
+}
+
+/// `POST /auth/2fa/setup` — секрет для ручного ввода и URI для QR-кода.
+export interface TwoFactorSetupDto {
+  secret: string;
+  otpauthUri: string;
+}
+
+/// `POST /auth/2fa/enable` и `/backup-codes` — резервные коды (показываются один раз).
+export interface TwoFactorBackupCodesDto {
+  backupCodes: string[];
+}
+
 export interface RegisterRequest {
   email: string;
   username: string;
@@ -92,6 +123,8 @@ export interface MeResponse {
   accessLevel: number;
   accountType: AccountType;
   mustChangePassword: boolean;
+  /// Включена ли 2FA (ADR-0109).
+  twoFactorEnabled: boolean;
   roles: MeRole[];
   permissions: EffectivePermissions;
 }
@@ -157,6 +190,8 @@ export type SocialResultStatus =
   | 'cancelled'
   | 'expired'
   | 'unavailable'
+  /// Включена 2FA — на странице результата нужен код (ADR-0109).
+  | 'two_factor'
   | 'error';
 
 /// `GET /auth/linked-accounts` (свои привязки); `PATCH …/:provider` — видимость.

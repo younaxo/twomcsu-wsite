@@ -256,21 +256,32 @@ model Position {
 }
 
 model User {
-  id       String @id @default(cuid())
+  id            String  @id @default(cuid())
   /// Публичный числовой id (#1, #2, ...). #0 зарезервирован для системного аккаунта (ADR-0006).
-  shortId  Int    @unique @default(autoincrement())
+  shortId       Int     @unique @default(autoincrement())
   /// Публичный тег `username#0000` — ник + discriminator (ADR-0099).
-  tag      String @unique @db.VarChar(32)
+  tag           String  @unique @db.VarChar(32)
   /// Публичный числовой discriminator 0000–9999 (CHECK в миграции): выдаётся
   /// backend при регистрации и сам не меняется. Не DB ID и не shortId.
-  discriminator Int @db.SmallInt
+  discriminator Int     @db.SmallInt
   /// Тег до перехода на числовой discriminator — если он отличался.
-  legacyTag String? @db.VarChar(32)
-  email    String @unique
+  legacyTag     String? @db.VarChar(32)
+  email         String  @unique
   /// Ник = логин для входа = Minecraft-ник. Исключения — только точечные
   /// alias'ы входа (`LoginAlias`, ADR-0061), модель identity не меняется.
-  username String @unique @db.VarChar(16)
-  password String
+  username      String  @unique @db.VarChar(16)
+  password      String
+
+  /// Двухфакторная аутентификация TOTP (ADR-0109). Секреты хранятся
+  /// зашифрованными (AES-256-GCM, ключ `TWO_FACTOR_ENCRYPTION_KEY`) и глобально
+  /// исключены из выборок (PrismaService omit). `PendingSecret` — во время
+  /// настройки, до подтверждения первым кодом.
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?
+  twoFactorPendingSecret String?
+  twoFactorEnabledAt     DateTime?
+  /// Последний принятый шаг TOTP: один и тот же код дважды не принимается.
+  twoFactorLastStep      Int?
 
   /// Уровень доступа (ADR-0062) — отдельный числовой параметр пользователя,
   /// НЕ priority роли и НЕ замена permissions. Показывается в title админки
@@ -357,22 +368,23 @@ model User {
 
   roles UserRole[]
 
-  customPosition      UserCustomPosition?
-  departments         UserDepartment[]
-  loginAliases        LoginAlias[]
-  externalAccounts    UserExternalAccount[]
-  legalConsents       LegalConsent[]
-  minecraftAccount    MinecraftAccount?
-  refreshTokens       RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
-  promoCodeUsages     PromoCodeUsage[]
-  badges              UserBadge[]           @relation("UserBadgeOwner")
-  socialLinks         SocialLink[]
-  mediaBadges         UserMediaBadge[]
-  mediaBadgeRequests  MediaBadgeRequest[]
-  statistics          PlayerStatistics?
-  awards              UserAward[]
-  uploadedFiles       File[]                @relation("FileUploader")
+  customPosition       UserCustomPosition?
+  departments          UserDepartment[]
+  loginAliases         LoginAlias[]
+  externalAccounts     UserExternalAccount[]
+  legalConsents        LegalConsent[]
+  minecraftAccount     MinecraftAccount?
+  refreshTokens        RefreshToken[]
+  twoFactorBackupCodes TwoFactorBackupCode[]
+  passwordResetTokens  PasswordResetToken[]
+  promoCodeUsages      PromoCodeUsage[]
+  badges               UserBadge[]           @relation("UserBadgeOwner")
+  socialLinks          SocialLink[]
+  mediaBadges          UserMediaBadge[]
+  mediaBadgeRequests   MediaBadgeRequest[]
+  statistics           PlayerStatistics?
+  awards               UserAward[]
+  uploadedFiles        File[]                @relation("FileUploader")
 
   profileViews     ProfileView[]     @relation("ProfileViewsReceived")
   viewedProfiles   ProfileView[]     @relation("ProfileViewsGiven")
@@ -3282,4 +3294,19 @@ model File {
   @@index([status])
   @@index([ownerType, ownerId])
   @@map("files")
+}
+
+/// Резервные коды 2FA (ADR-0109): только HMAC-хеш с секретным pepper, каждый
+/// код — одноразовый (`usedAt`). Новый набор заменяет старый целиком.
+model TwoFactorBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @db.VarChar(64)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("two_factor_backup_codes")
 }
