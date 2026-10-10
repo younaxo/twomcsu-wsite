@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveUserIdByHandle } from '../profiles/handle';
 import { SKIN_SOURCE, type SkinModel, type SkinSource } from './skin-source';
 
 /// Скины игроков для 3D-просмотра в профиле (ADR-0089). Сайт сам получает
@@ -47,8 +48,10 @@ export class SkinsService {
   /// (он же Minecraft-ник, ADR-0072). Нет пользователя или профиль скрыт от
   /// всех — 404 одинаково: эндпоинт не раскрывает, есть ли аккаунт.
   private async minecraftName(username: string): Promise<string> {
+    // Ник сайта, alias входа или ник привязки (`younaxo` → `younaxo_`).
+    const id = await resolveUserIdByHandle(this.prisma, username);
     const user = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
+      where: { id: id ?? '__none__' },
       select: {
         username: true,
         profileVisibility: true,

@@ -181,6 +181,9 @@ enum SocialPlatform {
   TWITCH
   TIKTOK
   STEAM
+  /// Профиль на GitHub и свой сайт (B5) — только https-ссылки.
+  GITHUB
+  WEBSITE
 }
 
 /// Платформы, на которых можно подтвердить статус создателя контента — подмножество SocialPlatform.
