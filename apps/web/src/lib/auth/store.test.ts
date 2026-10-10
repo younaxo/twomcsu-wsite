@@ -14,6 +14,7 @@ const me: MeResponse = {
   accountType: 'DEFAULT',
   accessLevel: 0,
   mustChangePassword: false,
+  twoFactorEnabled: false,
   avatar: null,
   banner: null,
   roles: [],

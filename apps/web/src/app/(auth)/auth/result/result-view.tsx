@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthShell } from '@/components/auth/auth-shell';
 import { SocialAuthResult, useCountdown } from '@/components/auth/social-auth-result';
+import { TwoFactorLoginStep } from '@/components/auth/two-factor-login-step';
 import { Button } from '@/components/ui/button';
 import { parseSocialResult, requestLinkUrl, socialLoginHref } from '@/lib/auth/social';
 import { useAuthStore } from '@/lib/auth/store';
@@ -48,6 +49,19 @@ export function SocialResultView() {
         <Button size="lg" onClick={() => router.replace('/login')}>
           Вернуться ко входу
         </Button>
+      </AuthShell>
+    );
+  }
+
+  // Внешний аккаунт подтверждён, включена 2FA — тот же второй шаг, что после
+  // пароля (челлендж уже в httpOnly cookie, ADR-0109).
+  if (result.mode === 'login' && result.status === 'two_factor') {
+    return (
+      <AuthShell
+        title="Подтверждение входа"
+        description="Аккаунт защищён двухфакторной аутентификацией."
+      >
+        <TwoFactorLoginStep onDone={goNext} onRestart={() => router.replace('/login')} />
       </AuthShell>
     );
   }

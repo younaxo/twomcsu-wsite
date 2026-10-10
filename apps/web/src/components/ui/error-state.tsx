@@ -1,6 +1,7 @@
 'use client';
 
-import { CircleAlert, PowerOff, ShieldAlert, WifiOff, Wrench } from 'lucide-react';
+import { CircleAlert, PowerOff, ShieldAlert, ShieldCheck, WifiOff, Wrench } from 'lucide-react';
+import Link from 'next/link';
 import type { HTMLAttributes, ReactNode } from 'react';
 import { ApiError, getErrorMessage, NetworkError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
@@ -33,22 +34,28 @@ export function ErrorState({
   const unavailable =
     error instanceof ApiError && error.status === 503 ? (error.code ?? null) : null;
   const isServer = error instanceof ApiError && error.status >= 500 && !unavailable;
-  const Icon = isNetwork
-    ? WifiOff
-    : unavailable === 'MAINTENANCE'
-      ? Wrench
-      : unavailable === 'MODULE_DISABLED'
-        ? PowerOff
-        : CircleAlert;
-  const fallbackTitle = isNetwork
-    ? 'Нет соединения с сервером'
-    : unavailable === 'MAINTENANCE'
-      ? 'Идут технические работы'
-      : unavailable === 'MODULE_DISABLED'
-        ? 'Раздел временно недоступен'
-        : isServer
-          ? 'Сервер временно не отвечает'
-          : 'Не удалось загрузить данные';
+  // Требование 2FA персоналу (ADR-0109): не «повторить», а «включить 2FA».
+  const needsTwoFactor = error instanceof ApiError && error.code === 'admin_2fa_required';
+  const Icon = needsTwoFactor
+    ? ShieldCheck
+    : isNetwork
+      ? WifiOff
+      : unavailable === 'MAINTENANCE'
+        ? Wrench
+        : unavailable === 'MODULE_DISABLED'
+          ? PowerOff
+          : CircleAlert;
+  const fallbackTitle = needsTwoFactor
+    ? 'Нужна двухфакторная аутентификация'
+    : isNetwork
+      ? 'Нет соединения с сервером'
+      : unavailable === 'MAINTENANCE'
+        ? 'Идут технические работы'
+        : unavailable === 'MODULE_DISABLED'
+          ? 'Раздел временно недоступен'
+          : isServer
+            ? 'Сервер временно не отвечает'
+            : 'Не удалось загрузить данные';
   return (
     <div
       role="alert"
@@ -68,7 +75,11 @@ export function ErrorState({
       <p className="max-w-sm text-sm text-muted-foreground">
         {description ?? (error ? getErrorMessage(error) : 'Попробуйте обновить страницу.')}
       </p>
-      {onRetry ? (
+      {needsTwoFactor ? (
+        <Button asChild size="sm">
+          <Link href="/settings/security">Включить 2FA</Link>
+        </Button>
+      ) : onRetry ? (
         <Button variant="secondary" size="sm" onClick={onRetry} loading={retrying}>
           Повторить
         </Button>

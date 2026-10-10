@@ -1,4 +1,10 @@
-import type { LoginCaptchaRequired, LoginRequest, LoginResponse, MeResponse } from '@twomc/shared';
+import type {
+  LoginCaptchaRequired,
+  LoginRequest,
+  LoginResponse,
+  LoginTwoFactorRequired,
+  MeResponse,
+} from '@twomc/shared';
 import { create } from 'zustand';
 import { api, refreshAccessToken, setSessionExpiredHandler } from '../api/client';
 import { ApiError } from '../api/errors';
@@ -12,7 +18,10 @@ export interface AuthState {
   user: MeResponse | null;
   /// Восстановить сессию по refresh-cookie при загрузке приложения.
   bootstrap: () => Promise<void>;
+  /// При включённой 2FA бросает `TwoFactorRequiredError` — дальше `completeTwoFactor`.
   login: (request: LoginRequest) => Promise<MeResponse>;
+  /// Второй шаг входа (ADR-0109): код из приложения или резервный код.
+  completeTwoFactor: (code: string) => Promise<MeResponse>;
   /// Принять готовую сессию (вход через Telegram: backend вернул access-токен).
   acceptSession: (accessToken: string) => Promise<MeResponse>;
   logout: () => Promise<void>;
@@ -32,10 +41,23 @@ export class CaptchaRequiredError extends Error {
   }
 }
 
-function isCaptchaRequired(
-  body: LoginResponse | LoginCaptchaRequired,
-): body is LoginCaptchaRequired {
+/// Пароль верен, но включена 2FA: нужен код (ADR-0109). Челлендж — в httpOnly
+/// cookie, форма просто переходит ко второму шагу.
+export class TwoFactorRequiredError extends Error {
+  constructor() {
+    super('Введите код из приложения-аутентификатора');
+    this.name = 'TwoFactorRequiredError';
+  }
+}
+
+type LoginBody = LoginResponse | LoginCaptchaRequired | LoginTwoFactorRequired;
+
+function isCaptchaRequired(body: LoginBody): body is LoginCaptchaRequired {
   return (body as LoginCaptchaRequired).requiresCaptcha === true;
+}
+
+function isTwoFactorRequired(body: LoginBody): body is LoginTwoFactorRequired {
+  return (body as LoginTwoFactorRequired).twoFactorRequired === true;
 }
 
 async function fetchMe(): Promise<MeResponse> {
@@ -82,13 +104,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   login: async (request) => {
-    const body = await api.post<LoginResponse | LoginCaptchaRequired>('/auth/login', request, {
+    const body = await api.post<LoginBody>('/auth/login', request, {
       auth: false,
       retryOn401: false,
     });
     if (isCaptchaRequired(body)) {
       throw new CaptchaRequiredError();
     }
+    if (isTwoFactorRequired(body)) {
+      throw new TwoFactorRequiredError();
+    }
+    tokenStore.set(body.accessToken);
+    const user = await fetchMe();
+    set({ status: 'authenticated', user });
+    return user;
+  },
+
+  completeTwoFactor: async (code) => {
+    const body = await api.post<LoginResponse>(
+      '/auth/login/2fa',
+      { code },
+      { auth: false, retryOn401: false },
+    );
     tokenStore.set(body.accessToken);
     const user = await fetchMe();
     set({ status: 'authenticated', user });

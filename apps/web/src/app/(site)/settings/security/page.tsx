@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
+import { TwoFactorSettings } from '@/components/auth/two-factor-settings';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -248,15 +249,19 @@ function RequiredChangeNotice() {
   );
 }
 
-/// «Настройки → Безопасность»: смена пароля и активные сессии.
+/// «Настройки → Безопасность»: пароль, двухфакторная аутентификация и сессии.
 export default function SecuritySettingsPage() {
   return (
     <>
-      <PageHeader title="Безопасность" description="Пароль и устройства, где выполнен вход." />
+      <PageHeader
+        title="Безопасность"
+        description="Пароль, двухфакторная аутентификация и устройства, где выполнен вход."
+      />
       <RequiredChangeNotice />
       <RequireSession>
         <div className="flex flex-col gap-5">
           <ChangePassword />
+          <TwoFactorSettings />
           <Sessions />
         </div>
       </RequireSession>
