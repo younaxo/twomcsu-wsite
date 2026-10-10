@@ -211,6 +211,16 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R24 — CDN `cdn-files.twomc.su` недоступен с машины разработки — OPEN (сеть)
+
+DNS отдаёт `198.18.0.51` (диапазон fake-IP прокси/VPN), TLS-соединение
+рвётся (`ECONNRESET`, schannel error 35) — и в браузере, и у сервера Next.
+Логотип виден только из кэша картинок Next; украшение шапки, префиксы ролей
+и прочие ассеты CDN с этой машины не загружаются. То же с `status.twomc.su`.
+**Нужно от владельца:** проверить CDN с другой сети или исключить
+`*.twomc.su` из прокси; если CDN недоступен везде — проверить Cloudflare и
+хостинг.
+
 ## R23 — Cleanup e2e с `undefined` удаляет всё — MITIGATED (инцидент 2026-10-10)
 
 Для Prisma `{ id: undefined }` — пустой фильтр. В `users-domain.e2e-spec.ts`

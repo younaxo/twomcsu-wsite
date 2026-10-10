@@ -1,4 +1,4 @@
-import type { PublicSeasonalSettings, SeasonalEffectId } from '@twomc/shared';
+import type { PublicSeasonalSettings, SeasonalEffectId, SeasonalFallingMode } from '@twomc/shared';
 import { cdnUrl } from '../env';
 
 /// Сезонное оформление — единый реестр кампаний. Компоненты (BrandWordmark,
@@ -68,6 +68,7 @@ export const SEASONAL_EFFECTS: { id: SeasonalEffect; label: string }[] = [
   { id: 'leaves', label: 'Листья' },
   { id: 'rain', label: 'Дождь' },
   { id: 'sun', label: 'Солнце' },
+  { id: 'stars', label: 'Красные звёзды' },
 ];
 export const SEASONAL_MAX_EFFECTS = 3;
 
@@ -111,7 +112,8 @@ export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
   },
   {
     id: 'victory-day',
-    effects: ['sun'],
+    // Красные пятиконечные звёзды (ADR-0090) — фигура движка, не emoji.
+    effects: ['stars'],
     name: 'День Победы',
     priority: 70,
     window: { from: { month: 5, day: 5 }, to: { month: 5, day: 10 } },
@@ -229,4 +231,60 @@ export function withOverrides(
 ): SeasonalCampaign | null {
   const effects = campaign ? settings.campaigns?.[campaign.id]?.effects : undefined;
   return campaign && Array.isArray(effects) ? { ...campaign, effects } : campaign;
+}
+
+export interface SeasonalView {
+  campaign: SeasonalCampaign | null;
+  showWordmarkO: boolean;
+  /// Украшение шапки — свой флаг, не зависит от эффектов.
+  showDecoration: boolean;
+  showBanners: boolean;
+  fallingMode: SeasonalFallingMode;
+  /// Падающие эффекты к показу (пусто — ничего не падает).
+  effects: SeasonalEffect[];
+  effectIntensity: number;
+  effectSpeed: number;
+}
+
+/// Режим падающего эффекта; старые настройки без `fallingMode` — по
+/// `showEffects`.
+export function fallingModeOf(settings: PublicSeasonalSettings | undefined): SeasonalFallingMode {
+  if (settings?.fallingMode) return settings.fallingMode;
+  return settings?.showEffects === false ? 'off' : 'season';
+}
+
+/// Что показывать (ADR-0090) — один расчёт для сайта и превью админки.
+/// Оформление сезона (буква «o», украшение шапки, баннеры) — только при
+/// активной кампании и своём флаге. Падающий эффект — независимо от сезона:
+/// `season` — эффекты кампании, `always` — выбранный тип даже без сезона,
+/// `off` — ничего.
+///
+/// `preview` — только админка: `campaign` — какую кампанию примерить (без
+/// активации сезона), `season` — показать её оформление или нет, `effect:
+/// false` — скрыть эффект. Режим «Выключен» превью показывает выключенным.
+export function resolveSeasonalView(
+  settings: PublicSeasonalSettings | undefined,
+  now: Date,
+  preview?: { campaign?: SeasonalCampaign | null; season?: boolean; effect?: boolean },
+): SeasonalView {
+  const campaign =
+    preview?.campaign !== undefined ? preview.campaign : resolveSeasonalFromSettings(settings, now);
+  const seasonOn = (preview?.season ?? true) && !!campaign;
+  const mode = fallingModeOf(settings);
+  const chosen = settings?.fallingEffect ? [settings.fallingEffect] : [];
+  let effects: SeasonalEffect[];
+  if (preview?.effect === false) effects = [];
+  else if (mode === 'always') effects = chosen.length > 0 ? chosen : (campaign?.effects ?? []);
+  else if (mode === 'season') effects = campaign?.effects ?? [];
+  else effects = [];
+  return {
+    campaign: seasonOn ? campaign : null,
+    showWordmarkO: seasonOn && (settings?.showWordmarkO ?? true),
+    showDecoration: seasonOn && (settings?.showDecoration ?? true),
+    showBanners: seasonOn && (settings?.showBanners ?? true),
+    fallingMode: mode,
+    effects,
+    effectIntensity: settings?.effectIntensity ?? 2,
+    effectSpeed: settings?.effectSpeed ?? 2,
+  };
 }

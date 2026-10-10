@@ -10,7 +10,9 @@ import { usePrefersReducedMotion } from '@/lib/use-media-query';
 /// Движок сезонных эффектов (ADR-0079): один canvas (pointer-events: none,
 /// ниже модалок), rAF с паузой в скрытой вкладке, ограниченное число частиц
 /// (ширина × плотность, на слабых устройствах и при экономии трафика — меньше),
-/// учёт DPR. Несколько эффектов делят один бюджет частиц.
+/// учёт DPR. Несколько эффектов делят один бюджет частиц. Движение — по
+/// реальному времени кадра (на 120 Гц не быстрее, чем на 60), скорость и
+/// плотность — из админки; на узком экране частиц меньше (ADR-0090).
 /// prefers-reduced-motion → эффект не рисуется вовсе.
 
 interface Particle {
@@ -31,12 +33,39 @@ const COLORS: Record<SeasonalEffect, string[]> = {
   rain: ['rgba(150,180,220,0.5)'],
   blossom: ['rgba(255,190,210,0.8)', 'rgba(255,220,230,0.8)'],
   sun: ['rgba(255,214,120,0.35)', 'rgba(255,240,180,0.3)'],
+  // День Победы: красные пятиконечные звёзды — вектор на canvas, не emoji;
+  // одинаково на всех ОС.
+  stars: ['rgba(214,40,40,0.9)', 'rgba(196,30,45,0.85)', 'rgba(232,58,58,0.85)'],
 };
 
-/// Частиц на холст: плотность × ширина / 40 × множитель устройства, не больше 120.
+/// Звёзды по форме заметнее остальных частиц, поэтому их вдвое меньше.
+const KIND_DENSITY: Partial<Record<SeasonalEffect, number>> = { stars: 0.5 };
+
+/// Скорость из админки (1–3) → множитель падения.
+export function speedFactor(speed: number): number {
+  return speed <= 1 ? 0.6 : speed >= 3 ? 1.6 : 1;
+}
+
+/// Частиц на холст: плотность × ширина / 40 × множитель устройства, не больше
+/// 120; на узком (мобильном) экране — ещё ×0.6.
 export function particleCount(width: number, intensity: number, power = 1): number {
   const density = Math.max(1, Math.min(3, intensity));
-  return Math.min(120, Math.round(((density * width) / 40) * power));
+  const mobile = width < 640 ? 0.6 : 1;
+  return Math.min(120, Math.round(((density * width) / 40) * power * mobile));
+}
+
+/// Пятиконечная звезда: внешний радиус r, внутренний — 0.45 r.
+function starPath(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, turn: number) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i += 1) {
+    const radius = i % 2 === 0 ? r : r * 0.45;
+    const angle = turn - Math.PI / 2 + (i * Math.PI) / 5;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
 }
 
 // Перенесено в lib (нужно и профилю: 3D-скин) — реэкспорт для совместимости.
@@ -75,6 +104,11 @@ function draw(ctx: CanvasRenderingContext2D, p: Particle, color: string) {
       ctx.fill();
       return;
     }
+    case 'stars':
+      // Небольшие: радиус 3–7 px, медленное вращение.
+      starPath(ctx, p.x, p.y, 2.5 + p.size * 0.65, p.phase * 0.5);
+      ctx.fill();
+      return;
     case 'leaves':
     case 'blossom':
       ctx.save();
@@ -97,11 +131,14 @@ function draw(ctx: CanvasRenderingContext2D, p: Particle, color: string) {
 export function EffectsCanvas({
   effects,
   intensity,
+  speed = 2,
   contained = false,
   className,
 }: {
   effects: SeasonalEffect[];
   intensity: number;
+  /// 1–3: скорость падения из админки.
+  speed?: number;
   contained?: boolean;
   className?: string;
 }) {
@@ -129,20 +166,35 @@ export function EffectsCanvas({
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = particleCount(width, intensity, power);
+      const density =
+        kinds.reduce((sum, kind) => sum + (KIND_DENSITY[kind] ?? 1), 0) / kinds.length;
+      const count = Math.max(1, Math.round(particleCount(width, intensity, power) * density));
       particles = Array.from({ length: count }, (_, i) =>
         spawn(kinds[i % kinds.length]!, width, height, true),
       );
     };
     resize();
     let frame = 0;
-    const tick = () => {
+    let last = 0;
+    const factor = speedFactor(speed);
+    const tick = (time: number) => {
+      // Шаг в «кадрах 60 Гц»: одинаковая скорость на любой частоте экрана;
+      // после паузы вкладки — не больше 3 кадров, без рывка.
+      const step = last ? Math.min(3, (time - last) / (1000 / 60)) : 1;
+      last = time;
       ctx.clearRect(0, 0, width, height);
       particles.forEach((p, index) => {
-        const fall = p.kind === 'rain' ? p.speed * 6 : p.kind === 'sun' ? p.speed * 0.15 : p.speed;
-        p.y += fall;
-        p.phase += p.spin;
-        p.x += p.drift + Math.sin(p.phase) * (p.kind === 'rain' ? 0 : 0.4);
+        const base =
+          p.kind === 'rain'
+            ? p.speed * 6
+            : p.kind === 'sun'
+              ? p.speed * 0.15
+              : p.kind === 'stars'
+                ? p.speed * 0.7
+                : p.speed;
+        p.y += base * factor * step;
+        p.phase += p.spin * step;
+        p.x += (p.drift + Math.sin(p.phase) * (p.kind === 'rain' ? 0 : 0.4)) * step;
         if (p.y > height + 20 || p.x < -30 || p.x > width + 30) {
           particles[index] = spawn(p.kind, width, height, false);
         }
@@ -153,6 +205,7 @@ export function EffectsCanvas({
     };
     const onVisibility = () => {
       window.cancelAnimationFrame(frame);
+      last = 0;
       if (!document.hidden) frame = window.requestAnimationFrame(tick);
     };
     frame = window.requestAnimationFrame(tick);
@@ -169,7 +222,7 @@ export function EffectsCanvas({
       window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [key, intensity, reduced, contained]);
+  }, [key, intensity, speed, reduced, contained]);
 
   if (!key || reduced) return null;
   return (
@@ -187,8 +240,15 @@ export function EffectsCanvas({
   );
 }
 
-/// Эффекты активной кампании на сайте (флаг «Эффекты» и плотность — из админки).
+/// Падающий эффект на сайте: режим, тип, плотность и скорость — из админки
+/// (ADR-0090), независимо от остального сезонного оформления.
 export function SeasonalEffects() {
   const seasonal = useSeasonal();
-  return <EffectsCanvas effects={seasonal.effects} intensity={seasonal.effectIntensity} />;
+  return (
+    <EffectsCanvas
+      effects={seasonal.effects}
+      intensity={seasonal.effectIntensity}
+      speed={seasonal.effectSpeed}
+    />
+  );
 }

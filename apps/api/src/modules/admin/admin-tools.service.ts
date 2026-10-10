@@ -440,6 +440,9 @@ export class AdminToolsService {
       showEffects: s.showEffects,
       showBanners: s.showBanners,
       effectIntensity: s.effectIntensity,
+      fallingMode: s.fallingMode,
+      fallingEffect: s.fallingEffect,
+      effectSpeed: s.effectSpeed,
       campaigns: s.campaigns,
       serverTime: new Date().toISOString(),
     };
@@ -512,6 +515,26 @@ export class AdminToolsService {
         'Для режима «принудительно» выберите кампанию',
       );
     }
+    // Падающий эффект (ADR-0090). Старый клиент присылает только
+    // showEffects — переводим в режим; showEffects держим согласованным.
+    const fallingMode =
+      dto.fallingMode ??
+      (dto.showEffects !== undefined
+        ? dto.showEffects
+          ? before.fallingMode === 'off'
+            ? 'season'
+            : before.fallingMode
+          : 'off'
+        : before.fallingMode);
+    const fallingEffect =
+      dto.fallingEffect !== undefined
+        ? dto.fallingEffect
+        : before.fallingEffect;
+    if (fallingMode === 'always' && !fallingEffect) {
+      throw new BadRequestException(
+        'Для режима «всегда» выберите тип падающего эффекта',
+      );
+    }
     const after = await this.prisma.seasonalSettings.update({
       where: { id: 'global' },
       data: {
@@ -520,9 +543,12 @@ export class AdminToolsService {
         forcedCampaignId: dto.forcedCampaignId,
         showWordmarkO: dto.showWordmarkO,
         showDecoration: dto.showDecoration,
-        showEffects: dto.showEffects,
+        showEffects: fallingMode !== 'off',
         showBanners: dto.showBanners,
         effectIntensity: dto.effectIntensity,
+        fallingMode,
+        fallingEffect,
+        effectSpeed: dto.effectSpeed,
         campaigns: dto.campaigns
           ? this.normalizeCampaigns(dto.campaigns)
           : undefined,
@@ -539,6 +565,9 @@ export class AdminToolsService {
       'showEffects',
       'showBanners',
       'effectIntensity',
+      'fallingMode',
+      'fallingEffect',
+      'effectSpeed',
       'campaigns',
     ] as const) {
       if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {

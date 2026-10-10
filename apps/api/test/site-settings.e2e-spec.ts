@@ -182,6 +182,42 @@ describe('Site settings: alert bar & social links (e2e)', () => {
     });
     expect(audit).not.toBeNull();
 
+    // Падающий эффект независимо от сезона (ADR-0090).
+    const patchSeasonal = (body: Record<string, unknown>) =>
+      http()
+        .patch('/admin/settings/seasonal')
+        .set('Authorization', editor.auth)
+        .send(body);
+    await patchSeasonal({ fallingMode: 'always', fallingEffect: null }).expect(
+      400,
+    );
+    await patchSeasonal({ fallingMode: 'sometimes' }).expect(400);
+    await patchSeasonal({ fallingEffect: 'confetti' }).expect(400);
+    await patchSeasonal({ effectSpeed: 4 }).expect(400);
+    const always = await patchSeasonal({
+      fallingMode: 'always',
+      fallingEffect: 'stars',
+      effectSpeed: 3,
+    }).expect(200);
+    expect(always.body).toMatchObject({
+      fallingMode: 'always',
+      fallingEffect: 'stars',
+      effectSpeed: 3,
+      showEffects: true,
+    });
+    const pubAlways = await http().get('/site/settings').expect(200);
+    expect(pubAlways.body.seasonal).toMatchObject({
+      fallingMode: 'always',
+      fallingEffect: 'stars',
+      effectSpeed: 3,
+    });
+    // Старый клиент присылает только showEffects=false → режим off.
+    const legacy = await patchSeasonal({ showEffects: false }).expect(200);
+    expect(legacy.body).toMatchObject({
+      fallingMode: 'off',
+      showEffects: false,
+    });
+
     // Вернуть автоматический режим, чтобы не влиять на другие наборы.
     await http()
       .patch('/admin/settings/seasonal')
@@ -190,6 +226,9 @@ describe('Site settings: alert bar & social links (e2e)', () => {
         mode: 'auto',
         forcedCampaignId: null,
         showEffects: true,
+        fallingMode: 'season',
+        fallingEffect: null,
+        effectSpeed: 2,
         effectIntensity: 2,
         campaigns: {},
       })
