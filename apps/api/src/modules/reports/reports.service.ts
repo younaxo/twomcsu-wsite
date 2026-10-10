@@ -77,6 +77,8 @@ export class ReportsService {
       this.prisma.report.findMany({
         where,
         include: { targets: true },
+        // Внутренняя заметка персонала — не для автора (ADR-0119).
+        omit: { internalNote: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -117,7 +119,12 @@ export class ReportsService {
     if (!isStaff && report.authorId !== viewerId) {
       throw new ForbiddenException('Это обращение вам не принадлежит');
     }
-    return report;
+    if (isStaff) {
+      return report;
+    }
+    // Внутренняя заметка персонала — не для автора обращения (ADR-0119).
+    const { internalNote: _internal, ...visible } = report;
+    return visible;
   }
 
   async createReport(authorId: string, dto: CreateReportDto) {
