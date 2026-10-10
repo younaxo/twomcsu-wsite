@@ -37,9 +37,14 @@ export interface MiniProfileEntry {
   icon: LucideIcon;
   /// Нет href — раздел ещё не готов: пункт недоступен с пометкой «скоро».
   href: string | null;
+  /// Счётчик справа (новые заявки в друзья); 0 и нет — без бейджа.
+  badge?: number;
 }
 
-export function miniProfileEntries(username: string): MiniProfileEntry[] {
+export function miniProfileEntries(
+  username: string,
+  counts: { friendRequests?: number } = {},
+): MiniProfileEntry[] {
   return [
     {
       key: 'profile',
@@ -48,9 +53,15 @@ export function miniProfileEntries(username: string): MiniProfileEntry[] {
       href: `/u/${encodeURIComponent(username)}`,
     },
     { key: 'settings', label: 'Настройки', icon: Settings, href: '/settings' },
+    {
+      key: 'friends',
+      label: 'Друзья',
+      icon: Users,
+      href: '/friends',
+      badge: counts.friendRequests,
+    },
     // Разделы волн Social (2) и Store (4) — появятся вместе с функцией.
     { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: null },
-    { key: 'friends', label: 'Друзья', icon: Users, href: null },
     { key: 'favorites', label: 'Избранное', icon: Heart, href: null },
     { key: 'orders', label: 'Заказы', icon: Package, href: null },
   ];

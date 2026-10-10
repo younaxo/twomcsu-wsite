@@ -11,6 +11,7 @@ import type {
 import { EyeOff, LogOut, UserX } from 'lucide-react';
 import { useState } from 'react';
 import { ConnectedAccountCard } from '@/components/account/connected-account-card';
+import { FriendControls } from '@/components/friends/friend-button';
 import { LogoutConfirmDialog } from '@/components/auth/logout-confirm';
 import { ProfileBadges } from '@/components/profile/profile-badges';
 import { ProfileHeader } from '@/components/profile/profile-header';
@@ -793,10 +794,47 @@ function SeasonMatrixPreview() {
   );
 }
 
+const FRIEND_STATES = [
+  { status: 'NONE', label: 'Нет связи' },
+  { status: 'OUTGOING', label: 'Заявка отправлена' },
+  { status: 'INCOMING', label: 'Входящая заявка' },
+  { status: 'FRIENDS', label: 'Друзья' },
+  { status: 'BLOCKED', label: 'Заблокирован мной' },
+] as const;
+
+function FriendButtonPreview() {
+  return (
+    <Card
+      title="Кнопка дружбы на профиле"
+      note="Состояние приходит с сервера (GET /friends/relation/:username). Основное действие видно сразу, остальное — в меню «⋯». Удаление из друзей и блокировка — только после подтверждения. Чужая блокировка не раскрывается: такой профиль скрыт, кнопки нет. В Design Lab действия уходят на демо-игрока и честно показывают ошибку."
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="dl-friend-states">
+        {FRIEND_STATES.map((item) => (
+          <div
+            key={item.status}
+            className="flex flex-col gap-2 rounded-lg bg-surface p-4 shadow-sm"
+          >
+            <span className="text-xs text-muted-foreground">{item.label}</span>
+            <FriendControls
+              username="design-lab-demo"
+              relation={{
+                userId: 'design-lab-demo',
+                status: item.status,
+                requestId: item.status === 'OUTGOING' || item.status === 'INCOMING' ? 'demo' : null,
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function IdentitySeasonalSection() {
   return (
     <div className="flex flex-col gap-10">
       <ProfilePagePreview />
+      <FriendButtonPreview />
       <ProfileDetailsPreview />
       <ConnectedAccountsSettingsPreview />
       <MinecraftHeadPreview />
