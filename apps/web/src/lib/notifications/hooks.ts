@@ -20,6 +20,7 @@ import { toast } from '@/components/ui/toast';
 import { inAppDecision, inAppLink, useActiveConversation } from './in-app';
 import { messagesEnabled, useNotificationSettings } from './settings';
 import { notificationSound, usePrimeNotificationSound } from './sound';
+import { friendKeys } from '@/lib/friends/hooks';
 
 /// Уведомления (ADR-0074). Единый источник числа непрочитанных —
 /// `siteKeys.unread` (бейдж, превью, страница, title, favicon); все списки —
@@ -184,6 +185,9 @@ export function useNotificationsRealtime() {
         queryKey: NOTIFICATIONS_PREFIX,
         predicate: (query) => query.queryKey[2] !== 'unread',
       });
+      // Заявка в друзья / принятие приходят уведомлением — обновить счётчик
+      // входящих и списки «Друзей» без перезагрузки (срез 2.1).
+      void client.invalidateQueries({ queryKey: friendKeys.all });
     });
 
     const seen = new Set<string>();

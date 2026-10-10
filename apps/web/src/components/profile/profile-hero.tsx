@@ -48,6 +48,7 @@ export function ProfileHero({
   mediaBadges,
   decoration,
   awards,
+  actions,
   showBadges = true,
   decorationCampaign,
   titleAs: Title = 'h1',
@@ -70,6 +71,8 @@ export function ProfileHero({
   decoration?: ProfileDecorationView | null;
   /// Плашка наград — появится вместе с системой наград.
   awards?: ReactNode;
+  /// Действия зрителя справа от ника (кнопка дружбы, срез 2.1).
+  actions?: ReactNode;
   /// Значки под ником; на странице профиля они в витрине «Награды и значки».
   showBadges?: boolean;
   /// Явная кампания украшения шапки (design-lab); по умолчанию — сайта.
@@ -132,6 +135,11 @@ export function ProfileHero({
             <ProfileBadges badges={badges} mediaBadges={mediaBadges} decoration={decoration} />
           ) : null}
         </div>
+        {actions ? (
+          <div className="flex shrink-0 items-center pt-3" data-testid="profile-actions">
+            {actions}
+          </div>
+        ) : null}
         <ProfileAwardsSlot>{awards}</ProfileAwardsSlot>
       </div>
     </section>

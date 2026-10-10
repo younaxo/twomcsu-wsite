@@ -29,7 +29,9 @@ import { useAuthStore } from '@/lib/auth/store';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { useWallet } from '@/lib/account/hooks';
 import { cn } from '@/lib/cn';
+import { useIncomingRequestsCount } from '@/lib/friends/hooks';
 import { useProfileSummary } from '@/lib/profile/hooks';
+import { formatBadgeCount } from '@/lib/site/document-badge';
 import {
   MINI_PROFILE_ADMIN,
   MiniProfileAdminContent,
@@ -41,6 +43,20 @@ import { floatingClearance } from './floating-actions';
 import { ProfileTrigger } from './profile-trigger';
 
 const SOON = 'скоро';
+
+/// Счётчик пункта меню (новые заявки в друзья) — справа, как у уведомлений.
+function EntryBadge({ count }: { count?: number }) {
+  if (!count) return null;
+  return (
+    <span
+      className="ml-auto rounded-full bg-primary px-1.5 text-[11px] font-semibold leading-5 text-primary-foreground tabular-nums"
+      aria-label={`новых: ${count}`}
+      data-testid="mini-profile-badge"
+    >
+      {formatBadgeCount(count)}
+    </span>
+  );
+}
 
 /// Аватар + mini profile в header (ADR-0088, ADR-0093). Анонимам — «Войти».
 /// Desktop — меню-popover с шапкой профиля; mobile — bottom sheet с тем же
@@ -60,6 +76,7 @@ export function ProfileMenu() {
   const [bottomClearance, setBottomClearance] = useState(8);
   const summary = useProfileSummary(user?.username ?? '', open && !!user);
   const wallet = useWallet(open && !!user);
+  const friendRequests = useIncomingRequestsCount(status === 'authenticated' && !!user);
 
   useEffect(() => {
     if (status === 'idle') {
@@ -81,7 +98,9 @@ export function ProfileMenu() {
     );
   }
 
-  const entries = miniProfileEntries(user.username);
+  const entries = miniProfileEntries(user.username, {
+    friendRequests: friendRequests.data?.count,
+  });
   const admin = can(ADMIN_ENTRY_REQUIREMENT);
   const header = (bleed: boolean) => (
     <MiniProfileSummary
@@ -127,6 +146,7 @@ export function ProfileMenu() {
                         <Link href={entry.href}>
                           <entry.icon />
                           {entry.label}
+                          <EntryBadge count={entry.badge} />
                         </Link>
                       </Button>
                     </DrawerClose>
@@ -207,6 +227,7 @@ export function ProfileMenu() {
                   <Link href={entry.href}>
                     <entry.icon />
                     {entry.label}
+                    <EntryBadge count={entry.badge} />
                   </Link>
                 </DropdownMenuItem>
               ) : (
