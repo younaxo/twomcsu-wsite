@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { VoteWebhookDto } from './dto/vote-webhook.dto';
@@ -67,33 +68,46 @@ export class VotingService {
       return { accepted: false, reason: 'user_not_found' };
     }
 
-    const lastVote = await this.prisma.playerVote.findFirst({
-      where: { siteId: site.id, userId: user.id },
-      orderBy: { votedAt: 'desc' },
-    });
-    if (lastVote) {
-      const cooldownMs = site.cooldownHours * 60 * 60 * 1000;
-      if (Date.now() - lastVote.votedAt.getTime() < cooldownMs) {
-        return { accepted: false, reason: 'cooldown' };
+    const cooldownMs = site.cooldownHours * 60 * 60 * 1000;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Параллельные вебхуки одного игрока на один сайт идут по очереди:
+        // иначе оба проходят проверку cooldown и награда начисляется дважды
+        // (ADR-0121). Блокировка снимается с концом транзакции.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`vote:${site.id}:${user.id}`}))`;
+        const lastVote = await tx.playerVote.findFirst({
+          where: { siteId: site.id, userId: user.id },
+          orderBy: { votedAt: 'desc' },
+        });
+        if (lastVote && Date.now() - lastVote.votedAt.getTime() < cooldownMs) {
+          return { accepted: false, reason: 'cooldown' };
+        }
+        await tx.playerVote.create({
+          data: {
+            siteId: site.id,
+            userId: user.id,
+            externalId: dto.externalId,
+            rewardCoins: site.rewardCoins,
+          },
+        });
+        await tx.playerStatistics.upsert({
+          where: { userId: user.id },
+          create: { userId: user.id, coins: site.rewardCoins },
+          update: { coins: { increment: site.rewardCoins } },
+        });
+        return { accepted: true };
+      });
+    } catch (error) {
+      // Повтор того же голоса (externalId уже учтён) — не 500: сайт-рейтинг
+      // ретраит не-2xx ответы бесконечно.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        String(error.meta?.target ?? '').includes('externalId')
+      ) {
+        return { accepted: false, reason: 'duplicate' };
       }
+      throw error;
     }
-
-    await this.prisma.$transaction([
-      this.prisma.playerVote.create({
-        data: {
-          siteId: site.id,
-          userId: user.id,
-          externalId: dto.externalId,
-          rewardCoins: site.rewardCoins,
-        },
-      }),
-      this.prisma.playerStatistics.upsert({
-        where: { userId: user.id },
-        create: { userId: user.id, coins: site.rewardCoins },
-        update: { coins: { increment: site.rewardCoins } },
-      }),
-    ]);
-
-    return { accepted: true };
   }
 }

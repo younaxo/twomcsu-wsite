@@ -225,6 +225,53 @@ describe('Voting (e2e)', () => {
     expect(site.canVoteNow).toBe(false);
   });
 
+  it('webhook: параллельные голоса — одна награда; повтор externalId — duplicate, не 500 (ADR-0121)', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/admin/voting/sites')
+      .set('Authorization', auth(admin))
+      .send({
+        slug: `${slug}-race`,
+        name: 'Race Top',
+        url: 'https://example.com/race',
+        cooldownHours: 24,
+        rewardCoins: 7,
+      })
+      .expect(201);
+    const raceSecret = created.body.secret as string;
+    const before = await prisma.playerStatistics.findUnique({
+      where: { userId: alice.id },
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        request(app.getHttpServer())
+          .post(`/voting/webhook/${slug}-race`)
+          .send({ secret: raceSecret, username: alice.username })
+          .expect(200),
+      ),
+    );
+    expect(results.filter((res) => res.body.accepted)).toHaveLength(1);
+    const after = await prisma.playerStatistics.findUnique({
+      where: { userId: alice.id },
+    });
+    expect(after?.coins ?? 0).toBe((before?.coins ?? 0) + 7);
+
+    // Повтор того же голоса (externalId уже учтён) после cooldown — не награда.
+    await prisma.playerVote.updateMany({
+      where: { site: { slug: `${slug}-race` } },
+      data: { externalId: `ext-${unique}`, votedAt: new Date(0) },
+    });
+    const replay = await request(app.getHttpServer())
+      .post(`/voting/webhook/${slug}-race`)
+      .send({
+        secret: raceSecret,
+        username: alice.username,
+        externalId: `ext-${unique}`,
+      })
+      .expect(200);
+    expect(replay.body).toEqual({ accepted: false, reason: 'duplicate' });
+  });
+
   it('admin: rotate-secret делает старый секрет недействительным', async () => {
     const rotated = await request(app.getHttpServer())
       .post(`/admin/voting/sites/${siteId}/rotate-secret`)
