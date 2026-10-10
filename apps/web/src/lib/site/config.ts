@@ -271,12 +271,15 @@ export const CURRENCIES: CurrencyOption[] = [
 ];
 
 /// Showcase возможностей проекта на главной: 1 крупный + 3 дополнительных.
-/// Изображения — только реальные превью владельца (CDN); без них карточка
-/// рисуется без картинки, фейковые скриншоты не подставляются.
+/// Изображения — только реальные: скриншот из реестра (`screenshot`, ADR-0096)
+/// или превью владельца через env (`image`); без них карточка рисуется без
+/// картинки, фейковые скриншоты не подставляются.
 export interface HomeFeature {
   id: string;
   title: string;
   description: string;
+  /// id кадра из `PROJECT_SCREENSHOTS`.
+  screenshot?: string;
   image?: string | null;
   size: 'large' | 'small';
 }
@@ -286,8 +289,8 @@ export const HOME_FEATURES: HomeFeature[] = [
     id: 'casino',
     title: '3D-казино',
     description:
-      'Настоящее казино прямо на сервере: рулетка, слоты и столы с объёмными моделями, ставки игровой валютой.',
-    image: process.env.NEXT_PUBLIC_HOME_FEATURE_CASINO || null,
+      'Кастомное 3D-казино прямо на сервере: рулетка с крупье, слоты и бильярд с объёмными моделями.',
+    screenshot: '3d-casino',
     size: 'large',
   },
   {
@@ -314,13 +317,17 @@ export const HOME_FEATURES: HomeFeature[] = [
   },
 ];
 
-/// Сильные изображения hero (скриншоты проекта) — только реальные ассеты
-/// владельца через env (относительные пути CDN через запятую).
-export const HOME_HERO_IMAGES: string[] = (process.env.NEXT_PUBLIC_HOME_HERO_IMAGES || '')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean)
-  .map((value) => (/^https?:\/\//.test(value) ? value : cdnUrl(value)));
+/// Кадры hero главной (ADR-0096): крупный — над сгибом (priority), второй —
+/// панорама. Остальные кадры — в галерее под showcase.
+export const HOME_HERO_SHOTS = ['spawn-day', 'spawn-night'] as const;
+/// Галерея «Как выглядит twomc.su» — кадры, которых нет в hero и showcase.
+export const HOME_GALLERY_SHOTS = [
+  'spawn-town',
+  'spawn-hall',
+  'amethyst-crater',
+  'spawn-night-plaza',
+  'spawn-hills',
+] as const;
 
 export function isSiteNavActive(item: SiteNavItem, pathname: string): boolean {
   if (item.exact) {

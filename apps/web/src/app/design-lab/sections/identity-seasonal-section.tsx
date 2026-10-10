@@ -42,7 +42,7 @@ import {
 import { SwitchField } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
-import { HOME_HERO_IMAGES } from '@/lib/site/config';
+import { getScreenshot, screenshotUrl } from '@/lib/site/project-screenshots';
 import {
   SEASONAL_CAMPAIGNS,
   SEASONAL_EFFECTS,
@@ -60,8 +60,8 @@ import { demoUsers } from '../demo-data';
 /// профиле).
 
 const demo = demoUsers[0]!;
-// Баннер — реальный скриншот проекта из конфига главной (если задан).
-const BANNER = HOME_HERO_IMAGES[0] ?? null;
+// Баннер — реальный скриншот проекта из реестра (ADR-0096).
+const BANNER = screenshotUrl(getScreenshot('spawn-town'), 1280, 'webp');
 
 const me: MeResponse = {
   id: demo.id,

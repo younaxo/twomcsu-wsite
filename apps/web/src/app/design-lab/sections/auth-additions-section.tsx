@@ -16,6 +16,7 @@ import {
 } from '@/components/auth/auth-layout';
 import { AuthTutorial } from '@/components/auth/auth-tutorial';
 import { LinkCodeInput } from '@/components/auth/link-code-input';
+import { ScreenshotCarousel } from '@/components/site/screenshot-carousel';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { OtpInput } from '@/components/ui/otp-input';
@@ -161,6 +162,52 @@ function ForgotPreviewBlock() {
   );
 }
 
+type CarouselDemo = 'autoplay' | 'manual' | 'second' | 'mobile' | 'reduced';
+
+/// Auth Screenshot Carousel — тот же production-компонент, что в панели входа
+/// и регистрации, на реальных кадрах из реестра (CDN).
+function ShowcasePreview() {
+  const [mode, setMode] = useState<CarouselDemo>('autoplay');
+  return (
+    <Block
+      title="Auth Screenshot Carousel"
+      note="Правая половина панели входа и регистрации — только реальный скриншот TwoMC на всю площадь (без текста и логотипа): точки, пауза и ← → поверх кадра, «развернуть» справа сверху; автопрокрутка 6 с с паузой на наведении и фокусе, свайп и клавиатура; на телефоне — кадр 16:6 с точками; при «уменьшении движения» — только вручную."
+    >
+      <div className="max-w-full overflow-x-auto pb-1 scrollbar-thin">
+        <SegmentedControl
+          size="sm"
+          aria-label="Состояние карусели"
+          value={mode}
+          onValueChange={(value) => setMode(value as CarouselDemo)}
+          options={[
+            { value: 'autoplay', label: 'Автопрокрутка' },
+            { value: 'manual', label: 'Вручную' },
+            { value: 'second', label: 'Второй кадр' },
+            { value: 'mobile', label: 'Mobile' },
+            { value: 'reduced', label: 'Reduced motion' },
+          ]}
+        />
+      </div>
+      <div
+        className={
+          mode === 'mobile'
+            ? 'w-[375px] max-w-full overflow-hidden rounded-xl'
+            : 'h-[30rem] w-full max-w-[34rem] overflow-hidden rounded-r-2xl'
+        }
+      >
+        <ScreenshotCarousel
+          key={mode}
+          variant={mode === 'mobile' ? 'compact' : 'fill'}
+          autoplay={mode !== 'manual'}
+          initialIndex={mode === 'second' ? 1 : 0}
+          forceReducedMotion={mode === 'reduced'}
+          onOpen={mode === 'mobile' ? undefined : () => undefined}
+        />
+      </div>
+    </Block>
+  );
+}
+
 export function AuthAdditionsSection() {
   return (
     <div className="flex flex-col gap-10">
@@ -178,6 +225,7 @@ export function AuthAdditionsSection() {
           </div>
         </Block>
       </div>
+      <ShowcasePreview />
       <Block
         title="Забыли пароль?"
         note="Та же форма, что на /forgot-password: по e-mail или по нику, маска адреса, полный e-mail вводит человек."

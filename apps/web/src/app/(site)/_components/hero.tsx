@@ -1,7 +1,6 @@
 'use client';
 
 import { ArrowDown, Play } from 'lucide-react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { BrandWordmark } from '@/components/shell/brand-wordmark';
 import { overviewHealth } from '@/components/shell/server-status-button';
@@ -10,14 +9,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { formatNumber, plural } from '@/lib/format';
 import {
-  HOME_HERO_IMAGES,
+  HOME_HERO_SHOTS,
   SERVER_ADDRESS,
   SITE_DESCRIPTION,
-  SITE_LOGO_URL,
   SUPPORTED_VERSIONS,
 } from '@/lib/site/config';
 import { useServersOverview } from '@/lib/site/hooks';
 import { CopyAddressButton } from './copy-address-button';
+import { ScreenshotPicture } from '@/components/site/screenshot-picture';
+import { getScreenshot, type ProjectScreenshot } from '@/lib/site/project-screenshots';
 
 const HEALTH_LABEL = {
   operational: { text: 'Все сервера работают', dot: 'bg-success' },
@@ -66,14 +66,16 @@ function Stat({
 
 /// Первый экран: название, суть проекта, живой онлайн и статус по реальному
 /// ping, адрес, версии, кнопки «Начать играть» и «Скопировать IP».
-/// Изображения — только реальные скриншоты владельца (HOME_HERO_IMAGES);
-/// без них справа — официальный логотип, не чужие картинки.
+/// Изображения — реальные скриншоты сервера из реестра (HOME_HERO_SHOTS).
 export function HomeHero() {
   const overview = useServersOverview();
   const players = overview.data?.totalPlayers;
   const health = overviewHealth(overview.data, overview.isError);
   const versions = collectVersions(overview.data?.servers);
-  const [primaryImage, secondaryImage] = HOME_HERO_IMAGES;
+  const [primaryShot, secondaryShot] = HOME_HERO_SHOTS.map(getScreenshot) as [
+    ProjectScreenshot,
+    ProjectScreenshot,
+  ];
 
   return (
     <section
@@ -157,48 +159,22 @@ export function HomeHero() {
       </div>
 
       <div className="grid gap-3" data-testid="hero-media">
-        {primaryImage ? (
-          <figure className="relative aspect-[16/10] overflow-hidden rounded-xl border bg-surface-sunken shadow-lg">
-            <Image
-              src={primaryImage}
-              alt="Скриншот сервера twomc.su"
-              fill
-              sizes="(min-width: 1024px) 45vw, 100vw"
-              className="object-cover"
-              priority
-            />
-          </figure>
-        ) : (
-          <div className="relative flex aspect-[16/10] items-center justify-center overflow-hidden rounded-xl border bg-surface-sunken shadow-lg">
-            {/* Основной логотип (исходник 1095×1094). Размер в разметке =
-                фактическому (224px): srcset 1x/2x без растягивания; q=90 и
-                без CSS-фильтров — края не «мылятся». */}
-            <Image
-              src={SITE_LOGO_URL}
-              alt=""
-              width={224}
-              height={224}
-              quality={90}
-              priority
-              draggable={false}
-              className="size-40 select-none md:size-56"
-            />
-            <p className="absolute bottom-3 right-3 rounded-sm bg-surface/90 px-2 py-1 text-[11px] text-muted-foreground">
-              Скриншоты проекта — скоро
-            </p>
-          </div>
-        )}
-        {secondaryImage ? (
-          <figure className="relative aspect-[21/9] overflow-hidden rounded-xl border bg-surface-sunken">
-            <Image
-              src={secondaryImage}
-              alt="Скриншот сервера twomc.su"
-              fill
-              sizes="(min-width: 1024px) 45vw, 100vw"
-              className="object-cover"
-            />
-          </figure>
-        ) : null}
+        {/* Реальные скриншоты сервера (ADR-0096): крупный — над сгибом. */}
+        <figure className="relative aspect-[16/10] overflow-hidden rounded-xl border bg-surface-sunken shadow-lg">
+          <ScreenshotPicture
+            shot={primaryShot}
+            priority
+            sizes="(min-width: 1024px) 45vw, 100vw"
+            className="absolute inset-0 size-full"
+          />
+        </figure>
+        <figure className="relative aspect-[21/9] overflow-hidden rounded-xl border bg-surface-sunken">
+          <ScreenshotPicture
+            shot={secondaryShot}
+            sizes="(min-width: 1024px) 45vw, 100vw"
+            className="absolute inset-0 size-full"
+          />
+        </figure>
       </div>
     </section>
   );

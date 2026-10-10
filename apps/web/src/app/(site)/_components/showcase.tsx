@@ -3,7 +3,11 @@
 import { Clapperboard, Dices, Sparkles, Swords, type LucideIcon } from 'lucide-react';
 import Image from 'next/image';
 import { cn } from '@/lib/cn';
-import { HOME_FEATURES, type HomeFeature } from '@/lib/site/config';
+import { useState } from 'react';
+import { ScreenshotPicture } from '@/components/site/screenshot-picture';
+import { ScreenshotViewer } from '@/components/site/screenshot-viewer';
+import { HOME_FEATURES, HOME_GALLERY_SHOTS, type HomeFeature } from '@/lib/site/config';
+import { getScreenshot } from '@/lib/site/project-screenshots';
 import { HomeSection } from './section';
 
 const ICONS: Record<string, LucideIcon> = {
@@ -30,7 +34,13 @@ function FeatureCard({ feature }: { feature: HomeFeature }) {
           large ? 'aspect-[16/9] md:min-h-[320px] md:flex-1' : 'aspect-[16/7]',
         )}
       >
-        {feature.image ? (
+        {feature.screenshot ? (
+          <ScreenshotPicture
+            shot={getScreenshot(feature.screenshot)}
+            sizes={large ? '(min-width: 768px) 60vw, 100vw' : '(min-width: 768px) 30vw, 100vw'}
+            className="absolute inset-0 size-full transition-transform duration-slow group-hover:scale-[1.02] motion-reduce:transition-none"
+          />
+        ) : feature.image ? (
           <Image
             src={feature.image}
             alt={feature.title}
@@ -61,6 +71,46 @@ function FeatureCard({ feature }: { feature: HomeFeature }) {
 /// Showcase реальных сильных сторон проекта: 1 крупная карточка + 3
 /// дополнительных. Превью — только реальные изображения владельца; без них
 /// карточка с иконкой, не чужой скриншот.
+/// «Как выглядит twomc.su» — остальные реальные кадры (без повторов hero и
+/// showcase); клик — просмотр крупно в production Dialog.
+function HomeGallery() {
+  const shots = HOME_GALLERY_SHOTS.map(getScreenshot);
+  const [viewing, setViewing] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-3" data-testid="home-gallery">
+      <h3 className="font-display text-lg font-semibold">Как выглядит twomc.su</h3>
+      <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+        {shots.map((shot, index) => (
+          <li key={shot.id} className={cn(index === 0 && 'col-span-2 md:col-span-1')}>
+            <button
+              type="button"
+              onClick={() => setViewing(index)}
+              aria-label={`Открыть «${shot.title}» крупно`}
+              className="group/shot flex w-full flex-col gap-2 text-left"
+            >
+              <span className="relative block aspect-[16/10] w-full overflow-hidden rounded-lg border bg-surface-sunken">
+                <ScreenshotPicture
+                  shot={shot}
+                  decorative
+                  sizes="(min-width: 1024px) 20vw, (min-width: 768px) 33vw, 50vw"
+                  className="absolute inset-0 size-full transition-transform duration-slow group-hover/shot:scale-[1.02] motion-reduce:transition-none"
+                />
+              </span>
+              <span className="text-sm font-medium">{shot.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <ScreenshotViewer
+        shots={shots}
+        index={viewing}
+        onIndexChange={setViewing}
+        onClose={() => setViewing(null)}
+      />
+    </div>
+  );
+}
+
 export function HomeShowcase() {
   const large = HOME_FEATURES.find((feature) => feature.size === 'large');
   const small = HOME_FEATURES.filter((feature) => feature.size !== 'large').slice(0, 3);
@@ -77,6 +127,7 @@ export function HomeShowcase() {
           <FeatureCard key={feature.id} feature={feature} />
         ))}
       </div>
+      <HomeGallery />
     </HomeSection>
   );
 }
