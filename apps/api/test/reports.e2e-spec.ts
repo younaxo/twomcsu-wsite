@@ -419,11 +419,22 @@ describe('Reports (e2e)', () => {
       .set('Authorization', auth(moderator))
       .expect(200);
 
+    // ADR-0119: внутренняя заметка персонала не уходит автору.
+    await prisma.report.update({
+      where: { reportNumber },
+      data: { internalNote: 'только для персонала' },
+    });
     const authorView = await request(app.getHttpServer())
       .get(`/reports/${reportNumber}`)
       .set('Authorization', auth(alice))
       .expect(200);
     expect(authorView.body.moderatorNotes).toBeUndefined();
+    expect(authorView.body.internalNote).toBeUndefined();
+    const mine = await request(app.getHttpServer())
+      .get('/reports')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(JSON.stringify(mine.body)).not.toContain('только для персонала');
 
     await request(app.getHttpServer())
       .delete(`/moderation/reports/${reportNumber}/notes/${noteId}`)
