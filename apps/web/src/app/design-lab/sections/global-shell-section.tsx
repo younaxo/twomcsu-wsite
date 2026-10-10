@@ -11,6 +11,7 @@ import { ProfileMenu } from '@/components/shell/profile-menu';
 import { ServerStatusButton } from '@/components/shell/server-status-button';
 import { OnlineCounter, SidebarRail } from '@/components/shell/sidebar-rail';
 import { MojangDisclaimer, SiteFooter } from '@/components/shell/site-footer';
+import { SiteIcon } from '@/components/shell/site-icon';
 import { SiteHeader } from '@/components/shell/site-header';
 import { Card } from '@/components/ui/card';
 import { popoverContentClassName } from '@/components/ui/popover';
@@ -73,6 +74,7 @@ export function GlobalShellSection() {
       </div>
 
       <NotificationsPanelPreview />
+      <ExternalLinkPreview />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="flex flex-col gap-3">
@@ -162,6 +164,41 @@ const DEMO_NOTIFICATIONS: NotificationDto[] = [
 ];
 
 type PanelState = 'list' | 'empty' | 'error' | 'loading';
+
+/// Подтверждение внешнего перехода (ADR-0102) — настоящий ExternalLinkGuard:
+/// клик по ссылке открывает production-диалог с иконкой сайта. Известные
+/// сервисы — brand-иконка, остальные — фавиконка через защищённый резолвер,
+/// нет иконки — Globe.
+function ExternalLinkPreview() {
+  const links = [
+    { href: 'https://github.com/younaxo', label: 'GitHub — brand-иконка' },
+    { href: 'https://www.youtube.com/@twomc', label: 'YouTube — brand-иконка' },
+    { href: 'https://reallyworld.ru/news', label: 'reallyworld.ru — фавиконка сайта' },
+  ];
+  return (
+    <Card className="flex flex-col gap-3">
+      <p className="text-sm font-semibold">Подтверждение внешнего перехода</p>
+      <p className="text-xs text-muted-foreground">
+        Клик открывает настоящий диалог «Вы переходите на внешний сайт» с иконкой сайта. Фавиконку
+        загружает наш API с защитой от SSRF; в резолвер уходит только адрес сайта, без пути.
+      </p>
+      <ul className="flex flex-col gap-2 text-sm">
+        {links.map((link) => (
+          <li key={link.href} className="flex items-center gap-3">
+            <SiteIcon href={link.href} />
+            <a href={link.href} className="text-primary hover:underline">
+              {link.label}
+            </a>
+          </li>
+        ))}
+        <li className="flex items-center gap-3">
+          <SiteIcon href="https://example.invalid/" />
+          <span className="text-muted-foreground">Нет иконки — Globe</span>
+        </li>
+      </ul>
+    </Card>
+  );
+}
 
 /// Окно уведомлений колокольчика — production `NotificationsPanel` на демо-данных:
 /// список (непрочитанные, системное, прочитанное, длинный текст), пусто, ошибка,
