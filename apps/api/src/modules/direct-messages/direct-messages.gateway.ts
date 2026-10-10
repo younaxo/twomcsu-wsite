@@ -14,6 +14,14 @@ import {
 import { Server, Socket } from 'socket.io';
 import { AccessTokenPayload } from '../auth/interfaces/access-token-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import {
+  WS_RATE_MESSAGE,
+  wsAllowed,
+  type WsLimitGroup,
+} from '../redis/ws-rate-limit';
+import { PermissionService } from '../roles/permission.service';
+import { SiteStatusService } from '../system/site-status.service';
 import { ConversationIdDto } from './dto/socket/conversation-id.dto';
 import { EditMessageSocketDto } from './dto/socket/edit-message-socket.dto';
 import { MessageIdDto } from './dto/socket/message-id.dto';
@@ -72,7 +80,31 @@ export class DirectMessagesGateway
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly dm: DirectMessagesService,
+    private readonly status: SiteStatusService,
+    private readonly permissions: PermissionService,
+    private readonly redis: RedisService,
   ) {}
+
+  /// Модуль «Личные сообщения» выключен или идут техработы (ADR-0123) — WS
+  /// закрыт, как REST (`SiteModuleGuard`); сотрудники с
+  /// `system.maintenance.bypass` проходят.
+  private async moduleRefusal(userId: string): Promise<string | null> {
+    const reason = await this.status.unavailable('direct-messages');
+    if (!reason) return null;
+    if (
+      await this.permissions.hasPermission(userId, 'system.maintenance.bypass')
+    ) {
+      return null;
+    }
+    return reason === 'MAINTENANCE'
+      ? 'Идут технические работы. Сообщения скоро заработают.'
+      : 'Личные сообщения временно недоступны.';
+  }
+
+  /// Лимит событий сокета (ADR-0123).
+  private allowed(client: Socket, group: WsLimitGroup): Promise<boolean> {
+    return wsAllowed(this.redis, 'messages', group, client.data.userId);
+  }
 
   afterInit(server: Server): void {
     server.use((client: Socket, next: (err?: Error) => void) => {
@@ -96,6 +128,10 @@ export class DirectMessagesGateway
     });
     if (!user || user.isBanned) {
       throw new Error('Аккаунт недоступен');
+    }
+    const refusal = await this.moduleRefusal(user.id);
+    if (refusal) {
+      throw new Error(refusal);
     }
     client.data.userId = user.id;
   }
@@ -129,6 +165,7 @@ export class DirectMessagesGateway
     @MessageBody() dto: ConversationIdDto,
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'room'))) return;
       await this.dm.requireMember(client.data.userId, dto.conversationId);
       await client.join(conversationRoom(dto.conversationId));
     } catch {
@@ -150,6 +187,14 @@ export class DirectMessagesGateway
     @MessageBody() dto: SendMessageSocketDto,
   ): Promise<AckResponse> {
     try {
+      if (!(await this.allowed(client, 'send'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
+      // Модуль выключили, пока сокет подключён, — отправка тоже закрыта.
+      const refusal = await this.moduleRefusal(client.data.userId);
+      if (refusal) {
+        throw new Error(refusal);
+      }
       const message = await this.dm.sendMessage(
         client.data.userId,
         dto.conversationId,
@@ -174,6 +219,9 @@ export class DirectMessagesGateway
     @MessageBody() dto: EditMessageSocketDto,
   ): Promise<AckResponse> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
       const message = await this.dm.editMessage(
         client.data.userId,
         dto.messageId,
@@ -200,6 +248,9 @@ export class DirectMessagesGateway
     @MessageBody() dto: MessageIdDto,
   ): Promise<AckResponse> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
       const message = await this.dm.deleteMessage(
         client.data.userId,
         dto.messageId,
@@ -223,6 +274,9 @@ export class DirectMessagesGateway
     @MessageBody() dto: ReactMessageSocketDto,
   ): Promise<AckResponse> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
       const result = await this.dm.react(client.data.userId, dto.messageId, {
         emoji: dto.emoji,
       });
@@ -245,6 +299,7 @@ export class DirectMessagesGateway
     @MessageBody() dto: ConversationIdDto,
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) return;
       await this.dm.markRead(client.data.userId, dto.conversationId);
       this.server
         .to(conversationRoom(dto.conversationId))
@@ -283,6 +338,7 @@ export class DirectMessagesGateway
     event: 'typing:start' | 'typing:stop',
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'typing'))) return;
       await this.dm.requireMember(client.data.userId, conversationId);
       client.to(conversationRoom(conversationId)).emit(event, {
         conversationId,
