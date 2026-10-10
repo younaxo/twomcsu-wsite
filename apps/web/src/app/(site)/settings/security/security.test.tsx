@@ -43,11 +43,20 @@ beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.get.mockResolvedValue([
     {
+      id: 'me',
+      userAgent: SAFARI_IOS,
+      ipAddress: '10.0.0.2',
+      createdAt: '2026-10-02T10:00:00.000Z',
+      expiresAt: '2026-11-02T10:00:00.000Z',
+      current: true,
+    },
+    {
       id: 's1',
       userAgent: CHROME_WIN,
       ipAddress: '10.0.0.1',
       createdAt: '2026-10-01T10:00:00.000Z',
       expiresAt: '2026-11-01T10:00:00.000Z',
+      current: false,
     },
   ]);
   mocks.post.mockResolvedValue({ success: true });
@@ -94,8 +103,18 @@ describe('Настройки → Безопасность', () => {
     render(<SecuritySettingsPage />, { wrapper: Providers });
     const list = await screen.findByTestId('sessions');
     expect(list).toHaveTextContent('Chrome, Windows');
+    // У своего устройства — метка и нет «Завершить»; у чужого — есть.
+    const mine = list.querySelector('li[data-current]') as HTMLElement;
+    expect(mine).toHaveTextContent('Это устройство');
+    expect(within(mine).queryByRole('button', { name: 'Завершить' })).toBeNull();
+    expect(within(list).getAllByRole('button', { name: 'Завершить' })).toHaveLength(1);
     await user.click(within(list).getByRole('button', { name: 'Завершить' }));
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/auth/sessions/s1'));
+    expect(mocks.delete).not.toHaveBeenCalledWith('/auth/sessions/me');
+
+    await user.click(screen.getByRole('button', { name: /Завершить все остальные/ }));
+    await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/auth/sessions/others'));
+    expect(mocks.replace).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: /Выйти на всех устройствах/ }));
     const dialog = await screen.findByRole('alertdialog');

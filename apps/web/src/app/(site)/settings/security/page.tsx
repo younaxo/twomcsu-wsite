@@ -1,5 +1,6 @@
 'use client';
 
+import type { SessionSummary } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LogOut, Monitor, Smartphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -8,6 +9,7 @@ import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -22,15 +24,10 @@ import { formatDateTime } from '@/lib/format';
 const island = 'flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-sm';
 const SESSIONS_KEY = ['account', 'sessions'] as const;
 
-interface SessionDto {
-  id: string;
-  userAgent: string | null;
-  ipAddress: string | null;
-  createdAt: string;
-  expiresAt: string;
-}
+type SessionDto = SessionSummary;
 
 function ChangePassword() {
+  const client = useQueryClient();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -51,6 +48,12 @@ function ChangePassword() {
     try {
       await change.mutateAsync();
       toast.success('Пароль изменён');
+      // Обязательная смена выполнена — снять флаг сразу (сервер уже сбросил его),
+      // иначе оболочка продолжит возвращать на эту страницу.
+      useAuthStore.setState((state) =>
+        state.user ? { user: { ...state.user, mustChangePassword: false } } : state,
+      );
+      void client.invalidateQueries({ queryKey: SESSIONS_KEY });
       setCurrent('');
       setNext('');
       setRepeat('');
@@ -122,6 +125,10 @@ function Sessions() {
     onSuccess: () => void client.invalidateQueries({ queryKey: SESSIONS_KEY }),
   });
   const revokeAll = useMutation({ mutationFn: () => api.delete('/auth/sessions') });
+  const revokeOthers = useMutation({
+    mutationFn: () => api.delete<{ count: number }>('/auth/sessions/others'),
+    onSuccess: () => void client.invalidateQueries({ queryKey: SESSIONS_KEY }),
+  });
 
   return (
     <section className={island} aria-label="Сессии">
@@ -132,10 +139,26 @@ function Sessions() {
             Незнакомое устройство — завершите сессию и смените пароль.
           </p>
         </div>
-        <Button size="sm" variant="secondary" onClick={() => setConfirmAll(true)}>
-          <LogOut />
-          Выйти на всех устройствах
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={revokeOthers.isPending}
+            disabled={(query.data?.filter((session) => !session.current).length ?? 0) === 0}
+            onClick={() =>
+              revokeOthers.mutate(undefined, {
+                onSuccess: () => toast.success('Остальные сессии завершены'),
+                onError: (error) => toast.error(getErrorMessage(error)),
+              })
+            }
+          >
+            <LogOut />
+            Завершить все остальные
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirmAll(true)}>
+            Выйти на всех устройствах
+          </Button>
+        </div>
       </div>
       <QueryBoundary query={query} skeleton={<SkeletonRows rows={3} />}>
         {(sessions) =>
@@ -147,28 +170,38 @@ function Sessions() {
                 const device = describeDevice(session.userAgent);
                 const Icon = device.mobile ? Smartphone : Monitor;
                 return (
-                  <li key={session.id} className="flex flex-wrap items-center gap-3 py-3">
+                  <li
+                    key={session.id}
+                    className="flex flex-wrap items-center gap-3 py-3"
+                    data-current={session.current || undefined}
+                  >
                     <Icon aria-hidden className="size-5 shrink-0 text-subtle-foreground" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{device.label}</p>
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                        {device.label}
+                        {session.current ? <Badge tone="success">Это устройство</Badge> : null}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {session.ipAddress ? `${session.ipAddress} · ` : ''}вход{' '}
                         {formatDateTime(session.createdAt)}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      loading={revoke.isPending && revoke.variables === session.id}
-                      onClick={() =>
-                        revoke.mutate(session.id, {
-                          onSuccess: () => toast.success('Сессия завершена'),
-                          onError: (error) => toast.error(getErrorMessage(error)),
-                        })
-                      }
-                    >
-                      Завершить
-                    </Button>
+                    {/* Своё устройство отсюда не завершается — для этого «Выйти». */}
+                    {session.current ? null : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={revoke.isPending && revoke.variables === session.id}
+                        onClick={() =>
+                          revoke.mutate(session.id, {
+                            onSuccess: () => toast.success('Сессия завершена'),
+                            onError: (error) => toast.error(getErrorMessage(error)),
+                          })
+                        }
+                      >
+                        Завершить
+                      </Button>
+                    )}
                   </li>
                 );
               })}
@@ -199,11 +232,28 @@ function Sessions() {
   );
 }
 
+/// Аккаунту нужно сменить пароль (mustChangePassword) — понятное объяснение.
+function RequiredChangeNotice() {
+  const required = useAuthStore((state) => Boolean(state.user?.mustChangePassword));
+  if (!required) return null;
+  return (
+    <p
+      className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning"
+      role="status"
+      data-testid="password-change-required"
+    >
+      Смените пароль, чтобы продолжить пользоваться twomc.su. После смены другие устройства будут
+      разлогинены.
+    </p>
+  );
+}
+
 /// «Настройки → Безопасность»: смена пароля и активные сессии.
 export default function SecuritySettingsPage() {
   return (
     <>
       <PageHeader title="Безопасность" description="Пароль и устройства, где выполнен вход." />
+      <RequiredChangeNotice />
       <RequireSession>
         <div className="flex flex-col gap-5">
           <ChangePassword />
