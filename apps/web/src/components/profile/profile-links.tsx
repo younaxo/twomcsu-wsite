@@ -67,7 +67,10 @@ function socialHref(value: string): string | null {
   return /^https:\/\//.test(value) ? value : null;
 }
 
-/// Круглая кнопка «Редактировать профиль» в правом верхнем углу баннера.
+/// Круглая кнопка «Редактировать профиль» в левом верхнем углу баннера.
+/// Наведение/фокус — спокойная реакция за ~200 мс: кнопка чуть подрастает
+/// (×1.03) и берёт акцентную поверхность, карандаш слегка наклоняется и
+/// приподнимается (без вращения). prefers-reduced-motion — только смена цвета.
 export function ProfileEditButton({ className }: { className?: string }) {
   return (
     <Tooltip content="Редактировать профиль">
@@ -76,10 +79,17 @@ export function ProfileEditButton({ className }: { className?: string }) {
         size="sm"
         variant="secondary"
         aria-label="Редактировать профиль"
-        className={cn('group/edit rounded-full shadow-sm', className)}
+        data-testid="profile-edit"
+        className={cn(
+          'group/edit rounded-full shadow-sm transition-[transform,background-color,color] duration-200 ease-out',
+          'hover:scale-[1.03] hover:bg-primary-soft hover:text-primary-soft-foreground',
+          'focus-visible:scale-[1.03] focus-visible:bg-primary-soft focus-visible:text-primary-soft-foreground',
+          'motion-reduce:transition-colors motion-reduce:hover:scale-100 motion-reduce:focus-visible:scale-100',
+          className,
+        )}
       >
         <Link href="/settings">
-          <Pencil className="transition-transform duration-fast group-hover/edit:-rotate-12 group-focus-visible/edit:-rotate-12 motion-reduce:transition-none motion-reduce:group-hover/edit:rotate-0" />
+          <Pencil className="transition-transform duration-200 ease-out group-hover/edit:-translate-y-px group-hover/edit:-rotate-6 group-focus-visible/edit:-translate-y-px group-focus-visible/edit:-rotate-6 motion-reduce:transition-none motion-reduce:group-hover/edit:transform-none motion-reduce:group-focus-visible/edit:transform-none" />
         </Link>
       </IconButton>
     </Tooltip>

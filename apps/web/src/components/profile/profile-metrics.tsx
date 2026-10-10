@@ -73,16 +73,22 @@ export function ProfileMetrics({
         {formatNumber(count)}
       </>
     );
-    // Свой профиль: оценить себя нельзя — просто счётчик, без кнопки.
+    // Свой профиль: оценить себя нельзя — недоступное действие (not-allowed,
+    // наш Tooltip), запрос не отправляется.
     if (own) {
       return (
-        <span
-          key={type}
-          className={cn(cell, 'text-muted-foreground')}
-          aria-label={`${label}: ${count}`}
-        >
-          {content}
-        </span>
+        <Tooltip key={type} content="Нельзя оценить собственный профиль">
+          <button
+            type="button"
+            aria-label={`${label}: ${count}`}
+            aria-disabled="true"
+            data-own-reaction={type}
+            onClick={(event) => event.preventDefault()}
+            className={cn(cell, 'cursor-not-allowed text-muted-foreground')}
+          >
+            {content}
+          </button>
+        </Tooltip>
       );
     }
     const pending = react.isPending && react.variables === (active ? null : type);

@@ -98,6 +98,19 @@ export function normalizeSocialValue(
 }
 
 type OwnProfile = Prisma.UserGetPayload<{ select: typeof OWN_PROFILE_SELECT }>;
+
+/// Публичный вид дня рождения: день и месяц, год — только с `showBirthDate`.
+export function birthdayView(user: {
+  birthDate: Date | null;
+  showBirthDate: boolean;
+}): { day: number; month: number; year: number | null } | null {
+  if (!user.birthDate) return null;
+  return {
+    day: user.birthDate.getUTCDate(),
+    month: user.birthDate.getUTCMonth() + 1,
+    year: user.showBirthDate ? user.birthDate.getUTCFullYear() : null,
+  };
+}
 type OwnProfileView = Omit<OwnProfile, 'discriminator'> & {
   discriminator: string;
 };
@@ -192,7 +205,10 @@ export class ProfilesService {
     }
 
     const resolved = this.withMedia(user);
-    const base = isOwner ? { ...resolved } : this.applyPrivacy(resolved);
+    // Владелец видит свои поля; день рождения — в том же виде, что у других.
+    const base = isOwner
+      ? { ...this.ownView(user), birthday: birthdayView(user) }
+      : this.applyPrivacy(resolved);
     const showSocials = isOwner || !user.hideSocials;
     return {
       ...base,
@@ -232,6 +248,92 @@ export class ProfilesService {
       // Только из реальной привязки; нет публичной страницы — null.
       url: connectedProfileUrl(account.provider, account),
     }));
+  }
+
+  /// Витрина профиля (ADR-0100) — только реальные данные: активные награды
+  /// пользователя (порядок `order`, затем дата) и выставленные им завершённые
+  /// достижения (`isShowcased`, порядок `showcaseOrder`). Секретность и
+  /// внутренние поля (условия, награды за достижение) наружу не уходят.
+  async getShowcase(username: string, viewerId: string | null) {
+    const id = await resolveUserIdByHandle(this.prisma, username);
+    const user = id
+      ? await this.prisma.user.findUnique({
+          where: { id },
+          select: { id: true, profileVisibility: true },
+        })
+      : null;
+    if (!user || !(await this.canView(user, viewerId))) {
+      throw new NotFoundException('Профиль не найден');
+    }
+    const [awards, achievements, achievementsCompleted] = await Promise.all([
+      this.prisma.userAward.findMany({
+        where: { userId: user.id, award: { isActive: true } },
+        orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
+        take: 24,
+        select: {
+          grantedAt: true,
+          award: {
+            select: {
+              slug: true,
+              name: true,
+              description: true,
+              iconUrl: true,
+              color: true,
+              rarity: true,
+            },
+          },
+        },
+      }),
+      this.prisma.userAchievement.findMany({
+        where: {
+          userId: user.id,
+          isCompleted: true,
+          isShowcased: true,
+          achievement: { isActive: true },
+        },
+        orderBy: [{ showcaseOrder: 'asc' }, { completedAt: 'asc' }],
+        take: 12,
+        select: {
+          completedAt: true,
+          achievement: {
+            select: {
+              slug: true,
+              name: true,
+              description: true,
+              iconUrl: true,
+              category: true,
+              rarity: true,
+            },
+          },
+        },
+      }),
+      this.prisma.userAchievement.count({
+        where: { userId: user.id, isCompleted: true },
+      }),
+    ]);
+    const icon = (value: string) =>
+      value.startsWith('/') ? value : this.storage.publicUrl(value);
+    return {
+      awards: awards.map(({ award, grantedAt }) => ({
+        slug: award.slug,
+        name: award.name,
+        description: award.description,
+        iconUrl: icon(award.iconUrl),
+        color: award.color,
+        rarity: award.rarity,
+        grantedAt: grantedAt.toISOString(),
+      })),
+      achievements: achievements.map(({ achievement, completedAt }) => ({
+        slug: achievement.slug,
+        name: achievement.name,
+        description: achievement.description,
+        iconUrl: icon(achievement.iconUrl),
+        category: achievement.category,
+        rarity: achievement.rarity,
+        completedAt: completedAt?.toISOString() ?? null,
+      })),
+      achievementsCompleted,
+    };
   }
 
   /// Просмотры (уникальные зрители, без собственных) и реакции профиля.
@@ -486,13 +588,12 @@ export class ProfilesService {
     if (!user.hideCountry) visible.country = user.country;
     if (!user.hideCity) visible.city = user.city;
     if (!user.hideGender) visible.gender = user.gender;
-    if (!user.hideBirthDate && user.birthDate) {
-      visible.birthDate = user.showBirthDate
-        ? user.birthDate
-        : {
-            month: user.birthDate.getUTCMonth() + 1,
-            day: user.birthDate.getUTCDate(),
-          };
+    // День рождения: скрыт (по умолчанию) — не отдаётся вовсе; показан — день
+    // и месяц, год — только если владелец разрешил (showBirthDate). Один
+    // нормализованный объект: клиенту не нужно знать флаги приватности.
+    if (!user.hideBirthDate) {
+      const birthday = birthdayView(user);
+      if (birthday) visible.birthday = birthday;
     }
     if (!user.hideSocials) visible.socialLinks = user.socialLinks;
 
