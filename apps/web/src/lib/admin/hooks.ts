@@ -6,7 +6,6 @@ import type {
   UpdateSiteAlertRequest,
   UpdateSiteSocialLinkRequest,
   AssignRoleRequest,
-  BroadcastRequest,
   BulkUsersRequest,
   CreateBookmarkRequest,
   CreateRoleRequest,
@@ -270,11 +269,7 @@ export function useAuditStats(enabled = true) {
   return useQuery({ queryKey: queryKeys.auditLog.stats, queryFn: adminApi.auditStats, enabled });
 }
 
-// --- Broadcast / settings --------------------------------------------------------
-
-export function useBroadcast() {
-  return useMutation({ mutationFn: (body: BroadcastRequest) => adminApi.broadcast(body) });
-}
+// --- Settings --------------------------------------------------------------------
 
 export function useKvSettings(enabled = true) {
   return useQuery({ queryKey: queryKeys.settings.kv, queryFn: adminApi.kvSettings, enabled });

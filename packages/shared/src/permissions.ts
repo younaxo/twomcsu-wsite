@@ -594,6 +594,16 @@ export const PERMISSIONS = [
     module: 'communications',
     description: 'Массовая рассылка системных сообщений (всем, роли, выбранным)',
   },
+  {
+    key: 'announcements.view',
+    module: 'announcements',
+    description: 'Просмотр объявлений сайта, включая черновики и снятые',
+  },
+  {
+    key: 'announcements.manage',
+    module: 'announcements',
+    description: 'Создание, изменение, публикация, снятие и удаление объявлений',
+  },
 
   {
     key: 'saved_filters.view',

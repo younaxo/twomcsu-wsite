@@ -1638,6 +1638,17 @@ model Announcement {
   createdBy     String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  /// ADR-0081: где показывать — banner (сайт под шапкой), notifications
+  /// (центр уведомлений), dashboard (главная админки). Пусто — нигде
+  /// (старые записи broadcast).
+  placements    String[]  @default([])
+  /// all — все посетители; users — вошедшие; role — обладатели `targetRole`.
+  audience      String    @default("all")
+  /// Первая публикация; null — черновик (isActive = false).
+  publishedAt   DateTime?
+  /// Уведомления разосланы (атомарная отметка против повторной рассылки).
+  notifiedAt    DateTime?
+  updatedBy     String?
 
   @@index([isActive, showFrom, showUntil])
   @@map("announcements")
