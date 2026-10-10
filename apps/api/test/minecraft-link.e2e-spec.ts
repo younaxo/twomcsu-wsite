@@ -72,7 +72,7 @@ describe('Minecraft link in registration (e2e)', () => {
     };
   }
 
-  /// /site-connect в игре → ссылка → страница → 15-символьный код.
+  /// /site-connect в игре → ссылка → страница → код привязки (16 символов).
   async function linkCode(player: { uuid: string; name: string }) {
     const connect = await plugin(
       '/minecraft/plugin/site-connect',
@@ -83,7 +83,8 @@ describe('Minecraft link in registration (e2e)', () => {
       .post('/minecraft/site-connect/open')
       .send({ token })
       .expect(200);
-    expect(open.body.code).toMatch(/^[A-HJ-NP-Z2-9]{15}$/);
+    // Новый формат (A12): XXX-000-X0X0-0X0.
+    expect(open.body.code).toMatch(/^[A-Z]{3}-[0-9]{3}-[A-Z][0-9][A-Z][0-9]-[0-9][A-Z][0-9]$/);
     return { code: open.body.code as string, token };
   }
 
@@ -154,7 +155,7 @@ describe('Minecraft link in registration (e2e)', () => {
     }).expect(401);
   });
 
-  it('полный путь: почта → /site-connect → 15 символов → 5 символов в игре → аккаунт с привязкой', async () => {
+  it('полный путь: почта → /site-connect → код привязки (16) → код X0XX0 в игре → аккаунт с привязкой', async () => {
     const player = newPlayer('ok');
     const reg = await verifiedRegistration(player.name);
 
@@ -180,10 +181,10 @@ describe('Minecraft link in registration (e2e)', () => {
       .post('/auth/register/minecraft/code')
       .send({ ...reg, code: pasted })
       .expect(200);
-    expect(issued.body.challenge).toMatch(/^[A-HJ-NP-Z2-9]{5}$/);
+    expect(issued.body.challenge).toMatch(/^[A-Z][0-9][A-Z]{2}[0-9]$/);
     expect(issued.body.name).toBe(player.name);
 
-    // Повтор того же 15-символьного кода — «уже использован».
+    // Повтор того же кода привязки — «уже использован».
     const replay = await request(app.getHttpServer())
       .post('/auth/register/minecraft/code')
       .send({ ...reg, code })
@@ -323,7 +324,7 @@ describe('Minecraft link in registration (e2e)', () => {
       .post('/auth/register/minecraft/challenge')
       .send(reg)
       .expect(200);
-    expect(renewed.body.challenge).toMatch(/^[A-HJ-NP-Z2-9]{5}$/);
+    expect(renewed.body.challenge).toMatch(/^[A-Z][0-9][A-Z]{2}[0-9]$/);
     const wrongCode = renewed.body.challenge === 'AAAAA' ? 'BBBBB' : 'AAAAA';
     for (let i = 0; i < 5; i += 1) {
       await plugin('/minecraft/plugin/site-connect/confirm', {

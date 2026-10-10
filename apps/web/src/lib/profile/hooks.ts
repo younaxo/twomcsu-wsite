@@ -5,8 +5,22 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { API_URL } from '@/lib/env';
 
+/// Просмотры (уникальные зрители, без своих) и реакции профиля (B5).
+export interface ProfileStatsDto {
+  views: number;
+  likes: number;
+  dislikes: number;
+  myReaction: 'LIKE' | 'DISLIKE' | null;
+}
+
 /// Публичная часть профиля: те же поля, что у своего, но скрытые сервер не отдаёт.
-export type PublicProfileDto = Partial<OwnProfileDto> & Pick<OwnProfileDto, 'id' | 'username'>;
+export type PublicProfileDto = Partial<OwnProfileDto> &
+  Pick<OwnProfileDto, 'id' | 'username'> & {
+    minecraftName?: string | null;
+    stats?: ProfileStatsDto;
+    /// Привязанные Discord/Telegram: провайдер и имя, без внешних ID.
+    connectedAccounts?: { provider: 'discord' | 'telegram'; name: string | null }[];
+  };
 
 export const profileKeys = {
   summary: (username: string) => ['profile', 'summary', username.toLowerCase()] as const,

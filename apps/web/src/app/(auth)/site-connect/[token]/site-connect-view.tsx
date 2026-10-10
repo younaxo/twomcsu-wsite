@@ -39,7 +39,7 @@ function errorCode(error: unknown): string {
 }
 
 /// /site-connect/<token> — ссылка из чата Minecraft (ADR-0072): показывает
-/// 15-символьный код, который вставляют в регистрацию. Каждое открытие выдаёт
+/// Код привязки XXX-000-X0X0-0X0 (16 символов), который вставляют в регистрацию. Каждое открытие выдаёт
 /// новый код (прежний перестаёт действовать), поэтому запрос — ровно один.
 export function SiteConnectView({ token }: { token: string }) {
   const [result, setResult] = useState<SiteConnectOpenResponse | null>(null);

@@ -283,9 +283,7 @@ function TutorialInstruction({
           <span className="rounded bg-surface-sunken px-2 py-0.5 font-mono font-semibold tracking-widest text-foreground">
             {step.example.value}
           </span>
-          {step.id === 'confirm-in-game' ? (
-            <span className="text-xs text-subtle-foreground">(пример)</span>
-          ) : null}
+          <span className="text-xs text-subtle-foreground">X — буква, 0 — цифра</span>
         </p>
       ) : null}
     </div>

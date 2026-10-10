@@ -109,14 +109,18 @@ describe('Настройки → Профиль', () => {
     fireEvent.change(vk, { target: { value: '' } });
     fireEvent.blur(vk);
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/users/me/social-links/VK'));
-    const telegram = screen.getByRole('textbox', { name: 'Telegram' });
-    fireEvent.change(telegram, { target: { value: '@player' } });
-    fireEvent.blur(telegram);
+    const github = screen.getByRole('textbox', { name: 'GitHub' });
+    fireEvent.change(github, { target: { value: 'player' } });
+    fireEvent.blur(github);
     await waitFor(() =>
-      expect(mocks.put).toHaveBeenCalledWith('/users/me/social-links/TELEGRAM', {
-        value: '@player',
+      expect(mocks.put).toHaveBeenCalledWith('/users/me/social-links/GITHUB', {
+        value: 'player',
       }),
     );
+    // Discord и Telegram — только привязки (B5), не текст в соцсетях.
+    expect(screen.queryByRole('textbox', { name: 'Telegram' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Discord' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Сайт' })).toBeInTheDocument();
   });
 
   it('аватар загружается файлом (multipart)', async () => {

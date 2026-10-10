@@ -2,7 +2,8 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFetchMock, jsonResponse, requestInfo, type FetchMock } from '@/test/http';
-import { MinecraftLinkStep, normalizeLinkCode } from './minecraft-link-step';
+import { LINK_CODE_PATTERN, formatByPattern } from '@/lib/auth/minecraft-code';
+import { MinecraftLinkStep } from './minecraft-link-step';
 
 let fetchMock: FetchMock;
 
@@ -22,13 +23,16 @@ const props = {
 };
 
 describe('MinecraftLinkStep', () => {
-  it('нормализация вставки: регистр, пробелы, дефисы, похожие символы, не больше 15', () => {
-    expect(normalizeLinkCode('abcde-fghjk lmnpq')).toBe('ABCDEFGHJKLMNPQ');
-    expect(normalizeLinkCode('ABCDEFGHJKLMNPQRSTU')).toHaveLength(15);
-    expect(normalizeLinkCode('O0I1abc')).toBe('ABC');
+  it('формат XXX-000-X0X0-0X0 (A12): регистр, дефисы сами, чужие символы позиции отбрасываются', () => {
+    expect(formatByPattern('abc123a1b23c4', LINK_CODE_PATTERN)).toBe('ABC-123-A1B2-3C4');
+    expect(formatByPattern('ABC 123-A1B2 3C4 EXTRA', LINK_CODE_PATTERN)).toBe('ABC-123-A1B2-3C4');
+    // Цифра на месте буквы и наоборот не принимаются.
+    expect(formatByPattern('1ABC', LINK_CODE_PATTERN)).toBe('ABC');
+    expect(formatByPattern('ABCD123', LINK_CODE_PATTERN)).toBe('ABC-123');
+    expect(formatByPattern('ABC-123-A1B2-3C4', LINK_CODE_PATTERN)).toHaveLength(16);
   });
 
-  it('код из 15 символов → 5-символьный код с командой; ошибки понятные', async () => {
+  it('код привязки (16 символов) → код X0XX0 с командой; ошибки понятные', async () => {
     const user = userEvent.setup();
     let attempt = 0;
     fetchMock.mockImplementation(async (...args) => {
@@ -44,7 +48,7 @@ describe('MinecraftLinkStep', () => {
         return jsonResponse({
           name: 'player',
           confirmed: false,
-          challenge: 'K7Q2M',
+          challenge: 'A1BC2',
           challengeExpiresAt: new Date(Date.now() + 300_000).toISOString(),
         });
       }
@@ -55,14 +59,14 @@ describe('MinecraftLinkStep', () => {
     const submit = screen.getByTestId('minecraft-submit');
     expect(submit).toBeDisabled();
     await user.click(input);
-    await user.paste('abcde fghjk-lmnpq');
-    expect(input).toHaveValue('ABCDEFGHJKLMNPQ');
-    expect(screen.getByText('15/15')).toBeInTheDocument();
+    await user.paste('abc123a1b23c4');
+    expect(input).toHaveValue('ABC-123-A1B2-3C4');
+    expect(screen.getByText('13/13')).toBeInTheDocument();
     await user.click(submit);
     expect(await screen.findByText(/Код получен для другого ника/)).toBeInTheDocument();
     await user.click(submit);
-    expect(await screen.findByTestId('minecraft-challenge-code')).toHaveTextContent('K7Q2M');
-    expect(screen.getByText('/site-connect K7Q2M')).toBeInTheDocument();
+    expect(await screen.findByTestId('minecraft-challenge-code')).toHaveTextContent('A1BC2');
+    expect(screen.getByText('/site-connect A1BC2')).toBeInTheDocument();
     expect(screen.getByText(/Ожидаем подтверждение в игре/)).toBeInTheDocument();
   });
 
@@ -84,7 +88,7 @@ describe('MinecraftLinkStep', () => {
         initialChallenge={{
           name: 'player',
           confirmed: false,
-          challenge: 'K7Q2M',
+          challenge: 'A1BC2',
           challengeExpiresAt: new Date(Date.now() + 300_000).toISOString(),
         }}
       />,
@@ -106,7 +110,7 @@ describe('MinecraftLinkStep', () => {
       jsonResponse({
         name: 'player',
         confirmed: false,
-        challenge: 'B2C3D',
+        challenge: 'B2CD3',
         challengeExpiresAt: new Date(Date.now() + 300_000).toISOString(),
       }),
     );
@@ -117,12 +121,12 @@ describe('MinecraftLinkStep', () => {
         initialChallenge={{
           name: 'player',
           confirmed: false,
-          challenge: 'K7Q2M',
+          challenge: 'A1BC2',
           challengeExpiresAt: new Date(Date.now() - 1000).toISOString(),
         }}
       />,
     );
     await user.click(screen.getByRole('button', { name: 'Получить новый код' }));
-    expect(await screen.findByTestId('minecraft-challenge-code')).toHaveTextContent('B2C3D');
+    expect(await screen.findByTestId('minecraft-challenge-code')).toHaveTextContent('B2CD3');
   });
 });

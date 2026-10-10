@@ -36,6 +36,9 @@ export interface SeasonalImageAsset {
   /// Натуральные размеры — для пропорций без layout shift.
   width: number;
   height: number;
+  /// Монохромные силуэты: файл — маска, цвет — из темы (`--foreground`).
+  /// Иначе тёмные силуэты не видны на тёмной теме (ADR-0090).
+  tint?: boolean;
 }
 
 export interface SeasonalCampaign {
@@ -138,6 +141,8 @@ export const SEASONAL_CAMPAIGNS: SeasonalCampaign[] = [
         cdnUrl('assets/images/halloween_assets.webp'),
       width: 2728,
       height: 146,
+      // Тёмные силуэты летучих мышей и пауков на прозрачном фоне.
+      tint: true,
     },
   },
   {

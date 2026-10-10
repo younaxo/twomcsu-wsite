@@ -110,7 +110,22 @@ describe('AuthTutorial', () => {
     expect(screen.getByRole('button', { name: 'Скопировать команду' })).toBeInTheDocument();
     for (let i = 0; i < 3; i += 1) await user.click(screen.getByRole('button', { name: 'Далее' }));
     expect(screen.getByText('/site-connect <код>')).toBeInTheDocument();
-    expect(screen.getByText('(пример)')).toBeInTheDocument();
+    // Пример — шаблон формата, а не выдуманный код (A12).
+    expect(screen.getByText('X0XX0')).toBeInTheDocument();
+    expect(screen.getByText('X — буква, 0 — цифра')).toBeInTheDocument();
+  });
+
+  it('форматы кодов (A12): длина в названиях шагов, шаблон на шаге 3, нигде нет «15 символов»', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const titles = TUTORIAL_STEPS.map((step) => step.title);
+    expect(titles[2]).toBe('Получите код привязки (16 символов)');
+    expect(titles[3]).toBe('Введите код привязки (16 символов)');
+    expect(titles[4]).toBe('Подтвердите Minecraft (5 символов)');
+    expect(JSON.stringify(TUTORIAL_STEPS)).not.toMatch(/15 символ|15-символ|K7Q2M/);
+    const nav = screen.getByRole('navigation', { name: 'Шаги обучения' });
+    await user.click(within(nav).getByRole('button', { name: /^Шаг 3:/ }));
+    expect(screen.getByText('XXX-000-X0X0-0X0')).toBeInTheDocument();
   });
 
   it('скриншота нет — помеченный слот (не фейковый скриншот); есть — изображение из конфига', () => {

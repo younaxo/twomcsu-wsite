@@ -141,7 +141,7 @@ export function AuthSection() {
                 initialChallenge={{
                   name: 'player',
                   confirmed: false,
-                  challenge: 'K7Q2M',
+                  challenge: 'X0XX0',
                   challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
                 }}
                 onConfirmed={() => undefined}

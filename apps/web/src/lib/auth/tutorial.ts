@@ -63,6 +63,8 @@ export const TUTORIAL_VIDEOS: Record<TutorialVideoPlatform, string | null> = {
 /// включается здесь; до этого — нейтральная иконка воспроизведения.
 export const RUTUBE_ICON_SRC: string | null = null;
 
+import { CHALLENGE_PATTERN, LINK_CODE_PATTERN } from './minecraft-code';
+
 export const SITE_CONNECT_COMMAND = '/site-connect';
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
@@ -92,30 +94,30 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'open-link',
-    short: 'Ссылка',
-    title: 'Откройте ссылку',
+    short: 'Код (16)',
+    title: 'Получите код привязки (16 символов)',
     description:
-      'Откройте ссылку из чата. На странице появится одноразовый код из 15 символов — скопируйте его.',
-    example: { label: 'Формат кода', value: '15 символов' },
-    image: { src: null, alt: 'Страница с 15-символьным кодом привязки' },
+      'Откройте ссылку из чата. На странице появится одноразовый код привязки: 13 букв и цифр с тремя дефисами — скопируйте его.',
+    example: { label: 'Пример формата', value: LINK_CODE_PATTERN },
+    image: { src: null, alt: 'Страница с кодом привязки формата XXX-000-X0X0-0X0' },
   },
   {
     id: 'enter-code',
-    short: 'Код из 15',
-    title: 'Подтвердите Minecraft-аккаунт',
+    short: 'Ввод (16)',
+    title: 'Введите код привязки (16 символов)',
     description:
-      'Вернитесь к регистрации и вставьте 15-символьный код в поле «Код привязки Minecraft».',
+      'Вернитесь к регистрации и вставьте код в поле «Код привязки Minecraft» — дефисы поставятся сами.',
     image: { src: null, alt: 'Поле «Код привязки Minecraft» в регистрации' },
   },
   {
     id: 'confirm-in-game',
-    short: 'Код из 5',
-    title: 'Подтвердите привязку в игре',
+    short: 'Код (5)',
+    title: 'Подтвердите Minecraft (5 символов)',
     description:
-      'Сайт покажет код из 5 символов. Введите его в игре командой ниже — так сервер подтвердит, что аккаунт ваш.',
+      'Сайт покажет код подтверждения из 5 символов. Введите его в игре командой ниже — так сервер подтвердит, что аккаунт ваш.',
     command: `${SITE_CONNECT_COMMAND} <код>`,
-    example: { label: 'Пример формата', value: 'K7Q2M' },
-    image: { src: null, alt: 'Сайт показывает 5-символьный код, Minecraft его принимает' },
+    example: { label: 'Пример формата', value: CHALLENGE_PATTERN },
+    image: { src: null, alt: 'Сайт показывает код подтверждения X0XX0, Minecraft его принимает' },
   },
   {
     id: 'done',
@@ -127,12 +129,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-/// Tutorial открывается сам ТОЛЬКО в регистрации (ADR-0087): при входе на
-/// `/register`, в том числе при переключении «Вход → Регистрация». На обычном
-/// «Вход» сам не открывается. Один раз за вкладку (sessionStorage): закрытый
-/// tutorial не всплывает снова при перезагрузке посреди регистрации; открыть
-/// вручную можно кнопкой «Как зарегистрироваться».
-export const TUTORIAL_SHOWN_KEY = 'twomc.auth-tutorial.shown';
+/// Registration Spotlight (A11) показывается ТОЛЬКО при входе в регистрацию
+/// (`/register`, в т.ч. «Вход → Регистрация»), один раз за вкладку
+/// (sessionStorage); на «Вход» — нет. Tutorial открывает сам человек — кнопкой
+/// «Как зарегистрироваться» в шапке или в подсказке.
+export const TUTORIAL_SHOWN_KEY = 'twomc.auth-spotlight.shown';
 
 export function shouldShowAuthTutorial(input: { pathname: string; shown: boolean }): boolean {
   return input.pathname === '/register' && !input.shown;

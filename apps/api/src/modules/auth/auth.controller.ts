@@ -19,6 +19,7 @@ import { AuthService, RequestContext } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotLookupDto } from './dto/forgot-lookup.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -99,7 +100,7 @@ export class AuthController {
     return this.registration.state(dto);
   }
 
-  /// Привязка Minecraft (ADR-0072): 15-символьный код → 5-символьный код.
+  /// Привязка Minecraft (ADR-0072): код привязки XXX-000-X0X0-0X0 → код подтверждения X0XX0.
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
@@ -263,10 +264,21 @@ export class AuthController {
 
   @Public()
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
     await this.authService.forgotPassword(dto);
     return { success: true };
+  }
+
+  /// Восстановление по нику (A13): маска e-mail; строгий лимит — против
+  /// массового сбора, капча — как у остального восстановления.
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('forgot-password/lookup')
+  async forgotLookup(@Body() dto: ForgotLookupDto) {
+    return this.authService.forgotLookup(dto);
   }
 
   @Public()

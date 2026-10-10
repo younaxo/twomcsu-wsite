@@ -140,3 +140,25 @@ describe('OtpInput', () => {
     expect(document.querySelector('input[type="hidden"][name="code"]')).toHaveValue('4321');
   });
 });
+
+describe('OtpInput с шаблоном (A12)', () => {
+  it('X0XX0: буквы и цифры по позициям, верхний регистр, вставка, неверные символы отброшены', async () => {
+    const user = userEvent.setup();
+    const onComplete = vi.fn();
+    render(<OtpInput autoFocus pattern="X0XX0" onComplete={onComplete} aria-label="Код подтверждения Minecraft" />);
+    const first = screen.getByLabelText('Код, символ 1');
+    expect(first).toHaveFocus();
+    expect(first).toHaveAttribute('inputmode', 'text');
+    expect(screen.getByLabelText('Код, символ 2')).toHaveAttribute('inputmode', 'numeric');
+    await user.keyboard('1a');
+    // «1» на месте буквы не принимается; «a» → «A».
+    expect(first).toHaveValue('A');
+    // Целый валидный код вставляется с начала, заменяя ввод.
+    await user.paste('b2cd3');
+    expect(onComplete).toHaveBeenLastCalledWith('B2CD3');
+    await user.click(first);
+    await user.paste('a1bc2');
+    expect(onComplete).toHaveBeenCalledWith('A1BC2');
+    expect(screen.getAllByRole('textbox')).toHaveLength(5);
+  });
+});

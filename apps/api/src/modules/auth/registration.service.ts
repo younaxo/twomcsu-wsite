@@ -416,7 +416,7 @@ export class RegistrationService {
     };
   }
 
-  /// 15-символьный код со страницы /site-connect → 5-символьный код для игры.
+  /// код привязки (16 символов) со страницы /site-connect → код X0XX0 для игры.
   async submitMinecraftCode(dto: RegisterMinecraftCodeDto) {
     if (!this.minecraft.required()) {
       throw new BadRequestException({
@@ -453,7 +453,7 @@ export class RegistrationService {
   }
 
   /// Новый 5-символьный код (истёк или исчерпаны попытки) для уже принятого
-  /// 15-символьного кода.
+  /// кода привязки.
   async renewMinecraftChallenge(dto: RegisterMinecraftDto) {
     const record = await this.getCompletable(
       dto.verificationId,

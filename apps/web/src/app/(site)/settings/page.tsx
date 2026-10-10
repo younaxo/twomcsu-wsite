@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  CONNECTED_SOCIAL_PLATFORMS,
   SOCIAL_PLATFORMS,
   type Gender,
   type OwnProfileDto,
@@ -55,6 +56,8 @@ const SOCIAL_LABELS: Record<SocialPlatform, { label: string; placeholder: string
   TWITCH: { label: 'Twitch', placeholder: 'twitch.tv/…' },
   TIKTOK: { label: 'TikTok', placeholder: '@username' },
   STEAM: { label: 'Steam', placeholder: 'steamcommunity.com/id/…' },
+  GITHUB: { label: 'GitHub', placeholder: 'ник или https://github.com/…' },
+  WEBSITE: { label: 'Сайт', placeholder: 'https://…' },
 };
 
 type ProfileForm = Pick<
@@ -172,7 +175,9 @@ function SocialLinksEditor() {
       <QueryBoundary query={query} skeleton={<SkeletonRows rows={4} />}>
         {() => (
           <div className="grid gap-3 sm:grid-cols-2">
-            {SOCIAL_PLATFORMS.map((platform) => (
+            {SOCIAL_PLATFORMS.filter(
+              (platform) => !CONNECTED_SOCIAL_PLATFORMS.includes(platform),
+            ).map((platform) => (
               <Field key={platform} label={SOCIAL_LABELS[platform].label}>
                 <Input
                   value={values[platform] ?? ''}
