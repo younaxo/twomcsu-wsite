@@ -238,6 +238,11 @@ describe('Registration with e-mail OTP (e2e)', () => {
   });
 
   it('ADR-0125: достигнут maxUsersLimit — регистрация закрыта', async () => {
+    // В CI seed не создаёт SiteSettings — строку создают лениво; без неё
+    // updateMany ничего не изменит.
+    if ((await prisma.siteSettings.count()) === 0) {
+      await prisma.siteSettings.create({ data: {} });
+    }
     const site = await prisma.siteSettings.findFirst({
       select: { id: true, maxUsersLimit: true },
     });

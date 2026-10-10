@@ -360,6 +360,11 @@ describe('Notifications (e2e)', () => {
   });
 
   it('ADR-0125: defaultNotificationsEnabled выключен — новые настройки и сброс без писем и push', async () => {
+    // В CI seed не создаёт SiteSettings — строку создают лениво; без неё
+    // updateMany ничего не изменит.
+    if ((await prisma.siteSettings.count()) === 0) {
+      await prisma.siteSettings.create({ data: {} });
+    }
     const site = await prisma.siteSettings.findFirst({
       select: { defaultNotificationsEnabled: true },
     });
