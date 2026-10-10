@@ -210,14 +210,14 @@ describe('Direct Messages (e2e)', () => {
     const reactRes = await request(app.getHttpServer())
       .post(`/messages/messages/${messageId}/reactions`)
       .set('Authorization', auth(bob))
-      .send({ emoji: '👍' })
+      .send({ emoji: 'like' })
       .expect(201);
     expect(reactRes.body.reacted).toBe(true);
 
     const reactAgainRes = await request(app.getHttpServer())
       .post(`/messages/messages/${messageId}/reactions`)
       .set('Authorization', auth(bob))
-      .send({ emoji: '👍' })
+      .send({ emoji: 'like' })
       .expect(201);
     expect(reactAgainRes.body.reacted).toBe(false);
 
@@ -257,6 +257,89 @@ describe('Direct Messages (e2e)', () => {
     );
     expect(bobConvAfter.unreadCount).toBe(0);
     expect(newMsg.body.conversationId ?? conversationId).toBe(conversationId);
+  });
+
+  it('ADR-0112: группа не обходит приватность; блокировка закрывает личную беседу; реакции — участникам; текст удалённого скрыт', async () => {
+    const http = () => request(app.getHttpServer());
+    // Нельзя добавить в группу того, кто закрыл ЛС; неизвестный ник — 404.
+    await http()
+      .patch('/users/me/profile')
+      .set('Authorization', auth(carol))
+      .send({ directMessagePolicy: 'NOBODY' })
+      .expect(200);
+    const refused = await http()
+      .post('/messages/conversations/group')
+      .set('Authorization', auth(alice))
+      .send({ title: 'Обход', memberUsernames: [bob.username, carol.username] })
+      .expect(403);
+    expect(JSON.stringify(refused.body)).toContain(carol.username);
+    await http()
+      .patch('/users/me/profile')
+      .set('Authorization', auth(carol))
+      .send({ directMessagePolicy: 'EVERYONE' })
+      .expect(200);
+    await http()
+      .post('/messages/conversations/group')
+      .set('Authorization', auth(alice))
+      .send({ title: 'Нет такого', memberUsernames: ['no-such-player-zz'] })
+      .expect(404);
+
+    const direct = await http()
+      .post('/messages/conversations/direct')
+      .set('Authorization', auth(alice))
+      .send({ username: bob.username })
+      .expect(201);
+    const sent = await http()
+      .post(`/messages/conversations/${direct.body.id}/messages`)
+      .set('Authorization', auth(alice))
+      .send({ content: 'секретный текст' })
+      .expect(201);
+    // Реакция — только участнику беседы и только из набора.
+    await http()
+      .post(`/messages/messages/${sent.body.id}/reactions`)
+      .set('Authorization', auth(carol))
+      .send({ emoji: 'like' })
+      .expect(404);
+    await http()
+      .post(`/messages/messages/${sent.body.id}/reactions`)
+      .set('Authorization', auth(bob))
+      .send({ emoji: 'плохое слово' })
+      .expect(400);
+    // Удалённое сообщение остаётся «удалено», но без текста.
+    await http()
+      .delete(`/messages/messages/${sent.body.id}`)
+      .set('Authorization', auth(alice))
+      .expect(200);
+    const history = await http()
+      .get(`/messages/conversations/${direct.body.id}/messages`)
+      .set('Authorization', auth(bob))
+      .expect(200);
+    const removed = history.body.items.find(
+      (m: { id: string }) => m.id === sent.body.id,
+    );
+    expect(removed.isDeleted).toBe(true);
+    expect(removed.content).toBe('');
+    expect(JSON.stringify(history.body)).not.toContain('секретный текст');
+
+    // Блокировка в любую сторону: новая беседа и сообщения в старую — нельзя.
+    await http()
+      .post(`/friends/block/${alice.id}`)
+      .set('Authorization', auth(bob))
+      .expect(201);
+    await http()
+      .post('/messages/conversations/direct')
+      .set('Authorization', auth(alice))
+      .send({ username: bob.username })
+      .expect(403);
+    await http()
+      .post(`/messages/conversations/${direct.body.id}/messages`)
+      .set('Authorization', auth(alice))
+      .send({ content: 'после блокировки' })
+      .expect(403);
+    await http()
+      .delete(`/friends/block/${alice.id}`)
+      .set('Authorization', auth(bob))
+      .expect(200);
   });
 
   it('групповая беседа: создание, приглашение, вступление по коду, выход', async () => {
@@ -414,7 +497,7 @@ describe('Direct Messages (e2e)', () => {
         bobSocket,
         'message:updated',
       );
-      bobSocket.emit('message:react', { messageId, emoji: '🔥' });
+      bobSocket.emit('message:react', { messageId, emoji: 'fire' });
       const [reactUpdateAlice, reactUpdateBob] = await Promise.all([
         reactOnAlice,
         reactOnBob,

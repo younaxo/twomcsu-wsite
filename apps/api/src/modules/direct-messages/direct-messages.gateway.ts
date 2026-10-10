@@ -172,7 +172,7 @@ export class DirectMessagesGateway
   async onMessageEdit(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: EditMessageSocketDto,
-  ): Promise<void> {
+  ): Promise<AckResponse> {
     try {
       const message = await this.dm.editMessage(
         client.data.userId,
@@ -184,11 +184,13 @@ export class DirectMessagesGateway
       this.server
         .to(conversationRoom(message.conversationId))
         .emit('message:updated', message);
+      return { ok: true };
     } catch (err) {
       client.emit('error', {
         event: 'message:edit',
         message: (err as Error).message,
       });
+      return { ok: false, error: (err as Error).message };
     }
   }
 
@@ -196,7 +198,7 @@ export class DirectMessagesGateway
   async onMessageDelete(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: MessageIdDto,
-  ): Promise<void> {
+  ): Promise<AckResponse> {
     try {
       const message = await this.dm.deleteMessage(
         client.data.userId,
@@ -205,11 +207,13 @@ export class DirectMessagesGateway
       this.server
         .to(conversationRoom(message.conversationId))
         .emit('message:updated', message);
+      return { ok: true };
     } catch (err) {
       client.emit('error', {
         event: 'message:delete',
         message: (err as Error).message,
       });
+      return { ok: false, error: (err as Error).message };
     }
   }
 
@@ -217,7 +221,7 @@ export class DirectMessagesGateway
   async onMessageReact(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: ReactMessageSocketDto,
-  ): Promise<void> {
+  ): Promise<AckResponse> {
     try {
       const result = await this.dm.react(client.data.userId, dto.messageId, {
         emoji: dto.emoji,
@@ -225,11 +229,13 @@ export class DirectMessagesGateway
       this.server
         .to(conversationRoom(result.conversationId))
         .emit('message:updated', { messageId: dto.messageId, ...result });
+      return { ok: true };
     } catch (err) {
       client.emit('error', {
         event: 'message:react',
         message: (err as Error).message,
       });
+      return { ok: false, error: (err as Error).message };
     }
   }
 

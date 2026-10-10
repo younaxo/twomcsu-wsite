@@ -12,6 +12,7 @@ export * from './api/auth';
 export * from './api/roles';
 export * from './api/users';
 export * from './api/chat';
+export * from './api/messages';
 export * from './api/friends';
 export * from './api/moderation';
 export * from './api/admin';
