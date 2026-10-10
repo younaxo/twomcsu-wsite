@@ -130,9 +130,9 @@ export function ProfilePreviewCard({
       <div className={cn('flex flex-col gap-3', pad)}>
         {summary.position ? (
           <span
-            className="max-w-full truncate text-xs font-medium"
+            className="line-clamp-2 max-w-full break-words text-xs font-medium"
             style={{ color: summary.position.color }}
-            title={summary.position.displayName}
+            data-testid="profile-position"
           >
             {summary.position.displayName}
           </span>

@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
+import { Tooltip } from '@/components/ui/tooltip';
 import { downloadExport } from '@/lib/admin/api';
 import { useUsers } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
@@ -84,15 +85,19 @@ export default function UsersPage() {
     {
       key: 'position',
       header: 'Должность',
-      cell: (user) => (
-        <Badge
-          color={user.position?.color ?? null}
-          className="max-w-[12rem] truncate"
-          title={user.position?.displayName}
-        >
-          {user.position?.displayName ?? '—'}
-        </Badge>
-      ),
+      cell: (user) =>
+        user.position ? (
+          // Длинная должность обрезается — полное название в нашем Tooltip.
+          <Tooltip content={user.position.displayName}>
+            <span className="inline-flex max-w-[12rem]">
+              <Badge color={user.position.color ?? null} className="max-w-full truncate">
+                {user.position.displayName}
+              </Badge>
+            </span>
+          </Tooltip>
+        ) : (
+          <Badge>—</Badge>
+        ),
     },
     { key: 'status', header: 'Статус', cell: userStatus },
     {

@@ -30,7 +30,7 @@ import { SiteLogo } from './site-logo';
 function FooterLinkItem({ link }: { link: FooterLink }) {
   if (!link.available) {
     return (
-      <span className="inline-flex items-center gap-1 text-muted-foreground/70" title="Скоро">
+      <span className="inline-flex items-center gap-1 text-muted-foreground/70">
         {link.label}
         <span className="rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wide text-subtle-foreground">
           скоро

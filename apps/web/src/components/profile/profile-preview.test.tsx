@@ -67,8 +67,11 @@ describe('ProfilePreviewCard', () => {
     card({});
     const root = screen.getByTestId('profile-preview');
     expect(within(root).getByTestId('user-identity')).toHaveTextContent(/^younaxo_#\d{4}$/);
-    const position = within(root).getByTitle(summary.position!.displayName);
-    expect(position.className).toMatch(/truncate/);
+    // Должность видна целиком (до двух строк), без нативного title.
+    const position = within(root).getByTestId('profile-position');
+    expect(position).toHaveTextContent(summary.position!.displayName);
+    expect(position.className).toMatch(/line-clamp-2/);
+    expect(root.querySelector('[title]')).toBeNull();
     expect(screen.getByText('В игре · Выживание')).toBeInTheDocument();
     expect(screen.getByText('3 ч 5 мин')).toBeInTheDocument();
     expect(screen.getByText('3.00')).toBeInTheDocument();

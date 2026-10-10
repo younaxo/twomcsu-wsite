@@ -78,8 +78,10 @@ export function NotificationItem({
       <ContextMenuTrigger asChild>
         <li
           className={cn(
-            'group relative flex items-start gap-1 border-b border-border-subtle last:border-b-0',
-            !item.isRead && 'bg-primary-soft/30',
+            // Фон строки (непрочитанное и наведение) — на всей строке, включая
+            // колонку кнопок; скругление последней строки задаёт контейнер.
+            'group relative flex items-start gap-1 border-b border-border-subtle transition-colors duration-fast last:border-b-0',
+            item.isRead ? 'hover:bg-muted/60' : 'bg-primary-soft/30 hover:bg-primary-soft/50',
           )}
           data-testid="notification-item"
           data-read={item.isRead}
@@ -89,7 +91,7 @@ export function NotificationItem({
             <Link
               href={href}
               onClick={open}
-              className="flex min-w-0 flex-1 gap-3 px-3 py-2.5 hover:bg-muted"
+              className="flex min-w-0 flex-1 gap-3 rounded-[inherit] px-3 py-2.5"
             >
               {body}
             </Link>
