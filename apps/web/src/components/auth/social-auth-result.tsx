@@ -1,6 +1,11 @@
 'use client';
 
-import type { ExternalProvider, SocialAuthMode, SocialResultStatus } from '@twomc/shared';
+import type {
+  ConnectedProvider,
+  ExternalProvider,
+  SocialAuthMode,
+  SocialResultStatus,
+} from '@twomc/shared';
 import { CircleAlert, CircleCheck, CircleX, Info, Link2Off, Plus } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -15,9 +20,11 @@ import { SITE_LOGO_URL } from '@/lib/site/config';
 /// логотип провайдера, иконка статуса, заголовок, пояснение и действия.
 /// Никаких технических деталей (кодов, токенов, ответов провайдера).
 
-export const PROVIDER_COLOR: Record<ExternalProvider, string> = {
+export const PROVIDER_COLOR: Record<ConnectedProvider, string> = {
   discord: 'text-[#5865F2]',
   telegram: 'text-[#26A5E4]',
+  vk: 'text-[#0077FF]',
+  steam: 'text-foreground',
 };
 
 type Tone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';

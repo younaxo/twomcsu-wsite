@@ -1,6 +1,7 @@
 'use client';
 
-import type { ProfileSocialLinkDto, SocialPlatform } from '@twomc/shared';
+import type { ConnectedProvider, ProfileSocialLinkDto, SocialPlatform } from '@twomc/shared';
+import { CONNECTED_PROVIDER_LABELS } from '@twomc/shared';
 import { ArrowUpRight, Check, Copy, Globe, Link2, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -16,17 +17,14 @@ import { cn } from '@/lib/cn';
 /// реальные привязки Discord/Telegram) и соцсети пользователя.
 
 export type ConnectedAccount = {
-  provider: 'discord' | 'telegram';
+  provider: ConnectedProvider;
   name: string | null;
   /// Публичная страница из реальной привязки (Telegram — t.me/…); у Discord
   /// её нет — тогда вместо ссылки «Скопировать».
   url: string | null;
 };
 
-const PROVIDER_LABEL: Record<ConnectedAccount['provider'], string> = {
-  discord: 'Discord',
-  telegram: 'Telegram',
-};
+const PROVIDER_LABEL = CONNECTED_PROVIDER_LABELS;
 
 const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   DISCORD: 'Discord',

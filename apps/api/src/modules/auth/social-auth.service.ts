@@ -7,6 +7,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { PROVIDERS, type ConnectedProvider } from './connected-providers';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { AuditService } from '../audit/audit.service';
@@ -111,10 +112,14 @@ export class SocialAuthService {
   }
 
   /// Какие кнопки показывать (без секретов).
+  /// Какие провайдеры можно привязать. VK и Steam — в реестре, но без
+  /// интеграции (ADR-0095): всегда `enabled: false` — UI показывает «Скоро».
   providers() {
     return {
       discord: { enabled: this.discordConfigured() },
       telegram: { enabled: this.telegramConfigured() },
+      vk: { enabled: PROVIDERS.vk.integration !== null },
+      steam: { enabled: PROVIDERS.steam.integration !== null },
     };
   }
 
@@ -452,7 +457,35 @@ export class SocialAuthService {
     return 'linked';
   }
 
-  async unlink(userId: string, provider: ExternalProvider) {
+  /// Показывать ли привязку в публичном профиле — отдельно по провайдеру.
+  async setVisibility(
+    userId: string,
+    provider: ConnectedProvider,
+    isPublic: boolean,
+  ) {
+    const existing = await this.prisma.userExternalAccount.findUnique({
+      where: { userId_provider: { userId, provider } },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Аккаунт не привязан');
+    }
+    await this.prisma.userExternalAccount.update({
+      where: { id: existing.id },
+      data: { isPublic },
+    });
+    await this.audit.log({
+      actorId: userId,
+      action: 'auth.external.visibility',
+      targetType: 'UserExternalAccount',
+      targetId: existing.id,
+      severity: 'info',
+      changes: { provider, isPublic },
+    });
+    return this.list(userId);
+  }
+
+  async unlink(userId: string, provider: ConnectedProvider) {
     const existing = await this.prisma.userExternalAccount.findUnique({
       where: { userId_provider: { userId, provider } },
     });
@@ -480,6 +513,8 @@ export class SocialAuthService {
         provider: true,
         username: true,
         displayName: true,
+        avatarUrl: true,
+        isPublic: true,
         linkedAt: true,
         lastLoginAt: true,
       },

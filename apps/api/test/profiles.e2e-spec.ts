@@ -404,15 +404,28 @@ describe('Profiles (e2e)', () => {
     await put('WEBSITE', 'https://example.com/me').expect(200);
     const github = await put('GITHUB', 'octocat').expect(200);
     expect(github.body.value).toBe('https://github.com/octocat');
-    await put('DISCORD', 'old#tag').expect(200);
+    // Подтверждённые платформы вручную не вводятся (ADR-0095).
+    await put('DISCORD', 'old#tag').expect(400);
+    await put('VK', 'https://vk.com/fake').expect(400);
+    await put('STEAM', 'https://steamcommunity.com/id/fake').expect(400);
 
     const pub = await request(app.getHttpServer())
       .get(`/users/${user.username}/public`)
       .expect(200);
     // Telegram — ссылка только из привязки; у Discord публичного URL нет.
     expect(pub.body.connectedAccounts).toEqual([
-      { provider: 'discord', name: 'steve_discord', url: null },
-      { provider: 'telegram', name: 'steve_tg', url: 'https://t.me/steve_tg' },
+      {
+        provider: 'discord',
+        name: 'steve_discord',
+        avatarUrl: null,
+        url: null,
+      },
+      {
+        provider: 'telegram',
+        name: 'steve_tg',
+        avatarUrl: null,
+        url: 'https://t.me/steve_tg',
+      },
     ]);
     expect(JSON.stringify(pub.body)).not.toContain(`snowflake-${unique}`);
     expect(JSON.stringify(pub.body)).not.toContain(`tg-${unique}`);
@@ -421,6 +434,43 @@ describe('Profiles (e2e)', () => {
     );
     expect(platforms).toEqual(expect.arrayContaining(['WEBSITE', 'GITHUB']));
     expect(platforms).not.toContain('DISCORD');
+
+    // Видимость — отдельно по провайдеру и на сервере: скрытый Telegram не
+    // уходит в публичный ответ вовсе.
+    const linked = await request(app.getHttpServer())
+      .patch('/auth/linked-accounts/telegram')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ isPublic: false })
+      .expect(200);
+    expect(
+      linked.body.find((a: { provider: string }) => a.provider === 'telegram')
+        .isPublic,
+    ).toBe(false);
+    const partly = await request(app.getHttpServer())
+      .get(`/users/${user.username}/public`)
+      .expect(200);
+    expect(
+      partly.body.connectedAccounts.map(
+        (a: { provider: string }) => a.provider,
+      ),
+    ).toEqual(['discord']);
+    expect(JSON.stringify(partly.body)).not.toContain('steve_tg');
+    // VK/Steam не привязаны — видимость менять нечему; чужой провайдер — 400.
+    await request(app.getHttpServer())
+      .patch('/auth/linked-accounts/steam')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ isPublic: false })
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch('/auth/linked-accounts/google')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ isPublic: false })
+      .expect(400);
+    const providers = await request(app.getHttpServer())
+      .get('/auth/social/providers')
+      .expect(200);
+    expect(providers.body.vk).toEqual({ enabled: false });
+    expect(providers.body.steam).toEqual({ enabled: false });
 
     await request(app.getHttpServer())
       .patch('/users/me/profile')

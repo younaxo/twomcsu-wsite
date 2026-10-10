@@ -118,6 +118,12 @@ const DEMO_STATS = { views: 128, likes: 24, dislikes: 2, myReaction: 'LIKE' as c
 const DEMO_ACCOUNTS: ConnectedAccount[] = [
   { provider: 'discord', name: 'steve_mainer', url: null },
   { provider: 'telegram', name: 'steve_mainer', url: 'https://t.me/steve_mainer' },
+  { provider: 'vk', name: 'steve_mainer', url: 'https://vk.com/steve_mainer' },
+  {
+    provider: 'steam',
+    name: 'Steve Mainer',
+    url: 'https://steamcommunity.com/profiles/76561198000000000',
+  },
 ];
 const DEMO_SOCIALS: ProfileSocialLinkDto[] = [
   { platform: 'YOUTUBE', value: 'https://youtube.com/@twomc' },
@@ -409,7 +415,13 @@ function ProfilePagePreview() {
         />
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <ConnectedAccountsSection accounts={DEMO_ACCOUNTS} />
+        <div className="flex min-w-0 flex-col gap-2">
+          <ConnectedAccountsSection accounts={DEMO_ACCOUNTS} />
+          <p className="text-xs text-muted-foreground">
+            Discord — без публичной ссылки (только «Скопировать имя»). Скрытый владельцем провайдер
+            и не привязанный сервер в ответ не отдаёт — его здесь нет.
+          </p>
+        </div>
         <SocialLinksSection links={DEMO_SOCIALS} />
       </div>
     </Card>
