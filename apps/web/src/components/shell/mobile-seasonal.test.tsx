@@ -83,7 +83,9 @@ describe('SeasonalHeaderDecoration', () => {
       expect(decoration).toHaveAttribute('aria-hidden', 'true');
       expect(decoration.className).toMatch(/pointer-events-none/);
       expect(decoration.className).toMatch(/absolute/);
-      expect(decoration.style.backgroundImage).toContain('halloween_assets.webp');
+      // Тёмные силуэты — маской цвета темы, иначе не видны на тёмной шапке.
+      expect(decoration).toHaveAttribute('data-tint', 'true');
+      expect(decoration.style.backgroundColor).toContain('var(--foreground)');
     } finally {
       vi.useRealTimers();
       restore();

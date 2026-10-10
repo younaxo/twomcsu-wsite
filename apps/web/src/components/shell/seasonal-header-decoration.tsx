@@ -17,6 +17,9 @@ import { useSeasonal } from '@/lib/site/use-seasonal';
 ///   картинки, ошибка — на сайте полосы нет (и предупреждение в dev-консоли), в
 ///   превью админки — явное состояние «ассет не загрузился» с адресом, а не
 ///   молчаливая пустота. Повторяется по горизонтали, высота фиксирована.
+/// - Монохромный ассет (`tint`) рисуется маской цвета темы — тёмные силуэты
+///   Хэллоуина иначе сливались с тёмной шапкой (так и выглядел баг «включено,
+///   но не видно»).
 /// - Один компонент для сайта и превью: превью передаёт `campaign` явно.
 /// - Без glass: никакого backdrop-filter, только изображение.
 
@@ -93,15 +96,29 @@ export function SeasonalHeaderDecoration({
           'flex items-center justify-center bg-destructive-soft text-[10px] font-medium text-destructive',
         className,
       )}
+      data-tint={decoration.tint ? 'true' : undefined}
       style={
-        status === 'loaded'
-          ? {
-              backgroundImage: `url("${decoration.src}")`,
-              backgroundRepeat: 'repeat-x',
-              backgroundPosition: 'top center',
-              backgroundSize: 'auto 100%',
-            }
-          : undefined
+        status !== 'loaded'
+          ? undefined
+          : decoration.tint
+            ? {
+                // Силуэты — маска, цвет — из темы: читаются и в Dark, и в Light.
+                WebkitMaskImage: `url("${decoration.src}")`,
+                maskImage: `url("${decoration.src}")`,
+                WebkitMaskRepeat: 'repeat-x',
+                maskRepeat: 'repeat-x',
+                WebkitMaskPosition: 'top center',
+                maskPosition: 'top center',
+                WebkitMaskSize: 'auto 100%',
+                maskSize: 'auto 100%',
+                backgroundColor: 'rgb(var(--foreground) / 0.55)',
+              }
+            : {
+                backgroundImage: `url("${decoration.src}")`,
+                backgroundRepeat: 'repeat-x',
+                backgroundPosition: 'top center',
+                backgroundSize: 'auto 100%',
+              }
       }
     >
       {status === 'error' ? 'Ассет украшения не загрузился' : null}
