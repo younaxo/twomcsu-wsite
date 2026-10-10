@@ -89,9 +89,10 @@ export class RegisterMinecraftDto {
 }
 
 export class RegisterMinecraftCodeDto extends RegisterMinecraftDto {
-  /// 15-символьный код со страницы /site-connect (пробелы/дефисы допустимы).
+  /// Код привязки XXX-000-X0X0-0X0 со страницы /site-connect: 13 значимых
+  /// символов, дефисы и пробелы допустимы (A12).
   @IsString()
-  @Length(15, 40)
+  @Length(13, 40)
   code!: string;
 }
 

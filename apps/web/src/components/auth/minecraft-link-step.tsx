@@ -5,27 +5,30 @@ import { Check, Copy, Loader2, RotateCw, Terminal } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { SITE_CONNECT_COMMAND } from '@/lib/auth/tutorial';
+import {
+  LINK_CODE_PATTERN,
+  LINK_CODE_SIGNIFICANT,
+  isCompleteCode,
+  significantLength,
+} from '@/lib/auth/minecraft-code';
+import { LinkCodeInput } from './link-code-input';
 
 /// Шаг «Подтвердите Minecraft-аккаунт» регистрации (ADR-0072):
-/// 15-символьный код со страницы /site-connect → сайт выдаёт 5 символов →
+/// код привязки XXX-000-X0X0-0X0 (16 символов) со страницы /site-connect →
+/// сайт выдаёт код X0XX0 (5 символов) →
 /// игрок вводит `/site-connect <код>` → сервер подтверждает (сайт опрашивает
 /// состояние). Все проверки — на backend; здесь только ввод и отображение.
 
-export const LINK_CODE_LENGTH = 15;
-const CODE_CHARS = /[^A-HJ-NP-Z2-9]/g;
-
-/// Вставка/ввод: верхний регистр, только символы алфавита кодов, до 15.
-export function normalizeLinkCode(raw: string): string {
-  return raw.toUpperCase().replace(CODE_CHARS, '').slice(0, LINK_CODE_LENGTH);
-}
+/// Код целиком: формат XXX-000-X0X0-0X0 (A12).
+const codeComplete = (code: string) => isCompleteCode(code, LINK_CODE_PATTERN);
 
 const ERRORS: Record<string, string> = {
-  mc_code_invalid: 'Неверный код привязки. Проверьте 15 символов со страницы ссылки.',
+  mc_code_invalid:
+    'Неверный код привязки. Проверьте код формата XXX-000-X0X0-0X0 со страницы ссылки.',
   mc_code_expired: 'Срок кода истёк — введите /site-connect в игре ещё раз.',
   mc_code_used: 'Этот код уже использован — получите новый командой /site-connect.',
   mc_wrong_account: 'Код получен для другого ника. Войдите в игру под ником из регистрации.',
@@ -114,7 +117,7 @@ export function MinecraftLinkStep({
   }, [preview, waiting, verificationId, completionToken, onConfirmed]);
 
   const submit = async () => {
-    if (code.length !== LINK_CODE_LENGTH || pending || preview) return;
+    if (!codeComplete(code) || pending || preview) return;
     setPending(true);
     setError(null);
     try {
@@ -179,33 +182,28 @@ export function MinecraftLinkStep({
         <code className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-foreground">
           {SITE_CONNECT_COMMAND}
         </code>{' '}
-        — откройте ссылку из чата и скопируйте 15 символов.
+        — откройте ссылку из чата и скопируйте код привязки (16 символов с разделителями).
       </p>
 
       {!challenge?.challenge || left === 0 ? (
         <Field
-          label="Код привязки Minecraft"
+          label="Код привязки Minecraft (16 символов)"
+          hint={`Формат ${LINK_CODE_PATTERN}: буквы и цифры, дефисы ставятся сами`}
           required
           labelAddon={
             <span className="text-xs tabular-nums text-subtle-foreground">
-              {code.length}/{LINK_CODE_LENGTH}
+              {significantLength(code)}/{LINK_CODE_SIGNIFICANT}
             </span>
           }
           error={error}
         >
-          <Input
-            name="minecraft-code"
-            autoComplete="one-time-code"
-            spellCheck={false}
-            autoCapitalize="characters"
-            inputMode="text"
-            maxLength={40}
-            className="font-mono uppercase tracking-[0.2em]"
-            placeholder="15 символов"
+          <LinkCodeInput
             value={code}
+            invalid={!!error}
             disabled={pending}
-            onChange={(event) => {
-              setCode(normalizeLinkCode(event.target.value));
+            aria-busy={pending || undefined}
+            onValueChange={(next) => {
+              setCode(next);
               if (error) setError(null);
             }}
             onKeyDown={(event) => {
@@ -266,7 +264,7 @@ export function MinecraftLinkStep({
           size="lg"
           onClick={() => void submit()}
           loading={pending}
-          disabled={code.length !== LINK_CODE_LENGTH}
+          disabled={!codeComplete(code)}
           data-testid="minecraft-submit"
         >
           Проверить код

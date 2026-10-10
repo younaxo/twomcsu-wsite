@@ -99,7 +99,7 @@ export class AuthController {
     return this.registration.state(dto);
   }
 
-  /// Привязка Minecraft (ADR-0072): 15-символьный код → 5-символьный код.
+  /// Привязка Minecraft (ADR-0072): код привязки XXX-000-X0X0-0X0 → код подтверждения X0XX0.
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(HttpStatus.OK)
