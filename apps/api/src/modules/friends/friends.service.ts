@@ -187,15 +187,23 @@ export class FriendsService {
       data: { status: FriendshipStatus.ACCEPTED, acceptedAt: new Date() },
     });
 
-    await this.prisma.activity.create({
-      data: {
-        userId: friendship.requesterId,
-        type: 'FRIENDSHIP_STARTED',
-        title: 'Новая дружба',
-        visibility: 'FRIENDS',
-        metadata: { friendId: friendship.addresseeId },
-      },
+    // Запись в ленту — по настройкам ленты отправителя заявки (ADR-0114):
+    // «показывать дружбу» и её видимость.
+    const feed = await this.prisma.activityFeedSettings.findUnique({
+      where: { userId: friendship.requesterId },
+      select: { showFriendships: true, friendshipsVisibility: true },
     });
+    if (feed?.showFriendships !== false) {
+      await this.prisma.activity.create({
+        data: {
+          userId: friendship.requesterId,
+          type: 'FRIENDSHIP_STARTED',
+          title: 'Новая дружба',
+          visibility: feed?.friendshipsVisibility ?? 'FRIENDS',
+          metadata: { friendId: friendship.addresseeId },
+        },
+      });
+    }
 
     const requesterSettings = await this.prisma.user.findUnique({
       where: { id: friendship.requesterId },

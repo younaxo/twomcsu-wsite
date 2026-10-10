@@ -5,16 +5,45 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { escapeToHtml, extractMentions } from '../../common/html.util';
+import { StorageService } from '../files/storage.service';
 import { FriendsService } from '../friends/friends.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { canViewProfile } from '../profiles/visibility';
 import { CreateActivityCommentDto } from './dto/create-activity-comment.dto';
-import { ReactActivityDto } from './dto/react-activity.dto';
+import { ACTIVITY_REACTIONS, ReactActivityDto } from './dto/react-activity.dto';
 import { UpdateActivitySettingsDto } from './dto/update-activity-settings.dto';
-import { PUBLIC_USER_SELECT } from '../users/public-user';
+import { PUBLIC_USER_SELECT, PublicUser } from '../users/public-user';
 
 const DEFAULT_SETTINGS: Omit<Prisma.ActivityFeedSettingsCreateInput, 'user'> =
   {};
+
+/// Запись активности в ответе (ADR-0114): автор — публичные поля (аватар-URL),
+/// реакции — счётчики по набору и своя реакция (без списка реагировавших),
+/// для дружбы — ник друга.
+export interface ActivityView {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  visibility: string;
+  createdAt: string;
+  user: PublicUser;
+  friend: { username: string } | null;
+  reactions: Array<{ key: string; count: number }>;
+  myReaction: string | null;
+  commentsCount: number;
+}
+
+const ACTIVITY_INCLUDE = {
+  user: { select: PUBLIC_USER_SELECT },
+  reactions: { select: { userId: true, emoji: true } },
+  _count: { select: { comments: { where: { isDeleted: false } } } },
+} as const;
+
+type ActivityRow = Prisma.ActivityGetPayload<{
+  include: typeof ACTIVITY_INCLUDE;
+}>;
 
 @Injectable()
 export class ActivityService {
@@ -22,28 +51,82 @@ export class ActivityService {
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
+  private avatar<T extends { avatar: string | null }>(user: T): T {
+    return { ...user, avatar: this.storage.publicUrl(user.avatar) };
+  }
+
+  private async views(
+    rows: ActivityRow[],
+    viewerId: string | null,
+  ): Promise<ActivityView[]> {
+    const friendIds = rows
+      .map((row) => (row.metadata as { friendId?: string } | null)?.friendId)
+      .filter((id): id is string => typeof id === 'string');
+    const friends = friendIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: friendIds } },
+          select: { id: true, username: true },
+        })
+      : [];
+    const names = new Map(
+      friends.map((friend) => [friend.id, friend.username]),
+    );
+    return rows.map((row) => {
+      const counts = new Map<string, number>();
+      for (const reaction of row.reactions) {
+        if (!ACTIVITY_REACTIONS.includes(reaction.emoji as never)) continue;
+        counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+      }
+      const mine = viewerId
+        ? (row.reactions.find((reaction) => reaction.userId === viewerId)
+            ?.emoji ?? null)
+        : null;
+      const friendId = (row.metadata as { friendId?: string } | null)?.friendId;
+      const friendName = friendId ? names.get(friendId) : undefined;
+      return {
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        description: row.description,
+        visibility: row.visibility,
+        createdAt: row.createdAt.toISOString(),
+        user: this.avatar(row.user),
+        friend: friendName ? { username: friendName } : null,
+        reactions: ACTIVITY_REACTIONS.filter((key) => counts.has(key)).map(
+          (key) => ({
+            key,
+            count: counts.get(key)!,
+          }),
+        ),
+        myReaction:
+          mine && ACTIVITY_REACTIONS.includes(mine as never) ? mine : null,
+        commentsCount: row._count.comments,
+      };
+    });
+  }
+
+  /// Глобальная лента — только PUBLIC-записи игроков с открытым профилем:
+  /// скрытый профиль (NOBODY / FRIENDS_ONLY) не светит активность всем.
   async listGlobalFeed(page: number, limit: number) {
     const where: Prisma.ActivityWhereInput = {
       visibility: 'PUBLIC',
       isHidden: false,
+      user: { profileVisibility: 'EVERYONE', isBanned: false },
     };
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.activity.findMany({
         where,
-        include: {
-          user: { select: PUBLIC_USER_SELECT },
-          reactions: true,
-          _count: { select: { comments: true } },
-        },
+        include: ACTIVITY_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.activity.count({ where }),
     ]);
-    return { items, total, page, limit };
+    return { items: await this.views(rows, null), total, page, limit };
   }
 
   async listUserFeed(
@@ -55,7 +138,8 @@ export class ActivityService {
     const owner = await this.prisma.user.findFirst({
       where: { username: { equals: username, mode: 'insensitive' } },
     });
-    if (!owner) {
+    // Активность видна тем же, кому виден профиль (ADR-0114); скрытый — 404.
+    if (!owner || !(await canViewProfile(this.prisma, owner, viewerId))) {
       throw new NotFoundException('Пользователь не найден');
     }
 
@@ -77,28 +161,30 @@ export class ActivityService {
       ...(visibilityIn !== undefined ? { visibility: visibilityIn } : {}),
     };
 
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.activity.findMany({
         where,
-        include: {
-          user: { select: PUBLIC_USER_SELECT },
-          reactions: true,
-          _count: { select: { comments: true } },
-        },
+        include: ACTIVITY_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.activity.count({ where }),
     ]);
-    return { items, total, page, limit };
+    return { items: await this.views(rows, viewerId), total, page, limit };
   }
 
+  /// Запись видна, если виден профиль автора и это разрешает видимость записи.
   private async assertVisible(activityId: string, viewerId: string | null) {
     const activity = await this.prisma.activity.findUnique({
       where: { id: activityId },
+      include: { user: { select: { id: true, profileVisibility: true } } },
     });
-    if (!activity || activity.isHidden) {
+    if (
+      !activity ||
+      activity.isHidden ||
+      !(await canViewProfile(this.prisma, activity.user, viewerId))
+    ) {
       throw new NotFoundException('Запись активности не найдена');
     }
     const isOwner = viewerId !== null && viewerId === activity.userId;
@@ -115,7 +201,46 @@ export class ActivityService {
   }
 
   async getOne(activityId: string, viewerId: string | null) {
-    return this.assertVisible(activityId, viewerId);
+    await this.assertVisible(activityId, viewerId);
+    const row = await this.prisma.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      include: ACTIVITY_INCLUDE,
+    });
+    const [view] = await this.views([row], viewerId);
+    return view;
+  }
+
+  /// Комментарии записи — по видимости записи; автор — публичные поля.
+  async listComments(
+    activityId: string,
+    viewerId: string | null,
+    page: number,
+    limit: number,
+  ) {
+    await this.assertVisible(activityId, viewerId);
+    const where = { activityId, isDeleted: false };
+    const [rows, total] = await Promise.all([
+      this.prisma.activityComment.findMany({
+        where,
+        include: { author: { select: PUBLIC_USER_SELECT } },
+        orderBy: { createdAt: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.activityComment.count({ where }),
+    ]);
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        content: row.content,
+        createdAt: row.createdAt.toISOString(),
+        author: this.avatar(row.author),
+        canDelete: viewerId === row.authorId,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async getSettings(userId: string) {
@@ -181,7 +306,13 @@ export class ActivityService {
       dto.content,
     );
 
-    return created;
+    return {
+      id: created.id,
+      content: created.content,
+      createdAt: created.createdAt.toISOString(),
+      author: this.avatar(created.author),
+      canDelete: true,
+    };
   }
 
   /// mentions вычисляются на лету только для рассылки уведомлений —
@@ -193,7 +324,7 @@ export class ActivityService {
     author: { id: string; username: string },
     content: string,
   ): Promise<void> {
-    const link = `/activity/${activityId}`;
+    const link = `/feed/${activityId}`;
 
     if (activityOwnerId !== author.id) {
       const settings = await this.getSettings(activityOwnerId);
