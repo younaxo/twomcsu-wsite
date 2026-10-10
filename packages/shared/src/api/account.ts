@@ -16,7 +16,12 @@ export const SOCIAL_PLATFORMS = [
   'TWITCH',
   'TIKTOK',
   'STEAM',
+  'GITHUB',
+  'WEBSITE',
 ] as const;
+/// Discord и Telegram в профиле — только реальные привязки (Connected
+/// Accounts, /settings/linked-accounts), не текст в соцсетях (B5).
+export const CONNECTED_SOCIAL_PLATFORMS: readonly SocialPlatform[] = ['DISCORD', 'TELEGRAM'];
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 
 export interface ProfileSocialLinkDto {

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import { Prisma, SocialPlatform } from '@prisma/client';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
+import { resolveUserIdByHandle } from './handle';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -50,8 +52,41 @@ const OWN_PROFILE_SELECT = {
   selectedDecoration: true,
   displayBadge: true,
   socialLinks: true,
+  minecraftAccount: { select: { name: true } },
   createdAt: true,
 } satisfies Prisma.UserSelect;
+
+/// Discord и Telegram в профиле — только реальные привязки (Connected
+/// Accounts), а не введённый текст: в публичных соцсетях их нет (B5).
+const CONNECTED_PLATFORMS = new Set<string>(['DISCORD', 'TELEGRAM']);
+
+/// Проверка ссылок соцсетей (B5): сайт — только https; GitHub — ник или
+/// https://github.com/… (нормализуется в ссылку).
+export function normalizeSocialValue(
+  platform: string,
+  raw: string,
+): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  const https = (input: string, hosts?: string[]): string | null => {
+    try {
+      const url = new URL(input);
+      if (url.protocol !== 'https:') return null;
+      if (hosts && !hosts.includes(url.hostname.toLowerCase())) return null;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  };
+  if (platform === 'WEBSITE') return https(value);
+  if (platform === 'GITHUB') {
+    if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(value)) {
+      return `https://github.com/${value}`;
+    }
+    return https(value, ['github.com', 'www.github.com']);
+  }
+  return value;
+}
 
 type OwnProfile = Prisma.UserGetPayload<{ select: typeof OWN_PROFILE_SELECT }>;
 
@@ -120,10 +155,13 @@ export class ProfilesService {
     username: string,
     viewerId: string | null,
   ): Promise<OwnProfile | Record<string, unknown>> {
-    const user = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
-      select: OWN_PROFILE_SELECT,
-    });
+    const id = await resolveUserIdByHandle(this.prisma, username);
+    const user = id
+      ? await this.prisma.user.findUnique({
+          where: { id },
+          select: OWN_PROFILE_SELECT,
+        })
+      : null;
     if (!user) {
       throw new NotFoundException('Профиль не найден');
     }
@@ -134,7 +172,107 @@ export class ProfilesService {
     }
 
     const resolved = this.withMedia(user);
-    return isOwner ? resolved : this.applyPrivacy(resolved);
+    const base = isOwner ? { ...resolved } : this.applyPrivacy(resolved);
+    const showSocials = isOwner || !user.hideSocials;
+    return {
+      ...base,
+      minecraftName: user.minecraftAccount?.name ?? null,
+      stats: await this.profileStats(user.id, viewerId),
+      // Привязанные Discord/Telegram — провайдер и имя, без внешних ID.
+      connectedAccounts: showSocials
+        ? await this.connectedAccounts(user.id)
+        : undefined,
+      socialLinks: showSocials
+        ? user.socialLinks.filter(
+            (link) => !CONNECTED_PLATFORMS.has(link.platform),
+          )
+        : undefined,
+    };
+  }
+
+  private async connectedAccounts(userId: string) {
+    const accounts = await this.prisma.userExternalAccount.findMany({
+      where: { userId },
+      select: { provider: true, username: true, displayName: true },
+      orderBy: { linkedAt: 'asc' },
+    });
+    return accounts.map((account) => ({
+      provider: account.provider,
+      name: account.username ?? account.displayName ?? null,
+    }));
+  }
+
+  /// Просмотры (уникальные зрители, без собственных) и реакции профиля.
+  private async profileStats(profileId: string, viewerId: string | null) {
+    const [views, likes, dislikes, mine] = await Promise.all([
+      this.prisma.profileView.count({ where: { profileId } }),
+      this.prisma.profileReaction.count({
+        where: { profileId, type: 'LIKE' },
+      }),
+      this.prisma.profileReaction.count({
+        where: { profileId, type: 'DISLIKE' },
+      }),
+      viewerId && viewerId !== profileId
+        ? this.prisma.profileReaction.findUnique({
+            where: { profileId_userId: { profileId, userId: viewerId } },
+            select: { type: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    return { views, likes, dislikes, myReaction: mine?.type ?? null };
+  }
+
+  /// Видимый зрителю профиль по handle или 404 (одинаково для «нет» и
+  /// «скрыт»).
+  private async visibleProfile(handle: string, viewerId: string | null) {
+    const id = await resolveUserIdByHandle(this.prisma, handle);
+    const user = id
+      ? await this.prisma.user.findUnique({
+          where: { id },
+          select: { id: true, profileVisibility: true },
+        })
+      : null;
+    if (!user || !(await this.canView(user, viewerId))) {
+      throw new NotFoundException('Профиль не найден');
+    }
+    return user;
+  }
+
+  /// Просмотр профиля (B5): только вошедшие, свой — не считается; один
+  /// зритель — один просмотр (повтор обновляет время).
+  async recordView(handle: string, viewerId: string) {
+    const profile = await this.visibleProfile(handle, viewerId);
+    if (profile.id !== viewerId) {
+      await this.prisma.profileView.upsert({
+        where: {
+          profileId_viewerId: { profileId: profile.id, viewerId },
+        },
+        create: { profileId: profile.id, viewerId },
+        update: { viewedAt: new Date() },
+      });
+    }
+    return this.profileStats(profile.id, viewerId);
+  }
+
+  /// Лайк/дизлайк профиля (B5): одна реакция на пару, себе — нельзя;
+  /// `null` — снять реакцию.
+  async react(handle: string, userId: string, type: 'LIKE' | 'DISLIKE' | null) {
+    const profile = await this.visibleProfile(handle, userId);
+    if (profile.id === userId) {
+      throw new ForbiddenException('Нельзя оценить свой профиль');
+    }
+    if (type === null) {
+      await this.prisma.profileReaction.deleteMany({
+        where: { profileId: profile.id, userId },
+      });
+    } else {
+      await this.prisma.profileReaction.upsert({
+        where: { profileId_userId: { profileId: profile.id, userId } },
+        create: { profileId: profile.id, userId, type },
+        update: { type },
+      });
+    }
+    return this.profileStats(profile.id, userId);
   }
 
   /// Видимость профиля для зрителя: владелец — всегда; блокировка в любую
@@ -168,8 +306,9 @@ export class ProfilesService {
   /// — `null` (никаких выдуманных нулей). Статистика — только если игрок её не
   /// скрыл и она реально есть.
   async getProfileSummary(username: string, viewerId: string | null) {
+    const handleId = await resolveUserIdByHandle(this.prisma, username);
     const user = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
+      where: { id: handleId ?? '__none__' },
       select: {
         id: true,
         shortId: true,
@@ -331,10 +470,18 @@ export class ProfilesService {
     platform: SocialPlatform,
     dto: UpsertSocialLinkDto,
   ) {
+    const value = normalizeSocialValue(platform, dto.value);
+    if (!value) {
+      throw new BadRequestException(
+        platform === 'GITHUB'
+          ? 'Укажите ник GitHub или ссылку https://github.com/…'
+          : 'Укажите ссылку, начинающуюся с https://',
+      );
+    }
     return this.prisma.socialLink.upsert({
       where: { userId_platform: { userId, platform } },
-      create: { userId, platform, value: dto.value },
-      update: { value: dto.value },
+      create: { userId, platform, value },
+      update: { value },
     });
   }
 

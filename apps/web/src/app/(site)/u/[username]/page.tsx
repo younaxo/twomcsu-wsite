@@ -1,14 +1,19 @@
 'use client';
 
 import type { SocialPlatform } from '@twomc/shared';
-import { CalendarDays, MapPin, UserX } from 'lucide-react';
+import { CalendarDays, Globe, Link2, MapPin, Pencil, UserX } from 'lucide-react';
+import { siGithub, siSteam, siTiktok, siTwitch, siVk, siYoutube } from 'simple-icons';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
 import { ProfileBanner } from '@/components/profile/profile-header';
+import { MinecraftHead } from '@/components/profile/minecraft-head';
+import { ProfileEngagement } from '@/components/profile/profile-engagement';
 import { SkinViewer } from '@/components/profile/skin-viewer';
+import { BrandIcon } from '@/components/shell/brand-icon';
 import { Avatar } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
@@ -25,7 +30,33 @@ const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   TWITCH: 'Twitch',
   TIKTOK: 'TikTok',
   STEAM: 'Steam',
+  GITHUB: 'GitHub',
+  WEBSITE: 'Сайт',
 };
+
+/// Официальные знаки соцсетей (Simple Icons); сайт — нейтральная иконка.
+const SOCIAL_ICONS: Partial<Record<SocialPlatform, { path: string }>> = {
+  VK: siVk,
+  YOUTUBE: siYoutube,
+  TWITCH: siTwitch,
+  TIKTOK: siTiktok,
+  STEAM: siSteam,
+  GITHUB: siGithub,
+};
+
+function SocialIcon({ platform }: { platform: SocialPlatform }) {
+  const icon = SOCIAL_ICONS[platform];
+  if (!icon) return <Globe aria-hidden className="size-4 shrink-0 text-muted-foreground" />;
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      className="size-4 shrink-0 fill-current text-muted-foreground"
+    >
+      <path d={icon.path} />
+    </svg>
+  );
+}
 
 const GENDER_LABELS: Record<string, string> = {
   MALE: 'Мужской',
@@ -46,7 +77,8 @@ export default function PublicProfilePage() {
   const me = useAuthStore((state) => state.user);
   const profile = usePublicProfile(username);
   const summary = useProfileSummary(username, true);
-  const own = me?.username.toLowerCase() === username.toLowerCase();
+  // Владелец — по id (адрес может быть alias или Minecraft-ником).
+  const own = !!me && !!profile.data && me.id === profile.data.id;
 
   if (profile.isPending) {
     return (
@@ -81,7 +113,24 @@ export default function PublicProfilePage() {
       data-testid="public-profile"
     >
       <section className="overflow-hidden rounded-xl bg-surface shadow-sm">
-        <ProfileBanner src={data.banner ?? null} className="h-28 md:h-40" />
+        <div className="relative">
+          <ProfileBanner src={data.banner ?? null} className="h-28 md:h-40" />
+          {own ? (
+            <Tooltip content="Редактировать профиль">
+              <IconButton
+                asChild
+                size="sm"
+                variant="secondary"
+                aria-label="Редактировать профиль"
+                className="group/edit absolute right-3 top-3 rounded-full shadow-sm"
+              >
+                <Link href="/settings">
+                  <Pencil className="transition-transform duration-fast group-hover/edit:-rotate-12 group-focus-visible/edit:-rotate-12 motion-reduce:transition-none motion-reduce:group-hover/edit:rotate-0" />
+                </Link>
+              </IconButton>
+            </Tooltip>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-end gap-4 px-5 pb-5">
           <Avatar
             src={data.avatar ?? null}
@@ -89,16 +138,15 @@ export default function PublicProfilePage() {
             size="xl"
             className="-mt-10 ring-4 ring-surface"
           />
+          <MinecraftHead username={data.username} size={36} className="mb-1" />
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-display text-2xl font-bold">{data.username}</h1>
             {data.statusText ? (
               <p className="text-sm text-muted-foreground">{data.statusText}</p>
             ) : null}
           </div>
-          {own ? (
-            <Button asChild size="sm" variant="secondary">
-              <Link href="/settings">Редактировать профиль</Link>
-            </Button>
+          {data.stats ? (
+            <ProfileEngagement handle={username} stats={data.stats} own={own} signedIn={!!me} />
           ) : null}
         </div>
       </section>
@@ -136,6 +184,25 @@ export default function PublicProfilePage() {
               ) : null}
             </ul>
           </section>
+          {(data.connectedAccounts?.length ?? 0) > 0 ? (
+            <section
+              className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
+              aria-label="Привязанные аккаунты"
+            >
+              <h2 className="text-sm font-semibold">Привязанные аккаунты</h2>
+              <ul className="grid gap-2 sm:grid-cols-2">
+                {data.connectedAccounts!.map((account) => (
+                  <li key={account.provider} className="flex min-w-0 items-center gap-2 text-sm">
+                    <BrandIcon id={account.provider} className="text-muted-foreground" />
+                    <span className="text-subtle-foreground">
+                      {account.provider === 'discord' ? 'Discord' : 'Telegram'}:
+                    </span>
+                    <span className="truncate">{account.name ?? 'привязан'}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {socials.length > 0 ? (
             <section
               className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
@@ -146,21 +213,23 @@ export default function PublicProfilePage() {
                 {socials.map((link) => {
                   const href = socialHref(link.value);
                   return (
-                    <li key={link.platform} className="min-w-0 text-sm">
-                      <span className="text-subtle-foreground">
-                        {SOCIAL_LABELS[link.platform]}:{' '}
+                    <li key={link.platform} className="flex min-w-0 items-center gap-2 text-sm">
+                      <SocialIcon platform={link.platform} />
+                      <span className="shrink-0 text-subtle-foreground">
+                        {SOCIAL_LABELS[link.platform]}:
                       </span>
                       {href ? (
                         <a
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer nofollow"
-                          className="break-all text-primary hover:underline"
+                          className="inline-flex min-w-0 items-center gap-1 text-primary hover:underline"
                         >
-                          {link.value}
+                          <span className="truncate">{link.value}</span>
+                          <Link2 aria-hidden className="size-3.5 shrink-0" />
                         </a>
                       ) : (
-                        <span className="break-all">{link.value}</span>
+                        <span className="truncate">{link.value}</span>
                       )}
                     </li>
                   );

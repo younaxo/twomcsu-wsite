@@ -19,6 +19,7 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
+import { ProfileReactionDto } from './dto/profile-reaction.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
@@ -45,6 +46,27 @@ export class ProfilesController {
   async summary(@Param('username') username: string, @Req() req: Request) {
     const viewer = (req as Request & { user?: AuthenticatedUser }).user;
     return this.profiles.getProfileSummary(username, viewer?.id ?? null);
+  }
+
+  /// Просмотр профиля (B5): свой не считается, повтор не дублирует.
+  @UseGuards(JwtAuthGuard)
+  @Post(':username/view')
+  async view(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('username') username: string,
+  ) {
+    return this.profiles.recordView(username, user.id);
+  }
+
+  /// Лайк / дизлайк / снять (B5).
+  @UseGuards(JwtAuthGuard)
+  @Put(':username/reaction')
+  async reaction(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('username') username: string,
+    @Body() dto: ProfileReactionDto,
+  ) {
+    return this.profiles.react(username, user.id, dto.type);
   }
 
   @UseGuards(JwtAuthGuard)

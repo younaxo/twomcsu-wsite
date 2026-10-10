@@ -23,17 +23,26 @@ function service(
   users: Record<string, { profileVisibility: string; mc?: string }>,
   source: SkinSource,
 ) {
+  const find = (name: string) =>
+    Object.keys(users).find((key) => key.toLowerCase() === name.toLowerCase());
   const prisma = {
     user: {
       findFirst: jest.fn(
-        async ({ where }: { where: { username: { equals: string } } }) => {
-          const key = Object.keys(users).find(
-            (name) =>
-              name.toLowerCase() === where.username.equals.toLowerCase(),
-          );
+        async ({
+          where,
+        }: {
+          where: { username?: { equals: string }; id?: string };
+        }) => {
+          // resolveUserIdByHandle ищет по нику, затем запись — по id (= ник).
+          const key = where.username
+            ? find(where.username.equals)
+            : where.id && users[where.id]
+              ? where.id
+              : undefined;
           if (!key) return null;
           const user = users[key]!;
           return {
+            id: key,
             username: key,
             profileVisibility: user.profileVisibility,
             minecraftAccount: user.mc ? { name: user.mc } : null,
@@ -41,6 +50,8 @@ function service(
         },
       ),
     },
+    loginAlias: { findUnique: jest.fn(async () => null) },
+    minecraftAccount: { findFirst: jest.fn(async () => null) },
   };
   return new SkinsService(prisma as never, source);
 }
