@@ -9,6 +9,7 @@ import { AuthSection } from './sections/auth-section';
 import { BrandSection } from './sections/brand-section';
 import { CursorsSection } from './sections/cursors-section';
 import { GlobalShellSection } from './sections/global-shell-section';
+import { IdentitySeasonalSection } from './sections/identity-seasonal-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
 
@@ -21,6 +22,7 @@ const SECTIONS = [
   { id: 'auth', label: 'Auth' },
   { id: 'cursors', label: 'Курсоры' },
   { id: 'prefixes', label: 'Role prefixes' },
+  { id: 'identity', label: 'Профиль и сезоны' },
 ] as const;
 
 function useViewportWidth(): number | null {
@@ -126,6 +128,14 @@ export function DesignLab() {
             description="Официальные PNG-префиксы ролей из resource pack (CDN). Только визуализация роли — права определяет backend."
           />
           <RolePrefixesSection />
+        </section>
+
+        <section id="identity" className="scroll-mt-20">
+          <SectionHeading
+            title="Профиль и сезоны"
+            description="Mini profile, шапка профиля с баннером и без, бейджи и украшения, украшение шапки ON/OFF и ошибка ассета, падающие эффекты и звёзды Дня Победы — production-компоненты на демо-данных."
+          />
+          <IdentitySeasonalSection />
         </section>
       </main>
     </div>

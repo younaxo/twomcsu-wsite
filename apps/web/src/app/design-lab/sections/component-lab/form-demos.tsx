@@ -694,7 +694,7 @@ function OtpDemo() {
   return (
     <DemoBlock
       title="OtpInput"
-      use="Код подтверждения по одной цифре в ячейку: вход, привязка почты. Вставка целого кода и автозаполнение из SMS."
+      use="Код подтверждения по одной цифре в ячейку: вход, привязка почты. Свой компонент без нативных стрелок: вставка целого кода, ←/→, Backspace, цифровая клавиатура на телефоне; invalid, success, loading, disabled."
       avoid="обычных паролей и кодов длиннее 8 символов."
     >
       <Field
@@ -704,6 +704,8 @@ function OtpDemo() {
       >
         <OtpInput
           value={code}
+          invalid={status === 'wrong'}
+          success={status === 'ok'}
           onChange={(next) => {
             setCode(next);
             if (next.length < 6) {
@@ -716,6 +718,13 @@ function OtpDemo() {
       <DemoResult>
         {status === 'ok' ? 'Код принят' : status === 'wrong' ? 'Код отклонён' : 'Ожидаем ввод'}
       </DemoResult>
+      {/* Состояния своего OtpInput (ADR-0087): проверка кода и недоступность. */}
+      <div className="flex flex-col gap-2">
+        <span className="text-xs text-muted-foreground">Проверка кода (loading)</span>
+        <OtpInput value="4815" loading aria-label="Код, идёт проверка" />
+        <span className="text-xs text-muted-foreground">Недоступно (disabled)</span>
+        <OtpInput disabled aria-label="Код недоступен" />
+      </div>
     </DemoBlock>
   );
 }

@@ -5,7 +5,7 @@ import { Suspense, useState } from 'react';
 import { LoginForm } from '@/app/(auth)/login/login-form';
 import { RegisterForm } from '@/app/(auth)/register/register-form';
 import { AuthPanel } from '@/components/auth/auth-layout';
-import { AuthTutorial, TutorialStepView } from '@/components/auth/auth-tutorial';
+import { AuthTutorial, TutorialNav, TutorialStepView } from '@/components/auth/auth-tutorial';
 import { MinecraftLinkStep } from '@/components/auth/minecraft-link-step';
 import { Button } from '@/components/ui/button';
 import { TUTORIAL_STEPS } from '@/lib/auth/tutorial';
@@ -152,7 +152,13 @@ export function AuthSection() {
               <RegisterForm key="create" previewStep="create" />
             </AuthPanel>
           ) : view === 'tutorial' ? (
-            <div className="w-full max-w-[56rem] rounded-xl bg-surface-overlay p-6 shadow-xl">
+            <div className="flex w-full max-w-[72rem] flex-col gap-5 rounded-xl bg-surface-overlay p-6 shadow-xl">
+              {/* Та же кликабельная навигация по шагам, что в окне tutorial. */}
+              <TutorialNav
+                steps={TUTORIAL_STEPS}
+                index={stepIndex}
+                onSelect={(index) => setTutorialStep(TUTORIAL_STEPS[index]!.id)}
+              />
               <TutorialStepView
                 step={TUTORIAL_STEPS[stepIndex]!}
                 index={stepIndex}
