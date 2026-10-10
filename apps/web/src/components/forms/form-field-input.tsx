@@ -195,16 +195,21 @@ function Control({ field, value, onChange, ...a11y }: Omit<Props, 'error'> & A11
     case 'NUMBER':
     case 'CURRENCY_AMOUNT':
       return (
+        // Без нативного числового input (ADR-0087): строка с цифровой клавиатурой, число из
+        // неё получает сервер (`Number(value)`), запятая — как точка.
         <Input
           {...a11y}
-          type="number"
+          type="text"
           inputMode="decimal"
           value={typeof value === 'number' ? String(value) : text}
-          min={field.minValue ?? undefined}
-          max={field.maxValue ?? undefined}
-          placeholder={field.placeholder ?? undefined}
+          placeholder={
+            field.placeholder ??
+            (field.minValue !== null && field.maxValue !== null
+              ? `${field.minValue}–${field.maxValue}`
+              : undefined)
+          }
           onChange={(event) =>
-            onChange(event.target.value === '' ? undefined : Number(event.target.value))
+            onChange(event.target.value.replace(',', '.').replace(/[^\d.-]/g, ''))
           }
         />
       );
