@@ -4,7 +4,9 @@
 export function maskEmailStrict(email: string): string {
   const [local = '', domain = ''] = email.split('@');
   const name =
-    local.length <= 2 ? `${local[0] ?? ''}***` : `${local[0]}***${local[local.length - 1]}`;
+    local.length <= 2
+      ? `${local[0] ?? ''}***`
+      : `${local[0]}***${local[local.length - 1]}`;
   const dot = domain.lastIndexOf('.');
   const host = dot > 0 ? domain.slice(0, dot) : domain;
   const zone = dot > 0 ? domain.slice(dot) : '';

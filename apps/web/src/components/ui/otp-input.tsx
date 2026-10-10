@@ -58,7 +58,6 @@ const cellSizeClass = {
   lg: 'h-14 w-12 text-2xl',
 } as const;
 
-
 export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
   (
     {

@@ -29,7 +29,6 @@ export const MINECRAFT_UUID =
   /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 export const MINECRAFT_NAME = /^[A-Za-z0-9_]{3,16}$/;
 
-
 /// UUID в каноническом виде с дефисами, в нижнем регистре.
 export function normalizeUuid(raw: string): string {
   const hex = raw.replace(/-/g, '').toLowerCase();

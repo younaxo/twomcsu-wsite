@@ -9,8 +9,10 @@ import { LINK_CODE_PATTERN, formatByPattern } from '@/lib/auth/minecraft-code';
 /// регистр, только символы своей позиции (буква/цифра), дефисы — сами;
 /// вставка `ABC123A1B23C4` нормализуется. Backspace стирает символ (дефис в
 /// конце убирается вместе с ним). Состояния — как у обычного поля.
-export interface LinkCodeInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'size'> {
+export interface LinkCodeInputProps extends Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  'value' | 'onChange' | 'size'
+> {
   value: string;
   onValueChange: (value: string) => void;
   invalid?: boolean;

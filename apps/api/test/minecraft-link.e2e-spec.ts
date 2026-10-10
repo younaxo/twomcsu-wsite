@@ -84,7 +84,9 @@ describe('Minecraft link in registration (e2e)', () => {
       .send({ token })
       .expect(200);
     // Новый формат (A12): XXX-000-X0X0-0X0.
-    expect(open.body.code).toMatch(/^[A-Z]{3}-[0-9]{3}-[A-Z][0-9][A-Z][0-9]-[0-9][A-Z][0-9]$/);
+    expect(open.body.code).toMatch(
+      /^[A-Z]{3}-[0-9]{3}-[A-Z][0-9][A-Z][0-9]-[0-9][A-Z][0-9]$/,
+    );
     return { code: open.body.code as string, token };
   }
 

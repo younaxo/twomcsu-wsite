@@ -4,7 +4,9 @@ import { Emoji, emojiSrc } from './emoji';
 
 describe('Apple Emoji Policy (A15)', () => {
   it('из пака — картинка по коду Unicode с подписью; без пака — без системного emoji', () => {
-    expect(emojiSrc('fire', 'https://cdn.example/emoji/')).toBe('https://cdn.example/emoji/1f525.png');
+    expect(emojiSrc('fire', 'https://cdn.example/emoji/')).toBe(
+      'https://cdn.example/emoji/1f525.png',
+    );
     const { unmount } = render(<Emoji name="fire" base="https://cdn.example/emoji" />);
     expect(screen.getByRole('img', { name: 'огонь' })).toHaveAttribute(
       'src',
