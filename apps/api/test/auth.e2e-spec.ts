@@ -149,6 +149,39 @@ describe('Auth (e2e)', () => {
     await agent.post('/auth/refresh').expect(401);
   });
 
+  it('восстановление по нику (A13): маска e-mail, ссылка — только при совпадении полного адреса', async () => {
+    const sent: SendEmailInput[] = [];
+    jest.spyOn(emailService, 'send').mockImplementation(async (input) => {
+      sent.push(input);
+    });
+    const lookup = await request(app.getHttpServer())
+      .post('/auth/forgot-password/lookup')
+      .send({ username: username.toUpperCase() })
+      .expect(200);
+    expect(lookup.body.maskedEmail).toMatch(/^t\*\*\*\S@e\*{5}\.com$/);
+    expect(JSON.stringify(lookup.body)).not.toContain(email);
+    expect(lookup.body.providers).toEqual([]);
+    const unknown = await request(app.getHttpServer())
+      .post('/auth/forgot-password/lookup')
+      .send({ username: `nobody${unique}`.slice(0, 16) })
+      .expect(200);
+    expect(unknown.body).toEqual({ maskedEmail: null, providers: [] });
+
+    // Неверный адрес — ответ тот же, письма нет.
+    await request(app.getHttpServer())
+      .post('/auth/forgot-password')
+      .send({ email: `other-${unique}@example.com`, username })
+      .expect(200);
+    expect(sent).toHaveLength(0);
+    // Полный адрес (другой регистр) — письмо со ссылкой.
+    await request(app.getHttpServer())
+      .post('/auth/forgot-password')
+      .send({ email: email.toUpperCase(), username })
+      .expect(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.html).toMatch(/token=[a-f0-9]{64}/);
+  });
+
   it('forgot-password → reset-password выдаёт новый пароль и отзывает сессии', async () => {
     let captured: SendEmailInput | undefined;
     jest.spyOn(emailService, 'send').mockImplementation(async (input) => {
