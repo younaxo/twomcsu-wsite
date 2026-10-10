@@ -372,6 +372,12 @@ describe('Profiles (e2e)', () => {
   });
 
   it('B5: Connected Accounts — провайдер и имя без внешних ID; соцсети — отдельно и с проверкой ссылок', async () => {
+    // Предыдущий сценарий оставляет hideSocials=true — начинаем с явного false.
+    await request(app.getHttpServer())
+      .patch('/users/me/profile')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ hideSocials: false })
+      .expect(200);
     await prisma.userExternalAccount.create({
       data: {
         userId: user.id,
