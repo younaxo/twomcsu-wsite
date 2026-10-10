@@ -30,6 +30,7 @@ export interface ConnectedProviderDef {
   profileUrl(account: ConnectedAccountRef): string | null;
 }
 
+const DISCORD_SNOWFLAKE = /^\d{17,20}$/;
 const TELEGRAM_USERNAME = /^[A-Za-z0-9_]{5,32}$/;
 const VK_SCREEN_NAME = /^[A-Za-z0-9_.]{2,32}$/;
 const VK_ID = /^\d{1,12}$/;
@@ -40,8 +41,12 @@ export const PROVIDERS: Record<ConnectedProvider, ConnectedProviderDef> = {
     key: 'discord',
     label: 'Discord',
     integration: 'oauth',
-    // Публичной страницы по нику нет (только по внутреннему id) — ссылки нет.
-    profileUrl: () => null,
+    // Профиль Discord открывается по внешнему id (snowflake) из привязки, не
+    // по нику: ник меняется и не уникален. Не snowflake — ссылки нет.
+    profileUrl: ({ providerUserId }) =>
+      DISCORD_SNOWFLAKE.test(providerUserId)
+        ? `https://discord.com/users/${providerUserId}`
+        : null,
   },
   telegram: {
     key: 'telegram',

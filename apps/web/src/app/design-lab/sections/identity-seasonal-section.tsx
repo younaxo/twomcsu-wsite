@@ -10,6 +10,7 @@ import type {
 } from '@twomc/shared';
 import { LogOut } from 'lucide-react';
 import { useState } from 'react';
+import { ConnectedAccountCard } from '@/components/account/connected-account-card';
 import { LogoutConfirmDialog } from '@/components/auth/logout-confirm';
 import { ProfileBadges } from '@/components/profile/profile-badges';
 import { ProfileHeader } from '@/components/profile/profile-header';
@@ -121,7 +122,11 @@ const DEMO_ROLE = {
 };
 const DEMO_STATS = { views: 128, likes: 24, dislikes: 2, myReaction: 'LIKE' as const };
 const DEMO_ACCOUNTS: ConnectedAccount[] = [
-  { provider: 'discord', name: 'steve_mainer', url: null },
+  {
+    provider: 'discord',
+    name: 'steve_mainer',
+    url: 'https://discord.com/users/312345678901234567',
+  },
   { provider: 'telegram', name: 'steve_mainer', url: 'https://t.me/steve_mainer' },
   { provider: 'vk', name: 'steve_mainer', url: 'https://vk.com/steve_mainer' },
   {
@@ -489,12 +494,60 @@ function ProfilePagePreview() {
         <div className="flex min-w-0 flex-col gap-2">
           <ConnectedAccountsSection accounts={DEMO_ACCOUNTS} />
           <p className="text-xs text-muted-foreground">
-            Discord — без публичной ссылки (только «Скопировать имя»). Скрытый владельцем провайдер
-            и не привязанный сервер в ответ не отдаёт — его здесь нет.
+            Discord — ссылка на профиль по snowflake и «Скопировать имя» рядом; Telegram без
+            публичного ника — без ссылки. Скрытый владельцем провайдер и не привязанный сервер в
+            ответ не отдаёт — его здесь нет.
           </p>
         </div>
         <SocialLinksSection links={DEMO_SOCIALS} />
       </div>
+    </Card>
+  );
+}
+
+const DEMO_LINKED = {
+  provider: 'discord',
+  username: 'younaxo',
+  displayName: 'younaxo',
+  avatarUrl: null,
+  isPublic: true,
+  linkedAt: '2026-10-01T10:00:00.000Z',
+  lastLoginAt: '2026-10-09T18:00:00.000Z',
+  profileUrl: 'https://discord.com/users/312345678901234567',
+} as const;
+
+/// Настройки → Связанные аккаунты: один production-компонент во всех
+/// состояниях. «Требуется повторная авторизация» на сайте сейчас не
+/// возникает (токены провайдеров не хранятся) — показана только здесь.
+function ConnectedAccountsSettingsPreview() {
+  return (
+    <Card
+      title="Связанные аккаунты — настройки"
+      note="Одна карточка для Discord, Telegram, VK и Steam (Google и GitHub позже — новой записью реестра): иконка или аватар, статус, имя, «Открыть профиль» (Discord — по snowflake, через подтверждение перехода), «Показывать в профиле», «Отвязать» с подтверждением. Состояния: не привязан, привязан, скрыт, ошибка (реальная — не удалось начать привязку), требуется повторная авторизация, скоро."
+    >
+      <ul className="grid gap-3 md:grid-cols-2">
+        <ConnectedAccountCard provider="discord" state="linked" account={DEMO_LINKED} />
+        <ConnectedAccountCard
+          provider="telegram"
+          state="hidden"
+          account={{
+            ...DEMO_LINKED,
+            provider: 'telegram',
+            username: null,
+            displayName: 'Player',
+            isPublic: false,
+            profileUrl: null,
+          }}
+        />
+        <ConnectedAccountCard provider="discord" state="unlinked" />
+        <ConnectedAccountCard
+          provider="telegram"
+          state="error"
+          error="Telegram временно недоступен. Попробуйте ещё раз."
+        />
+        <ConnectedAccountCard provider="discord" state="reauth" account={DEMO_LINKED} />
+        <ConnectedAccountCard provider="steam" state="soon" available={false} />
+      </ul>
     </Card>
   );
 }
@@ -611,6 +664,7 @@ export function IdentitySeasonalSection() {
   return (
     <div className="flex flex-col gap-10">
       <ProfilePagePreview />
+      <ConnectedAccountsSettingsPreview />
       <MinecraftHeadPreview />
       <div className="grid gap-8 lg:grid-cols-[auto_minmax(0,1fr)]">
         <MiniProfilePreview />
