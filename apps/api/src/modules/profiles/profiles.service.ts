@@ -74,7 +74,10 @@ export class ProfilesService {
       where: { id: userId },
       data: {
         ...rest,
-        ...(birthDate !== undefined ? { birthDate: new Date(birthDate) } : {}),
+        // null — очистить дату (new Date(null) дало бы 1970-01-01).
+        ...(birthDate !== undefined
+          ? { birthDate: birthDate === null ? null : new Date(birthDate) }
+          : {}),
       },
       select: OWN_PROFILE_SELECT,
     });
