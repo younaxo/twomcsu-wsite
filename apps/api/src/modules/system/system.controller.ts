@@ -23,6 +23,13 @@ import { SystemService } from './system.service';
 export class SystemAdminController {
   constructor(private readonly system: SystemService) {}
 
+  /// Сводка состояния для дашборда — видна всем, у кого есть дашборд.
+  @Get('overview')
+  @RequirePermissions('dashboard.view')
+  overview() {
+    return this.system.overview();
+  }
+
   @Get('modules')
   @RequirePermissions('system.modules.view')
   modules() {

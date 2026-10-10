@@ -17,6 +17,7 @@ export type AdminIconName =
   | 'megaphone'
   | 'mail'
   | 'power'
+  | 'sparkles'
   | 'settings'
   | 'lock'
   | 'newspaper'
@@ -42,6 +43,7 @@ export interface AdminNavGroup {
   items: AdminNavItem[];
 }
 
+/// Группы — по ТЗ админки (§62): логическая группировка вместо длинного списка.
 export const ADMIN_NAV: AdminNavGroup[] = [
   {
     id: 'overview',
@@ -85,41 +87,28 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     ],
   },
   {
-    id: 'system',
-    title: 'Система',
+    id: 'content',
+    title: 'Контент',
     items: [
       {
-        href: '/admin/audit-log',
-        label: 'Журнал аудита',
-        icon: 'scroll',
-        requirement: ['audit_log.view', 'audit_log.stats'],
-        keywords: ['лог', 'история', 'действия'],
+        href: '/admin/content',
+        label: 'Контент',
+        icon: 'newspaper',
+        requirement: 'content.view',
+        keywords: ['новости', 'формы', 'жалобы'],
       },
+    ],
+  },
+  {
+    id: 'finance',
+    title: 'Финансы',
+    items: [
       {
-        href: '/admin/security',
-        label: 'Безопасность',
-        icon: 'lock',
-        requirement: [
-          'security.sessions.view',
-          'security.suspicious.view',
-          'security.logins.view',
-          'security.ip_whitelist.create',
-        ],
-        keywords: ['сессии', 'входы', 'ip', 'whitelist'],
-      },
-      {
-        href: '/admin/system',
-        label: 'Техработы и модули',
-        icon: 'power',
-        requirement: ['system.maintenance.view', 'system.modules.view'],
-        keywords: ['техработы', 'обслуживание', 'модули', 'выключить', 'maintenance'],
-      },
-      {
-        href: '/admin/settings',
-        label: 'Настройки',
-        icon: 'settings',
-        requirement: ['settings.view', 'settings.site.view'],
-        keywords: ['сайт', 'параметры', 'регистрация'],
+        href: '/admin/finance',
+        label: 'Финансы',
+        icon: 'receipt',
+        requirement: ['finance.overview.view', 'finance.transactions.view', 'finance.refunds.view'],
+        keywords: ['заказы', 'выручка', 'возвраты', 'магазин'],
       },
     ],
   },
@@ -144,22 +133,66 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     ],
   },
   {
-    id: 'business',
-    title: 'Контент и финансы',
+    id: 'appearance',
+    title: 'Оформление',
     items: [
       {
-        href: '/admin/content',
-        label: 'Контент',
-        icon: 'newspaper',
-        requirement: 'content.view',
-        keywords: ['новости', 'формы', 'жалобы'],
+        href: '/admin/appearance',
+        label: 'Сезонное оформление',
+        icon: 'sparkles',
+        requirement: 'settings.seasonal.view',
+        keywords: ['сезон', 'праздник', 'хэллоуин', 'новый год', 'эффекты', 'снег'],
+      },
+    ],
+  },
+  {
+    id: 'system',
+    title: 'Система',
+    items: [
+      {
+        href: '/admin/system',
+        label: 'Техработы и модули',
+        icon: 'power',
+        requirement: ['system.maintenance.view', 'system.modules.view'],
+        keywords: ['техработы', 'обслуживание', 'модули', 'выключить', 'maintenance'],
       },
       {
-        href: '/admin/finance',
-        label: 'Финансы',
-        icon: 'receipt',
-        requirement: ['finance.overview.view', 'finance.transactions.view', 'finance.refunds.view'],
-        keywords: ['заказы', 'выручка', 'возвраты', 'магазин'],
+        href: '/admin/settings',
+        label: 'Настройки',
+        icon: 'settings',
+        requirement: ['settings.view', 'settings.site.view'],
+        keywords: ['сайт', 'параметры', 'регистрация'],
+      },
+    ],
+  },
+  {
+    id: 'security',
+    title: 'Безопасность',
+    items: [
+      {
+        href: '/admin/security',
+        label: 'Безопасность',
+        icon: 'lock',
+        requirement: [
+          'security.sessions.view',
+          'security.suspicious.view',
+          'security.logins.view',
+          'security.ip_whitelist.create',
+        ],
+        keywords: ['сессии', 'входы', 'ip', 'whitelist'],
+      },
+    ],
+  },
+  {
+    id: 'audit',
+    title: 'Аудит',
+    items: [
+      {
+        href: '/admin/audit-log',
+        label: 'Журнал аудита',
+        icon: 'scroll',
+        requirement: ['audit_log.view', 'audit_log.stats'],
+        keywords: ['лог', 'история', 'действия'],
       },
     ],
   },

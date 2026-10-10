@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import { PermissionService } from '../roles/permission.service';
 import { UpdateMaintenanceDto, UpdateSiteModuleDto } from './dto/system.dto';
 import { SITE_MODULES, findSiteModule } from './site-modules.registry';
@@ -27,6 +29,8 @@ export class SystemService {
     private readonly status: SiteStatusService,
     private readonly audit: AuditService,
     private readonly permissions: PermissionService,
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
   ) {}
 
   async listModules() {
@@ -199,6 +203,38 @@ export class SystemService {
         : null,
       disabledModules: [...snapshot.disabled].sort(),
       serverTime: new Date().toISOString(),
+    };
+  }
+
+  /// Сводка для дашборда админки (ТЗ §64): только реальные значения.
+  async overview() {
+    const now = new Date();
+    const [status, activeAnnouncements, database, redis] = await Promise.all([
+      this.publicStatus(),
+      this.prisma.announcement.count({
+        where: {
+          isActive: true,
+          AND: [
+            { OR: [{ showFrom: null }, { showFrom: { lte: now } }] },
+            { OR: [{ showUntil: null }, { showUntil: { gte: now } }] },
+          ],
+        },
+      }),
+      this.prisma.$queryRaw`SELECT 1`.then(
+        () => 'ok' as const,
+        () => 'error' as const,
+      ),
+      this.redis.client.ping().then(
+        (reply) => (reply === 'PONG' ? ('ok' as const) : ('error' as const)),
+        () => 'error' as const,
+      ),
+    ]);
+    return {
+      maintenance: status.maintenance,
+      disabledModules: status.disabledModules,
+      activeAnnouncements,
+      health: { database, redis },
+      serverTime: status.serverTime,
     };
   }
 }

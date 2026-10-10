@@ -3,7 +3,6 @@
 import type { KvSettings, SiteSettingsDto } from '@twomc/shared';
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { SeasonalTab } from './_components/seasonal-tab';
 import { PageHeader, PageSection } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
@@ -199,11 +198,6 @@ export default function SettingsPage() {
       content: (
         <QueryBoundary query={kv}>{(data) => <KvSettingsEditor initial={data} />}</QueryBoundary>
       ),
-    },
-    can('settings.seasonal.view') && {
-      value: 'seasonal',
-      label: 'Сезоны',
-      content: <SeasonalTab />,
     },
   ].filter((t): t is { value: string; label: string; content: JSX.Element } => Boolean(t));
 
