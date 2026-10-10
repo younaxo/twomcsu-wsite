@@ -62,6 +62,11 @@ const SETTINGS: NotificationSettingsDto = {
   quietHoursStart: null,
   quietHoursEnd: null,
   typeSettings: {},
+  discordEnabled: false,
+  discordWebhookHint: null,
+  digestMode: 'INSTANT',
+  digestTime: '09:00',
+  emailAvailable: false,
 };
 
 function Providers({ children }: { children: ReactNode }) {

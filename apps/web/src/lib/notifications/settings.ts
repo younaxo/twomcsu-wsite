@@ -79,3 +79,44 @@ export function useRemovePushDevice() {
     onSuccess: () => client.invalidateQueries({ queryKey: notificationSettingsKeys.devices }),
   });
 }
+
+/// Мутации, которые возвращают обновлённые настройки (ADR-0110) — кладём ответ в кэш.
+function useSettingsMutation<T>(request: (input: T) => Promise<NotificationSettingsDto>) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: request,
+    onSuccess: (data) => client.setQueryData(notificationSettingsKeys.settings, data),
+  });
+}
+
+/// Личный Discord-вебхук: только `https://discord.com/api/webhooks/<id>/<token>`.
+export function useSaveDiscordWebhook() {
+  return useSettingsMutation((url: string) =>
+    api.post<NotificationSettingsDto>('/notifications/discord/webhook', { url }),
+  );
+}
+
+export function useDeleteDiscordWebhook() {
+  return useSettingsMutation(() =>
+    api.delete<NotificationSettingsDto>('/notifications/discord/webhook'),
+  );
+}
+
+export function useTestDiscordWebhook() {
+  return useMutation({
+    mutationFn: () => api.post<{ sent: boolean }>('/notifications/discord/webhook/test'),
+  });
+}
+
+export function useTestDigest() {
+  return useMutation({
+    mutationFn: () => api.post<{ sent: boolean; count: number }>('/notifications/digest/test'),
+  });
+}
+
+/// Сброс всех настроек уведомлений к значениям по умолчанию (вебхук удаляется).
+export function useResetNotificationSettings() {
+  return useSettingsMutation(() =>
+    api.post<NotificationSettingsDto>('/notifications/settings/reset'),
+  );
+}
