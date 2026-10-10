@@ -93,16 +93,24 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.userRole.deleteMany({ where: { roleId: managerRoleId } });
-    await prisma.rolePermission.deleteMany({
-      where: { roleId: managerRoleId },
-    });
-    await prisma.role.deleteMany({ where: { id: managerRoleId } });
-    await prisma.auditLog.deleteMany({
-      where: { actor: { id: targetUserId } },
-    });
-    await prisma.user.deleteMany({ where: { id: targetUserId } });
-    await app.close();
+    // ВАЖНО: для Prisma `{ id: undefined }` — это «без фильтра». Если
+    // beforeAll упал до создания записей, cleanup с undefined удалил бы ВСЕ
+    // роли, назначения и журнал аудита dev-БД (так и случилось 2026-10-10).
+    // Поэтому — только по реально созданным id.
+    if (managerRoleId) {
+      await prisma.userRole.deleteMany({ where: { roleId: managerRoleId } });
+      await prisma.rolePermission.deleteMany({
+        where: { roleId: managerRoleId },
+      });
+      await prisma.role.deleteMany({ where: { id: managerRoleId } });
+    }
+    if (targetUserId) {
+      await prisma.auditLog.deleteMany({
+        where: { actor: { id: targetUserId } },
+      });
+      await prisma.user.deleteMany({ where: { id: targetUserId } });
+    }
+    await app?.close();
   });
 
   it('GET /positions (публичный) возвращает хотя бы default-позицию из seed', async () => {
