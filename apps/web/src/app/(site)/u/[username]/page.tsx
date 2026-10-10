@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
 import { ProfileBanner } from '@/components/profile/profile-header';
+import { SkinViewer } from '@/components/profile/skin-viewer';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -168,13 +169,19 @@ export default function PublicProfilePage() {
             </section>
           ) : null}
         </div>
-        <aside className="rounded-xl bg-surface shadow-sm lg:self-start">
-          <ProfilePreviewCard
-            username={data.username}
-            summary={summary.data}
-            loading={summary.isPending}
-            error={summary.isError}
-          />
+        <aside className="flex flex-col gap-5 lg:self-start">
+          <div className="rounded-xl bg-surface p-5 shadow-sm">
+            <SkinViewer username={data.username} />
+          </div>
+          <div className="rounded-xl bg-surface p-5 shadow-sm">
+            <ProfilePreviewCard
+              username={data.username}
+              summary={summary.data}
+              loading={summary.isPending}
+              error={summary.isError}
+              showHeader={false}
+            />
+          </div>
         </aside>
       </div>
     </div>

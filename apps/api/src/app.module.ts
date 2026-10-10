@@ -30,6 +30,7 @@ import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
+import { SkinsModule } from './modules/skins/skins.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -65,6 +66,7 @@ import { VotingModule } from './modules/voting/voting.module';
     CustomPositionsModule,
     UsersModule,
     ProfilesModule,
+    SkinsModule,
     FriendsModule,
     CommentsModule,
     ActivityModule,

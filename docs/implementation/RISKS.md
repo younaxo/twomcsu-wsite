@@ -211,6 +211,27 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R23 — Cleanup e2e с `undefined` удаляет всё — MITIGATED (инцидент 2026-10-10)
+
+Для Prisma `{ id: undefined }` — пустой фильтр. В `users-domain.e2e-spec.ts`
+`afterAll` удалял по `let`-переменным из `beforeAll`; когда `beforeAll` упал
+(в dev-БД включены техработы → 503), cleanup удалил **все** роли, назначения
+ролей, права ролей и журнал аудита **dev-БД** (production не затронут).
+Исправлено: cleanup только по реально созданным id. Восстановлены три
+superuser-роли из сида и назначения `younaxo_` → chief-curator, `qaadmin` →
+chief-developer; роли, созданные вручную через админку, и журнал аудита
+восстановить не из чего. Дальше: e2e — только на отдельной тестовой БД (CI
+так и делает), локально — `DATABASE_URL` тестовой базы; рассмотреть
+`strictUndefinedChecks` Prisma.
+
+## R22 — Скины игроков без лицензии — OPEN
+
+3D-скин берётся из API Mojang (ADR-0089). Для ников без лицензионного профиля
+скина нет — показывается пустое состояние. Если сервер в offline-режиме, это
+большинство игроков. **Решение владельца:** источник скинов с серверов через
+плагин (R20, SkinsRestorer и т.п.) или сторонняя система скинов — только
+после выбора владельцем (надёжность и правила).
+
 ## R21 — Брендированные страницы ошибок Cloudflare 502/503/504 — DEFERRED
 
 Офлайн-режим внутри сайта готов (ADR-0086): страница `/offline` через Service
@@ -235,7 +256,7 @@ API привязки готов (ADR-0072, `MINECRAFT-PLUGIN-CONTRACT.md`), в d
 ## R18 — Telegram Login (OpenID Connect): настройка BotFather — OPEN (нужен владелец)
 
 Код входа/привязки через Telegram OIDC готов (ADR-0071), но без настройки бота
-кнопка Telegram не показывается. **Нужно от владельца:** @BotFather → бот
+кнопка Telegram видна, но недоступна с пояснением (ADR-0087). **Нужно от владельца:** @BotFather → бот
 `@twomcsu_testbot` (или production-бот) → Login Widget → переключить на
 OpenID Connect; в Allowed URLs добавить `https://api.twomc.su/auth/telegram/callback`;
 Client ID и Client Secret — в env (`TELEGRAM_CLIENT_ID`, `TELEGRAM_CLIENT_SECRET`,

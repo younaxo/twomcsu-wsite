@@ -3,6 +3,7 @@
 import type { OwnProfileDto, PublicProfileSummary } from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
+import { API_URL } from '@/lib/env';
 
 /// Публичная часть профиля: те же поля, что у своего, но скрытые сервер не отдаёт.
 export type PublicProfileDto = Partial<OwnProfileDto> & Pick<OwnProfileDto, 'id' | 'username'>;
@@ -35,4 +36,28 @@ export function usePublicProfile(username: string) {
       }),
     staleTime: 60_000,
   });
+}
+
+/// `GET /users/:username/skin` — есть ли скин Minecraft (ADR-0089). Текстуры
+/// сайт отдаёт сам (`skin.png` / `cape.png`), браузер не ходит к Mojang.
+export interface SkinMetaDto {
+  available: boolean;
+  model: 'classic' | 'slim' | null;
+  cape: boolean;
+  version: string | null;
+}
+
+export function useSkinMeta(username: string) {
+  return useQuery({
+    queryKey: ['profile', 'skin', username.toLowerCase()] as const,
+    queryFn: () =>
+      api.get<SkinMetaDto>(`/users/${encodeURIComponent(username)}/skin`, {
+        retryOn401: false,
+      }),
+    staleTime: 10 * 60_000,
+  });
+}
+
+export function skinTextureUrl(username: string, kind: 'skin' | 'cape', version: string): string {
+  return `${API_URL}/users/${encodeURIComponent(username)}/${kind}.png?v=${encodeURIComponent(version)}`;
 }

@@ -67,6 +67,7 @@ export function ProfilePreviewCard({
   loading,
   error,
   bleed = false,
+  showHeader = true,
 }: {
   username: string;
   summary: PublicProfileSummary | undefined;
@@ -74,6 +75,8 @@ export function ProfilePreviewCard({
   error: boolean;
   /// Внутри popover без внутренних отступов — баннер во всю ширину.
   bleed?: boolean;
+  /// Без шапки — на странице профиля баннер и аватар уже наверху.
+  showHeader?: boolean;
 }) {
   const pad = bleed ? 'px-4' : '';
   if (loading) {
@@ -119,7 +122,7 @@ export function ProfilePreviewCard({
   }
   return (
     <div className={cn('flex flex-col gap-3', bleed && 'pb-4')} data-testid="profile-preview">
-      <ProfileHeader identity={identityFromSummary(summary)} bleed={bleed} />
+      {showHeader ? <ProfileHeader identity={identityFromSummary(summary)} bleed={bleed} /> : null}
       <div className={cn('flex flex-col gap-3', pad)}>
         {summary.position ? (
           <span
