@@ -1820,6 +1820,13 @@ model SeasonalSettings {
   showBanners      Boolean  @default(true)
   /// 1–3: плотность эффектов (1 — мало частиц).
   effectIntensity  Int      @default(2)
+  /// Падающий эффект — независимо от сезона (ADR-0090): season — эффекты
+  /// активной кампании; always — `fallingEffect` всегда, даже без сезона;
+  /// off — выключен. `showEffects` = fallingMode != off (совместимость).
+  fallingMode      String   @default("season") @db.VarChar(16)
+  fallingEffect    String?  @db.VarChar(16)
+  /// 1–3: скорость падения (1 — медленно).
+  effectSpeed      Int      @default(2)
   campaigns        Json     @default("{}")
   updatedBy        String?
   updatedAt        DateTime @updatedAt

@@ -3,10 +3,13 @@
 import type { PublicSeasonalSettings, SeasonalCampaignOverride } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EffectsCanvas } from '@/components/seasonal/seasonal-effects';
 import { BrandWordmark } from '@/components/shell/brand-wordmark';
-import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
+import {
+  SeasonalHeaderDecoration,
+  type DecorationStatus,
+} from '@/components/shell/seasonal-header-decoration';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
@@ -32,7 +35,9 @@ import {
   SEASONAL_CAMPAIGNS,
   SEASONAL_EFFECTS,
   SEASONAL_MAX_EFFECTS,
+  fallingModeOf,
   resolveSeasonalFromSettings,
+  resolveSeasonalView,
   withOverrides,
   type SeasonalCampaign,
   type SeasonalEffect,
@@ -147,12 +152,14 @@ export function SeasonalTab() {
         </section>
 
         <section className={island}>
-          <h3 className="text-sm font-semibold">Что показывать</h3>
+          <h3 className="text-sm font-semibold">Оформление сезона</h3>
+          <p className="text-xs text-muted-foreground">
+            Работает только при активной кампании. Каждый элемент включается отдельно.
+          </p>
           {(
             [
               ['showWordmarkO', 'Сезонная «o» в wordmark'],
-              ['showDecoration', 'Декор над шапкой'],
-              ['showEffects', 'Эффекты (снег, листья, сердечки…)'],
+              ['showDecoration', 'Украшение шапки'],
               ['showBanners', 'Сезонные баннеры'],
             ] as const
           ).map(([key, label]) => (
@@ -164,25 +171,9 @@ export function SeasonalTab() {
               onCheckedChange={(value) => set(key, value)}
             />
           ))}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm">Плотность эффектов</span>
-            <SegmentedControl
-              size="sm"
-              value={String(form.effectIntensity)}
-              disabled={!editable || !form.enabled || !form.showEffects}
-              onValueChange={(value) => set('effectIntensity', Number(value))}
-              options={[
-                { value: '1', label: 'Мало' },
-                { value: '2', label: 'Средне' },
-                { value: '3', label: 'Много' },
-              ]}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            На слабых устройствах, при экономии трафика и с «уменьшением движения» эффекты
-            автоматически упрощаются или выключаются.
-          </p>
         </section>
+
+        <FallingEffectSection form={form} editable={editable} set={set} />
 
         <section className={island}>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -337,6 +328,113 @@ function CampaignRow({
 
 /// Предпросмотр до публикации: любая кампания, desktop/mobile, dark/light —
 /// те же компоненты, что на сайте (wordmark, декор шапки, движок эффектов).
+const MODE_OPTIONS = [
+  { value: 'season', label: 'По сезону' },
+  { value: 'always', label: 'Всегда' },
+  { value: 'off', label: 'Выключен' },
+];
+
+/// Падающий эффект (ADR-0090) — отдельно от оформления сезона: «По сезону» —
+/// эффекты активной кампании, «Всегда» — выбранный тип даже без сезона,
+/// «Выключен» — ничего не падает, даже в сезон.
+function FallingEffectSection({
+  form,
+  editable,
+  set,
+}: {
+  form: SeasonalForm;
+  editable: boolean;
+  set: <K extends keyof SeasonalForm>(key: K, value: SeasonalForm[K]) => void;
+}) {
+  const mode = fallingModeOf({ ...form, serverTime: '' });
+  return (
+    <section className={island} aria-label="Падающий эффект">
+      <h3 className="text-sm font-semibold">Падающий эффект</h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm">Режим</span>
+        <SegmentedControl
+          size="sm"
+          aria-label="Режим падающего эффекта"
+          value={mode}
+          disabled={!editable}
+          onValueChange={(value) => {
+            set('fallingMode', value as SeasonalForm['fallingMode']);
+            set('showEffects', value !== 'off');
+          }}
+          options={MODE_OPTIONS}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {mode === 'season'
+          ? 'Падают эффекты активной кампании (их набор — в списке кампаний ниже). Без сезона — ничего.'
+          : mode === 'always'
+            ? 'Выбранный эффект падает всегда — независимо от того, активен ли сезон.'
+            : 'Падающих элементов нет, даже если сезон активен. Остальное оформление сезона работает.'}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm">Тип</span>
+        <Select
+          value={form.fallingEffect ?? ''}
+          disabled={!editable || mode !== 'always'}
+          onValueChange={(value) => set('fallingEffect', value as SeasonalEffect)}
+        >
+          <SelectTrigger size="sm" aria-label="Тип падающего эффекта" className="w-48">
+            <SelectValue placeholder="Выберите эффект" />
+          </SelectTrigger>
+          <SelectContent>
+            {SEASONAL_EFFECTS.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm">Плотность</span>
+        <SegmentedControl
+          size="sm"
+          aria-label="Плотность эффекта"
+          value={String(form.effectIntensity)}
+          disabled={!editable || mode === 'off'}
+          onValueChange={(value) => set('effectIntensity', Number(value))}
+          options={[
+            { value: '1', label: 'Мало' },
+            { value: '2', label: 'Средне' },
+            { value: '3', label: 'Много' },
+          ]}
+        />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm">Скорость</span>
+        <SegmentedControl
+          size="sm"
+          aria-label="Скорость эффекта"
+          value={String(form.effectSpeed)}
+          disabled={!editable || mode === 'off'}
+          onValueChange={(value) => set('effectSpeed', Number(value))}
+          options={[
+            { value: '1', label: 'Медленно' },
+            { value: '2', label: 'Обычно' },
+            { value: '3', label: 'Быстро' },
+          ]}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        На телефонах частиц меньше; на слабых устройствах, при экономии трафика и с «уменьшением
+        движения» эффект автоматически упрощается или выключается. Элементы не перехватывают клики.
+      </p>
+    </section>
+  );
+}
+
+const DECORATION_STATUS: Record<DecorationStatus, string> = {
+  none: 'у этой кампании нет украшения',
+  loading: 'загружается…',
+  loaded: 'показано',
+  error: 'ассет не загрузился',
+};
+
 function SeasonalPreview({
   form,
   active,
@@ -347,14 +445,33 @@ function SeasonalPreview({
   const [campaignId, setCampaignId] = useState('site');
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  // Комбинации без активации реального сезона: оформление и эффект — отдельно.
+  const [seasonOn, setSeasonOn] = useState(true);
+  const [effectOn, setEffectOn] = useState(true);
+  const [decoration, setDecoration] = useState<{
+    status: DecorationStatus;
+    src: string | null;
+  }>({ status: 'none', src: null });
+  const onDecoration = useCallback(
+    (status: DecorationStatus, src: string | null) => setDecoration({ status, src }),
+    [],
+  );
   const reduced = usePrefersReducedMotion();
   const campaign =
     campaignId === 'site'
       ? active
       : withOverrides(SEASONAL_CAMPAIGNS.find((item) => item.id === campaignId) ?? null, form);
+  const now = new Date();
+  const view = resolveSeasonalView({ ...form, serverTime: now.toISOString() }, now, {
+    campaign,
+    season: seasonOn,
+    effect: effectOn,
+  });
   const wordmarkO =
-    form.showWordmarkO && campaign?.wordmarkO ? { id: campaign.id, src: campaign.wordmarkO } : null;
-  const effects = form.showEffects && campaign ? campaign.effects : [];
+    view.showWordmarkO && view.campaign?.wordmarkO
+      ? { id: view.campaign.id, src: view.campaign.wordmarkO }
+      : null;
+  const effects = view.effects;
 
   return (
     <section className={island}>
@@ -394,6 +511,15 @@ function SeasonalPreview({
           ]}
         />
       </div>
+      <div className="flex flex-col gap-2">
+        <SwitchField
+          label="Оформление сезона"
+          description="«o», украшение шапки, баннеры"
+          checked={seasonOn}
+          onCheckedChange={setSeasonOn}
+        />
+        <SwitchField label="Падающий эффект" checked={effectOn} onCheckedChange={setEffectOn} />
+      </div>
       <div
         data-theme={theme}
         data-device={device}
@@ -406,7 +532,9 @@ function SeasonalPreview({
       >
         <div className="relative m-2 flex h-9 items-center rounded-md bg-surface px-2.5 shadow-sm">
           <SeasonalHeaderDecoration
-            campaign={form.showDecoration ? campaign : null}
+            campaign={view.showDecoration ? view.campaign : null}
+            preview
+            onStatus={onDecoration}
             className="h-3 rounded-t-md md:h-3"
           />
           <span className="relative z-[1]">
@@ -418,14 +546,27 @@ function SeasonalPreview({
           <div className="h-2 w-3/4 rounded-full bg-surface-raised" />
           <div className="h-2 w-1/2 rounded-full bg-surface-raised" />
         </div>
-        <EffectsCanvas contained effects={effects} intensity={form.effectIntensity} />
+        <EffectsCanvas
+          contained
+          effects={effects}
+          intensity={view.effectIntensity}
+          speed={view.effectSpeed}
+        />
       </div>
+      <p className="text-xs text-muted-foreground" data-testid="seasonal-preview-decoration">
+        {!view.campaign
+          ? 'Оформление сезона: нет.'
+          : !view.showDecoration
+            ? 'Украшение шапки: выключено.'
+            : `Украшение шапки: ${DECORATION_STATUS[decoration.status]}.`}
+        {view.showDecoration && decoration.status === 'error' && decoration.src ? (
+          <span className="block break-all text-destructive">Адрес: {decoration.src}</span>
+        ) : null}
+      </p>
       <p className="text-xs text-muted-foreground" data-testid="seasonal-preview-effects">
-        {!campaign
-          ? 'Сезонного оформления нет.'
-          : effects.length === 0
-            ? 'Эффекты: нет.'
-            : `Эффекты: ${effects.map(effectLabel).join(', ')}.`}
+        {effects.length === 0
+          ? 'Падающий эффект: нет.'
+          : `Падающий эффект: ${effects.map(effectLabel).join(', ')}.`}
         {reduced && effects.length > 0
           ? ' В системе включено «уменьшение движения» — анимация здесь не показывается.'
           : ''}

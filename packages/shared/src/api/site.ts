@@ -107,7 +107,10 @@ export interface CreateSiteSocialLinkRequest {
 export type UpdateSiteSocialLinkRequest = Partial<CreateSiteSocialLinkRequest>;
 
 /// Эффекты сезонного движка (ADR-0079).
-export type SeasonalEffectId = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun';
+export type SeasonalEffectId = 'snow' | 'hearts' | 'leaves' | 'rain' | 'blossom' | 'sun' | 'stars';
+
+/// Падающий эффект независимо от сезона (ADR-0090).
+export type SeasonalFallingMode = 'season' | 'always' | 'off';
 
 export interface SeasonalCampaignOverride {
   enabled?: boolean;
@@ -126,6 +129,11 @@ export interface PublicSeasonalSettings {
   showEffects: boolean;
   showBanners: boolean;
   effectIntensity: number;
+  /// season — эффекты кампании; always — `fallingEffect` даже без сезона; off.
+  fallingMode: SeasonalFallingMode;
+  fallingEffect: SeasonalEffectId | null;
+  /// 1–3: скорость падения.
+  effectSpeed: number;
   campaigns: Record<string, SeasonalCampaignOverride>;
   serverTime: IsoDateString;
 }

@@ -31,6 +31,9 @@ const SETTINGS = {
   showEffects: true,
   showBanners: true,
   effectIntensity: 2,
+  fallingMode: 'season',
+  fallingEffect: null,
+  effectSpeed: 2,
   campaigns: { halloween: { effects: ['leaves', 'rain'] } },
   updatedAt: '2026-10-10T00:00:00.000Z',
 };
@@ -63,7 +66,9 @@ describe('SeasonalTab', () => {
 
     await user.click(screen.getByRole('switch', { name: /Включена/ }));
     expect(screen.getByTestId('seasonal-preview')).toHaveTextContent('Без сезонного оформления');
-    expect(screen.getByRole('switch', { name: /Эффекты/ })).toBeDisabled();
+    // Оформление сезона зависит от «Включена», падающий эффект — нет (ADR-0090).
+    expect(screen.getByRole('switch', { name: /Украшение шапки/ })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Всегда' })).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
@@ -81,7 +86,7 @@ describe('SeasonalTab', () => {
     expect(frame).toHaveAttribute('data-device', 'desktop');
     // Хэллоуин с набором из админки (листья + дождь), а не только эффект по умолчанию.
     expect(screen.getByTestId('seasonal-preview-effects')).toHaveTextContent(
-      'Эффекты: Листья, Дождь.',
+      'Падающий эффект: Листья, Дождь.',
     );
 
     await user.click(screen.getByRole('radio', { name: 'Телефон' }));
@@ -92,8 +97,45 @@ describe('SeasonalTab', () => {
     // Сброс набора кампании к умолчанию — «По умолчанию» в строке Хэллоуина.
     const row = document.querySelector('[data-campaign="halloween"]') as HTMLElement;
     await user.click(within(row).getByRole('button', { name: 'По умолчанию' }));
-    expect(screen.getByTestId('seasonal-preview-effects')).toHaveTextContent('Эффекты: Листья.');
+    expect(screen.getByTestId('seasonal-preview-effects')).toHaveTextContent(
+      'Падающий эффект: Листья.',
+    );
     expect(within(row).getByText(/По умолчанию: Листья/)).toBeInTheDocument();
+  });
+
+  it('падающий эффект независим: «Всегда» — звёзды без сезона; «Выключен» — украшение остаётся', async () => {
+    const user = userEvent.setup();
+    mocks.get.mockReset().mockResolvedValue({
+      ...SETTINGS,
+      fallingMode: 'always',
+      fallingEffect: 'stars',
+    });
+    renderTab();
+    await screen.findByTestId('seasonal-preview');
+    // Без оформления сезона (превью) звёзды всё равно падают.
+    await user.click(screen.getByRole('switch', { name: /Оформление сезона/ }));
+    expect(screen.getByTestId('seasonal-preview-decoration')).toHaveTextContent(
+      'Оформление сезона: нет.',
+    );
+    expect(screen.getByTestId('seasonal-preview-effects')).toHaveTextContent(
+      'Падающий эффект: Красные звёзды.',
+    );
+    // Эффект выключен — украшение шапки сезона по-прежнему показывается.
+    await user.click(screen.getByRole('switch', { name: /Оформление сезона/ }));
+    await user.click(screen.getByRole('radio', { name: 'Выключен' }));
+    expect(screen.getByTestId('seasonal-preview-effects')).toHaveTextContent(
+      'Падающий эффект: нет.',
+    );
+    expect(screen.getByTestId('seasonal-preview-decoration')).toHaveTextContent(
+      /Украшение шапки: (загружается|показано)/,
+    );
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    expect(mocks.patch.mock.calls[0]?.[1]).toMatchObject({
+      fallingMode: 'off',
+      showEffects: false,
+      showDecoration: true,
+    });
   });
 
   it('без права редактирования — всё только для чтения, кнопки сохранения нет', async () => {
