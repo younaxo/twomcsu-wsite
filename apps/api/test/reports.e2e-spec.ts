@@ -229,6 +229,27 @@ describe('Reports (e2e)', () => {
     expect(res.body.evidenceLinks).toHaveLength(1);
   });
 
+  it('цели: обязательны для жалоб, не нужны для остальных типов (ADR-0120)', async () => {
+    const noTarget = await request(app.getHttpServer())
+      .post('/reports')
+      .set('Authorization', auth(alice))
+      .send({ type: 'ADMIN_COMPLAINT', description: 'Без ника', targets: [] })
+      .expect(400);
+    expect(noTarget.body.message).toBe('Укажите ник нарушителя');
+
+    const technical = await request(app.getHttpServer())
+      .post('/reports')
+      .set('Authorization', auth(alice))
+      .send({
+        type: 'TECHNICAL_ISSUE',
+        description: 'Не открывается карта',
+        targets: [],
+      })
+      .expect(201);
+    createdReportNumbers.push(technical.body.reportNumber);
+    expect(technical.body.targets).toHaveLength(0);
+  });
+
   it('ban в тикет-системе: блокирует создание новых обращений до unban', async () => {
     await request(app.getHttpServer())
       .post(`/admin/reports/ban/${troll.id}`)
