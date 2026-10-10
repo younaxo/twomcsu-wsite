@@ -15,4 +15,5 @@ export * from './api/admin';
 export * from './api/site';
 export * from './api/communications';
 export * from './api/announcements';
+export * from './api/system';
 export * from './privacy';

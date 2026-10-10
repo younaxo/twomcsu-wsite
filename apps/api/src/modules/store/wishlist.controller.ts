@@ -14,7 +14,9 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { GiftWishlistItemDto } from './dto/gift-wishlist-item.dto';
 import { UpdateWishlistDto } from './dto/update-wishlist.dto';
 import { WishlistService } from './wishlist.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('store')
 @Controller('store/wishlist')
 export class WishlistController {
   constructor(private readonly wishlist: WishlistService) {}

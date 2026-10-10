@@ -11,11 +11,11 @@ import {
   type UpsertAnnouncementRequest,
 } from '@twomc/shared';
 import { useEffect, useMemo, useState } from 'react';
+import { DateTimeField } from '@/components/admin/date-time-field';
 import { AnnouncementView } from '@/components/announcements/announcement-view';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
-import { DatePicker } from '@/components/ui/date-picker';
 import {
   Dialog,
   DialogBody,
@@ -36,7 +36,7 @@ import { useRoles } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { ANNOUNCEMENT_KIND_META, ANNOUNCEMENT_PLACEMENT_LABELS } from '@/lib/site/announcements';
-import { isoToLocalParts, localPartsToIso, timezoneLabel } from '@/lib/site/local-datetime';
+import { timezoneLabel } from '@/lib/site/local-datetime';
 
 interface Form {
   title: string;
@@ -98,42 +98,6 @@ export function validateAnnouncement(
   }
   if (form.audience === 'role' && !form.targetRole) errors.targetRole = 'Выберите роль';
   return errors;
-}
-
-/// Дата + время в поясе администратора; хранение — ISO (UTC).
-function DateTimeField({
-  label,
-  value,
-  fallbackTime,
-  onChange,
-}: {
-  label: string;
-  value: string | null;
-  fallbackTime: string;
-  onChange: (value: string | null) => void;
-}) {
-  const parts = isoToLocalParts(value);
-  return (
-    <div className="flex items-center gap-2">
-      <DatePicker
-        aria-label={`${label}: дата`}
-        placeholder={label}
-        value={parts.date}
-        clearable
-        onChange={(date) => onChange(date ? localPartsToIso(date, parts.time, fallbackTime) : null)}
-      />
-      <Input
-        type="time"
-        className="w-28"
-        aria-label={`${label}: время`}
-        value={parts.time}
-        disabled={!parts.date}
-        onChange={(event) =>
-          parts.date && onChange(localPartsToIso(parts.date, event.target.value, fallbackTime))
-        }
-      />
-    </div>
-  );
 }
 
 /// Создание и изменение объявления. Сохраняется без публикации — публикация

@@ -4,7 +4,9 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ListProductsQueryDto } from './dto/list-products-query.dto';
 import { ProductsService } from './products.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('store')
 @Controller('store/products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}

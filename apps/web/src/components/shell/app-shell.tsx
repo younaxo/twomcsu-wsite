@@ -3,7 +3,9 @@
 import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import { AnnouncementBanners } from '@/components/announcements/announcement-banners';
+import { MaintenanceScreen, StaffBypassNotice } from '@/components/system/site-availability';
 import { cn } from '@/lib/cn';
+import { useFullMaintenance } from '@/lib/site/status';
 import { DocumentBadge } from './document-badge';
 import { GlobalFloatingActions } from './floating-actions';
 import { MobileNav } from './mobile-nav';
@@ -34,6 +36,12 @@ const SeasonalEffects = dynamic(
 /// на длинной — после контента, в обычном потоке документа). На мобильных
 /// rail заменяет нижняя навигация; плавающие действия — над ней.
 export function AppShell({ children, className }: { children: ReactNode; className?: string }) {
+  // Полные техработы (ADR-0082): игрокам — экран техработ вместо сайта,
+  // сотрудникам с правом обхода — сайт с плашкой. Вход и админка — вне AppShell.
+  const maintenance = useFullMaintenance();
+  if (maintenance.active && !maintenance.bypass) {
+    return <MaintenanceScreen maintenance={maintenance.maintenance} />;
+  }
   return (
     <div className={cn('min-h-dvh bg-background text-foreground', className)}>
       <DocumentBadge />
@@ -42,6 +50,11 @@ export function AppShell({ children, className }: { children: ReactNode; classNa
         <SiteHeader />
         <AnnouncementBanners className="mx-auto w-full max-w-[1440px] px-3 pt-3 md:px-6" />
         <main id="main" className="flex-1">
+          {maintenance.bypass ? (
+            <div className="px-3 pt-3">
+              <StaffBypassNotice reason="MAINTENANCE" />
+            </div>
+          ) : null}
           {children}
         </main>
         <SiteFooter />

@@ -23,11 +23,13 @@ import { ReactNewsCommentDto } from './dto/react-news-comment.dto';
 import { TagsQueryDto } from './dto/tags-query.dto';
 import { UpdateNewsCommentDto } from './dto/update-news-comment.dto';
 import { NewsService } from './news.service';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
+@SiteModule('news')
 @Controller()
 export class NewsController {
   constructor(private readonly news: NewsService) {}

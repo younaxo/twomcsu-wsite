@@ -15,7 +15,9 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { AchievementsService } from './achievements.service';
 import { SetShowcaseDto } from './dto/set-showcase.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('achievements')
 @Controller('users')
 export class UserAchievementsController {
   constructor(private readonly achievements: AchievementsService) {}

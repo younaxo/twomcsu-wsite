@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { SiteStatusService } from '../system/site-status.service';
 import { AdminToolsService } from './admin-tools.service';
 import { SiteSocialLinksService } from './site-social-links.service';
 
@@ -11,17 +12,21 @@ export class SiteController {
   constructor(
     private readonly tools: AdminToolsService,
     private readonly socialLinks: SiteSocialLinksService,
+    private readonly siteStatus: SiteStatusService,
   ) {}
 
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get('settings')
   async publicSettings() {
-    const [s, alert, socialLinks, seasonal] = await Promise.all([
+    const [s, alert, socialLinks, seasonal, status] = await Promise.all([
       this.tools.getSiteSettings(),
       this.tools.getPublicSiteAlert(),
       this.socialLinks.listPublic(),
       this.tools.getPublicSeasonal(),
+      this.siteStatus.snapshot(),
     ]);
+    // Флаги модулей — из реестра модулей (ADR-0082), а не из старых полей.
+    const on = (key: string) => !status.disabled.has(key);
     return {
       siteName: s.siteName,
       siteDescription: s.siteDescription,
@@ -30,12 +35,12 @@ export class SiteController {
       socialLinks,
       registrationEnabled: s.registrationEnabled,
       modules: {
-        chat: s.chatEnabled,
-        friends: s.friendsEnabled,
-        store: s.storeEnabled,
-        comments: s.commentsEnabled,
-        news: s.newsEnabled,
-        reports: s.reportsEnabled,
+        chat: on('chat'),
+        friends: on('friends'),
+        store: on('store'),
+        comments: on('comments'),
+        news: on('news'),
+        reports: on('reports'),
       },
       meta: {
         title: s.metaTitle,

@@ -10,6 +10,7 @@ import { api } from '@/lib/api/client';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 import { useServersOverview } from '@/lib/site/hooks';
+import { ModuleGate } from '@/components/system/site-availability';
 
 const HEALTH_LABEL = {
   operational: { text: 'Все системы работают', dot: 'bg-success' },
@@ -21,7 +22,7 @@ const HEALTH_LABEL = {
 /// Временная внутренняя status page (до отдельного проекта
 /// twomcsu-statuspagewebsite — NEXT_PUBLIC_STATUS_PAGE_URL): API и сервера
 /// по реальным проверкам.
-export default function StatusPage() {
+function StatusPageContent() {
   const overview = useServersOverview();
   const apiHealth = useQuery({
     queryKey: ['site', 'health'],
@@ -70,5 +71,14 @@ export default function StatusPage() {
         </ul>
       </Card>
     </div>
+  );
+}
+
+/// Страница модуля «minecraft» (ADR-0082): выключен или на техработах — понятное состояние.
+export default function StatusPage() {
+  return (
+    <ModuleGate module="minecraft">
+      <StatusPageContent />
+    </ModuleGate>
   );
 }

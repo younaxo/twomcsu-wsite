@@ -5,7 +5,9 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('store')
 @Controller('store')
 export class StoreExtrasController {
   constructor(private readonly orders: OrdersService) {}
@@ -21,6 +23,7 @@ export class StoreExtrasController {
   }
 }
 
+@SiteModule('store')
 @Controller('store/orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {

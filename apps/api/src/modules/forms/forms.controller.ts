@@ -15,11 +15,13 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { SaveDraftDto } from './dto/save-draft.dto';
 import { SubmitResponseDto } from './dto/submit-response.dto';
 import { FormsService } from './forms.service';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
+@SiteModule('forms')
 @Controller('forms')
 export class FormsController {
   constructor(private readonly forms: FormsService) {}

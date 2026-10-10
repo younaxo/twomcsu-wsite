@@ -10,9 +10,10 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
 import { formatNumber } from '@/lib/format';
 import { useServersOverview } from '@/lib/site/hooks';
+import { ModuleGate } from '@/components/system/site-availability';
 
 /// Сервера проекта — реальный Server List Ping (GET /servers/overview).
-export default function ServersPage() {
+function ServersPageContent() {
   const overview = useServersOverview();
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-6">
@@ -87,5 +88,14 @@ export default function ServersPage() {
         }
       </QueryBoundary>
     </div>
+  );
+}
+
+/// Страница модуля «minecraft» (ADR-0082): выключен или на техработах — понятное состояние.
+export default function ServersPage() {
+  return (
+    <ModuleGate module="minecraft">
+      <ServersPageContent />
+    </ModuleGate>
   );
 }

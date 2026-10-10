@@ -4,11 +4,13 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { ListTopicsQueryDto } from './dto/list-topics-query.dto';
 import { TopicsService } from './topics.service';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
+@SiteModule('topics')
 @Controller('topics')
 export class TopicsController {
   constructor(private readonly topics: TopicsService) {}

@@ -18,6 +18,7 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { PrismaService } from '../prisma/prisma.service';
 import { FilesService } from './files.service';
 import { isUploadType, UPLOAD_TYPES } from './upload-types';
+import { SiteModule } from '../system/site-module.decorator';
 
 /// Единый лимит multipart на входе; точный лимит по типу — в FilesService.
 const MULTIPART_LIMIT = 20 * 1024 * 1024;
@@ -30,6 +31,7 @@ const upload = () =>
 
 /// Загрузка файлов (PHASE 23, ADR-0008). Клиент присылает multipart-поле
 /// `file` и `type` из UPLOAD_TYPES; ключ, формат и права — на стороне сервера.
+@SiteModule('uploads')
 @Controller()
 export class FilesController {
   constructor(

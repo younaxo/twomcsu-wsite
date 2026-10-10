@@ -1,7 +1,9 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { ListMessagesQueryDto } from './dto/list-messages-query.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('chat')
 @Controller('chat')
 export class ChatController {
   constructor(private readonly chat: ChatService) {}

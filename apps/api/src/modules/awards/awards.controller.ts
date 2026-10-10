@@ -16,11 +16,13 @@ import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { AwardsService } from './awards.service';
 import { CreateAwardDto } from './dto/create-award.dto';
 import { UpdateAwardDto } from './dto/update-award.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
 @Controller()
 export class AwardsController {
   constructor(private readonly awards: AwardsService) {}
 
+  @SiteModule('achievements')
   @Get('awards')
   async listPublic() {
     return this.awards.listPublic();

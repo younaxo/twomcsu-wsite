@@ -220,7 +220,6 @@ function ModerationQueue() {
 }
 
 export function ModerationTab({ api, editable }: TabProps) {
-  const { form } = api;
   return (
     <SettingsLayout
       main={
@@ -263,11 +262,10 @@ export function ModerationTab({ api, editable }: TabProps) {
             title="Обращения и жалобы"
             description="Приём жалоб от игроков и работа с ними."
           >
-            <SummaryRow label="Модуль обращений" value={<OnOff value={form.reportsEnabled} />} />
-            <SummaryRow label="Комментарии" value={<OnOff value={form.commentsEnabled} />} />
             <p className="text-sm text-muted-foreground">
-              Модули включаются на вкладке «Модули». Действия над нарушителями (предупреждение, мут,
-              бан) — в карточке пользователя; каждое действие пишется в журнал аудита.
+              Модули включаются в разделе «Система → Техработы и модули». Действия над нарушителями
+              (предупреждение, мут, бан) — в карточке пользователя; каждое действие пишется в журнал
+              аудита.
             </p>
           </SettingsIsland>
         </>
@@ -308,64 +306,38 @@ export function ModerationTab({ api, editable }: TabProps) {
 
 /* ---------------- Модули ---------------- */
 
-const MODULES: { key: BoolKey; label: string; description: string }[] = [
-  { key: 'storeEnabled', label: 'Магазин', description: 'Каталог, корзина и заказы' },
-  { key: 'chatEnabled', label: 'Чат', description: 'Общий чат сайта' },
-  { key: 'friendsEnabled', label: 'Друзья', description: 'Заявки и список друзей' },
-  {
-    key: 'commentsEnabled',
-    label: 'Комментарии',
-    description: 'Комментарии к профилям и новостям',
-  },
-  { key: 'newsEnabled', label: 'Новости', description: 'Лента новостей проекта' },
-  { key: 'reportsEnabled', label: 'Обращения', description: 'Жалобы и обращения игроков' },
-  {
-    key: 'defaultNotificationsEnabled',
-    label: 'Уведомления по умолчанию',
-    description: 'Включены у новых аккаунтов',
-  },
-];
-
+/// Модули сайта переехали в реестр «Система → Техработы и модули» (ADR-0082);
+/// здесь — только умолчания для новых аккаунтов.
 export function ModulesTab({ api, editable }: TabProps) {
-  const disabled = MODULES.filter((module) => !api.form[module.key]);
+  const { can } = usePermissions();
   return (
     <SettingsLayout
       main={
-        <SettingsIsland
-          title="Модули сайта"
-          description="Выключенный модуль скрывается из интерфейса для всех пользователей."
-        >
-          <div className="grid gap-x-6 gap-y-3 md:grid-cols-2">
-            {MODULES.map((module) => (
-              <BoolSwitch
-                key={module.key}
-                api={api}
-                editable={editable}
-                field={module.key}
-                label={module.label}
-                description={module.description}
-              />
-            ))}
-          </div>
+        <SettingsIsland title="Умолчания аккаунтов" description="Применяются к новым аккаунтам.">
+          <BoolSwitch
+            api={api}
+            editable={editable}
+            field="defaultNotificationsEnabled"
+            label="Уведомления по умолчанию"
+            description="Включены у новых аккаунтов"
+          />
         </SettingsIsland>
       }
       aside={
-        <SettingsAside title="Состояние">
-          <SummaryRow label="Всего модулей" value={MODULES.length} />
-          <SummaryRow
-            label="Выключено"
-            value={<span data-testid="modules-disabled">{disabled.length}</span>}
-          />
-          {disabled.length > 0 ? (
-            <p className="text-muted-foreground">
-              Выключены: {disabled.map((module) => module.label).join(', ')}.
-            </p>
-          ) : (
-            <p className="flex items-center gap-1.5 text-muted-foreground">
-              <ShieldCheck aria-hidden className="size-4 text-success" />
-              Все модули работают.
-            </p>
-          )}
+        <SettingsAside title="Модули сайта">
+          <p className="flex items-start gap-1.5 text-muted-foreground">
+            <ShieldCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />
+            Включение и выключение модулей, защищённые модули и техработы — в отдельном разделе.
+          </p>
+          {can(['system.modules.view', 'system.maintenance.view']) ? (
+            <Link
+              href="/admin/system"
+              className="flex items-center justify-between rounded-md px-2 py-1.5 font-medium text-primary hover:bg-muted"
+            >
+              Техработы и модули
+              <ArrowUpRight aria-hidden className="size-4" />
+            </Link>
+          ) : null}
         </SettingsAside>
       }
     />

@@ -17,11 +17,13 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { EventAttendanceDto } from './dto/event-attendance.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { EventsService } from './events.service';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
+@SiteModule('events')
 @Controller('events')
 export class EventsController {
   constructor(private readonly events: EventsService) {}

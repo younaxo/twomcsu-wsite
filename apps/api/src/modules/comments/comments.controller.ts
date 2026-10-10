@@ -20,6 +20,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReactCommentDto } from './dto/react-comment.dto';
 import { ReportCommentDto } from './dto/report-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
 class ListCommentsQueryDto {
   @IsOptional()
@@ -36,6 +37,7 @@ class ListCommentsQueryDto {
   limit?: number = 20;
 }
 
+@SiteModule('comments')
 @Controller()
 export class CommentsController {
   constructor(private readonly comments: CommentsService) {}

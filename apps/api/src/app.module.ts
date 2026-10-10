@@ -35,6 +35,7 @@ import { RedisModule } from './modules/redis/redis.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { StoreModule } from './modules/store/store.module';
+import { SystemModule } from './modules/system/system.module';
 import { StreamingModule } from './modules/streaming/streaming.module';
 import { TopicsModule } from './modules/topics/topics.module';
 import { UsersModule } from './modules/users/users.module';
@@ -58,6 +59,7 @@ import { VotingModule } from './modules/voting/voting.module';
     RolesModule,
     NotificationsModule,
     CommunicationsModule,
+    SystemModule,
     PositionsModule,
     DepartmentsModule,
     CustomPositionsModule,

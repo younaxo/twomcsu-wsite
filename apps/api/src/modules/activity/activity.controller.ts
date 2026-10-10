@@ -21,11 +21,13 @@ import { CreateActivityCommentDto } from './dto/create-activity-comment.dto';
 import { ListActivityQueryDto } from './dto/list-activity-query.dto';
 import { ReactActivityDto } from './dto/react-activity.dto';
 import { UpdateActivitySettingsDto } from './dto/update-activity-settings.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerIdOf(req: Request): string | null {
   return (req as Request & { user?: AuthenticatedUser }).user?.id ?? null;
 }
 
+@SiteModule('activity')
 @Controller('activity')
 export class ActivityController {
   constructor(private readonly activity: ActivityService) {}
