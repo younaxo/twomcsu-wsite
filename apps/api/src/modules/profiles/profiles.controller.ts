@@ -78,6 +78,9 @@ export class ProfilesController {
     return this.profiles.react(username, user.id, dto.type);
   }
 
+  /// Жалоба на профиль — часть модуля сайта «Жалобы и обращения»: при
+  /// выключенном модуле 503, как у остальных жалоб.
+  @SiteModule('reports')
   @UseGuards(JwtAuthGuard)
   @Post(':username/report')
   async report(

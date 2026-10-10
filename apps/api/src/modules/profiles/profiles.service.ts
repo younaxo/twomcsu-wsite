@@ -181,13 +181,16 @@ export class ProfilesService {
     return this.ownView(updated);
   }
 
-  /// Фильтрует профиль по приватности для чужого просмотра. FRIENDS_ONLY
-  /// трактуется как недоступно посторонним до появления системы друзей
-  /// (PHASE 09) — безопасный дефолт (меньше раскрытия, не больше).
+  /// Публичный профиль с учётом приватности (`canView`). Скрытый профиль
+  /// существующего игрока — `{ username, hidden: true }`, как у summary
+  /// (ADR-0073, ADR-0106): 404 — только для несуществующего ника.
   async getPublicProfile(
     username: string,
     viewerId: string | null,
-  ): Promise<OwnProfile | Record<string, unknown>> {
+  ): Promise<
+    | { username: string; hidden: true }
+    | ((OwnProfile | Record<string, unknown>) & { hidden: false })
+  > {
     const id = await resolveUserIdByHandle(this.prisma, username);
     const user = id
       ? await this.prisma.user.findUnique({
@@ -201,7 +204,7 @@ export class ProfilesService {
 
     const isOwner = viewerId !== null && viewerId === user.id;
     if (!(await this.canView(user, viewerId))) {
-      throw new NotFoundException('Профиль не найден');
+      return { username: user.username, hidden: true as const };
     }
 
     const resolved = this.withMedia(user);
@@ -212,6 +215,7 @@ export class ProfilesService {
     const showSocials = isOwner || !user.hideSocials;
     return {
       ...base,
+      hidden: false as const,
       minecraftName: user.minecraftAccount?.name ?? null,
       stats: await this.profileStats(user.id, viewerId),
       // Привязанные Discord/Telegram — провайдер и имя, без внешних ID.

@@ -175,10 +175,106 @@ describe('Публичный профиль /u/[username]', () => {
     expect(screen.queryByRole('link', { name: 'Редактировать профиль' })).toBeNull();
   });
 
-  it('скрытый или несуществующий профиль — понятное состояние', async () => {
+  it('несуществующий ник (404) — «Профиль не найден»', async () => {
     mocks.get.mockRejectedValue(new ApiError(404, ['Профиль не найден']));
     render(<PublicProfilePage />, { wrapper: Providers });
-    expect(await screen.findByText('Профиль не найден или скрыт')).toBeInTheDocument();
+    expect(await screen.findByText('Профиль не найден')).toBeInTheDocument();
+    expect(screen.queryByTestId('profile-hidden')).toBeNull();
+  });
+
+  it('скрытый профиль (200 hidden) — отдельное состояние, без данных и действий', async () => {
+    mocks.get.mockImplementation(async (path: string) =>
+      path.endsWith('/public')
+        ? { username: 'Steve', hidden: true }
+        : path === '/site/settings'
+          ? { modules: { reports: true } }
+          : { username: 'Steve', hidden: true },
+    );
+    useAuthStore.setState({
+      status: 'authenticated',
+      user: { id: 'viewer', username: 'alex' } as never,
+    });
+    render(<PublicProfilePage />, { wrapper: Providers });
+    expect(await screen.findByTestId('profile-hidden')).toHaveTextContent('Профиль Steve скрыт');
+    expect(screen.queryByTestId('public-profile')).toBeNull();
+    expect(screen.queryByTestId('profile-report')).toBeNull();
+  });
+
+  describe('«Пожаловаться» (срез 1.3)', () => {
+    const answer = (reports: boolean) => async (path: string) =>
+      path.endsWith('/public')
+        ? { id: 'u1', username: 'Steve', hidden: false }
+        : path === '/site/settings'
+          ? { modules: { reports } }
+          : path.endsWith('/showcase')
+            ? { awards: [], achievements: [], achievementsCompleted: 0 }
+            : { username: 'Steve', hidden: false, roles: [] };
+
+    it('вошедшему на чужом профиле — окно с причиной; без причины не отправляется', async () => {
+      const user = (await import('@testing-library/user-event')).default.setup();
+      useAuthStore.setState({
+        status: 'authenticated',
+        user: { id: 'viewer', username: 'alex' } as never,
+      });
+      mocks.get.mockImplementation(answer(true));
+      mocks.post.mockImplementation(async (path: string) =>
+        path.endsWith('/report') ? { success: true } : STATS,
+      );
+      render(<PublicProfilePage />, { wrapper: Providers });
+      const button = await screen.findByRole('button', { name: 'Пожаловаться' });
+      expect(button.className).toMatch(/left-3/);
+      expect(screen.queryByRole('link', { name: 'Редактировать профиль' })).toBeNull();
+      await user.click(button);
+      const dialog = await screen.findByTestId('profile-report-dialog');
+      await user.click(within(dialog).getByRole('button', { name: 'Отправить жалобу' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Выберите причину');
+      expect(mocks.post).not.toHaveBeenCalledWith('/users/Steve/report', expect.anything());
+
+      // «Другое» требует описания.
+      await user.click(within(dialog).getByRole('radio', { name: /Другое/ }));
+      await user.click(within(dialog).getByRole('button', { name: 'Отправить жалобу' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('Опишите проблему');
+
+      await user.click(within(dialog).getByRole('radio', { name: /Спам или реклама/ }));
+      await user.type(within(dialog).getByRole('textbox'), '  реклама в статусе  ');
+      await user.click(within(dialog).getByRole('button', { name: 'Отправить жалобу' }));
+      await waitFor(() =>
+        expect(mocks.post).toHaveBeenCalledWith('/users/Steve/report', {
+          reason: 'SPAM',
+          description: 'реклама в статусе',
+        }),
+      );
+      await waitFor(() => expect(screen.queryByTestId('profile-report-dialog')).toBeNull());
+    });
+
+    it('гостю, владельцу и при выключенном модуле жалоб — кнопки нет', async () => {
+      mocks.get.mockImplementation(answer(true));
+      const guest = render(<PublicProfilePage />, { wrapper: Providers });
+      await screen.findByTestId('public-profile');
+      expect(screen.queryByTestId('profile-report')).toBeNull();
+      guest.unmount();
+
+      useAuthStore.setState({
+        status: 'authenticated',
+        user: { id: 'u1', username: 'steve' } as never,
+      });
+      const owner = render(<PublicProfilePage />, { wrapper: Providers });
+      await screen.findByRole('link', { name: 'Редактировать профиль' });
+      expect(screen.queryByTestId('profile-report')).toBeNull();
+      owner.unmount();
+
+      useAuthStore.setState({
+        status: 'authenticated',
+        user: { id: 'viewer', username: 'alex' } as never,
+      });
+      mocks.get.mockImplementation(answer(false));
+      render(<PublicProfilePage />, { wrapper: Providers });
+      await screen.findByTestId('public-profile');
+      await waitFor(() =>
+        expect(mocks.get).toHaveBeenCalledWith('/site/settings', expect.anything()),
+      );
+      expect(screen.queryByTestId('profile-report')).toBeNull();
+    });
   });
 
   it('свой профиль — кнопка «Редактировать профиль»', async () => {
