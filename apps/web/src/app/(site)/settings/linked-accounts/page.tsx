@@ -177,7 +177,7 @@ function LinkedAccounts() {
 /// «Связанные аккаунты» (ADR-0069): Discord/Telegram для входа в этот аккаунт.
 export default function LinkedAccountsPage() {
   return (
-    <div className="mx-auto flex max-w-[1100px] flex-col gap-6 px-4 py-8 md:px-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="Связанные аккаунты"
         description="Discord и Telegram для быстрого входа в ваш аккаунт twomc.su."

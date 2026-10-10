@@ -62,6 +62,20 @@ describe('Profiles (e2e)', () => {
     expect(res.body.city).toBe('Moscow');
   });
 
+  it('дату рождения можно задать и очистить (null — не 1970-01-01)', async () => {
+    const http = () =>
+      request(app.getHttpServer())
+        .patch('/users/me/profile')
+        .set('Authorization', `Bearer ${user.accessToken}`);
+    const set = await http().send({ birthDate: '2001-05-20' }).expect(200);
+    expect(set.body.birthDate).toMatch(/^2001-05-20/);
+    const cleared = await http()
+      .send({ birthDate: null, statusText: null })
+      .expect(200);
+    expect(cleared.body.birthDate).toBeNull();
+    expect(cleared.body.statusText).toBeNull();
+  });
+
   it('GET /users/:username/public скрывает country при hideCountry=true', async () => {
     await request(app.getHttpServer())
       .patch('/users/me/profile')

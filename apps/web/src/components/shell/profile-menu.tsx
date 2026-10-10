@@ -72,9 +72,11 @@ export function ProfileMenu() {
           <UserRound />
           Профиль
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
-          <Settings />
-          Настройки
+        <DropdownMenuItem asChild>
+          <Link href="/settings">
+            <Settings />
+            Настройки
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem disabled>
           <Shield />
