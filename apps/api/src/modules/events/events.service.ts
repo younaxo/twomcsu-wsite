@@ -13,6 +13,7 @@ import { PermissionService } from '../roles/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventAttendanceDto } from './dto/event-attendance.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 @Injectable()
 export class EventsService {
@@ -62,7 +63,7 @@ export class EventsService {
       this.prisma.calendarEvent.findMany({
         where,
         include: {
-          createdBy: true,
+          createdBy: { select: PUBLIC_USER_SELECT },
           _count: { select: { participants: true } },
         },
         orderBy: { startsAt: 'asc' },
@@ -77,7 +78,10 @@ export class EventsService {
   async featured(viewerId: string | null) {
     const all = await this.prisma.calendarEvent.findMany({
       where: { status: CalendarEventStatus.PUBLISHED, isFeatured: true },
-      include: { createdBy: true, _count: { select: { participants: true } } },
+      include: {
+        createdBy: { select: PUBLIC_USER_SELECT },
+        _count: { select: { participants: true } },
+      },
       orderBy: { startsAt: 'asc' },
       take: 20,
     });
@@ -95,7 +99,7 @@ export class EventsService {
         OR: [{ createdById: userId }, { participants: { some: { userId } } }],
       },
       include: {
-        createdBy: true,
+        createdBy: { select: PUBLIC_USER_SELECT },
         participants: { where: { userId } },
         _count: { select: { participants: true } },
       },
@@ -106,7 +110,10 @@ export class EventsService {
   async bySlug(slug: string, viewerId: string | null) {
     const event = await this.prisma.calendarEvent.findUnique({
       where: { slug },
-      include: { createdBy: true, _count: { select: { participants: true } } },
+      include: {
+        createdBy: { select: PUBLIC_USER_SELECT },
+        _count: { select: { participants: true } },
+      },
     });
     if (!event || event.status !== CalendarEventStatus.PUBLISHED) {
       throw new NotFoundException('Событие не найдено');
