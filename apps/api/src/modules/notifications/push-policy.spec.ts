@@ -62,7 +62,7 @@ describe('push-policy', () => {
     expect(payload.body!.length).toBeLessThanOrEqual(120);
   });
 
-  it('URL — только внутренний путь; раздел сообщений ещё не выпущен → Центр уведомлений', () => {
+  it('URL — только внутренний путь; push о сообщении ведёт в беседу (срез 2.4)', () => {
     expect(safeInternalPath('/u/younaxo')).toBe('/u/younaxo');
     expect(safeInternalPath('https://evil.example')).toBe('/notifications');
     expect(safeInternalPath('//evil.example/x')).toBe('/notifications');
@@ -70,7 +70,7 @@ describe('push-policy', () => {
     expect(safeInternalPath(null)).toBe('/notifications');
     expect(
       buildPushPayload(message, { previewEnabled: true, senderName: null }).url,
-    ).toBe('/notifications');
+    ).toBe(message.link);
   });
 });
 

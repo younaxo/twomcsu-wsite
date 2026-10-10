@@ -469,7 +469,10 @@ export class DirectMessagesService {
   async getInvite(code: string) {
     const invite = await this.prisma.groupInvite.findUnique({
       where: { code },
-      include: { conversation: true },
+      // Превью приглашения — только название и тип беседы.
+      include: {
+        conversation: { select: { id: true, title: true, type: true } },
+      },
     });
     if (!invite || invite.revokedAt) {
       throw new NotFoundException('Приглашение не найдено');

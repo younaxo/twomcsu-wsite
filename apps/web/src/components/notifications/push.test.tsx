@@ -270,15 +270,15 @@ describe('Уведомления при открытом сайте (без ду
     });
   });
 
-  it('ссылка: диалоги и внешние адреса → Центр уведомлений', () => {
-    expect(inAppLink(message)).toBe('/notifications');
+  it('ссылка: беседа (раздел выпущен, срез 2.4); внешние адреса → Центр уведомлений', () => {
+    expect(inAppLink(message)).toBe('/messages/c1');
     expect(inAppLink({ link: 'https://evil.example', actionUrl: null })).toBe('/notifications');
     expect(inAppLink({ link: '//evil.example', actionUrl: null })).toBe('/notifications');
     expect(inAppLink({ link: '/friends', actionUrl: null })).toBe('/friends');
   });
 
-  it('пункт списка: ссылка на диалог не ведёт на несуществующую страницу', () => {
-    expect(notificationHref(message)).toBeNull();
+  it('пункт списка: ссылка на беседу ведёт в «Сообщения»', () => {
+    expect(notificationHref(message)).toBe('/messages/c1');
     expect(notificationHref({ link: null, actionUrl: null })).toBeNull();
     expect(notificationHref({ link: '/friends', actionUrl: null })).toBe('/friends');
     expect(notificationHref({ link: '/friends', actionUrl: '/store/orders/1' })).toBe(

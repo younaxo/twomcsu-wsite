@@ -52,9 +52,9 @@ export function inAppDecision(notification: NotificationDto, ctx: InAppContext):
   return { toast: true, sound: ctx.soundEnabled ? 'normal' : null };
 }
 
-/// Раздел «Сообщения» (диалоги) ещё не выпущен — ссылки на диалоги никуда не
-/// ведут, чтобы не открывать 404 (как и `MESSAGES_ROUTE_AVAILABLE` в API).
-export const MESSAGES_ROUTE_AVAILABLE = false;
+/// Раздел «Сообщения» выпущен (срез 2.4, ADR-0112) — ссылки на беседы работают
+/// (как и `MESSAGES_ROUTE_AVAILABLE` в API).
+export const MESSAGES_ROUTE_AVAILABLE = true;
 
 function unavailable(link: string): boolean {
   return !MESSAGES_ROUTE_AVAILABLE && link.startsWith('/messages/');
