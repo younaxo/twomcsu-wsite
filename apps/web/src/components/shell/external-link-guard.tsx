@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { classifyLink, describeExternalUrl } from '@/lib/site/external-links';
+import { SiteIcon } from './site-icon';
 
 /// Глобальный перехватчик переходов на сторонние сайты: один слушатель клика
 /// на document (capture) находит ближайший `<a href>`, и если ссылка —
@@ -77,17 +78,20 @@ export function ExternalLinkGuard({ children }: { children?: React.ReactNode }) 
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogBody>
-            {info ? (
-              <div className="rounded border bg-surface-sunken px-3 py-2 text-sm">
-                <p className="font-semibold" data-testid="external-link-host">
-                  {info.hostname}
-                </p>
-                <p
-                  className="mt-0.5 break-all font-mono text-xs text-muted-foreground"
-                  data-testid="external-link-url"
-                >
-                  {info.display}
-                </p>
+            {info && pending ? (
+              <div className="flex items-start gap-3 rounded border bg-surface-sunken px-3 py-2 text-sm">
+                <SiteIcon href={pending} />
+                <div className="min-w-0">
+                  <p className="font-semibold" data-testid="external-link-host">
+                    {info.hostname}
+                  </p>
+                  <p
+                    className="mt-0.5 break-all font-mono text-xs text-muted-foreground"
+                    data-testid="external-link-url"
+                  >
+                    {info.display}
+                  </p>
+                </div>
               </div>
             ) : null}
           </AlertDialogBody>
