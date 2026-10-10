@@ -32,6 +32,15 @@ export class FriendsController {
     return { success: true };
   }
 
+  /// Отношение к игроку для кнопки на профиле (срез 2.1).
+  @Get('relation/:username')
+  async relation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('username') username: string,
+  ) {
+    return this.friends.relation(user.id, username);
+  }
+
   @Get('blocked')
   async listBlocked(@CurrentUser() user: AuthenticatedUser) {
     return this.friends.listBlocked(user.id);

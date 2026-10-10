@@ -2,6 +2,7 @@
 
 import { EyeOff, UserX } from 'lucide-react';
 import { useParams } from 'next/navigation';
+import { FriendButton } from '@/components/friends/friend-button';
 import { ProfileInfoSection } from '@/components/profile/profile-info';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
 import { ProfileHero } from '@/components/profile/profile-hero';
@@ -35,6 +36,7 @@ export default function PublicProfilePage() {
   // Владелец — по id (адрес может быть alias или Minecraft-ником).
   const own = !!me && !!visible && me.id === visible.id;
   const reportable = !!me && !own && site.data?.modules?.reports === true;
+  const befriendable = !!me && !own && site.data?.modules?.friends === true;
 
   if (profile.isPending) {
     return (
@@ -90,6 +92,7 @@ export default function PublicProfilePage() {
         own={own}
         signedIn={!!me}
         reportable={reportable}
+        actions={befriendable ? <FriendButton username={data.username} /> : undefined}
         role={identity ? pickPrimaryRole(identity.roles) : null}
         badges={identity?.badges}
         mediaBadges={identity?.mediaBadges}

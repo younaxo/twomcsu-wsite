@@ -111,6 +111,7 @@ beforeEach(() => {
     const { path } = requestInfo(args);
     if (path.includes('/summary')) return jsonResponse(summary);
     if (path.endsWith('/wallet')) return jsonResponse(WALLET);
+    if (path.endsWith('/friends/requests/incoming/count')) return jsonResponse({ count: 3 });
     return new Response(null, { status: 404 });
   });
   useAuthStore.setState({ status: 'authenticated', user: me() });
@@ -183,18 +184,26 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(menu).not.toHaveTextContent('Друзья12');
     expect(within(menu).queryByTestId('mini-profile-admin')).toBeNull();
 
+    // «Друзья» (срез 2.1) — рабочий пункт со счётчиком входящих заявок.
+    await waitFor(() =>
+      expect(within(menu).getByRole('menuitem', { name: /Друзья/ })).toHaveTextContent('Друзья3'),
+    );
     const items = within(menu)
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
     expect(items).toEqual([
       'Мой профиль',
       'Настройки',
+      'Друзья3',
       'Сообщенияскоро',
-      'Друзьяскоро',
       'Избранноескоро',
       'Заказыскоро',
       'Выйти',
     ]);
+    expect(within(menu).getByRole('menuitem', { name: /Друзья/ })).toHaveAttribute(
+      'href',
+      '/friends',
+    );
     expect(within(menu).getByRole('menuitem', { name: 'Мой профиль' })).toHaveAttribute(
       'href',
       '/u/Steve_With_A_Very_Long_Nick',
@@ -339,7 +348,8 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(within(sheet).getByTestId('mini-profile')).toBeInTheDocument();
     const nav = within(sheet).getByRole('navigation', { name: 'Разделы аккаунта' });
     expect(within(nav).getByRole('link', { name: 'Мой профиль' })).toBeInTheDocument();
-    expect(within(nav).getByRole('button', { name: /Друзья/ })).toBeDisabled();
+    expect(within(nav).getByRole('link', { name: /Друзья/ })).toHaveAttribute('href', '/friends');
+    expect(within(nav).getByRole('button', { name: /Сообщения/ })).toBeDisabled();
     expect(within(sheet).getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
     // Те же данные, что в popover: кошелёк из /wallet, обычному игроку — без админ-блока.
     await waitFor(() =>

@@ -5,15 +5,57 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { FriendshipStatus } from '@prisma/client';
+import { StorageService } from '../files/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveUserIdByHandle } from '../profiles/handle';
+import { PUBLIC_USER_SELECT, type PublicUser } from '../users/public-user';
+
+/// Ответы друзей — зеркало контракта `@twomc/shared` (api/friends.ts). API не
+/// импортирует shared (исходники TS сломали бы раскладку dist/), поэтому типы
+/// дублируются здесь; e2e `social` проверяет форму.
+export interface FriendUserDto {
+  id: string;
+  username: string;
+  tag: string;
+  avatar: string | null;
+}
+export interface FriendDto {
+  user: FriendUserDto;
+  since: string | null;
+}
+export interface FriendRequestDto {
+  id: string;
+  createdAt: string;
+  user: FriendUserDto;
+}
+export interface BlockedUserDto {
+  user: FriendUserDto;
+  blockedAt: string;
+}
+export interface FriendRelationDto {
+  userId: string;
+  status: 'SELF' | 'NONE' | 'FRIENDS' | 'OUTGOING' | 'INCOMING' | 'BLOCKED';
+  requestId: string | null;
+}
 
 @Injectable()
 export class FriendsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
+
+  /// Пользователь в списках друзей — только публичные поля (ADR-0107/0108).
+  private toUser(user: PublicUser): FriendUserDto {
+    return {
+      id: user.id,
+      username: user.username,
+      tag: user.tag,
+      avatar: this.storage.publicUrl(user.avatar),
+    };
+  }
 
   private async findBetween(userAId: string, userBId: string) {
     return this.prisma.friendship.findFirst({
@@ -120,7 +162,7 @@ export class FriendsService {
           userId: target.id,
           type: 'FRIEND_REQUEST',
           title: `${requester.username} хочет добавить вас в друзья`,
-          link: `/users/${requester.username}`,
+          link: '/friends?tab=incoming',
           fromUserId: requester.id,
         });
       }
@@ -167,7 +209,7 @@ export class FriendsService {
           userId: friendship.requesterId,
           type: 'FRIEND_ACCEPTED',
           title: `${addressee.username} принял(а) вашу заявку в друзья`,
-          link: `/users/${addressee.username}`,
+          link: `/u/${encodeURIComponent(addressee.username)}`,
           fromUserId: addressee.id,
         });
       }
@@ -202,21 +244,48 @@ export class FriendsService {
     await this.prisma.friendship.delete({ where: { id: friendship.id } });
   }
 
+  /// Блокировка: снимает дружбу и заявки между игроками, но НЕ чужую блокировку —
+  /// если другой игрок уже заблокировал меня, его блок остаётся, мой добавляется
+  /// рядом (уникальна упорядоченная пара). Повторная блокировка — без изменений.
   async block(userId: string, targetUserId: string): Promise<void> {
     if (userId === targetUserId) {
       throw new ForbiddenException('Нельзя заблокировать самого себя');
     }
-    const existing = await this.findBetween(userId, targetUserId);
-    if (existing) {
-      await this.prisma.friendship.delete({ where: { id: existing.id } });
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Пользователь не найден');
     }
-    await this.prisma.friendship.create({
-      data: {
-        requesterId: userId,
-        addresseeId: targetUserId,
-        status: FriendshipStatus.BLOCKED,
+    const rows = await this.prisma.friendship.findMany({
+      where: {
+        OR: [
+          { requesterId: userId, addresseeId: targetUserId },
+          { requesterId: targetUserId, addresseeId: userId },
+        ],
       },
     });
+    const mine = rows.find(
+      (row) =>
+        row.requesterId === userId && row.status === FriendshipStatus.BLOCKED,
+    );
+    if (mine) return;
+    const removable = rows.filter(
+      (row) => row.status !== FriendshipStatus.BLOCKED,
+    );
+    await this.prisma.$transaction([
+      ...removable.map((row) =>
+        this.prisma.friendship.delete({ where: { id: row.id } }),
+      ),
+      this.prisma.friendship.create({
+        data: {
+          requesterId: userId,
+          addresseeId: targetUserId,
+          status: FriendshipStatus.BLOCKED,
+        },
+      }),
+    ]);
   }
 
   async unblock(userId: string, targetUserId: string): Promise<void> {
@@ -229,34 +298,50 @@ export class FriendsService {
     });
   }
 
-  async listFriends(userId: string) {
+  async listFriends(userId: string): Promise<FriendDto[]> {
     const rows = await this.prisma.friendship.findMany({
       where: {
         status: FriendshipStatus.ACCEPTED,
         OR: [{ requesterId: userId }, { addresseeId: userId }],
       },
-      include: { requester: true, addressee: true },
+      include: {
+        requester: { select: PUBLIC_USER_SELECT },
+        addressee: { select: PUBLIC_USER_SELECT },
+      },
       orderBy: { acceptedAt: 'desc' },
     });
-    return rows.map((f) =>
-      f.requesterId === userId ? f.addressee : f.requester,
-    );
+    return rows.map((row) => ({
+      user: this.toUser(
+        row.requesterId === userId ? row.addressee : row.requester,
+      ),
+      since: row.acceptedAt?.toISOString() ?? null,
+    }));
   }
 
-  async listIncomingRequests(userId: string) {
-    return this.prisma.friendship.findMany({
+  async listIncomingRequests(userId: string): Promise<FriendRequestDto[]> {
+    const rows = await this.prisma.friendship.findMany({
       where: { addresseeId: userId, status: FriendshipStatus.PENDING },
-      include: { requester: true },
+      include: { requester: { select: PUBLIC_USER_SELECT } },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      user: this.toUser(row.requester),
+    }));
   }
 
-  async listOutgoingRequests(userId: string) {
-    return this.prisma.friendship.findMany({
+  async listOutgoingRequests(userId: string): Promise<FriendRequestDto[]> {
+    const rows = await this.prisma.friendship.findMany({
       where: { requesterId: userId, status: FriendshipStatus.PENDING },
-      include: { addressee: true },
+      include: { addressee: { select: PUBLIC_USER_SELECT } },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => ({
+      id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      user: this.toUser(row.addressee),
+    }));
   }
 
   async incomingCount(userId: string): Promise<number> {
@@ -265,10 +350,59 @@ export class FriendsService {
     });
   }
 
-  async listBlocked(userId: string) {
-    return this.prisma.friendship.findMany({
+  async listBlocked(userId: string): Promise<BlockedUserDto[]> {
+    const rows = await this.prisma.friendship.findMany({
       where: { requesterId: userId, status: FriendshipStatus.BLOCKED },
-      include: { addressee: true },
+      include: { addressee: { select: PUBLIC_USER_SELECT } },
+      orderBy: { createdAt: 'desc' },
     });
+    return rows.map((row) => ({
+      user: this.toUser(row.addressee),
+      blockedAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  /// Отношение зрителя к игроку по адресу профиля (ник, alias, Minecraft-ник) —
+  /// для кнопки «В друзья». Чужая блокировка не раскрывается (`NONE`).
+  async relation(viewerId: string, handle: string): Promise<FriendRelationDto> {
+    const targetId = await resolveUserIdByHandle(this.prisma, handle);
+    if (!targetId) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    if (targetId === viewerId) {
+      return { userId: targetId, status: 'SELF', requestId: null };
+    }
+    const rows = await this.prisma.friendship.findMany({
+      where: {
+        OR: [
+          { requesterId: viewerId, addresseeId: targetId },
+          { requesterId: targetId, addresseeId: viewerId },
+        ],
+      },
+    });
+    const none: FriendRelationDto = {
+      userId: targetId,
+      status: 'NONE',
+      requestId: null,
+    };
+    const blocked = rows.filter(
+      (row) => row.status === FriendshipStatus.BLOCKED,
+    );
+    if (blocked.some((row) => row.requesterId === viewerId)) {
+      return { ...none, status: 'BLOCKED' };
+    }
+    if (blocked.length > 0) return none;
+    if (rows.some((row) => row.status === FriendshipStatus.ACCEPTED)) {
+      return { ...none, status: 'FRIENDS' };
+    }
+    const pending = rows.find((row) => row.status === FriendshipStatus.PENDING);
+    if (pending) {
+      return {
+        userId: targetId,
+        status: pending.requesterId === viewerId ? 'OUTGOING' : 'INCOMING',
+        requestId: pending.id,
+      };
+    }
+    return none;
   }
 }

@@ -200,6 +200,44 @@ describe('Публичный профиль /u/[username]', () => {
     expect(screen.queryByTestId('profile-report')).toBeNull();
   });
 
+  it('«В друзья» (срез 2.1): вошедшему на чужом профиле при модуле «Друзья»; себе и гостю — нет', async () => {
+    const answer = (friends: boolean) => async (path: string) =>
+      path.endsWith('/public')
+        ? { id: 'u1', username: 'Steve', hidden: false }
+        : path === '/site/settings'
+          ? { modules: { reports: false, friends } }
+          : path.startsWith('/friends/relation/')
+            ? { userId: 'u1', status: 'NONE', requestId: null }
+            : path.endsWith('/showcase')
+              ? { awards: [], achievements: [], achievementsCompleted: 0 }
+              : { username: 'Steve', hidden: false, roles: [] };
+    useAuthStore.setState({
+      status: 'authenticated',
+      user: { id: 'viewer', username: 'alex' } as never,
+    });
+    mocks.get.mockImplementation(answer(true));
+    const stranger = render(<PublicProfilePage />, { wrapper: Providers });
+    const actions = await screen.findByTestId('profile-actions');
+    expect(await within(actions).findByRole('button', { name: 'В друзья' })).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledWith('/friends/relation/Steve', expect.anything());
+    stranger.unmount();
+
+    mocks.get.mockImplementation(answer(false));
+    const disabled = render(<PublicProfilePage />, { wrapper: Providers });
+    await screen.findByTestId('public-profile');
+    await waitFor(() =>
+      expect(mocks.get).toHaveBeenCalledWith('/site/settings', expect.anything()),
+    );
+    expect(screen.queryByTestId('profile-actions')).toBeNull();
+    disabled.unmount();
+
+    useAuthStore.setState({ status: 'anonymous', user: null });
+    mocks.get.mockImplementation(answer(true));
+    render(<PublicProfilePage />, { wrapper: Providers });
+    await screen.findByTestId('public-profile');
+    expect(screen.queryByTestId('profile-actions')).toBeNull();
+  });
+
   describe('«Пожаловаться» (срез 1.3)', () => {
     const answer = (reports: boolean) => async (path: string) =>
       path.endsWith('/public')
