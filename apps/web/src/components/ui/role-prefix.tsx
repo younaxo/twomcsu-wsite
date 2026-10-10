@@ -63,7 +63,13 @@ export function RolePrefix({
 
   const scale = SCALE[size];
   const image = (
-    <span className={cn('inline-flex shrink-0 items-center align-middle', className)} {...props}>
+    // max-w-full: на узком экране длинный префикс ужимается в ширину контейнера
+    // (object-contain, pixelated), а не вылезает за край; shrink-0 — рядом с
+    // ником префикс не сжимается раньше времени.
+    <span
+      className={cn('inline-flex max-w-full shrink-0 items-center align-middle', className)}
+      {...props}
+    >
       {/* Обычный <img>, не next/image: pixel-art 7px нельзя ресемплить. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- pixel-art с CDN, фиксированные width/height, lazy */}
       <img
@@ -93,7 +99,7 @@ export function RolePrefix({
         </span>
       }
     >
-      <span tabIndex={0} className="inline-flex rounded-sm">
+      <span tabIndex={0} className="inline-flex min-w-0 max-w-full rounded-sm">
         {image}
       </span>
     </Tooltip>

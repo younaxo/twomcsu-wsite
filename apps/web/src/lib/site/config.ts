@@ -1,5 +1,6 @@
 import type { PublicSiteSettings, SiteSocialPlatform } from '@twomc/shared';
 import { cdnUrl } from '../env';
+import type { FlagCode } from '@/components/ui/flag-icon';
 
 /// Единый источник глобального содержимого shell (sidebar, header, footer,
 /// главная, metadata): название, логотип, навигация, соцсети, поддержка,
@@ -246,7 +247,8 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
 export interface LocaleOption {
   code: 'ru' | 'en';
   label: string;
-  flag: string;
+  /// SVG-флаг (`FlagIcon`, ADR-0085) — не emoji.
+  flag: FlagCode;
   available: boolean;
 }
 export interface CurrencyOption {
@@ -257,8 +259,8 @@ export interface CurrencyOption {
 }
 
 export const LOCALES: LocaleOption[] = [
-  { code: 'ru', label: 'Русский', flag: '🇷🇺', available: true },
-  { code: 'en', label: 'English', flag: '🇬🇧', available: false },
+  { code: 'ru', label: 'Русский', flag: 'ru', available: true },
+  { code: 'en', label: 'English', flag: 'gb', available: false },
 ];
 export const CURRENCIES: CurrencyOption[] = [
   { code: 'RUB', label: 'Российский рубль', symbol: '₽', available: true },

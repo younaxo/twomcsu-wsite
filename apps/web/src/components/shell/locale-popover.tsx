@@ -6,6 +6,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { CURRENCIES, LOCALES } from '@/lib/site/config';
 import { findCurrency, findLocale, usePreferences } from '@/lib/site/preferences';
+import { FlagIcon } from '@/components/ui/flag-icon';
 
 /// Язык и валюта — две независимые настройки в одном popover (rail и footer).
 /// Варианты без поддержки на сервере показаны как «скоро» и не выбираются —
@@ -72,9 +73,7 @@ export function LocalePopover({
           className,
         )}
       >
-        <span aria-hidden className="text-lg">
-          {locale.flag}
-        </span>
+        <FlagIcon code={locale.flag} className="text-lg" />
         <span aria-hidden className="font-mono text-[10px] font-semibold text-muted-foreground">
           {currency.code}
         </span>
@@ -89,7 +88,7 @@ export function LocalePopover({
           className,
         )}
       >
-        <span aria-hidden>{locale.flag}</span>
+        <FlagIcon code={locale.flag} />
         <span>{locale.label}</span>
         <span aria-hidden className="text-subtle-foreground">
           ·
@@ -126,7 +125,7 @@ export function LocalePopover({
               available={item.available}
               onSelect={() => setLocale(item.code)}
             >
-              <span aria-hidden>{item.flag}</span>
+              <FlagIcon code={item.flag} />
               {item.label}
             </Option>
           ))}

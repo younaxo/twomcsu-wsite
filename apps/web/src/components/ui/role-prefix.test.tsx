@@ -23,6 +23,9 @@ describe('RolePrefix', () => {
     expect(img).toHaveAttribute('width', '356');
     expect(img).toHaveAttribute('height', '28');
     expect(img).toHaveAttribute('loading', 'lazy');
+    // Узкий экран: длинный префикс ужимается в ширину контейнера, не вылезая за край.
+    expect(img.parentElement!.className).toMatch(/max-w-full/);
+    expect(img.parentElement!.className).toMatch(/shrink-0/);
   });
 
   it('неизвестная роль → текстовый бейдж, без <img>', () => {
