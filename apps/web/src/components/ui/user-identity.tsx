@@ -13,9 +13,10 @@ export function discriminatorOf(tag: string | null | undefined): string | null {
 
 /// Identity пользователя (ADR-0099) — ВСЕГДА одна строка:
 /// `[PREFIX] ник#0000`. Префикс и ник не переносятся друг под друга ни на
-/// каком экране: строка `flex-nowrap`, при нехватке места сначала
-/// пропорционально ужимается префикс (не больше ~45% ширины), затем ник
-/// обрезается многоточием; discriminator всегда виден целиком.
+/// каком экране: строка `flex-nowrap`. Пока место есть — оба в натуральную
+/// ширину (префикс чёткий, без пересчёта); при нехватке сначала ник
+/// обрезается многоточием (до ~4.5rem), затем пропорционально ужимается
+/// префикс (не больше 60% строки); discriminator всегда виден целиком.
 /// Префикс — один, по приоритету STAFF > MEDIA > DONATION (`identityPrefix`).
 /// `previewable` — ник открывает превью профиля (ADR-0073). Полные значения —
 /// в доступном имени, без нативного `title`.
@@ -62,7 +63,7 @@ export function UserIdentity({
       <button
         type="button"
         className={cn(
-          'flex min-w-0 max-w-full items-baseline rounded-sm text-left text-sm font-medium text-foreground hover:underline',
+          'flex min-w-[4.5rem] max-w-full shrink-[4] items-baseline rounded-sm text-left text-sm font-medium text-foreground hover:underline',
           nameClassName,
         )}
         aria-label={`Профиль ${full}`}
@@ -73,7 +74,7 @@ export function UserIdentity({
   ) : (
     <span
       className={cn(
-        'flex min-w-0 items-baseline text-sm font-medium text-foreground',
+        'flex min-w-[4.5rem] shrink-[4] items-baseline text-sm font-medium text-foreground',
         nameClassName,
       )}
       data-testid="user-identity-name"
@@ -90,7 +91,7 @@ export function UserIdentity({
       data-context-username={username}
     >
       {showPrefix ? (
-        <span className="flex min-w-0 max-w-[45%] shrink-0">
+        <span className="flex min-w-0 max-w-[60%] shrink" data-testid="user-identity-prefix">
           <RolePrefix role={role} prefix={prefix} size={prefixSize} />
         </span>
       ) : null}

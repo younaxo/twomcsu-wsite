@@ -25,14 +25,17 @@ describe('UserIdentity — одна строка', () => {
     expect(within(root).getByRole('img', { name: 'Chief Curator' })).toBeInTheDocument();
   });
 
-  it('длинный префикс ужимается (не больше ~45%), а не уносит ник на новую строку', () => {
+  it('длинный префикс ужимается (не больше 60%), а не уносит ник на новую строку', () => {
     wrap(<UserIdentity username="Steve_Mainer" role={hunter} discriminator="4821" />);
     const root = screen.getByTestId('user-identity');
-    const slot = within(root)
-      .getByRole('img', { name: 'Head Cheat Hunter' })
-      .closest('.max-w-\\[45\\%\\]');
-    expect(slot).not.toBeNull();
-    expect(within(root).getByRole('img').className).toMatch(/max-w-full/);
+    const slot = within(root).getByTestId('user-identity-prefix');
+    expect(slot.className).toMatch(/max-w-\[60%\]/);
+    expect(slot.className).toMatch(/\bshrink\b/);
+    expect(within(slot).getByRole('img', { name: 'Head Cheat Hunter' }).className).toMatch(
+      /max-w-full/,
+    );
+    // Ник сжимается раньше префикса, но не исчезает целиком.
+    expect(within(root).getByTestId('user-identity-name').className).toMatch(/shrink-\[4\]/);
   });
 
   it('длинный ник обрезается многоточием, discriminator остаётся видимым', () => {

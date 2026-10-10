@@ -96,18 +96,20 @@ export function ProfileHero({
           className="flex min-w-0 flex-1 basis-56 flex-col gap-1 pt-3"
           data-testid="profile-identity"
         >
-          {/* [PREFIX] ник — одна строка, без переноса: префикс ужимается до
-              ~45% ширины, ник обрезается многоточием (ADR-0099). */}
+          {/* [PREFIX] ник — одна строка, без переноса: при нехватке места
+              сначала обрезается ник, затем ужимается префикс (≤ 60%), ADR-0099. */}
           <div
             className="flex min-w-0 flex-nowrap items-center gap-2"
             data-testid="profile-identity-line"
           >
             {role || prefix ? (
-              <span className="flex min-w-0 max-w-[45%] shrink-0">
+              <span className="flex min-w-0 max-w-[60%] shrink">
                 <RolePrefix role={role} prefix={prefix} size="xs" loading="eager" />
               </span>
             ) : null}
-            <Title className="min-w-0 truncate font-display text-2xl font-bold">{username}</Title>
+            <Title className="min-w-[6rem] shrink-[4] truncate font-display text-2xl font-bold">
+              {username}
+            </Title>
           </div>
           {statusText ? (
             <p className="line-clamp-2 text-sm text-muted-foreground" data-testid="profile-status">
