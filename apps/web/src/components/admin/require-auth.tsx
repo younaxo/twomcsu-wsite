@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useLogoutConfirm } from '@/components/auth/logout-confirm';
 import { Button } from '@/components/ui/button';
 import { ErrorState, ForbiddenState } from '@/components/ui/error-state';
 import { Spinner } from '@/components/ui/spinner';
@@ -19,7 +20,8 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const status = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
   const bootstrap = useAuthStore((state) => state.bootstrap);
-  const logout = useAuthStore((state) => state.logout);
+  // Выход — только после подтверждения (та же политика, что на сайте).
+  const logoutConfirm = useLogoutConfirm('/');
   const [bootError, setBootError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -71,11 +73,12 @@ export function RequireAuth({ children }: { children: ReactNode }) {
           title="В админ-панель доступа нет"
           description={`Аккаунт ${user.username} не имеет ни одного права администрирования. Если это ошибка — обратитесь к куратору.`}
           action={
-            <Button variant="secondary" onClick={() => logout().then(() => router.replace('/'))}>
+            <Button variant="secondary" onClick={() => logoutConfirm.request()}>
               Выйти
             </Button>
           }
         />
+        {logoutConfirm.dialog}
       </div>
     );
   }

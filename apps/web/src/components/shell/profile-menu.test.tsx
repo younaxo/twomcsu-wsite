@@ -14,6 +14,19 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 
+/// Сезон: «Украшение шапки» включено/выключено — тот же источник, что у шапки сайта.
+const season = vi.hoisted(() => ({ decoration: false }));
+vi.mock('@/lib/site/use-seasonal', async () => {
+  const { SEASONAL_CAMPAIGNS } = await import('@/lib/site/seasonal');
+  const halloween = SEASONAL_CAMPAIGNS.find((campaign) => campaign.headerDecoration)!;
+  return {
+    useSeasonal: () => ({
+      showDecoration: season.decoration,
+      campaign: season.decoration ? halloween : null,
+    }),
+  };
+});
+
 const AVATAR = 'http://localhost:4000/uploads/users/u1/avatar/a.avif';
 const BANNER = 'http://localhost:4000/uploads/users/u1/banner/b.avif';
 
@@ -22,6 +35,7 @@ function me(overrides: Partial<MeResponse> = {}): MeResponse {
     id: 'u1',
     shortId: 42,
     tag: 'steve',
+    discriminator: '0042',
     email: 's@example.com',
     username: 'Steve_With_A_Very_Long_Nick',
     avatar: AVATAR,
@@ -41,6 +55,7 @@ const summary: PublicProfileSummary = {
   statusText: 'Делаю twomc.su',
   shortId: 42,
   tag: 'steve',
+  discriminator: '0042',
   avatar: AVATAR,
   banner: BANNER,
   decoration: { slug: 'aurora', name: 'Аврора', imageUrl: null },
@@ -132,7 +147,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     }
   });
 
-  it('шапка: баннер, ник, ID, бейджи, украшение, присутствие; затем статистика и меню', async () => {
+  it('шапка: баннер, ОДНА строка [префикс] ник#0000, присутствие; без статуса, ID и повторов', async () => {
     const user = userEvent.setup();
     render(<ProfileMenu />, { wrapper: Providers });
     await user.click(screen.getByRole('button', { name: /^Профиль: / }));
@@ -140,16 +155,17 @@ describe('Mini profile в header (ADR-0088)', () => {
     const banner = within(menu).getByTestId('profile-banner');
     expect(banner).toHaveAttribute('data-state', 'image');
     expect(banner.querySelector('img')).toHaveAttribute('src', BANNER);
-    expect(menu).toHaveTextContent('Steve_With_A_Very_Long_Nick');
-    expect(menu).toHaveTextContent('ID 42');
-    await waitFor(() => expect(within(menu).getByTestId('profile-badges')).toBeInTheDocument());
-    const badges = within(menu).getByTestId('profile-badges');
-    expect(within(badges).getByLabelText('Подтверждённый игрок')).toBeInTheDocument();
-    expect(within(badges).getByLabelText('Создатель контента · YouTube')).toBeInTheDocument();
-    expect(within(badges).getByLabelText('Украшение: Аврора')).toBeInTheDocument();
-    expect(menu).toHaveTextContent('В игре · Выживание');
-    // Статус — тот же, что в публичном профиле (summary), с полным текстом в title.
-    expect(within(menu).getByTestId('profile-status')).toHaveAttribute('title', 'Делаю twomc.su');
+    await waitFor(() => expect(menu).toHaveTextContent('В игре · Выживание'));
+    const identities = within(menu).getAllByTestId('user-identity');
+    expect(identities).toHaveLength(1);
+    expect(identities[0]!.className).toMatch(/flex-nowrap/);
+    expect(identities[0]).toHaveTextContent('Steve_With_A_Very_Long_Nick#0042');
+    // Ник — один раз; ни сырого номера, ни статуса, ни отдельной строки тега.
+    expect(within(menu).getAllByText('Steve_With_A_Very_Long_Nick')).toHaveLength(1);
+    expect(menu).not.toHaveTextContent('ID 42');
+    expect(menu).not.toHaveTextContent('Делаю twomc.su');
+    expect(within(menu).queryByTestId('profile-status')).toBeNull();
+    expect(within(menu).queryByTestId('profile-badges')).toBeNull();
     // Вместо «Друзья / Достижения» — реальный кошелёк из /wallet.
     const wallet = within(menu).getByLabelText('Кошелёк');
     await waitFor(() =>
@@ -211,7 +227,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(items.slice(0, -2).some((item) => /Админ/.test(item.textContent ?? ''))).toBe(false);
   });
 
-  it('префикс роли — маленький (×2 от исходника 7 px), без растяжения', async () => {
+  it('префикс роли — компактный ×1.5 (pixelated), в одной строке с ником', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({ status: 'authenticated', user: me({ roles: [CHIEF_CURATOR] }) });
     fetchMock.mockImplementation(async (...args) => {
@@ -223,12 +239,61 @@ describe('Mini profile в header (ADR-0088)', () => {
     await user.click(screen.getByRole('button', { name: /^Профиль: / }));
     const menu = await screen.findByRole('menu');
     const prefix = await waitFor(() => {
-      const img = menu.querySelector('img[height="14"]');
+      const img = menu.querySelector('[data-prefix-slug="chief-curator"] img');
       expect(img).not.toBeNull();
-      return img!;
+      return img as HTMLImageElement;
     });
+    // jsdom: DPR 1 → ×1.5 (10.5 px) с pixelated, а не прежние 14 px.
+    expect(prefix.closest('[data-prefix-scale]')).toHaveAttribute('data-prefix-scale', '1.5');
+    expect(prefix.style.height).toBe('10.5px');
     expect(prefix.getAttribute('style')).toMatch(/width: auto/);
-    expect(menu.querySelector('img[height="21"]')).toBeNull();
+    expect(prefix.className).toContain('[image-rendering:pixelated]');
+    expect(prefix.closest('[data-testid="user-identity"]')).toHaveTextContent(
+      'Steve_With_A_Very_Long_Nick#0042',
+    );
+  });
+
+  it('«Выйти» — только после подтверждения: Отмена и Escape оставляют в аккаунте', async () => {
+    const user = userEvent.setup();
+    const logout = vi.fn(async () => undefined);
+    useAuthStore.setState({ logout });
+    render(<ProfileMenu />, { wrapper: Providers });
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Выйти' }));
+    const dialog = await screen.findByRole('alertdialog', { name: 'Выйти из аккаунта?' });
+    expect(dialog).toHaveTextContent('Вы действительно хотите выйти из twomc.su?');
+    expect(logout).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(logout).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Выйти' }));
+    await screen.findByRole('alertdialog', { name: 'Выйти из аккаунта?' });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(logout).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Выйти' }));
+    const again = await screen.findByRole('alertdialog', { name: 'Выйти из аккаунта?' });
+    await user.click(within(again).getByRole('button', { name: 'Выйти' }));
+    await waitFor(() => expect(logout).toHaveBeenCalledTimes(1));
+  });
+
+  it('«Украшение шапки» включено — то же украшение над баннером mini profile', async () => {
+    const user = userEvent.setup();
+    season.decoration = true;
+    try {
+      render(<ProfileMenu />, { wrapper: Providers });
+      await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+      const menu = await screen.findByRole('menu');
+      const decoration = within(menu).getByTestId('seasonal-decoration');
+      expect(decoration).toHaveAttribute('aria-hidden', 'true');
+      expect(decoration.className).toMatch(/pointer-events-none/);
+    } finally {
+      season.decoration = false;
+    }
   });
 
   it('кошелёк недоступен — «—», а не выдуманный ноль', async () => {

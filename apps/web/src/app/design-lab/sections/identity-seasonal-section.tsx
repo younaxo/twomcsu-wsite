@@ -10,6 +10,7 @@ import type {
 } from '@twomc/shared';
 import { LogOut } from 'lucide-react';
 import { useState } from 'react';
+import { LogoutConfirmDialog } from '@/components/auth/logout-confirm';
 import { ProfileBadges } from '@/components/profile/profile-badges';
 import { ProfileHeader } from '@/components/profile/profile-header';
 import { MinecraftHead } from '@/components/profile/minecraft-head';
@@ -40,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SwitchField } from '@/components/ui/switch';
+import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
 import { getScreenshot, screenshotUrl } from '@/lib/site/project-screenshots';
@@ -47,6 +49,7 @@ import {
   SEASONAL_CAMPAIGNS,
   SEASONAL_EFFECTS,
   resolveSeasonalView,
+  type SeasonalCampaign,
   type SeasonalEffect,
 } from '@/lib/site/seasonal';
 import { demoUsers } from '../demo-data';
@@ -67,6 +70,7 @@ const me: MeResponse = {
   id: demo.id,
   shortId: 1042,
   tag: demo.tag,
+  discriminator: demo.tag.split('#')[1] ?? '0001',
   email: 'demo@twomc.su',
   username: demo.username,
   avatar: demo.avatar,
@@ -84,6 +88,7 @@ const summary: PublicProfileSummary = {
   statusText: 'Строю спавн к открытию сезона',
   shortId: 1042,
   tag: demo.tag,
+  discriminator: demo.tag.split('#')[1] ?? '0001',
   avatar: demo.avatar,
   banner: BANNER,
   decoration: { slug: 'demo', name: 'Пример украшения', imageUrl: null },
@@ -199,16 +204,25 @@ function MiniProfileCard({
   data,
   wallet,
   admin,
+  decoration,
 }: {
   user: MeResponse;
   data: PublicProfileSummary;
   wallet: WalletSummaryDto;
   admin: boolean;
+  decoration: SeasonalCampaign | null;
 }) {
+  const [logout, setLogout] = useState(false);
   return (
     <div className="w-80 max-w-full overflow-hidden rounded-lg bg-surface-overlay text-sm shadow-lg">
       <div className="pb-3">
-        <MiniProfileSummary user={user} summary={data} wallet={wallet} bleed />
+        <MiniProfileSummary
+          user={user}
+          summary={data}
+          wallet={wallet}
+          bleed
+          decorationCampaign={decoration}
+        />
       </div>
       <ul className="border-t border-border-subtle p-1">
         {miniProfileEntries(user.username).map((entry) => (
@@ -235,31 +249,83 @@ function MiniProfileCard({
         </div>
       ) : null}
       <div className="border-t border-border-subtle p-1">
-        <div className={cn(menuItemClassName, 'hover:bg-muted')}>
+        <button
+          type="button"
+          className={cn(menuItemClassName, 'w-full hover:bg-muted')}
+          onClick={() => setLogout(true)}
+        >
           <LogOut aria-hidden className="size-4 text-muted-foreground" />
           Выйти
-        </div>
+        </button>
       </div>
+      {/* Тот же диалог, что на сайте; в превью выход не выполняется. */}
+      <LogoutConfirmDialog
+        open={logout}
+        onOpenChange={setLogout}
+        onConfirm={() => {
+          setLogout(false);
+          toast.message('Превью: выход не выполняется');
+        }}
+      />
     </div>
   );
 }
 
+const HALLOWEEN = SEASONAL_CAMPAIGNS.find((item) => item.id === 'halloween') ?? null;
+
+/// «Украшение шапки» ON/OFF — то же украшение, что в шапке сайта.
+function DecorationToggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <SegmentedControl
+      size="sm"
+      aria-label="Украшение шапки"
+      value={value ? 'on' : 'off'}
+      onValueChange={(next) => onChange(next === 'on')}
+      options={[
+        { value: 'on', label: 'Украшение шапки: ON' },
+        { value: 'off', label: 'OFF' },
+      ]}
+    />
+  );
+}
+
 function MiniProfilePreview() {
+  const [decorated, setDecorated] = useState(true);
+  const decoration = decorated ? HALLOWEEN : null;
   return (
     <Card
       title="Mini profile"
-      note="Шапка (маленький префикс роли, статус) → баланс и рубины из /wallet → меню → отдельный блок «Админ-панель» только по праву → «Выйти». Desktop — popover, mobile — bottom sheet с теми же данными."
+      note="Баннер с сезонным украшением (тот же флаг и ассет, что у шапки сайта) → аватар и 3D-голова → ОДНА строка [префикс ×1.5] ник#0000 → присутствие → монета и рубин из /wallet → меню → «Админ-панель» только по праву → «Выйти» с подтверждением. Без статуса, внутренних номеров и повторов ника."
     >
+      <DecorationToggle value={decorated} onChange={setDecorated} />
       <div className="flex flex-wrap gap-6">
         <div className="flex flex-col gap-2">
           <span className="text-xs text-muted-foreground">Игрок · без админ-блока · честный 0</span>
-          <MiniProfileCard user={me} data={summary} wallet={WALLET_ZERO} admin={false} />
+          <MiniProfileCard
+            user={me}
+            data={summary}
+            wallet={WALLET_ZERO}
+            admin={false}
+            decoration={decoration}
+          />
         </div>
         <div className="flex flex-col gap-2">
           <span className="text-xs text-muted-foreground">
-            Администратор · длинные ник, роль и статус · пример баланса
+            Администратор · длинные ник и роль · пример баланса
           </span>
-          <MiniProfileCard user={adminMe} data={adminSummary} wallet={WALLET_DEMO} admin />
+          <MiniProfileCard
+            user={adminMe}
+            data={adminSummary}
+            wallet={WALLET_DEMO}
+            admin
+            decoration={decoration}
+          />
         </div>
       </div>
     </Card>
@@ -278,7 +344,7 @@ function HeaderPreview() {
             bleed
             identity={{
               username: demo.username,
-              shortId: 1042,
+              discriminator: '1042',
               avatar: demo.avatar,
               banner: BANNER,
               presence: { online: true, currentServer: 'Выживание', lastActivityAt: null },
@@ -290,7 +356,7 @@ function HeaderPreview() {
             bleed
             identity={{
               username: 'Без_Баннера_И_С_Очень_Длинным_Ником',
-              shortId: 7,
+              discriminator: '0007',
               avatar: null,
               banner: null,
               presence: { online: false, currentServer: null, lastActivityAt: null },
@@ -382,13 +448,17 @@ function EffectsPreview() {
 }
 
 function ProfilePagePreview() {
+  const [decorated, setDecorated] = useState(true);
+  const decoration = decorated ? HALLOWEEN : null;
   return (
     <Card
       title="Публичный профиль"
-      note="На баннере: слева сверху — круглая «Редактировать» (только свой профиль), справа сверху — метрики одним блоком (просмотры, оценки). Свой профиль — счётчики без действий; чужой без входа — оценки недоступны с подсказкой. Правый нижний угол свободен под будущую плашку «Награды» (наград пока нет — ничего не рисуем)."
+      note="Над баннером — сезонное украшение (тот же компонент, что в шапке сайта). На баннере: слева сверху — «Редактировать» (только свой профиль), справа сверху — метрики. Ниже — [префикс] ник ОДНОЙ строкой (тултип префикса — у самой картинки), под ней статус."
     >
+      <DecorationToggle value={decorated} onChange={setDecorated} />
       <div className="grid gap-4 xl:grid-cols-2">
         <ProfileHero
+          decorationCampaign={decoration}
           titleAs="h3"
           handle={demo.username}
           username={demo.username}
@@ -403,6 +473,7 @@ function ProfilePagePreview() {
           mediaBadges={['YOUTUBE']}
         />
         <ProfileHero
+          decorationCampaign={decoration}
           titleAs="h3"
           handle="Ochen_Dlinnyi_Nik_Igroka_32"
           username="Ochen_Dlinnyi_Nik_Igroka_32"

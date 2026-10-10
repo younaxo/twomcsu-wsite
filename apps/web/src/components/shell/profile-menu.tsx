@@ -2,8 +2,9 @@
 
 import { LogIn, LogOut } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useLogoutConfirm } from '@/components/auth/logout-confirm';
 import { Button } from '@/components/ui/button';
 import {
   BottomSheet,
@@ -46,12 +47,12 @@ const SOON = 'скоро';
 /// содержимым и теми же данными. Порядок: шапка → кошелёк → меню аккаунта →
 /// отдельный блок «Админ-панель» (только по праву) → «Выйти».
 export function ProfileMenu() {
-  const router = useRouter();
   const pathname = usePathname();
   const status = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
   const bootstrap = useAuthStore((state) => state.bootstrap);
-  const logout = useAuthStore((state) => state.logout);
+  // Выход — только после подтверждения (одна политика для popover и sheet).
+  const logoutConfirm = useLogoutConfirm('refresh');
   const { can } = usePermissions();
   const presentation = useMenuPresentation();
   const [open, setOpen] = useState(false);
@@ -82,7 +83,6 @@ export function ProfileMenu() {
 
   const entries = miniProfileEntries(user.username);
   const admin = can(ADMIN_ENTRY_REQUIREMENT);
-  const signOut = () => logout().then(() => router.refresh());
   const header = (bleed: boolean) => (
     <MiniProfileSummary
       user={user}
@@ -164,71 +164,82 @@ export function ProfileMenu() {
                 </>
               ) : null}
               <div className="h-px bg-border-subtle" />
-              <Button variant="ghost" className="h-11 justify-start" onClick={() => void signOut()}>
+              <Button
+                variant="ghost"
+                className="h-11 justify-start"
+                onClick={() => {
+                  setOpen(false);
+                  logoutConfirm.request();
+                }}
+              >
                 <LogOut />
                 Выйти
               </Button>
             </DrawerBody>
           </DrawerContent>
         </BottomSheet>
+        {logoutConfirm.dialog}
       </>
     );
   }
 
   return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        if (next) setBottomClearance(floatingClearance());
-        setOpen(next);
-      }}
-    >
-      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        collisionPadding={{ top: 8, right: 8, left: 8, bottom: bottomClearance }}
-        className="w-80 overflow-y-auto overflow-x-hidden p-0 scrollbar-thin"
+    <>
+      <DropdownMenu
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setBottomClearance(floatingClearance());
+          setOpen(next);
+        }}
       >
-        <div className="pb-3">{header(true)}</div>
-        <DropdownMenuSeparator className="mx-0 my-0" />
-        <div className="p-1">
-          {entries.map((entry) =>
-            entry.href ? (
-              <DropdownMenuItem key={entry.key} asChild>
-                <Link href={entry.href}>
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          collisionPadding={{ top: 8, right: 8, left: 8, bottom: bottomClearance }}
+          className="w-80 overflow-y-auto overflow-x-hidden p-0 scrollbar-thin"
+        >
+          <div className="pb-3">{header(true)}</div>
+          <DropdownMenuSeparator className="mx-0 my-0" />
+          <div className="p-1">
+            {entries.map((entry) =>
+              entry.href ? (
+                <DropdownMenuItem key={entry.key} asChild>
+                  <Link href={entry.href}>
+                    <entry.icon />
+                    {entry.label}
+                  </Link>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem key={entry.key} disabled data-entry={entry.key}>
                   <entry.icon />
                   {entry.label}
-                </Link>
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem key={entry.key} disabled data-entry={entry.key}>
-                <entry.icon />
-                {entry.label}
-                <span className="ml-auto text-xs text-subtle-foreground">{SOON}</span>
-              </DropdownMenuItem>
-            ),
-          )}
-        </div>
-        {admin ? (
-          <>
-            <DropdownMenuSeparator className="mx-0 my-0" />
-            <div className="p-1" data-testid="mini-profile-admin">
-              <DropdownMenuItem asChild className={miniProfileAdminClassName}>
-                <Link href={MINI_PROFILE_ADMIN.href}>
-                  <MiniProfileAdminContent />
-                </Link>
-              </DropdownMenuItem>
-            </div>
-          </>
-        ) : null}
-        <DropdownMenuSeparator className="mx-0 my-0" />
-        <div className="p-1">
-          <DropdownMenuItem onSelect={() => void signOut()}>
-            <LogOut />
-            Выйти
-          </DropdownMenuItem>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+                  <span className="ml-auto text-xs text-subtle-foreground">{SOON}</span>
+                </DropdownMenuItem>
+              ),
+            )}
+          </div>
+          {admin ? (
+            <>
+              <DropdownMenuSeparator className="mx-0 my-0" />
+              <div className="p-1" data-testid="mini-profile-admin">
+                <DropdownMenuItem asChild className={miniProfileAdminClassName}>
+                  <Link href={MINI_PROFILE_ADMIN.href}>
+                    <MiniProfileAdminContent />
+                  </Link>
+                </DropdownMenuItem>
+              </div>
+            </>
+          ) : null}
+          <DropdownMenuSeparator className="mx-0 my-0" />
+          <div className="p-1">
+            <DropdownMenuItem onSelect={() => logoutConfirm.request()}>
+              <LogOut />
+              Выйти
+            </DropdownMenuItem>
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {logoutConfirm.dialog}
+    </>
   );
 }

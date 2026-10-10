@@ -44,7 +44,7 @@ export function identityFromSummary(
 ): ProfileIdentityView {
   return {
     username: summary.username,
-    shortId: summary.shortId,
+    discriminator: summary.discriminator,
     tag: summary.tag,
     avatar: summary.avatar,
     banner: summary.banner,

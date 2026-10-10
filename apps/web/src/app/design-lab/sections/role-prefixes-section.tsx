@@ -117,19 +117,16 @@ export function RolePrefixesSection() {
           <div className="flex flex-col gap-3">
             <UserIdentity
               username="younaxo_"
-              variant="inline"
               role={{ slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 }}
               mediaBadges={['YOUTUBE']}
             />
             <UserIdentity
               username="streamer_tv"
-              variant="inline"
               role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
               mediaBadges={['TWITCH']}
             />
             <UserIdentity
               username="multi_media"
-              variant="inline"
               role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
               mediaBadges={['YOUTUBE', 'TIKTOK']}
             />
@@ -199,24 +196,40 @@ export function RolePrefixesSection() {
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
-          <p className="text-sm font-medium">UserIdentity — длинные ник и роль</p>
-          <div className="w-56 max-w-full">
+          <p className="text-sm font-medium">[PREFIX] ник#0000 — всегда одна строка</p>
+          <div className="w-72 max-w-full">
             <UserIdentity
-              username="very_long_name16"
-              tag="very_long_name16#a1b2"
-              role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
+              username="younaxo_"
+              discriminator="0002"
+              role={{ slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 }}
             />
           </div>
           <div className="w-56 max-w-full">
             <UserIdentity
               username="very_long_name16"
-              variant="inline"
+              tag="very_long_name16#4821"
               role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
+            />
+          </div>
+          <div className="w-44 max-w-full">
+            <UserIdentity
+              username="very_long_name16"
+              discriminator="4821"
+              role={{ slug: 'head-cheat-hunter', displayName: 'Head Cheat Hunter', priority: 80 }}
+            />
+          </div>
+          <div className="w-56 max-w-full">
+            <UserIdentity
+              username="Steve"
+              discriminator="0042"
+              prefixSize="compact"
+              role={{ slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 }}
             />
           </div>
           <p className="text-xs text-subtle-foreground">
-            stacked — префикс над ником; inline — префикс сжимается пропорционально, ник обрезается
-            многоточием (полное значение в title).
+            Префикс и ник не переносятся. Мало места — сначала обрезается ник (многоточие), затем
+            ужимается префикс (не больше 60%); discriminator виден всегда. compact (mini profile) —
+            около ×1.5, масштаб подбирается под DPR без «рваных» пикселей.
           </p>
         </div>
         <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
@@ -236,6 +249,7 @@ export function RolePrefixesSection() {
                 badges: [],
                 mediaBadges: [],
                 tag: 'player#0001',
+                discriminator: '0001',
                 avatar: null,
                 createdAt: '2025-03-01T10:00:00.000Z',
                 system: false,

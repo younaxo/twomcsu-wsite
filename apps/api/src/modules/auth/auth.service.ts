@@ -11,8 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AccountType, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { createHash, createHmac, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { publicTag } from '../users/public-tag';
 import { EmailService } from '../email/email.service';
 import { BruteForceService } from './brute-force.service';
 import { CaptchaService } from './captcha.service';
@@ -156,7 +157,7 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(input.password, this.bcryptRounds);
-    const tag = await this.generateUniqueTag(input.username);
+    const { tag, discriminator } = await this.generatePublicTag(input.username);
 
     try {
       const user = await this.prisma.user.create({
@@ -165,6 +166,7 @@ export class AuthService {
           username: input.username,
           password: passwordHash,
           tag,
+          discriminator,
           positionId: defaultPosition.id,
           isVerified: input.emailVerified ?? false,
           referredBy: input.referrerId ?? null,
@@ -209,13 +211,18 @@ export class AuthService {
     }
   }
 
-  private async generateUniqueTag(username: string): Promise<string> {
+  /// Публичный тег `username#0000` (ADR-0099): discriminator 0000–9999
+  /// выдаёт только backend, случайно; дальше он не меняется. Ник уникален,
+  /// поэтому повтор возможен лишь со «старым» тегом (`legacyTag`) — проверяем.
+  private async generatePublicTag(
+    username: string,
+  ): Promise<{ tag: string; discriminator: number }> {
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const suffix = randomBytes(2).toString('hex');
-      const tag = `${username}#${suffix}`;
+      const discriminator = randomInt(0, 10_000);
+      const tag = publicTag(username, discriminator);
       const exists = await this.prisma.user.findUnique({ where: { tag } });
       if (!exists) {
-        return tag;
+        return { tag, discriminator };
       }
     }
     throw new ConflictException(

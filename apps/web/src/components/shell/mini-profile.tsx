@@ -21,6 +21,7 @@ import { ProfileHeader, type ProfileIdentityView } from '@/components/profile/pr
 import { CurrencyIcon } from '@/components/ui/currency-icon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMinorUnits } from '@/lib/format';
+import type { SeasonalCampaign } from '@/lib/site/seasonal';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
 
 /// Mini profile (ADR-0088, ADR-0093): шапка с баннером, аватаром, ником, ID,
@@ -93,7 +94,7 @@ export const miniProfileAdminClassName =
 export function identityFromMe(user: MeResponse): ProfileIdentityView {
   return {
     username: user.username,
-    shortId: user.shortId,
+    discriminator: user.discriminator,
     tag: user.tag,
     avatar: user.avatar,
     banner: user.banner,
@@ -138,6 +139,7 @@ export function MiniProfileSummary({
   wallet,
   walletLoading = false,
   bleed = false,
+  decorationCampaign,
 }: {
   user: MeResponse;
   summary: PublicProfileSummary | undefined;
@@ -147,12 +149,19 @@ export function MiniProfileSummary({
   /// Устарело: шапка сразу из `/auth/me`, ожидание summary не блокирует.
   loading?: boolean;
   bleed?: boolean;
+  /// Явная кампания украшения шапки (design-lab); по умолчанию — сайта.
+  decorationCampaign?: SeasonalCampaign | null;
 }) {
   const full = summary && !summary.hidden ? summary : null;
   const identity = full ? identityFromSummary(full) : identityFromMe(user);
   return (
     <div className="flex flex-col gap-3" data-testid="mini-profile">
-      <ProfileHeader identity={identity} bleed={bleed} />
+      <ProfileHeader
+        identity={identity}
+        bleed={bleed}
+        compact
+        decorationCampaign={decorationCampaign}
+      />
       <div className={bleed ? 'px-4' : 'px-3'}>
         {walletLoading ? (
           <Skeleton className="h-11 w-full" />

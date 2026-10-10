@@ -126,6 +126,11 @@ describe('Auth (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     expect(meRes.body.email).toBe(email);
+    // Публичная identity `ник#0000` (ADR-0099): discriminator выдаёт backend.
+    expect(meRes.body.discriminator).toMatch(/^\d{4}$/);
+    expect(meRes.body.tag).toBe(
+      `${meRes.body.username}#${meRes.body.discriminator}`,
+    );
 
     const refreshRes = await agent.post('/auth/refresh').expect(200);
     const newAccessToken = refreshRes.body.accessToken;

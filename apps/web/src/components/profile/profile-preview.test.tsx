@@ -19,6 +19,7 @@ const summary: Extract<PublicProfileSummary, { hidden: false }> = {
   badges: [],
   mediaBadges: [],
   tag: 'younaxo_#a1b2',
+  discriminator: '0042',
   avatar: null,
   createdAt: '2025-03-01T10:00:00.000Z',
   system: false,
@@ -65,7 +66,7 @@ describe('ProfilePreviewCard', () => {
   it('реальные данные: ник, должность (обрезается), онлайн, статистика, счётчики', () => {
     card({});
     const root = screen.getByTestId('profile-preview');
-    expect(within(root).getByTitle('younaxo_')).toBeInTheDocument();
+    expect(within(root).getByTestId('user-identity')).toHaveTextContent(/^younaxo_#\d{4}$/);
     const position = within(root).getByTitle(summary.position!.displayName);
     expect(position.className).toMatch(/truncate/);
     expect(screen.getByText('В игре · Выживание')).toBeInTheDocument();
@@ -102,18 +103,18 @@ describe('ProfilePreviewCard', () => {
 });
 
 describe('UserIdentity', () => {
-  it('inline: префикс и ник в строку; длинный ник обрезается, полное значение в title', () => {
+  it('префикс и ник — одна строка без переноса; длинный ник обрезается, без нативного title', () => {
     render(
       <UserIdentity
         username="very_long_name16"
         role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
-        variant="inline"
       />,
       { wrapper: Providers },
     );
     const root = screen.getByTestId('user-identity');
-    expect(root).toHaveAttribute('data-variant', 'inline');
-    expect(within(root).getByTitle('very_long_name16').className).toMatch(/truncate/);
+    expect(root.className).toMatch(/flex-nowrap/);
+    expect(within(root).getByText('very_long_name16').className).toMatch(/truncate/);
+    expect(root.querySelector('[title]')).toBeNull();
   });
 
   it('previewable: ник — кнопка, превью загружает summary только при открытии', async () => {
