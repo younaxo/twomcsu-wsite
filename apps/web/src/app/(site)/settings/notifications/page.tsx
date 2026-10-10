@@ -8,6 +8,12 @@ import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
 import {
+  DiscordChannel,
+  EmailChannel,
+  NotificationTypes,
+  ResetNotificationSettings,
+} from '@/components/notifications/notification-channels';
+import {
   PERMISSION_LABEL,
   PushHelpDialog,
   enableErrorText,
@@ -253,7 +259,11 @@ function NotificationSettingsContent() {
         <div className="flex flex-col gap-5">
           <SystemNotifications settings={data} />
           <Preferences settings={data} />
+          <NotificationTypes settings={data} />
+          <EmailChannel settings={data} />
+          <DiscordChannel settings={data} />
           <Devices />
+          <ResetNotificationSettings />
         </div>
       )}
     </QueryBoundary>
@@ -265,7 +275,7 @@ export default function NotificationSettingsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Уведомления"
-        description="Системные уведомления о сообщениях, звук и что показывать в уведомлении."
+        description="Что и куда присылать: сайт, push, почта и Discord."
       />
       <RequireSession>
         <NotificationSettingsContent />

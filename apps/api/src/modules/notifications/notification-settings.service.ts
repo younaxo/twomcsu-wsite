@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { NotificationSettings, NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { isValidDiscordWebhookUrl } from './discord-webhook-url.util';
 import { UpdateDigestDto } from './dto/update-digest.dto';
@@ -16,6 +16,35 @@ const DEFAULTS = {
   quietHoursStart: '22:00',
   quietHoursEnd: '08:00',
 };
+
+/// Ответ настроек для клиента (ADR-0110): без id/userId и без самого URL
+/// вебхука — токен в нём даёт право писать в канал. Видно только «подключён»
+/// и маску `…/webhooks/<id>/••••`.
+export function settingsView(
+  row: NotificationSettings,
+  emailAvailable: boolean,
+) {
+  const webhook = row.discordWebhookUrl;
+  const id = webhook?.match(/\/api\/webhooks\/(\d+)\//)?.[1] ?? null;
+  return {
+    pushEnabled: row.pushEnabled,
+    soundEnabled: row.soundEnabled,
+    pushPreview: row.pushPreview,
+    foregroundEnabled: row.foregroundEnabled,
+    emailEnabled: row.emailEnabled,
+    quietHoursEnabled: row.quietHoursEnabled,
+    quietHoursStart: row.quietHoursStart,
+    quietHoursEnd: row.quietHoursEnd,
+    typeSettings: (row.typeSettings ?? {}) as Record<string, boolean>,
+    discordEnabled: row.discordEnabled && !!webhook,
+    discordWebhookHint: webhook
+      ? `discord.com/api/webhooks/${id ?? '…'}/••••`
+      : null,
+    digestMode: row.digestMode,
+    digestTime: row.digestTime,
+    emailAvailable,
+  };
+}
 
 @Injectable()
 export class NotificationSettingsService {

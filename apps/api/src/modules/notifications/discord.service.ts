@@ -24,10 +24,20 @@ export class DiscordService {
       throw new BadRequestException('Недопустимый Discord webhook URL');
     }
     try {
+      // ADR-0110: текст уведомления может содержать чужой пользовательский
+      // текст — `allowed_mentions: { parse: [] }` не даёт пингануть @everyone,
+      // роли и людей; Discord принимает до 2000 символов; без редиректов и с
+      // таймаутом — вебхук не держит запрос API.
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content:
+            content.length > 2000 ? `${content.slice(0, 1999)}…` : content,
+          allowed_mentions: { parse: [] },
+        }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(5000),
       });
       return response.ok;
     } catch (err) {

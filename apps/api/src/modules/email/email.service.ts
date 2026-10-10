@@ -32,6 +32,11 @@ export class EmailService {
     }
   }
 
+  /// SMTP настроен — письма реально уходят (иначе send() только логирует).
+  get configured(): boolean {
+    return this.transporter !== null;
+  }
+
   async send(input: SendEmailInput): Promise<void> {
     if (this.config.get<string>('NODE_ENV') !== 'production') {
       this.logger.debug(

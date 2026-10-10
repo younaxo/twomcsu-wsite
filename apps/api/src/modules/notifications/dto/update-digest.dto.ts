@@ -1,8 +1,13 @@
 import { DigestMode } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
 export class UpdateDigestDto {
-  @IsEnum(DigestMode)
+  /// Сводка по расписанию (HOURLY/DAILY/WEEKLY) требует фоновых задач — их пока
+  /// нет, и такой режим молча оставил бы игрока без писем (ADR-0110). Пока —
+  /// только INSTANT; ручная сводка — `POST /notifications/digest/test`.
+  @IsIn([DigestMode.INSTANT], {
+    message: 'Сводка по расписанию пока недоступна — письма приходят сразу',
+  })
   digestMode!: DigestMode;
 
   @IsOptional()
