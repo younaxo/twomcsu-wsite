@@ -53,8 +53,21 @@ describe('connected-providers', () => {
     expect(connectedProfileUrl('steam', ref('123'))).toBeNull();
   });
 
-  it('Discord — без выдуманного публичного URL; неизвестный провайдер — null', () => {
+  it('Discord — профиль по snowflake из привязки, не по нику', () => {
+    expect(
+      connectedProfileUrl('discord', ref('312345678901234567', 'younaxo')),
+    ).toBe('https://discord.com/users/312345678901234567');
+    // Ник в адрес не подставляется; не snowflake — ссылки нет.
+    expect(
+      connectedProfileUrl('discord', ref('younaxo', 'younaxo')),
+    ).toBeNull();
     expect(connectedProfileUrl('discord', ref('1', 'younaxo'))).toBeNull();
+    expect(
+      connectedProfileUrl('discord', ref('31234567890123456/../x')),
+    ).toBeNull();
+  });
+
+  it('неизвестный провайдер — null', () => {
     expect(connectedProfileUrl('google', ref('1', 'younaxo'))).toBeNull();
   });
 });

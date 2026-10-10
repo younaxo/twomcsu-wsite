@@ -167,6 +167,9 @@ export interface LinkedAccountDto {
   isPublic: boolean;
   linkedAt: IsoDateString;
   lastLoginAt: IsoDateString | null;
+  /// Профиль у провайдера (Discord — по snowflake, Telegram — t.me при публичном
+  /// нике, VK, Steam); нет публичной страницы — null.
+  profileUrl: string | null;
 }
 
 // --- Регистрация с подтверждением почты (ADR-0070) -------------------------------

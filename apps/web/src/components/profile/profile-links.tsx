@@ -161,11 +161,16 @@ export function ConnectedAccountsSection({ accounts }: { accounts: ConnectedAcco
                   <ArrowUpRight aria-hidden className="size-3.5 shrink-0" />
                 </a>
               ) : (
-                <>
-                  <span className="truncate">{name}</span>
-                  {account.name ? <CopyName value={account.name} provider={label} /> : null}
-                </>
+                // Публичной страницы нет (например, Telegram без публичного ника) —
+                // имя без выдуманной ссылки.
+                <span className="truncate" data-no-profile-link>
+                  {name}
+                </span>
               )}
+              {/* Discord: ник удобно скопировать — это дополнение к ссылке, не замена. */}
+              {account.provider === 'discord' && account.name ? (
+                <CopyName value={account.name} provider={label} />
+              ) : null}
             </li>
           );
         })}

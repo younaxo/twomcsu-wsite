@@ -7,7 +7,11 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PROVIDERS, type ConnectedProvider } from './connected-providers';
+import {
+  PROVIDERS,
+  connectedProfileUrl,
+  type ConnectedProvider,
+} from './connected-providers';
 import { ConfigService } from '@nestjs/config';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { AuditService } from '../audit/audit.service';
@@ -506,11 +510,14 @@ export class SocialAuthService {
     return { success: true };
   }
 
-  list(userId: string) {
-    return this.prisma.userExternalAccount.findMany({
+  /// Свои привязки: + готовая ссылка на профиль у провайдера (из реестра, по
+  /// внешнему id или нику привязки). Сам внешний id наружу не отдаётся.
+  async list(userId: string) {
+    const accounts = await this.prisma.userExternalAccount.findMany({
       where: { userId },
       select: {
         provider: true,
+        providerUserId: true,
         username: true,
         displayName: true,
         avatarUrl: true,
@@ -520,5 +527,12 @@ export class SocialAuthService {
       },
       orderBy: { linkedAt: 'asc' },
     });
+    return accounts.map(({ providerUserId, ...account }) => ({
+      ...account,
+      profileUrl: connectedProfileUrl(account.provider, {
+        providerUserId,
+        username: account.username,
+      }),
+    }));
   }
 }
