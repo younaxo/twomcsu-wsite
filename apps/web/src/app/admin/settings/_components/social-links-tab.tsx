@@ -341,15 +341,17 @@ export function SocialLinksTab() {
                     <p className="text-muted-foreground">Ни одна соцсеть не показывается.</p>
                   ) : (
                     <ul className="flex flex-wrap gap-1.5" aria-label="Предпросмотр соцсетей">
-                      {enabled.map((link) => (
-                        <li
-                          key={link.id}
-                          title={link.title || SOCIAL_PLATFORM_LABELS[link.platform]}
-                          className="flex size-10 items-center justify-center rounded bg-background text-muted-foreground [&_svg]:size-5"
-                        >
-                          <BrandIcon id={link.platform} />
-                        </li>
-                      ))}
+                      {enabled.map((link) => {
+                        const label = link.title || SOCIAL_PLATFORM_LABELS[link.platform];
+                        return (
+                          <Tooltip key={link.id} content={label}>
+                            <li className="flex size-10 items-center justify-center rounded bg-background text-muted-foreground [&_svg]:size-5">
+                              <BrandIcon id={link.platform} />
+                              <span className="sr-only">{label}</span>
+                            </li>
+                          </Tooltip>
+                        );
+                      })}
                     </ul>
                   )}
                   <SummaryRow label="На сайте" value={enabled.length} />

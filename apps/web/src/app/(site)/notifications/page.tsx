@@ -7,6 +7,7 @@ import { RequireSession } from '@/components/auth/require-session';
 import { NotificationBulkActions } from '@/components/notifications/notification-bulk-actions';
 import { NotificationItem } from '@/components/notifications/notification-item';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/cn';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { SkeletonRows } from '@/components/ui/skeleton';
@@ -66,7 +67,17 @@ function NotificationsList() {
           }
         />
       ) : (
-        <ul className="border-t border-border-subtle" data-testid="notifications-list">
+        // Секция без внутренних отступов: последняя строка стоит у её нижнего
+        // края — её фон (непрочитанное, наведение) скругляется так же, как
+        // секция (rounded-xl), иначе квадратные углы выступают за скругление.
+        // Без overflow-hidden: фокус-рамка ссылки не обрезается.
+        <ul
+          className={cn(
+            'border-t border-border-subtle',
+            !list.hasNextPage && '[&>li:last-child]:rounded-b-xl',
+          )}
+          data-testid="notifications-list"
+        >
           {items.map((item) => (
             <NotificationItem key={item.id} item={item} />
           ))}

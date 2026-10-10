@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/toast';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useSiteAlert, useUpdateSiteAlert } from '@/lib/admin/hooks';
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
@@ -454,43 +455,44 @@ function AlertEditor({ alert }: { alert: SiteAlertDto }) {
                 const Icon = SITE_ALERT_ICON_COMPONENTS[icon as Exclude<SiteAlertIcon, 'custom'>];
                 const selected = draft.icon === icon;
                 return (
-                  <button
-                    key={icon}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    aria-label={SITE_ALERT_ICON_LABELS[icon]}
-                    title={SITE_ALERT_ICON_LABELS[icon]}
-                    disabled={!editable}
-                    onClick={() => set('icon', icon)}
-                    className={cn(
-                      'flex h-10 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast',
-                      'hover:bg-background-subtle hover:text-foreground',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                      selected &&
-                        'bg-primary-soft text-primary hover:bg-primary-soft hover:text-primary',
-                    )}
-                  >
-                    <Icon aria-hidden className="size-[18px]" />
-                  </button>
+                  <Tooltip key={icon} content={SITE_ALERT_ICON_LABELS[icon]}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={SITE_ALERT_ICON_LABELS[icon]}
+                      disabled={!editable}
+                      onClick={() => set('icon', icon)}
+                      className={cn(
+                        'flex h-10 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast',
+                        'hover:bg-background-subtle hover:text-foreground',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                        selected &&
+                          'bg-primary-soft text-primary hover:bg-primary-soft hover:text-primary',
+                      )}
+                    >
+                      <Icon aria-hidden className="size-[18px]" />
+                    </button>
+                  </Tooltip>
                 );
               })}
               {draft.customIcon ? (
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={draft.icon === 'custom'}
-                  aria-label="Свой SVG"
-                  title="Свой SVG"
-                  disabled={!editable}
-                  onClick={() => set('icon', 'custom')}
-                  className={cn(
-                    'flex h-10 items-center justify-center rounded-sm transition-colors duration-fast hover:bg-background-subtle',
-                    draft.icon === 'custom' && 'bg-primary-soft',
-                  )}
-                >
-                  <SiteAlertIconView alert={{ ...preview, icon: 'custom' }} />
-                </button>
+                <Tooltip content="Свой SVG">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={draft.icon === 'custom'}
+                    aria-label="Свой SVG"
+                    disabled={!editable}
+                    onClick={() => set('icon', 'custom')}
+                    className={cn(
+                      'flex h-10 items-center justify-center rounded-sm transition-colors duration-fast hover:bg-background-subtle',
+                      draft.icon === 'custom' && 'bg-primary-soft',
+                    )}
+                  >
+                    <SiteAlertIconView alert={{ ...preview, icon: 'custom' }} />
+                  </button>
+                </Tooltip>
               ) : null}
             </div>
             {editable ? (

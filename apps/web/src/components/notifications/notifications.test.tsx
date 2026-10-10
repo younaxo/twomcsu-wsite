@@ -111,6 +111,25 @@ describe('Уведомления', () => {
     await waitFor(() => expect(calls).toContain('DELETE /notifications/n2'));
   });
 
+  it('/notifications: последняя строка скругляется вместе с секцией, подсветка — на всей строке', async () => {
+    serve();
+    render(<NotificationsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('notifications-list');
+    // Секция rounded-xl без отступов: фон последней строки скругляется так же
+    // (иначе квадратные углы выступают за скругление), без overflow-hidden.
+    expect(list.className).toContain('[&>li:last-child]:rounded-b-xl');
+    expect(list.closest('section')?.className).toMatch(/rounded-xl/);
+    expect(list.closest('section')?.className).not.toMatch(/overflow-hidden/);
+    const [unread, read] = within(list).getAllByTestId('notification-item');
+    // Фон непрочитанного и наведения — на строке целиком, включая колонку кнопок.
+    expect(unread!.className).toMatch(/bg-primary-soft\/30/);
+    expect(unread!.className).toMatch(/hover:bg-primary-soft\/50/);
+    expect(read!.className).toMatch(/hover:bg-muted\/60/);
+    for (const row of [unread!, read!]) {
+      expect(row.firstElementChild!.className).not.toMatch(/hover:bg-/);
+    }
+  });
+
   it('ПКМ на пункте — те же действия', async () => {
     serve();
     render(<NotificationsPage />, { wrapper: Providers });
