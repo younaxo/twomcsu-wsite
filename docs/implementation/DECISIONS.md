@@ -2092,6 +2092,34 @@ float. Операций пока нет: начисления, переводы 
 будут менять баланс только через журнал проводок в одной транзакции — контракт
 `GET /wallet` при этом не меняется. Обратного обмена и вывода нет.
 
+## ADR-0095 — Привязанные аккаунты: общий реестр провайдеров, VK и Steam, видимость
+
+**Decision.**
+
+- **Реестр** `auth/connected-providers.ts`: `discord | telegram | vk | steam`
+  с единым контрактом — ключ, подпись, способ подтверждения владения
+  (`integration`: oauth / widget / openid / null), публичная ссылка по данным
+  привязки (`profileUrl`). Хранение — та же `UserExternalAccount` (внешний id,
+  username, displayName) + новые `avatarUrl` и `isPublic` (аддитивная
+  миграция). Google/GitHub позже — новая запись без смены контракта.
+- **Ссылки только из привязки:** Telegram — `t.me/<username>`; VK —
+  `vk.com/<screen_name>` или `vk.com/id<id>`; Steam —
+  `steamcommunity.com/profiles/<SteamID64>`; Discord — нет (публичной
+  страницы по нику нет). Внешний id в ответ не уходит, кроме того, что
+  провайдер сам держит в адресе профиля (VK id, SteamID64).
+- **VK и Steam без интеграции** (`integration: null`): `GET
+  /auth/social/providers` отдаёт `enabled: false`, в настройках — «Скоро»,
+  привязать нельзя. Интеграции (VK ID OAuth, Steam OpenID) — отдельная задача:
+  нужны приложение VK ID и Steam Web API key (🚫 владелец).
+- **Видимость по провайдеру — на сервере:** `PATCH
+  /auth/linked-accounts/:provider { isPublic }` (аудит); скрытая привязка не
+  попадает в публичный DTO вовсе. Общий `hideSocials` по-прежнему скрывает
+  всё.
+- **Ручные соцсети:** `PUT /users/me/social-links/{DISCORD|TELEGRAM|VK|STEAM}`
+  → 400 — подтверждённую платформу нельзя «выдать» ссылкой; в настройках
+  полей для них нет, в публичном профиле старые ручные значения не
+  показываются (данные не удаляются).
+
 ## ADR-0096 — Реальные скриншоты TwoMC: реестр, CDN, Auth Showcase
 
 **Context.** Владелец передал 8 реальных скриншотов сервера (1920×1009, PNG,

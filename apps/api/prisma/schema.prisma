@@ -575,12 +575,16 @@ model LegalConsent {
 model UserExternalAccount {
   id             String    @id @default(cuid())
   userId         String
-  /// discord | telegram
+  /// Ключ из реестра connected-providers (ADR-0095): discord | telegram | vk | steam.
   provider       String    @db.VarChar(16)
   /// Стабильный id у провайдера (snowflake Discord / id Telegram).
   providerUserId String    @db.VarChar(64)
   username       String?   @db.VarChar(64)
   displayName    String?   @db.VarChar(128)
+  /// Аватар у провайдера (если отдаёт), только URL.
+  avatarUrl      String?   @db.VarChar(512)
+  /// Показывать в публичном профиле (отдельно для каждого провайдера).
+  isPublic       Boolean   @default(true)
   linkedAt       DateTime  @default(now())
   lastLoginAt    DateTime?
 

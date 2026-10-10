@@ -1,12 +1,14 @@
 'use client';
 
 import type {
+  ConnectedProvider,
   ExternalProvider,
   LinkedAccountDto,
   SocialAuthMode,
   SocialProvidersResponse,
   SocialResultStatus,
 } from '@twomc/shared';
+import { CONNECTED_PROVIDER_LABELS } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { API_URL } from '@/lib/env';
@@ -23,10 +25,7 @@ export const socialKeys = {
 
 export const PROVIDERS: ExternalProvider[] = ['discord', 'telegram'];
 
-export const PROVIDER_LABEL: Record<ExternalProvider, string> = {
-  discord: 'Discord',
-  telegram: 'Telegram',
-};
+export const PROVIDER_LABEL: Record<ConnectedProvider, string> = CONNECTED_PROVIDER_LABELS;
 
 export function useSocialProviders() {
   return useQuery({
@@ -60,9 +59,18 @@ export function useLinkedAccountMutations() {
   return {
     linkUrl: useMutation({ mutationFn: requestLinkUrl }),
     unlink: useMutation({
-      mutationFn: (provider: ExternalProvider) =>
+      mutationFn: (provider: ConnectedProvider) =>
         api.delete<LinkedAccountDto[]>(`/auth/linked-accounts/${provider}`),
       onSuccess: (data) => client.setQueryData(socialKeys.linked, data),
+    }),
+    /// Показывать ли привязку в публичном профиле (сервер фильтрует ответ).
+    visibility: useMutation({
+      mutationFn: ({ provider, isPublic }: { provider: ConnectedProvider; isPublic: boolean }) =>
+        api.patch<LinkedAccountDto[]>(`/auth/linked-accounts/${provider}`, { isPublic }),
+      onSuccess: (data) => {
+        client.setQueryData(socialKeys.linked, data);
+        void client.invalidateQueries({ queryKey: ['profile', 'public'] });
+      },
     }),
   };
 }

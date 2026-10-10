@@ -3,6 +3,7 @@ import {
   siDiscord,
   siFacebook,
   siInstagram,
+  siSteam,
   siTelegram,
   siTiktok,
   siTwitch,
@@ -12,7 +13,10 @@ import {
 } from 'simple-icons';
 import { cn } from '@/lib/cn';
 
-const ICONS: Record<SiteSocialPlatform, { path: string; title: string }> = {
+/// Соцсети сайта + привязываемые аккаунты (Steam — только как привязка).
+export type BrandIconId = SiteSocialPlatform | 'steam';
+
+const ICONS: Record<BrandIconId, { path: string; title: string }> = {
   telegram: siTelegram,
   discord: siDiscord,
   tiktok: siTiktok,
@@ -22,12 +26,13 @@ const ICONS: Record<SiteSocialPlatform, { path: string; title: string }> = {
   instagram: siInstagram,
   x: siX,
   facebook: siFacebook,
+  steam: siSteam,
 };
 
 /// Официальные brand-иконки соцсетей (Simple Icons). Монохром в currentColor —
 /// подстраивается под тему; цвет бренда не используем, чтобы не спорить с
 /// оранжевым. Декоративны: подпись несёт родительская ссылка (aria-label).
-export function BrandIcon({ id, className }: { id: SiteSocialPlatform; className?: string }) {
+export function BrandIcon({ id, className }: { id: BrandIconId; className?: string }) {
   const icon = ICONS[id];
   return (
     <svg
