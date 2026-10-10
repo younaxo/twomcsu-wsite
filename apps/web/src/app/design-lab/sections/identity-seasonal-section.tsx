@@ -8,7 +8,7 @@ import type {
   SeasonalFallingMode,
   WalletSummaryDto,
 } from '@twomc/shared';
-import { LogOut } from 'lucide-react';
+import { EyeOff, LogOut, UserX } from 'lucide-react';
 import { useState } from 'react';
 import { ConnectedAccountCard } from '@/components/account/connected-account-card';
 import { LogoutConfirmDialog } from '@/components/auth/logout-confirm';
@@ -17,6 +17,7 @@ import { ProfileHeader } from '@/components/profile/profile-header';
 import { MinecraftHead } from '@/components/profile/minecraft-head';
 import { ProfileHero } from '@/components/profile/profile-hero';
 import { GENDER_VIEW, ProfileInfoSection } from '@/components/profile/profile-info';
+import { ProfileReportDialog } from '@/components/profile/profile-report';
 import { ProfileShowcase } from '@/components/profile/profile-showcase';
 import {
   ConnectedAccountsSection,
@@ -31,7 +32,9 @@ import {
   miniProfileAdminClassName,
   miniProfileEntries,
 } from '@/components/shell/mini-profile';
+import { Button } from '@/components/ui/button';
 import { menuItemClassName } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -457,11 +460,12 @@ function EffectsPreview() {
 
 function ProfilePagePreview() {
   const [decorated, setDecorated] = useState(true);
+  const [reportOpen, setReportOpen] = useState(false);
   const decoration = decorated ? HALLOWEEN : null;
   return (
     <Card
       title="Публичный профиль"
-      note="Над баннером — сезонное украшение (тот же компонент, что в шапке сайта). На баннере: слева сверху — «Редактировать» (только свой профиль), справа сверху — метрики. Ниже — [префикс] ник ОДНОЙ строкой (тултип префикса — у самой картинки), под ней статус."
+      note="Над баннером — сезонное украшение (тот же компонент, что в шапке сайта). На баннере: слева сверху — «Редактировать» (свой профиль) или «Пожаловаться» (чужой, только вошедшим, при включённом модуле жалоб), справа сверху — метрики. Ниже — [префикс] ник ОДНОЙ строкой (тултип префикса — у самой картинки), под ней статус."
     >
       <DecorationToggle value={decorated} onChange={setDecorated} />
       <div className="grid gap-4 xl:grid-cols-2">
@@ -490,8 +494,40 @@ function ProfilePagePreview() {
           statusText="Очень длинный статус игрока, который обрезается многоточием, а полный текст виден в подсказке"
           stats={DEMO_STATS}
           own={false}
-          signedIn={false}
+          signedIn
+          reportable
         />
+      </div>
+      <div className="grid gap-4 md:grid-cols-3" data-testid="dl-profile-states">
+        <div className="rounded-xl bg-surface p-4 shadow-sm">
+          <EmptyState
+            icon={<EyeOff />}
+            title="Профиль Steve скрыт"
+            description="Игрок ограничил доступ к профилю настройками приватности."
+          />
+        </div>
+        <div className="rounded-xl bg-surface p-4 shadow-sm">
+          <EmptyState
+            icon={<UserX />}
+            title="Профиль не найден"
+            description="Игрока с ником «Steve_2» нет на twomc.su. Проверьте адрес."
+          />
+        </div>
+        <div className="flex flex-col items-start gap-2 rounded-xl bg-surface p-4 shadow-sm">
+          <p className="text-sm font-medium">Окно жалобы</p>
+          <p className="text-xs text-muted-foreground">
+            Причина обязательна, «Другое» — с описанием. В Design Lab отправка уходит на
+            несуществующий ник и честно показывает ошибку.
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => setReportOpen(true)}>
+            Открыть окно жалобы
+          </Button>
+          <ProfileReportDialog
+            username="design-lab-demo"
+            open={reportOpen}
+            onOpenChange={setReportOpen}
+          />
+        </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-2">

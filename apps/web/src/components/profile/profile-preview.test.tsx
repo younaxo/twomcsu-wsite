@@ -79,6 +79,22 @@ describe('ProfilePreviewCard', () => {
     expect(screen.getByText('15')).toBeInTheDocument();
   });
 
+  it('«Открыть профиль» ведёт на /u/<ник> и закрывает превью; на странице профиля и у скрытого — нет', async () => {
+    const user = userEvent.setup();
+    let closed = 0;
+    const open = card({ onOpenProfile: () => (closed += 1) });
+    const link = screen.getByRole('link', { name: 'Открыть профиль' });
+    expect(link).toHaveAttribute('href', '/u/younaxo_');
+    await user.click(link);
+    expect(closed).toBe(1);
+    open.unmount();
+    const page = card({ showOpenLink: false });
+    expect(screen.queryByTestId('profile-preview-open')).toBeNull();
+    page.unmount();
+    card({ summary: { username: 'secret', hidden: true } });
+    expect(screen.queryByTestId('profile-preview-open')).toBeNull();
+  });
+
   it('статистика скрыта или ещё нет — честная подпись, никаких нулей', () => {
     const { unmount } = card({ summary: { ...summary, statistics: null, statisticsHidden: true } });
     expect(screen.getByText('Игрок скрыл статистику.')).toBeInTheDocument();

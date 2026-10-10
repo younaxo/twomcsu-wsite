@@ -35,6 +35,10 @@ const nextConfig = {
     NEXT_PUBLIC_BUILD_SHA: process.env.NEXT_PUBLIC_BUILD_SHA ?? process.env.GITHUB_SHA ?? '',
   },
   transpilePackages: ['@twomc/shared'],
+  // Ссылки старого сайта на профиль (`/users/<ник>`) ведут на `/u/<ник>` (срез 1.3).
+  async redirects() {
+    return [{ source: '/users/:username', destination: '/u/:username', permanent: true }];
+  },
   // Service Worker (ADR-0086): всегда свежая версия, область — весь сайт.
   async headers() {
     return [

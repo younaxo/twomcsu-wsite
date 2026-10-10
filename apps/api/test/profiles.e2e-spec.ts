@@ -190,9 +190,20 @@ describe('Profiles (e2e)', () => {
         .send({ profileVisibility: 'FRIENDS_ONLY' })
         .expect(200);
       const path = `/users/${user.username}/public`;
-      await http().get(path).set('Authorization', friend.auth).expect(200);
-      await http().get(path).set('Authorization', stranger.auth).expect(404);
-      await http().get(path).expect(404);
+      // Скрытый профиль существующего игрока — 200 и только ник (ADR-0106).
+      const onlyHidden = { username: user.username, hidden: true };
+      const forFriend = await http()
+        .get(path)
+        .set('Authorization', friend.auth)
+        .expect(200);
+      expect(forFriend.body.hidden).toBe(false);
+      const forStranger = await http()
+        .get(path)
+        .set('Authorization', stranger.auth)
+        .expect(200);
+      expect(forStranger.body).toEqual(onlyHidden);
+      const forGuest = await http().get(path).expect(200);
+      expect(forGuest.body).toEqual(onlyHidden);
       const summary = await http()
         .get(`/users/${user.username}/summary`)
         .set('Authorization', friend.auth)
@@ -213,7 +224,11 @@ describe('Profiles (e2e)', () => {
           status: 'BLOCKED',
         },
       });
-      await http().get(path).set('Authorization', stranger.auth).expect(404);
+      const blocked = await http()
+        .get(path)
+        .set('Authorization', stranger.auth)
+        .expect(200);
+      expect(blocked.body).toEqual(onlyHidden);
       const hidden = await http()
         .get(`/users/${user.username}/summary`)
         .set('Authorization', stranger.auth)
@@ -234,8 +249,13 @@ describe('Profiles (e2e)', () => {
       .send({ profileVisibility: 'NOBODY' })
       .expect(200);
 
-    await request(app.getHttpServer())
+    const guestView = await request(app.getHttpServer())
       .get(`/users/${user.username}/public`)
+      .expect(200);
+    expect(guestView.body).toEqual({ username: user.username, hidden: true });
+    // 404 — только для несуществующего ника.
+    await request(app.getHttpServer())
+      .get(`/users/nobody-${unique}/public`)
       .expect(404);
 
     const ownView = await request(app.getHttpServer())
@@ -243,12 +263,73 @@ describe('Profiles (e2e)', () => {
       .set('Authorization', `Bearer ${user.accessToken}`)
       .expect(200);
     expect(ownView.body.username).toBe(user.username);
+    expect(ownView.body.hidden).toBe(false);
 
     await request(app.getHttpServer())
       .patch('/users/me/profile')
       .set('Authorization', `Bearer ${user.accessToken}`)
       .send({ profileVisibility: 'EVERYONE' })
       .expect(200);
+  });
+
+  it('жалоба на профиль: причина, не на себя, повтор обновляет, неизвестный ник — 404', async () => {
+    const http = () => request(app.getHttpServer());
+    const mail = `profile-r-${unique}@example.com`;
+    const name = `pfr${unique}`.slice(0, 16);
+    await http()
+      .post('/auth/register')
+      .send({ email: mail, username: name, password })
+      .expect(201);
+    const login = await http()
+      .post('/auth/login')
+      .send({ emailOrUsername: name, password })
+      .expect(200);
+    const reporter = await prisma.user.findUniqueOrThrow({
+      where: { email: mail },
+    });
+    const auth = `Bearer ${login.body.accessToken}`;
+    const path = `/users/${user.username}/report`;
+    try {
+      await http().post(path).send({ reason: 'SPAM' }).expect(401);
+      await http()
+        .post(path)
+        .set('Authorization', auth)
+        .send({ reason: 'NOT_A_REASON' })
+        .expect(400);
+      await http()
+        .post(`/users/${name}/report`)
+        .set('Authorization', auth)
+        .send({ reason: 'SPAM' })
+        .expect(403);
+      await http()
+        .post(`/users/nobody-${unique}/report`)
+        .set('Authorization', auth)
+        .send({ reason: 'SPAM' })
+        .expect(404);
+      await http()
+        .post(path)
+        .set('Authorization', auth)
+        .send({ reason: 'SPAM' })
+        .expect(201);
+      await http()
+        .post(path)
+        .set('Authorization', auth)
+        .send({ reason: 'HARASSMENT', description: 'Оскорбления в статусе' })
+        .expect(201);
+      const reports = await prisma.profileReport.findMany({
+        where: { reporterId: reporter.id },
+      });
+      expect(reports).toHaveLength(1);
+      expect(reports[0]).toMatchObject({
+        profileId: user.id,
+        reason: 'HARASSMENT',
+        description: 'Оскорбления в статусе',
+        status: 'PENDING',
+      });
+    } finally {
+      await prisma.refreshToken.deleteMany({ where: { userId: reporter.id } });
+      await prisma.user.delete({ where: { id: reporter.id } });
+    }
   });
 
   it('социальные ссылки: добавление/список/скрытие/удаление', async () => {
