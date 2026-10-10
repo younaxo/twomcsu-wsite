@@ -367,7 +367,10 @@ describe('Настройки → Уведомления', () => {
     device.permission = 'denied';
     serve();
     render(<NotificationSettingsPage />, { wrapper: Providers });
-    expect(await screen.findByTestId('push-permission')).toHaveTextContent('Заблокировано');
+    // Реальное разрешение читается эффектом после первого рендера.
+    await waitFor(() =>
+      expect(screen.getByTestId('push-permission')).toHaveTextContent('Заблокировано'),
+    );
     await user.click(await screen.findByRole('button', { name: 'Как включить' }));
     expect(
       await screen.findByRole('dialog', { name: 'Как включить уведомления' }),

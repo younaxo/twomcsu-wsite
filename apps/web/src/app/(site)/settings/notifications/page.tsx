@@ -14,7 +14,7 @@ import {
 } from '@/components/notifications/push-onboarding';
 import { Badge } from '@/components/ui/badge';
 import { Button, IconButton } from '@/components/ui/button';
-import { SkeletonRows } from '@/components/ui/skeleton';
+import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { SwitchField } from '@/components/ui/switch';
 import { toast } from '@/components/ui/toast';
 import { getErrorMessage } from '@/lib/api/errors';
@@ -122,7 +122,9 @@ function SystemNotifications({ settings }: { settings: NotificationSettingsDto }
         О новых сообщениях — даже когда вкладка TwoMC в фоне или браузер свёрнут (в Windows — в
         центре уведомлений). Звук системного уведомления задают браузер и Windows.
       </p>
-      {!configured ? (
+      {vapid.isPending ? (
+        <Skeleton className="h-9 w-full" />
+      ) : !configured ? (
         <p className="text-sm text-muted-foreground" data-testid="push-not-configured">
           На сервере уведомления пока не настроены — включить их сейчас нельзя.
         </p>
