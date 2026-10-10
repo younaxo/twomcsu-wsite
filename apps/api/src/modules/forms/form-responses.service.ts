@@ -1,8 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CreateFormInviteDto } from './dto/create-form-invite.dto';
 import { ListResponsesQueryDto } from './dto/list-responses-query.dto';
+
+/// Ответ формы для персонала (ADR-0122): автор — только публичные поля
+/// (ADR-0107); у анонимного ответа автора, хеша IP и user-agent нет.
+function forStaff<
+  T extends {
+    isAnonymous: boolean;
+    respondentId: string | null;
+    respondent: unknown;
+    ipHash: string | null;
+    userAgent: string | null;
+  },
+>(response: T): T {
+  const { ipHash: _ipHash, ...rest } = response;
+  return (
+    response.isAnonymous
+      ? { ...rest, respondentId: null, respondent: null, userAgent: null }
+      : rest
+  ) as T;
+}
 
 @Injectable()
 export class FormResponsesService {
@@ -24,26 +44,32 @@ export class FormResponsesService {
     const [items, total] = await Promise.all([
       this.prisma.formResponse.findMany({
         where,
-        include: { respondent: true, answers: true },
+        include: {
+          respondent: { select: PUBLIC_USER_SELECT },
+          answers: true,
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.formResponse.count({ where }),
     ]);
-    return { items, total, page, limit };
+    return { items: items.map(forStaff), total, page, limit };
   }
 
   async getResponse(formId: string, responseId: string) {
     await this.requireForm(formId);
     const response = await this.prisma.formResponse.findUnique({
       where: { id: responseId },
-      include: { respondent: true, answers: { include: { field: true } } },
+      include: {
+        respondent: { select: PUBLIC_USER_SELECT },
+        answers: { include: { field: true } },
+      },
     });
     if (!response || response.formId !== formId) {
       throw new NotFoundException('Ответ не найден');
     }
-    return response;
+    return forStaff(response);
   }
 
   async deleteResponse(formId: string, responseId: string): Promise<void> {
@@ -53,12 +79,17 @@ export class FormResponsesService {
     if (!response || response.formId !== formId) {
       throw new NotFoundException('Ответ не найден');
     }
+    // Черновик в responsesCount не входил — счётчик не трогаем.
     await this.prisma.$transaction([
       this.prisma.formResponse.delete({ where: { id: responseId } }),
-      this.prisma.form.update({
-        where: { id: formId },
-        data: { responsesCount: { decrement: 1 } },
-      }),
+      ...(response.isComplete
+        ? [
+            this.prisma.form.update({
+              where: { id: formId },
+              data: { responsesCount: { decrement: 1 } },
+            }),
+          ]
+        : []),
     ]);
   }
 
