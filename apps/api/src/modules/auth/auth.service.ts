@@ -528,7 +528,9 @@ export class AuthService {
     }
     return {
       maskedEmail: maskEmailStrict(user.email),
-      providers: [...new Set(user.externalAccounts.map((item) => item.provider))],
+      providers: [
+        ...new Set(user.externalAccounts.map((item) => item.provider)),
+      ],
     };
   }
 

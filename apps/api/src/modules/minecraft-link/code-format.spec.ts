@@ -10,7 +10,9 @@ describe('форматы кодов Minecraft (A12)', () => {
   it('код привязки — XXX-000-X0X0-0X0 (16 символов), подтверждение — X0XX0', () => {
     for (let i = 0; i < 200; i += 1) {
       const link = generateByPattern(LINK_CODE_PATTERN);
-      expect(link).toMatch(/^[A-Z]{3}-[0-9]{3}-[A-Z][0-9][A-Z][0-9]-[0-9][A-Z][0-9]$/);
+      expect(link).toMatch(
+        /^[A-Z]{3}-[0-9]{3}-[A-Z][0-9][A-Z][0-9]-[0-9][A-Z][0-9]$/,
+      );
       expect(link).toHaveLength(16);
       expect(matchesPattern(normalizeCode(link), LINK_CODE_PATTERN)).toBe(true);
       const challenge = generateByPattern(CHALLENGE_PATTERN);
