@@ -18,9 +18,19 @@ import { EditMessageDto } from './dto/edit-message.dto';
 import { ReactMessageDto } from './dto/react-message.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
+import { isBlockedBetween } from '../profiles/visibility';
 
 function directKeyOf(userAId: string, userBId: string): string {
   return [userAId, userBId].sort().join(':');
+}
+
+/// Удалённое сообщение остаётся в ленте как «удалено», но без текста (ADR-0112).
+function hideDeleted<
+  T extends { isDeleted: boolean; content: string; contentHtml: string },
+>(message: T): T {
+  return message.isDeleted
+    ? { ...message, content: '', contentHtml: '' }
+    : message;
 }
 
 @Injectable()
@@ -43,6 +53,32 @@ export class DirectMessagesService {
       throw new NotFoundException('Беседа не найдена');
     }
     return member;
+  }
+
+  /// Можно ли `senderId` писать `target` (ADR-0112): нет блокировки в любую
+  /// сторону и это разрешает политика ЛС получателя. Общая проверка для личной
+  /// беседы и добавления в группу — иначе группа обходила бы приватность.
+  private async dmRefusal(
+    senderId: string,
+    target: { id: string; directMessagePolicy: string },
+  ): Promise<string | null> {
+    if (await isBlockedBetween(this.prisma, senderId, target.id)) {
+      return 'Невозможно написать этому игроку';
+    }
+    switch (target.directMessagePolicy) {
+      case 'NOBODY':
+        return 'Игрок не принимает личные сообщения';
+      case 'FRIENDS':
+        return (await this.friends.isFriend(senderId, target.id))
+          ? null
+          : 'Игрок принимает сообщения только от друзей';
+      case 'FRIENDS_OF_FRIENDS':
+        return (await this.friends.areFriendsOfFriends(senderId, target.id))
+          ? null
+          : 'Игрок принимает сообщения только от друзей своих друзей';
+      default:
+        return null;
+    }
   }
 
   async listConversations(userId: string) {
@@ -75,7 +111,9 @@ export class DirectMessagesService {
           title: m.conversation.title,
           avatar: this.storage.publicUrl(m.conversation.avatar),
           members: m.conversation.members.map((cm) => cm.user),
-          lastMessage: m.conversation.messages[0] ?? null,
+          lastMessage: m.conversation.messages[0]
+            ? hideDeleted(m.conversation.messages[0])
+            : null,
           lastMessageAt: m.conversation.lastMessageAt,
           unreadCount,
           isMuted: m.isMuted,
@@ -99,26 +137,9 @@ export class DirectMessagesService {
       throw new ForbiddenException('Нельзя создать переписку с самим собой');
     }
 
-    if (target.directMessagePolicy === 'NOBODY') {
-      throw new ForbiddenException(
-        'Пользователь не принимает личные сообщения',
-      );
-    }
-    if (target.directMessagePolicy === 'FRIENDS') {
-      const isFriend = await this.friends.isFriend(userId, target.id);
-      if (!isFriend) {
-        throw new ForbiddenException(
-          'Пользователь принимает сообщения только от друзей',
-        );
-      }
-    }
-    if (target.directMessagePolicy === 'FRIENDS_OF_FRIENDS') {
-      const ok = await this.friends.areFriendsOfFriends(userId, target.id);
-      if (!ok) {
-        throw new ForbiddenException(
-          'Пользователь принимает сообщения только от друзей своих друзей',
-        );
-      }
+    const refusal = await this.dmRefusal(userId, target);
+    if (refusal) {
+      throw new ForbiddenException(refusal);
     }
 
     const directKey = directKeyOf(userId, target.id);
@@ -159,6 +180,24 @@ export class DirectMessagesService {
     const members = await this.prisma.user.findMany({
       where: { username: { in: dto.memberUsernames, mode: 'insensitive' } },
     });
+    const found = new Set(members.map((m) => m.username.toLowerCase()));
+    const missing = dto.memberUsernames.filter(
+      (name) => !found.has(name.toLowerCase()),
+    );
+    if (missing.length > 0) {
+      throw new NotFoundException(`Игроки не найдены: ${missing.join(', ')}`);
+    }
+    // Добавить в группу можно только того, кому можно написать лично.
+    const refused: string[] = [];
+    for (const member of members) {
+      if (member.id === userId) continue;
+      if (await this.dmRefusal(userId, member)) refused.push(member.username);
+    }
+    if (refused.length > 0) {
+      throw new ForbiddenException(
+        `Нельзя добавить (настройки приватности): ${refused.join(', ')}`,
+      );
+    }
     const memberIds = Array.from(
       new Set([userId, ...members.map((m) => m.id)]),
     );
@@ -209,7 +248,12 @@ export class DirectMessagesService {
       }),
       this.prisma.directMessage.count({ where: { conversationId } }),
     ]);
-    return { items: items.reverse(), total, page, limit };
+    return {
+      items: items.reverse().map(hideDeleted),
+      total,
+      page,
+      limit,
+    };
   }
 
   async sendMessage(
@@ -218,6 +262,20 @@ export class DirectMessagesService {
     dto: SendMessageDto,
   ) {
     await this.requireMember(userId, conversationId);
+    // Личная беседа после блокировки (в любую сторону) — писать нельзя.
+    const conversation = await this.prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      include: { members: { select: { userId: true } } },
+    });
+    if (conversation.type === ConversationType.DIRECT) {
+      const other = conversation.members.find((m) => m.userId !== userId);
+      if (
+        other &&
+        (await isBlockedBetween(this.prisma, userId, other.userId))
+      ) {
+        throw new ForbiddenException('Невозможно написать этому игроку');
+      }
+    }
 
     if (dto.parentId) {
       const parent = await this.prisma.directMessage.findUnique({
@@ -288,6 +346,7 @@ export class DirectMessagesService {
     if (!message || message.isDeleted) {
       throw new NotFoundException('Сообщение не найдено');
     }
+    await this.requireMember(userId, message.conversationId);
     if (message.senderId !== userId) {
       throw new ForbiddenException('Редактировать можно только свои сообщения');
     }
@@ -309,13 +368,16 @@ export class DirectMessagesService {
     if (!message || message.isDeleted) {
       throw new NotFoundException('Сообщение не найдено');
     }
+    await this.requireMember(userId, message.conversationId);
     if (message.senderId !== userId) {
       throw new ForbiddenException('Удалить можно только свои сообщения');
     }
-    return this.prisma.directMessage.update({
-      where: { id: messageId },
-      data: { isDeleted: true, deletedAt: new Date() },
-    });
+    return hideDeleted(
+      await this.prisma.directMessage.update({
+        where: { id: messageId },
+        data: { isDeleted: true, deletedAt: new Date() },
+      }),
+    );
   }
 
   /// DirectMessageReaction уникальна по (messageId, userId, emoji) — в отличие
@@ -328,6 +390,8 @@ export class DirectMessagesService {
     if (!message || message.isDeleted) {
       throw new NotFoundException('Сообщение не найдено');
     }
+    // Реагировать — только участнику беседы (раньше — любому, зная id).
+    await this.requireMember(userId, message.conversationId);
     const existing = await this.prisma.directMessageReaction.findUnique({
       where: {
         messageId_userId_emoji: { messageId, userId, emoji: dto.emoji },
