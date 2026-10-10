@@ -265,6 +265,8 @@ export class DirectMessagesService {
           message: message.content.slice(0, 200),
           link: `/messages/${conversationId}`,
           fromUserId: senderId,
+          // Для push: одна беседа — одна группа в системе (без дублей).
+          metadata: { conversationId, messageId: message.id },
         }),
       ),
     );

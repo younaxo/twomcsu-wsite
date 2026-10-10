@@ -11,6 +11,7 @@ import { BrandSection } from './sections/brand-section';
 import { CursorsSection } from './sections/cursors-section';
 import { GlobalShellSection } from './sections/global-shell-section';
 import { IdentitySeasonalSection } from './sections/identity-seasonal-section';
+import { NotificationsPushSection } from './sections/notifications-push-section';
 import { RolePrefixesSection } from './sections/role-prefixes-section';
 import { Showcase } from './showcase/showcase';
 
@@ -22,6 +23,7 @@ const SECTIONS = [
   { id: 'brand', label: 'Бренд и плашка' },
   { id: 'auth', label: 'Auth' },
   { id: 'auth-extra', label: 'Auth: коды и восстановление' },
+  { id: 'push', label: 'Уведомления и push' },
   { id: 'cursors', label: 'Курсоры' },
   { id: 'prefixes', label: 'Role prefixes' },
   { id: 'identity', label: 'Профиль и сезоны' },
@@ -122,6 +124,14 @@ export function DesignLab() {
             description="Карусель реальных скриншотов TwoMC в панели входа и регистрации, подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), «Забыли пароль?» по e-mail и по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу» — production-компоненты, без запросов к API."
           />
           <AuthAdditionsSection />
+        </section>
+
+        <section id="push" className="scroll-mt-20">
+          <SectionHeading
+            title="Уведомления и push"
+            description="Подсказка разрешения у колокольчика (спросить / заблокировано), «Как включить», состояния разрешения браузера, уведомление при открытом сайте и звук — production-компоненты; системный запрос браузера и подписка в превью не вызываются."
+          />
+          <NotificationsPushSection />
         </section>
 
         <section id="cursors" className="scroll-mt-20">

@@ -17,6 +17,16 @@ export class UpdateNotificationSettingsDto {
   @IsBoolean()
   soundEnabled?: boolean;
 
+  /// Показывать в системных push имя отправителя и текст (ADR-0097).
+  @IsOptional()
+  @IsBoolean()
+  pushPreview?: boolean;
+
+  /// Уведомления в интерфейсе (тост + звук), когда сайт открыт.
+  @IsOptional()
+  @IsBoolean()
+  foregroundEnabled?: boolean;
+
   @IsOptional()
   @IsBoolean()
   quietHoursEnabled?: boolean;

@@ -8,9 +8,15 @@ import { NotificationBulkActions } from '@/components/notifications/notification
 import { NotificationItem } from '@/components/notifications/notification-item';
 import { Button, IconButton } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  PushCoachmark,
+  PushHelpDialog,
+  usePushOnboarding,
+} from '@/components/notifications/push-onboarding';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { Tooltip } from '@/components/ui/tooltip';
+import { cn } from '@/lib/cn';
 import { floatingClearance } from './floating-actions';
 import { formatBadgeCount } from '@/lib/site/document-badge';
 import { useRecentNotifications, useUnreadCount } from '@/lib/site/hooks';
@@ -26,8 +32,10 @@ export function NotificationsPopover() {
   const label = count > 0 ? `Уведомления, ${count} новых` : 'Уведомления';
   // Не заходить на плавающие кнопки (см. floatingClearance) — замер при открытии.
   const [bottomClearance, setBottomClearance] = useState(8);
+  // Onboarding разрешения уведомлений (N1): колокольчик — над затемнением.
+  const onboarding = usePushOnboarding();
 
-  return (
+  const bell = (
     <Popover
       open={open}
       onOpenChange={(next) => {
@@ -63,6 +71,51 @@ export function NotificationsPopover() {
         />
       </PopoverContent>
     </Popover>
+  );
+
+  return (
+    <>
+      <Popover open={onboarding.open} onOpenChange={(next) => (next ? null : onboarding.close())}>
+        <PopoverAnchor asChild>
+          <span
+            data-spotlight={onboarding.open || undefined}
+            className={cn(
+              'inline-flex rounded-md',
+              onboarding.open &&
+                'relative z-dropdown bg-surface-raised shadow-lg ring-2 ring-primary',
+            )}
+          >
+            {bell}
+          </span>
+        </PopoverAnchor>
+        <PopoverContent
+          side="bottom"
+          align="end"
+          arrow
+          className="w-80"
+          aria-label="Уведомления о сообщениях"
+          data-testid="push-spotlight"
+        >
+          <PushCoachmark
+            step={onboarding.step}
+            pending={onboarding.pending}
+            onAllow={() => void onboarding.allow()}
+            onLater={onboarding.later}
+            onHelp={() => onboarding.setHelp(true)}
+          />
+        </PopoverContent>
+      </Popover>
+      {onboarding.open ? (
+        // Сплошное затемнение (без blur/glass); клик — закрыть до следующей сессии.
+        <div
+          aria-hidden
+          data-testid="push-spotlight-dim"
+          className="fixed inset-0 z-overlay bg-black/45 animate-fade-in motion-reduce:animate-none"
+          onClick={onboarding.close}
+        />
+      ) : null}
+      <PushHelpDialog open={onboarding.help} onOpenChange={onboarding.setHelp} />
+    </>
   );
 }
 

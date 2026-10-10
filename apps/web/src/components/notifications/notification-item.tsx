@@ -14,6 +14,7 @@ import {
 import { cn } from '@/lib/cn';
 import { formatRelative } from '@/lib/format';
 import { useNotificationActions } from '@/lib/notifications/hooks';
+import { notificationHref } from '@/lib/notifications/in-app';
 import { SystemSender, isSystemMessage } from './system-sender';
 
 /// Пункт уведомления (ADR-0074): переход по ссылке отмечает прочитанным;
@@ -29,7 +30,7 @@ export function NotificationItem({
   compact?: boolean;
 }) {
   const actions = useNotificationActions();
-  const href = item.actionUrl ?? item.link ?? null;
+  const href = notificationHref(item);
   const system = isSystemMessage(item);
   const toggleRead = () =>
     item.isRead ? actions.markUnread.mutate(item.id) : actions.markRead.mutate(item.id);

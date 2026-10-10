@@ -5,7 +5,13 @@ import * as webPush from 'web-push';
 export interface PushPayload {
   title: string;
   body?: string;
+  /// Только внутренний путь сайта (push-policy).
   url?: string;
+  /// id уведомления — Service Worker не показывает одно и то же дважды.
+  id?: string;
+  type?: string;
+  /// Группа в системе (например, одна беседа) — новое заменяет старое.
+  tag?: string;
 }
 
 /// Без VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY push-доставка выключается

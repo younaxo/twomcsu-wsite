@@ -305,6 +305,74 @@ describe('Notifications (e2e)', () => {
       .expect(200);
   });
 
+  it('push (ADR-0097): несколько устройств, отписка по endpoint, смена аккаунта на том же браузере', async () => {
+    const subscribe = (user: TestUser, endpoint: string) =>
+      request(app.getHttpServer())
+        .post('/notifications/push/subscribe')
+        .set('Authorization', auth(user))
+        .send({
+          endpoint,
+          keys: { p256dh: 'p256dh-test-key', auth: 'auth-test-key' },
+        })
+        .expect(201);
+    const pc = `https://push.example.com/pc-${unique}`;
+    const laptop = `https://push.example.com/laptop-${unique}`;
+    await subscribe(alice, pc);
+    await subscribe(alice, laptop);
+    const list = await request(app.getHttpServer())
+      .get('/notifications/push/subscriptions')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(list.body).toHaveLength(2);
+    expect(JSON.stringify(list.body)).not.toContain('p256dh-test-key');
+
+    // Вход другим аккаунтом в том же браузере: подписка переходит к нему,
+    // прошлому пользователю push сюда больше не уходит.
+    await subscribe(bob, pc);
+    const aliceAfter = await request(app.getHttpServer())
+      .get('/notifications/push/subscriptions')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(aliceAfter.body).toHaveLength(1);
+
+    // Выход из аккаунта: отписка этого браузера по endpoint.
+    await request(app.getHttpServer())
+      .post('/notifications/push/unsubscribe')
+      .set('Authorization', auth(alice))
+      .send({ endpoint: laptop })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post('/notifications/push/unsubscribe')
+      .set('Authorization', auth(alice))
+      .send({ endpoint: 'javascript:alert(1)' })
+      .expect(400);
+    const aliceEnd = await request(app.getHttpServer())
+      .get('/notifications/push/subscriptions')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(aliceEnd.body).toHaveLength(0);
+    await request(app.getHttpServer())
+      .post('/notifications/push/unsubscribe')
+      .set('Authorization', auth(bob))
+      .send({ endpoint: pc })
+      .expect(200);
+  });
+
+  it('настройки: превью push и уведомления при открытом сайте', async () => {
+    const updated = await request(app.getHttpServer())
+      .patch('/notifications/settings')
+      .set('Authorization', auth(alice))
+      .send({ pushPreview: false, foregroundEnabled: false })
+      .expect(200);
+    expect(updated.body.pushPreview).toBe(false);
+    expect(updated.body.foregroundEnabled).toBe(false);
+    await request(app.getHttpServer())
+      .patch('/notifications/settings')
+      .set('Authorization', auth(alice))
+      .send({ pushPreview: true, foregroundEnabled: true })
+      .expect(200);
+  });
+
   it('discord personal webhook: невалидный URL отклоняется, валидный сохраняется и удаляется', async () => {
     await request(app.getHttpServer())
       .post('/notifications/discord/webhook')

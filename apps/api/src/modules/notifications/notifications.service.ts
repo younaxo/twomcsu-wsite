@@ -12,6 +12,7 @@ import { NotificationSettingsService } from './notification-settings.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { PushService } from './push.service';
 import { PushSubscribeDto } from './dto/push-subscribe.dto';
+import { buildPushPayload, shouldSendPush } from './push-policy';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -87,10 +88,14 @@ export class NotificationsService {
   private async deliver(notification: {
     id: string;
     userId: string;
+    type: string;
     title: string;
     message: string | null;
     link: string | null;
     priority: NotificationPriority;
+    metadata?: unknown;
+    fromUserId?: string | null;
+    sentViaPush?: boolean;
   }): Promise<void> {
     const settings = await this.settings.getOrCreate(notification.userId);
     const isUrgent = notification.priority === NotificationPriority.URGENT;
@@ -124,9 +129,28 @@ export class NotificationsService {
       }
     }
 
-    if (settings.pushEnabled && !suppressed) {
+    // Push по политике (ADR-0097): не при открытой вкладке, не дважды, payload
+    // без лишнего (превью выключено — без имени и текста).
+    const sendPush = shouldSendPush({
+      pushEnabled: settings.pushEnabled,
+      suppressed,
+      foreground: this.gateway.isForeground(notification.userId),
+      alreadySent: notification.sentViaPush === true,
+    });
+    if (sendPush) {
       const subscriptions = await this.prisma.pushSubscription.findMany({
         where: { userId: notification.userId },
+      });
+      const sender =
+        settings.pushPreview && notification.fromUserId
+          ? await this.prisma.user.findUnique({
+              where: { id: notification.fromUserId },
+              select: { username: true },
+            })
+          : null;
+      const payload = buildPushPayload(notification, {
+        previewEnabled: settings.pushPreview,
+        senderName: sender?.username ?? null,
       });
       let delivered = false;
       for (const sub of subscriptions) {
@@ -135,14 +159,13 @@ export class NotificationsService {
             endpoint: sub.endpoint,
             keys: { p256dh: sub.p256dh, auth: sub.auth },
           },
-          {
-            title: notification.title,
-            body: notification.message ?? undefined,
-            url: notification.link ?? undefined,
-          },
+          payload,
         );
         if (result.ok) {
           delivered = true;
+          await this.prisma.pushSubscription
+            .update({ where: { id: sub.id }, data: { lastUsedAt: new Date() } })
+            .catch(() => undefined);
         }
         if (result.expired) {
           await this.prisma.pushSubscription
@@ -309,6 +332,32 @@ export class NotificationsService {
         auth: dto.keys.auth,
         lastUsedAt: new Date(),
       },
+    });
+  }
+
+  /// Устройства с включённым push (для «Настройки → Уведомления»).
+  listPushSubscriptions(userId: string) {
+    return this.prisma.pushSubscription.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        deviceName: true,
+        userAgent: true,
+        createdAt: true,
+        lastUsedAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /// Отписка этого браузера по endpoint (выход из аккаунта, выключение push):
+  /// после неё уведомления прошлого пользователя сюда не придут.
+  async unsubscribePushByEndpoint(
+    userId: string,
+    endpoint: string,
+  ): Promise<void> {
+    await this.prisma.pushSubscription.deleteMany({
+      where: { userId, endpoint },
     });
   }
 
