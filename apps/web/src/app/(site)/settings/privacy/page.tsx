@@ -1,6 +1,7 @@
 'use client';
 
 import type { OwnProfileDto, UpdateOwnProfileRequest } from '@twomc/shared';
+import { ActivityPrivacy } from '@/components/activity/activity-privacy';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
@@ -140,6 +141,7 @@ function PrivacyEditor({ profile }: { profile: OwnProfileDto }) {
         <h3 className="text-sm font-semibold">Уведомлять меня</h3>
         {NOTIFY_FLAGS.map(flag)}
       </section>
+      <ActivityPrivacy />
     </div>
   );
 }

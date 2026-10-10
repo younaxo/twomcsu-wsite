@@ -11,6 +11,7 @@ export * from './api/common';
 export * from './api/auth';
 export * from './api/roles';
 export * from './api/users';
+export * from './api/activity';
 export * from './api/messages';
 export * from './api/friends';
 export * from './api/moderation';
