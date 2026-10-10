@@ -328,13 +328,13 @@ describe('Social system (e2e)', () => {
     const reactRes = await request(app.getHttpServer())
       .post(`/comments/${created.body.id}/reactions`)
       .set('Authorization', auth(carol))
-      .send({ emoji: '👍' })
+      .send({ emoji: 'like' })
       .expect(201);
     expect(reactRes.body.reacted).toBe(true);
     const unreactRes = await request(app.getHttpServer())
       .post(`/comments/${created.body.id}/reactions`)
       .set('Authorization', auth(carol))
-      .send({ emoji: '👍' })
+      .send({ emoji: 'like' })
       .expect(201);
     expect(unreactRes.body.reacted).toBe(false);
 
@@ -370,6 +370,90 @@ describe('Social system (e2e)', () => {
       .set('Authorization', auth(carol))
       .send({ commentsEnabled: true })
       .expect(200);
+  });
+
+  it('ADR-0111: комментарии скрытого профиля не видны; блокировка запрещает писать и реагировать; реакции — счётчики', async () => {
+    const http = () => request(app.getHttpServer());
+    const path = `/users/${carol.username}/comments`;
+    const created = await http()
+      .post(path)
+      .set('Authorization', auth(bob))
+      .send({ content: 'Привет от Боба' })
+      .expect(201);
+    const id = created.body.id as string;
+    expect(created.body.author).toEqual(
+      expect.objectContaining({ id: bob.id, username: bob.username }),
+    );
+    expect(created.body.canDelete).toBe(true);
+
+    // Реакции: только из набора; в списке — счётчики и своя реакция, без userId.
+    await http()
+      .post(`/comments/${id}/reactions`)
+      .set('Authorization', auth(alice))
+      .send({ emoji: 'плохое слово' })
+      .expect(400);
+    await http()
+      .post(`/comments/${id}/reactions`)
+      .set('Authorization', auth(alice))
+      .send({ emoji: 'heart' })
+      .expect(201);
+    const asAlice = await http()
+      .get(path)
+      .set('Authorization', auth(alice))
+      .expect(200);
+    const item = asAlice.body.items.find((c: { id: string }) => c.id === id);
+    expect(item.reactions).toEqual([{ key: 'heart', count: 1 }]);
+    expect(item.myReaction).toBe('heart');
+    expect(item.canDelete).toBe(false);
+    expect(JSON.stringify(asAlice.body)).not.toContain(alice.id);
+    expect(asAlice.body.canComment).toBe(true);
+    const anonymous = await http().get(path).expect(200);
+    expect(anonymous.body.canComment).toBe(false);
+
+    // Блокировка владельцем: писать и реагировать нельзя.
+    await http()
+      .post(`/friends/block/${alice.id}`)
+      .set('Authorization', auth(carol))
+      .expect(201);
+    await http()
+      .post(path)
+      .set('Authorization', auth(alice))
+      .send({ content: 'обход блокировки' })
+      .expect(404);
+    await http()
+      .post(`/comments/${id}/reactions`)
+      .set('Authorization', auth(alice))
+      .send({ emoji: 'like' })
+      .expect(404);
+    await http()
+      .delete(`/friends/block/${alice.id}`)
+      .set('Authorization', auth(carol))
+      .expect(200);
+
+    // Скрытый профиль — комментарии не видны посторонним, владельцу видны.
+    await http()
+      .patch('/users/me/profile')
+      .set('Authorization', auth(carol))
+      .send({ profileVisibility: 'NOBODY' })
+      .expect(200);
+    await http().get(path).expect(404);
+    await http().get(path).set('Authorization', auth(alice)).expect(404);
+    await http().get(path).set('Authorization', auth(carol)).expect(200);
+    await http()
+      .patch('/users/me/profile')
+      .set('Authorization', auth(carol))
+      .send({ profileVisibility: 'EVERYONE' })
+      .expect(200);
+
+    // Владелец профиля удаляет чужой комментарий на своей стене.
+    await http()
+      .delete(`/comments/${id}`)
+      .set('Authorization', auth(carol))
+      .expect(200);
+    const after = await http().get(path).expect(200);
+    expect(after.body.items.some((c: { id: string }) => c.id === id)).toBe(
+      false,
+    );
   });
 
   it('лента активности: глобальная (PUBLIC) видна всем, но не всегда конкретному зрителю', async () => {

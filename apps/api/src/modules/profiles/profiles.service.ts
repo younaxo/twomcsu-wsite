@@ -9,6 +9,7 @@ import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { resolveUserIdByHandle } from './handle';
+import { canViewProfile } from './visibility';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -413,30 +414,12 @@ export class ProfilesService {
     return this.profileStats(profile.id, userId);
   }
 
-  /// Видимость профиля для зрителя: владелец — всегда; блокировка в любую
-  /// сторону — скрыт; NOBODY — скрыт; FRIENDS_ONLY — только принятым друзьям
-  /// (раньше скрывался и от друзей); EVERYONE — всем.
-  private async canView(
+  /// Видимость профиля для зрителя — общий helper (`visibility.ts`).
+  private canView(
     user: { id: string; profileVisibility: string },
     viewerId: string | null,
   ): Promise<boolean> {
-    if (viewerId === user.id) return true;
-    if (user.profileVisibility === 'NOBODY') return false;
-    if (!viewerId) return user.profileVisibility === 'EVERYONE';
-    const relations = await this.prisma.friendship.findMany({
-      where: {
-        OR: [
-          { requesterId: viewerId, addresseeId: user.id },
-          { requesterId: user.id, addresseeId: viewerId },
-        ],
-      },
-      select: { status: true },
-    });
-    if (relations.some((item) => item.status === 'BLOCKED')) return false;
-    if (user.profileVisibility === 'FRIENDS_ONLY') {
-      return relations.some((item) => item.status === 'ACCEPTED');
-    }
-    return true;
+    return canViewProfile(this.prisma, user, viewerId);
   }
 
   /// Карточка превью (ADR-0073). Те же правила видимости, что у публичного

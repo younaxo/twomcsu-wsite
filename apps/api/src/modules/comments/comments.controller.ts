@@ -7,13 +7,16 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { Type } from 'class-transformer';
+import type { Request } from 'express';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -42,13 +45,23 @@ class ListCommentsQueryDto {
 export class CommentsController {
   constructor(private readonly comments: CommentsService) {}
 
+  /// Видимость — как у профиля (скрытый — 404); зритель нужен для своей
+  /// реакции и прав (ADR-0111).
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('users/:username/comments')
   async list(
     @Param('username') username: string,
     @Query() query: ListCommentsQueryDto,
+    @Req() req: Request,
   ) {
-    return this.comments.list(username, query.page ?? 1, query.limit ?? 20);
+    const viewer = (req as Request & { user?: AuthenticatedUser }).user;
+    return this.comments.list(
+      username,
+      viewer?.id ?? null,
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
