@@ -393,6 +393,9 @@ describe('LocalePopover', () => {
       'true',
     );
     expect(within(locales).getByRole('button', { name: 'English' })).toBeDisabled();
+    // Флаги — SVG (ADR-0085), без emoji-индикаторов, которые Windows рисует буквами.
+    expect(locales.querySelectorAll('svg[data-flag]')).toHaveLength(2);
+    expect(locales.textContent ?? '').not.toMatch(/[\u{1F1E6}-\u{1F1FF}]/u);
     expect(within(currencies).getByRole('button', { name: /USD/ })).toBeDisabled();
     // Выбор недоступной валюты не меняет состояние; язык при этом не трогается.
     usePreferences.getState().setCurrency('USD');
