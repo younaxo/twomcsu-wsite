@@ -72,15 +72,12 @@ export function GeneralTab({ settings, api, editable }: TabProps) {
                 field="registrationEnabled"
                 label="Регистрация открыта"
               />
-              <BoolSwitch
-                api={api}
-                editable={editable}
-                field="registrationRequiresApproval"
-                label="Требуется одобрение"
-                description="Новые аккаунты ждут подтверждения администрацией"
-              />
             </div>
-            <Field label="Лимит аккаунтов" hint="Пусто — без лимита" className="max-w-xs">
+            <Field
+              label="Лимит аккаунтов"
+              hint="Пусто — без лимита. При достижении регистрация закрывается."
+              className="max-w-xs"
+            >
               <Input
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -155,10 +152,6 @@ export function GeneralTab({ settings, api, editable }: TabProps) {
         <>
           <SettingsAside title="Сводка">
             <SummaryRow label="Регистрация" value={<OnOff value={form.registrationEnabled} />} />
-            <SummaryRow
-              label="Одобрение"
-              value={<OnOff value={form.registrationRequiresApproval} />}
-            />
             <SummaryRow
               label="Лимит аккаунтов"
               value={form.maxUsersLimit === null ? 'без лимита' : formatNumber(form.maxUsersLimit)}
@@ -319,7 +312,7 @@ export function ModulesTab({ api, editable }: TabProps) {
             editable={editable}
             field="defaultNotificationsEnabled"
             label="Уведомления по умолчанию"
-            description="Включены у новых аккаунтов"
+            description="Письма и push у новых аккаунтов; уведомления на сайте — всегда"
           />
         </SettingsIsland>
       }

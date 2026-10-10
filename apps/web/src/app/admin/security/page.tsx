@@ -205,7 +205,7 @@ function WhitelistTab() {
   };
 
   return (
-    <PageSection description="Полная замена списка разрешённых IP для админки. Пустой список — ограничений нет.">
+    <PageSection description="Список разрешённых IP для админки сохраняется, но пока не применяется ко входу: его включат после проверки адресов за прокси, чтобы не закрыть доступ (ADR-0125).">
       <Card className="flex max-w-2xl flex-col gap-4">
         {settings.isError ? (
           <p className="text-sm text-muted-foreground">

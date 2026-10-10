@@ -50,6 +50,19 @@ export function settingsView(
 export class NotificationSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /// `SiteSettings.defaultNotificationsEnabled` (ADR-0125): выключено — новые
+  /// настройки и сброс без писем и push (уведомления на сайте остаются).
+  private async siteDefaults(): Promise<{
+    emailEnabled: boolean;
+    pushEnabled: boolean;
+  }> {
+    const site = await this.prisma.siteSettings.findFirst({
+      select: { defaultNotificationsEnabled: true },
+    });
+    const enabled = site?.defaultNotificationsEnabled ?? true;
+    return { emailEnabled: enabled, pushEnabled: enabled };
+  }
+
   async getOrCreate(userId: string) {
     const existing = await this.prisma.notificationSettings.findUnique({
       where: { userId },
@@ -57,7 +70,9 @@ export class NotificationSettingsService {
     if (existing) {
       return existing;
     }
-    return this.prisma.notificationSettings.create({ data: { userId } });
+    return this.prisma.notificationSettings.create({
+      data: { userId, ...(await this.siteDefaults()) },
+    });
   }
 
   async update(userId: string, dto: UpdateNotificationSettingsDto) {
@@ -96,7 +111,12 @@ export class NotificationSettingsService {
     await this.getOrCreate(userId);
     return this.prisma.notificationSettings.update({
       where: { userId },
-      data: { ...DEFAULTS, typeSettings: {}, discordWebhookUrl: null },
+      data: {
+        ...DEFAULTS,
+        ...(await this.siteDefaults()),
+        typeSettings: {},
+        discordWebhookUrl: null,
+      },
     });
   }
 
