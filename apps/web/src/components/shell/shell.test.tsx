@@ -386,10 +386,11 @@ describe('CartButton', () => {
     expect(cart.className).not.toMatch(/translate-x|peek/);
     expect(cart.className).toMatch(/rounded-full/);
     await waitFor(() => expect(screen.getByTestId('cart-count')).toHaveTextContent('99+'));
+    // Чат работает (срез 2.5): обычная кнопка без «скоро».
     const chat = await screen.findByTestId('chat-button');
-    expect(chat).toHaveAttribute('aria-disabled', 'true');
+    expect(chat).not.toHaveAttribute('aria-disabled');
     expect(chat.className).toMatch(/rounded-full/);
-    expect(chat).toHaveTextContent('скоро');
+    expect(chat).not.toHaveTextContent('скоро');
   });
 });
 

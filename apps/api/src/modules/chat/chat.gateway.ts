@@ -24,6 +24,7 @@ import { BanUserDto } from './dto/ban-user.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
 import { ChatService } from './chat.service';
 import { ModerationService } from './moderation.service';
+import { SiteStatusService } from '../system/site-status.service';
 
 function userRoom(userId: string): string {
   return `user:${userId}`;
@@ -67,7 +68,23 @@ export class ChatGateway
     private readonly permissions: PermissionService,
     private readonly chat: ChatService,
     private readonly moderation: ModerationService,
+    private readonly status: SiteStatusService,
   ) {}
+
+  /// Модуль «Чат» выключен или идут техработы (ADR-0113) — WS тоже закрыт, как
+  /// REST (`SiteModuleGuard`); сотрудники с `system.maintenance.bypass` проходят.
+  private async moduleRefusal(userId: string): Promise<string | null> {
+    const reason = await this.status.unavailable('chat');
+    if (!reason) return null;
+    if (
+      await this.permissions.hasPermission(userId, 'system.maintenance.bypass')
+    ) {
+      return null;
+    }
+    return reason === 'MAINTENANCE'
+      ? 'Идут технические работы. Чат скоро заработает.'
+      : 'Чат временно недоступен.';
+  }
 
   afterInit(server: Server): void {
     server.use((client: Socket, next: (err?: Error) => void) => {
@@ -95,6 +112,10 @@ export class ChatGateway
     const chatBan = await this.chat.findActiveBan(user.id);
     if (chatBan) {
       throw new Error('Забанен в чате');
+    }
+    const refusal = await this.moduleRefusal(user.id);
+    if (refusal) {
+      throw new Error(refusal);
     }
     client.data.userId = user.id;
     client.data.username = user.username;
@@ -159,8 +180,13 @@ export class ChatGateway
   async onSendMessage(
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: SendMessageSocketDto,
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; message?: unknown; error?: string }> {
     try {
+      // Модуль выключили, пока сокет подключён, — отправка тоже закрыта.
+      const refusal = await this.moduleRefusal(client.data.userId);
+      if (refusal) {
+        throw new Error(refusal);
+      }
       const message = await this.chat.sendMessage(
         client.data.userId,
         dto.channelId,
@@ -170,11 +196,13 @@ export class ChatGateway
         },
       );
       this.server.to(channelRoom(dto.channelId)).emit('message:new', message);
+      return { ok: true, message };
     } catch (err) {
       client.emit('error', {
         event: 'send_message',
         message: (err as Error).message,
       });
+      return { ok: false, error: (err as Error).message };
     }
   }
 

@@ -8,6 +8,8 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { RedisService } from '../src/modules/redis/redis.service';
+import { SiteStatusService } from '../src/modules/system/site-status.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом; этот
 // файл дополнительно поднимает реальный TCP-листенер для Socket.IO.
@@ -289,6 +291,47 @@ describe('Chat (e2e)', () => {
       bobSocket?.disconnect();
       moderatorSocket?.disconnect();
       carolSocket?.disconnect();
+    });
+
+    it('ADR-0113: выключенный модуль «Чат» — WS-подключение отклоняется', async () => {
+      const status = app.get(SiteStatusService);
+      const spy = jest
+        .spyOn(status, 'unavailable')
+        .mockImplementation(async (key: string) =>
+          key === 'chat' ? 'MODULE_DISABLED' : null,
+        );
+      try {
+        await expect(connectSocket(alice)).rejects.toThrow();
+      } finally {
+        spy.mockRestore();
+      }
+      aliceSocket = await connectSocket(alice);
+      expect(aliceSocket.connected).toBe(true);
+    });
+
+    it('ADR-0113: send_message отвечает ack; больше 5 сообщений за 10 с — отказ', async () => {
+      const redis = app.get(RedisService);
+      await redis.client.del(`chat:rate:${alice.id}`);
+      aliceSocket = await connectSocket(alice);
+      await joinChannel(aliceSocket, alice.id, channelId);
+      const results: Array<{ ok: boolean; error?: string }> = [];
+      for (let index = 0; index < 6; index += 1) {
+        results.push(
+          (await aliceSocket.timeout(5000).emitWithAck('send_message', {
+            channelId,
+            content: `флуд ${index}`,
+          })) as {
+            ok: boolean;
+            error?: string;
+          },
+        );
+      }
+      expect(results.slice(0, 5).every((item) => item.ok)).toBe(true);
+      expect(results[5]).toEqual({
+        ok: false,
+        error: 'Слишком часто — подождите несколько секунд.',
+      });
+      await redis.client.del(`chat:rate:${alice.id}`);
     });
 
     it('join_channel присоединяет к комнате, рассылает user:online и попадает в REST /online', async () => {

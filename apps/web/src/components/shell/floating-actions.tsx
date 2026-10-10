@@ -3,9 +3,19 @@
 import { MessageCircle, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
+import { ChatPanel } from '@/components/chat/chat-panel';
 import { Button, IconButton } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/lib/auth/store';
@@ -120,35 +130,36 @@ export function CartButton({ className }: { className?: string }) {
   );
 }
 
-/// Кнопка чата: сайт-чат (PHASE 11 backend, WebSocket) ещё не имеет
-/// frontend-клиента — аккуратное coming-soon состояние: кнопка приглушена,
-/// небольшая метка «скоро», без фейкового чата. Скрыта, если модуль чата
-/// выключен в настройках сайта. Когда клиент чата появится — сюда
-/// подключается реальный Chat.
+/// Кнопка общего чата (срез 2.5, ADR-0113): открывает панель справа (на
+/// телефоне — во всю ширину). Скрыта, если модуль чата выключен.
 export function ChatButton({ className }: { className?: string }) {
   const settings = usePublicSiteSettings();
+  const [open, setOpen] = useState(false);
   if (settings.data && !settings.data.modules.chat) {
     return null;
   }
   return (
-    <Tooltip content="Чат — скоро" side="left">
-      <IconButton
-        aria-label="Чат (скоро)"
-        aria-disabled="true"
-        variant="secondary"
-        className={cn(floatingButtonClassName, 'text-muted-foreground', className)}
-        data-testid="chat-button"
-        onClick={(event) => event.preventDefault()}
-      >
-        <MessageCircle />
-        <span
-          aria-hidden
-          className="absolute -right-1 -top-1 rounded-full border bg-surface px-1.5 text-[9px] font-semibold uppercase tracking-wide text-subtle-foreground"
-        >
-          скоро
-        </span>
-      </IconButton>
-    </Tooltip>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <Tooltip content="Чат" side="left">
+        <SheetTrigger asChild>
+          <IconButton
+            aria-label="Чат"
+            variant="secondary"
+            className={cn(floatingButtonClassName, className)}
+            data-testid="chat-button"
+          >
+            <MessageCircle />
+          </IconButton>
+        </SheetTrigger>
+      </Tooltip>
+      <SheetContent side="right" size="md" className="flex flex-col gap-0 p-0">
+        <SheetHeader className="px-4 pb-2 pt-4">
+          <SheetTitle>Чат</SheetTitle>
+          <SheetDescription className="sr-only">Общий чат twomc.su</SheetDescription>
+        </SheetHeader>
+        {open ? <ChatPanel /> : null}
+      </SheetContent>
+    </Sheet>
   );
 }
 
