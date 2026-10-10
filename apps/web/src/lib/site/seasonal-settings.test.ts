@@ -1,6 +1,11 @@
 import type { PublicSeasonalSettings } from '@twomc/shared';
 import { describe, expect, it } from 'vitest';
-import { resolveSeasonalFromSettings } from './seasonal';
+import {
+  SEASONAL_CAMPAIGNS,
+  fallingModeOf,
+  resolveSeasonalFromSettings,
+  resolveSeasonalView,
+} from './seasonal';
 
 const base: PublicSeasonalSettings = {
   enabled: true,
@@ -11,6 +16,9 @@ const base: PublicSeasonalSettings = {
   showEffects: true,
   showBanners: true,
   effectIntensity: 2,
+  fallingMode: 'season',
+  fallingEffect: null,
+  effectSpeed: 2,
   campaigns: {},
   serverTime: '2026-10-20T12:00:00.000Z',
 };
@@ -83,5 +91,59 @@ describe('resolveSeasonalFromSettings (ADR-0079)', () => {
         october,
       )?.effects,
     ).toEqual(['snow', 'sun']);
+  });
+});
+
+describe('resolveSeasonalView — независимые флаги (ADR-0090)', () => {
+  const now = new Date('2026-10-20T12:00:00.000Z'); // окно Хэллоуина
+  const settings = { ...base, serverTime: now.toISOString() };
+
+  it('сезон ON, эффект OFF — украшение шапки и «o» остаются', () => {
+    const view = resolveSeasonalView({ ...settings, fallingMode: 'off' }, now);
+    expect(view.campaign?.id).toBe('halloween');
+    expect(view.showDecoration).toBe(true);
+    expect(view.showWordmarkO).toBe(true);
+    expect(view.effects).toEqual([]);
+  });
+
+  it('украшение OFF не выключает эффект и наоборот', () => {
+    const view = resolveSeasonalView({ ...settings, showDecoration: false }, now);
+    expect(view.showDecoration).toBe(false);
+    expect(view.effects.length).toBeGreaterThan(0);
+  });
+
+  it('сезон выключен, эффект «Всегда» — эффект без оформления сезона', () => {
+    const view = resolveSeasonalView(
+      { ...settings, enabled: false, fallingMode: 'always', fallingEffect: 'stars' },
+      now,
+    );
+    expect(view.campaign).toBeNull();
+    expect(view.showDecoration).toBe(false);
+    expect(view.effects).toEqual(['stars']);
+  });
+
+  it('превью: сезон OFF / эффект ON без активации реального сезона', () => {
+    const victory = SEASONAL_CAMPAIGNS.find((item) => item.id === 'victory-day')!;
+    // Звёзды Дня Победы видны в превью без активации сезона и без его
+    // оформления; режим «Выключен» превью тоже честно показывает выключенным.
+    const view = resolveSeasonalView(settings, now, {
+      campaign: victory,
+      season: false,
+      effect: true,
+    });
+    expect(view.campaign).toBeNull();
+    expect(view.effects).toEqual(['stars']);
+    expect(
+      resolveSeasonalView({ ...settings, fallingMode: 'off' }, now, { campaign: victory }).effects,
+    ).toEqual([]);
+    expect(
+      resolveSeasonalView(settings, now, { campaign: victory, effect: false }).effects,
+    ).toEqual([]);
+  });
+
+  it('старые настройки без fallingMode: showEffects=false → эффекты выключены', () => {
+    const legacy = { ...settings, fallingMode: undefined, showEffects: false } as never;
+    expect(fallingModeOf(legacy)).toBe('off');
+    expect(resolveSeasonalView(legacy, now).effects).toEqual([]);
   });
 });
