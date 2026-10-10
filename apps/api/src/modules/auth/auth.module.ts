@@ -11,6 +11,8 @@ import { RegistrationService } from './registration.service';
 import { SocialAuthController } from './social-auth.controller';
 import { SocialAuthService } from './social-auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { TwoFactorController } from './two-factor/two-factor.controller';
+import { TwoFactorService } from './two-factor/two-factor.service';
 
 @Module({
   imports: [
@@ -27,7 +29,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       }),
     }),
   ],
-  controllers: [AuthController, SocialAuthController],
+  controllers: [AuthController, SocialAuthController, TwoFactorController],
   providers: [
     AuthService,
     JwtStrategy,
@@ -35,6 +37,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     CaptchaService,
     SocialAuthService,
     RegistrationService,
+    TwoFactorService,
   ],
   // JwtModule экспортируется, чтобы WS-шлюзы (например DirectMessagesGateway)
   // могли проверять access-token из handshake тем же JwtService, не

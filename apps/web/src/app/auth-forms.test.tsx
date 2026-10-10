@@ -288,6 +288,7 @@ describe('auth-формы «Полдня»', () => {
           accessLevel: 0,
           accountType: 'DEFAULT',
           mustChangePassword: false,
+          twoFactorEnabled: false,
           roles: [],
           permissions: { superuser: false, permissions: [], maxPriority: null },
         });
@@ -635,6 +636,7 @@ describe('SocialAuthResult — итог входа и привязки', () => {
             accessLevel: 0,
             accountType: 'DEFAULT',
             mustChangePassword: false,
+            twoFactorEnabled: false,
             roles: [],
             permissions: { superuser: false, permissions: [], maxPriority: null },
           });

@@ -19,7 +19,13 @@ function makeService(): SocialAuthService {
   const config = {
     get: (key: string, fallback?: unknown) => values[key] ?? fallback,
   } as unknown as ConfigService;
-  return new SocialAuthService(config, {} as never, {} as never, {} as never);
+  return new SocialAuthService(
+    config,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
 }
 
 const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -134,6 +140,7 @@ describe('SocialAuthService', () => {
       } as unknown as ConfigService;
       const disabled = new SocialAuthService(
         config,
+        {} as never,
         {} as never,
         {} as never,
         {} as never,

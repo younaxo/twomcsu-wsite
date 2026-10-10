@@ -31,6 +31,7 @@ function staff(accessLevel: number, priority: number): MeResponse {
     accessLevel,
     accountType: 'DEFAULT',
     mustChangePassword: false,
+    twoFactorEnabled: false,
     avatar: null,
     banner: null,
     roles: [

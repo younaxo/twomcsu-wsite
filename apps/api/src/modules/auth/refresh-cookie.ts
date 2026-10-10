@@ -2,6 +2,10 @@ import { ConfigService } from '@nestjs/config';
 import { CookieOptions } from 'express';
 
 export const REFRESH_COOKIE_NAME = 'refresh_token';
+/// Одноразовый челлендж второго шага входа (ADR-0109): httpOnly, только для
+/// `/auth`, живёт 5 минут — в URL и JS токен не попадает.
+export const TWO_FACTOR_COOKIE_NAME = 'two_factor_challenge';
+export const TWO_FACTOR_COOKIE_MAX_AGE_MS = 5 * 60_000;
 
 export function refreshCookieOptions(
   config: ConfigService,
@@ -25,5 +29,18 @@ export function refreshCookieOptions(
     secure: config.get<boolean>('COOKIE_SECURE'),
     sameSite,
     ...(maxAgeMs ? { maxAge: maxAgeMs } : {}),
+  };
+}
+
+export function twoFactorCookieOptions(
+  config: ConfigService,
+  withMaxAge = true,
+): CookieOptions {
+  return {
+    ...refreshCookieOptions(
+      config,
+      withMaxAge ? TWO_FACTOR_COOKIE_MAX_AGE_MS : undefined,
+    ),
+    path: '/auth',
   };
 }

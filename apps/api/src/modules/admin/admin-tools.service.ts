@@ -26,6 +26,7 @@ import {
   SEASONAL_MAX_EFFECTS,
   UpdateSeasonalDto,
 } from './dto/update-seasonal.dto';
+import { resetAdmin2faCache } from '../roles/guards/permissions.guard';
 
 /// Переопределение кампании в `seasonal_settings.campaigns` (ADR-0079).
 type SeasonalOverride = {
@@ -406,6 +407,8 @@ export class AdminToolsService {
       where: { id: current.id },
       data: { ...dto, updatedBy: actorId },
     });
+    // Требование 2FA персоналу (ADR-0109) — сразу, без ожидания кэша guard'а.
+    resetAdmin2faCache();
     await this.audit.log({
       actorId,
       action: 'settings.site.update',

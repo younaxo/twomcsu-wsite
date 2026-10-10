@@ -9,11 +9,12 @@ import { AuthShell } from '@/components/auth/auth-shell';
 import { PasswordField } from '@/components/auth/password-field';
 import { SocialLogin } from '@/components/auth/social-login';
 import { Turnstile, type TurnstileHandle } from '@/components/auth/turnstile';
+import { TwoFactorLoginStep } from '@/components/auth/two-factor-login-step';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { TURNSTILE_SITE_KEY } from '@/lib/env';
-import { CaptchaRequiredError, useAuthStore } from '@/lib/auth/store';
+import { CaptchaRequiredError, TwoFactorRequiredError, useAuthStore } from '@/lib/auth/store';
 
 /// Куда вести после входа: только внутренние пути (без `//evil.com`).
 export function safeNext(value: string | null, fallback = '/'): string {
@@ -47,6 +48,8 @@ export function LoginForm({ preview = false }: { preview?: boolean } = {}) {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /// Пароль верен, включена 2FA — второй шаг (ADR-0109).
+  const [twoFactor, setTwoFactor] = useState(false);
   const turnstileRef = useRef<TurnstileHandle>(null);
   const errorId = useId();
 
@@ -76,6 +79,11 @@ export function LoginForm({ preview = false }: { preview?: boolean } = {}) {
       });
       router.replace(next);
     } catch (caught) {
+      if (caught instanceof TwoFactorRequiredError) {
+        setTwoFactor(true);
+        setSubmitting(false);
+        return;
+      }
       setError(
         caught instanceof CaptchaRequiredError
           ? 'Проверка Cloudflare не пройдена. Подтвердите, что вы не робот, и повторите.'
@@ -88,6 +96,24 @@ export function LoginForm({ preview = false }: { preview?: boolean } = {}) {
   };
 
   const invalidCredentials = error !== null;
+
+  if (twoFactor) {
+    return (
+      <AuthShell
+        title="Подтверждение входа"
+        description="Аккаунт защищён двухфакторной аутентификацией."
+      >
+        <TwoFactorLoginStep
+          onDone={() => router.replace(next)}
+          onRestart={() => {
+            setTwoFactor(false);
+            setPassword('');
+            turnstileRef.current?.reset();
+          }}
+        />
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

@@ -18,6 +18,7 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService, RequestContext } from './auth.service';
 import { IdTokenError, Jwk, verifyIdToken } from './oidc-jwt.util';
+import { TwoFactorService } from './two-factor/two-factor.service';
 
 export type ExternalProvider = 'discord' | 'telegram';
 
@@ -87,6 +88,7 @@ export class SocialAuthService {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly audit: AuditService,
+    private readonly twoFactor: TwoFactorService,
   ) {}
 
   // --- Конфигурация --------------------------------------------------------
@@ -393,7 +395,16 @@ export class SocialAuthService {
             : 'Этот Telegram-аккаунт не привязан к twomc.su.',
       });
     }
-    const session = await this.auth.issueSessionForUser(link.userId, context);
+    const owner = await this.prisma.user.findUnique({
+      where: { id: link.userId },
+      select: { twoFactorEnabled: true },
+    });
+    // 2FA (ADR-0109): внешний аккаунт заменяет только пароль — код нужен так же.
+    const session = owner?.twoFactorEnabled
+      ? {
+          twoFactorChallenge: await this.twoFactor.createChallenge(link.userId),
+        }
+      : await this.auth.issueSessionForUser(link.userId, context);
     await this.prisma.userExternalAccount.update({
       where: { id: link.id },
       data: {
