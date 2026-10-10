@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { BookOpen, Pin } from 'lucide-react';
 import { PageHeader } from '@/components/admin/page-header';
@@ -20,8 +21,8 @@ interface TopicListItem {
   updatedAt: string;
 }
 
-/// Правила — топики категории RULES (GET /topics?category=RULES). Полный
-/// текст темы по slug — PHASE 31.
+/// Правила — темы категории RULES (GET /topics?category=RULES); карточка ведёт
+/// на полный текст `/rules/[slug]` (срез 3.2).
 export default function RulesPage() {
   const topics = useQuery({
     queryKey: ['site', 'topics', 'RULES'],
@@ -46,22 +47,28 @@ export default function RulesPage() {
             <ul className="grid gap-4 md:grid-cols-2">
               {items.map((topic) => (
                 <li key={topic.id}>
-                  <Card className="flex h-full flex-col gap-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <h2 className="text-lg font-semibold">{topic.title}</h2>
-                      {topic.isPinned ? (
-                        <Badge tone="primary" icon={<Pin />}>
-                          Закреплено
-                        </Badge>
+                  <Link
+                    href={`/rules/${encodeURIComponent(topic.slug)}`}
+                    className="block h-full rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    data-testid="rule-card"
+                  >
+                    <Card className="flex h-full flex-col gap-2 transition-colors hover:bg-muted/40">
+                      <div className="flex items-start justify-between gap-2">
+                        <h2 className="text-lg font-semibold">{topic.title}</h2>
+                        {topic.isPinned ? (
+                          <Badge tone="primary" icon={<Pin />}>
+                            Закреплено
+                          </Badge>
+                        ) : null}
+                      </div>
+                      {topic.description ? (
+                        <p className="text-sm text-muted-foreground">{topic.description}</p>
                       ) : null}
-                    </div>
-                    {topic.description ? (
-                      <p className="text-sm text-muted-foreground">{topic.description}</p>
-                    ) : null}
-                    <p className="mt-auto text-xs text-subtle-foreground">
-                      Обновлено {formatDate(topic.updatedAt)}
-                    </p>
-                  </Card>
+                      <p className="mt-auto text-xs text-subtle-foreground">
+                        Обновлено {formatDate(topic.updatedAt)}
+                      </p>
+                    </Card>
+                  </Link>
                 </li>
               ))}
             </ul>

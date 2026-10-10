@@ -2,9 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/admin/page-header';
+import { LegalTopic } from '@/components/topics/legal-topic';
 import { LEGAL_OWNER, SUPPORT } from '@/lib/site/config';
 
-/// Юридические документы. Тексты владелец ещё не передал — страница честно
+/// Юридические документы (срез 3.1, ADR-0116): текст — из темы с тем же slug,
+/// с датой редакции; пока владелец не опубликовал текст — страница честно
 /// сообщает, что документ готовится (никаких выдуманных юридических текстов).
 /// «Юридическая информация» — реальные данные владельца из конфига.
 const DOCS: Record<string, { title: string; summary: string }> = {
@@ -70,19 +72,24 @@ export default function LegalDocPage({ params }: { params: { doc: string } }) {
           </p>
         </section>
       ) : (
-        <section className="flex flex-col gap-3 rounded-xl bg-surface p-6 text-sm shadow-sm">
-          <p className="font-medium">Документ готовится к публикации.</p>
-          <p className="text-muted-foreground">
-            Полный текст появится на этой странице. По вопросам до публикации пишите на{' '}
-            <a href={`mailto:${SUPPORT.email}`} className="text-primary hover:underline">
-              {SUPPORT.email}
-            </a>
-            .
-          </p>
-          <Link href="/legal/info" className="text-primary hover:underline">
-            Юридическая информация о владельце
-          </Link>
-        </section>
+        <LegalTopic
+          slug={params.doc}
+          fallback={
+            <section className="flex flex-col gap-3 rounded-xl bg-surface p-6 text-sm shadow-sm">
+              <p className="font-medium">Документ готовится к публикации.</p>
+              <p className="text-muted-foreground">
+                Полный текст появится на этой странице. По вопросам до публикации пишите на{' '}
+                <a href={`mailto:${SUPPORT.email}`} className="text-primary hover:underline">
+                  {SUPPORT.email}
+                </a>
+                .
+              </p>
+              <Link href="/legal/info" className="text-primary hover:underline">
+                Юридическая информация о владельце
+              </Link>
+            </section>
+          }
+        />
       )}
     </div>
   );
