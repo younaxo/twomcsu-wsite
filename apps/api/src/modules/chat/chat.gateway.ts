@@ -25,6 +25,12 @@ import { MuteUserDto } from './dto/mute-user.dto';
 import { ChatService } from './chat.service';
 import { ModerationService } from './moderation.service';
 import { SiteStatusService } from '../system/site-status.service';
+import { RedisService } from '../redis/redis.service';
+import {
+  WS_RATE_MESSAGE,
+  wsAllowed,
+  type WsLimitGroup,
+} from '../redis/ws-rate-limit';
 
 function userRoom(userId: string): string {
   return `user:${userId}`;
@@ -69,7 +75,13 @@ export class ChatGateway
     private readonly chat: ChatService,
     private readonly moderation: ModerationService,
     private readonly status: SiteStatusService,
+    private readonly redis: RedisService,
   ) {}
+
+  /// Лимит событий сокета (ADR-0123); отправка ограничена ещё и в сервисе.
+  private allowed(client: Socket, group: WsLimitGroup): Promise<boolean> {
+    return wsAllowed(this.redis, 'chat', group, client.data.userId);
+  }
 
   /// Модуль «Чат» выключен или идут техработы (ADR-0113) — WS тоже закрыт, как
   /// REST (`SiteModuleGuard`); сотрудники с `system.maintenance.bypass` проходят.
@@ -146,6 +158,7 @@ export class ChatGateway
     @MessageBody() dto: ChannelIdDto,
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'room'))) return;
       await this.chat.requireActiveChannel(dto.channelId);
       await client.join(channelRoom(dto.channelId));
       await this.chat.markOnline(dto.channelId, client.data.userId);
@@ -167,6 +180,7 @@ export class ChatGateway
     // emit до leave: иначе вышедший сокет не попадёт в рассылку по комнате и
     // не получит подтверждение собственного выхода (симметрично join_channel,
     // где join выполняется до emit, чтобы включить себя в рассылку).
+    if (!(await this.allowed(client, 'room'))) return;
     await this.chat.markOffline(dto.channelId, client.data.userId);
     this.server.to(channelRoom(dto.channelId)).emit('user:offline', {
       userId: client.data.userId,
@@ -212,6 +226,9 @@ export class ChatGateway
     @MessageBody() dto: EditMessageSocketDto,
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
       const message = await this.chat.editMessage(
         client.data.userId,
         dto.messageId,
@@ -236,6 +253,9 @@ export class ChatGateway
     @MessageBody() dto: MessageIdDto,
   ): Promise<void> {
     try {
+      if (!(await this.allowed(client, 'mutate'))) {
+        throw new Error(WS_RATE_MESSAGE);
+      }
       const message = await this.chat.deleteMessage(
         client.data.userId,
         dto.messageId,
@@ -256,6 +276,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: ChannelIdDto,
   ): Promise<void> {
+    if (!(await this.allowed(client, 'typing'))) return;
     client.to(channelRoom(dto.channelId)).emit('user:typing', {
       userId: client.data.userId,
       username: client.data.username,
@@ -268,6 +289,7 @@ export class ChatGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() dto: ChannelIdDto,
   ): Promise<void> {
+    if (!(await this.allowed(client, 'typing'))) return;
     client.to(channelRoom(dto.channelId)).emit('user:stopped_typing', {
       userId: client.data.userId,
       username: client.data.username,

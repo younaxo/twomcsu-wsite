@@ -7,6 +7,9 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
+import { wsRateKey } from '../src/modules/redis/ws-rate-limit';
+import { SiteStatusService } from '../src/modules/system/site-status.service';
 
 // Компиляция AppModule + реальный листенинг порта + несколько bcrypt-хешей
 // в beforeAll, плюс парные WS-соединения в части тестов, дольше укладываются
@@ -528,6 +531,88 @@ describe('Direct Messages (e2e)', () => {
         .delete(`/messages/messages/${messageId}`)
         .set('Authorization', auth(alice))
         .expect(200);
+    });
+
+    it('ADR-0123: выключенный модуль — подключение и отправка закрыты', async () => {
+      const status = app.get(SiteStatusService);
+      const spy = jest
+        .spyOn(status, 'unavailable')
+        .mockImplementation(async (key: string) =>
+          key === 'direct-messages' ? 'MODULE_DISABLED' : null,
+        );
+      try {
+        await expect(connectSocket(alice)).rejects.toThrow();
+      } finally {
+        spy.mockRestore();
+      }
+      aliceSocket = await connectSocket(alice);
+      const off = jest
+        .spyOn(status, 'unavailable')
+        .mockImplementation(async (key: string) =>
+          key === 'direct-messages' ? 'MODULE_DISABLED' : null,
+        );
+      try {
+        const ack = (await aliceSocket
+          .timeout(5000)
+          .emitWithAck('message:send', {
+            conversationId,
+            content: 'модуль выключен',
+          })) as { ok: boolean; error?: string };
+        expect(ack).toEqual({
+          ok: false,
+          error: 'Личные сообщения временно недоступны.',
+        });
+      } finally {
+        off.mockRestore();
+      }
+    });
+
+    it('ADR-0123: больше 10 сообщений за 10 с — отказ; «печатает» сверх лимита отбрасывается', async () => {
+      const redis = app.get(RedisService);
+      const keys = [
+        wsRateKey('messages', 'send', alice.id),
+        wsRateKey('messages', 'typing', alice.id),
+      ];
+      await redis.client.del(...keys);
+      aliceSocket = await connectSocket(alice);
+      bobSocket = await connectSocket(bob);
+
+      const results: Array<{
+        ok: boolean;
+        error?: string;
+        message?: { id: string };
+      }> = [];
+      for (let index = 0; index < 11; index += 1) {
+        results.push(
+          (await aliceSocket.timeout(5000).emitWithAck('message:send', {
+            conversationId,
+            content: `флуд ${index}`,
+          })) as { ok: boolean; error?: string; message?: { id: string } },
+        );
+      }
+      expect(results.slice(0, 10).every((item) => item.ok)).toBe(true);
+      expect(results[10]).toEqual({
+        ok: false,
+        error: 'Слишком часто — подождите несколько секунд.',
+      });
+
+      let typing = 0;
+      bobSocket.on('typing:start', () => {
+        typing += 1;
+      });
+      for (let index = 0; index < 15; index += 1) {
+        aliceSocket.emit('typing:start', { conversationId });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      expect(typing).toBe(10);
+
+      await redis.client.del(...keys);
+      for (const item of results.slice(0, 10)) {
+        await request(app.getHttpServer())
+          .delete(`/messages/messages/${item.message!.id}`)
+          .set('Authorization', auth(alice))
+          .expect(200);
+      }
     });
 
     it('чужак не может вступить в чужую беседу через conversation:join', async () => {
