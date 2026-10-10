@@ -138,9 +138,9 @@ export function AnnouncementsPanel() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Объявление</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead>Показ</TableHead>
-                  <TableHead>Где и кому</TableHead>
+                  <TableHead className="hidden sm:table-cell">Статус</TableHead>
+                  <TableHead className="hidden lg:table-cell">Показ</TableHead>
+                  <TableHead className="hidden lg:table-cell">Где и кому</TableHead>
                   {manage ? <TableHead className="text-right">Действия</TableHead> : null}
                 </TableRow>
               </TableHeader>
@@ -157,15 +157,24 @@ export function AnnouncementsPanel() {
                     >
                       <TableCell className="max-w-[22rem]">
                         <p className="truncate font-medium">{item.title}</p>
-                        <Badge tone={kind.tone}>{kind.label}</Badge>
+                        <span className="flex flex-wrap gap-1">
+                          <Badge tone={kind.tone}>{kind.label}</Badge>
+                          {/* На узком экране статус и период — под заголовком. */}
+                          <Badge tone={status.tone} className="sm:hidden">
+                            {status.label}
+                          </Badge>
+                        </span>
+                        <p className="mt-1 text-xs text-muted-foreground lg:hidden">
+                          {period(item)} · {audience(item)}
+                        </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         <Badge tone={status.tone}>{status.label}</Badge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                      <TableCell className="hidden whitespace-nowrap text-xs text-muted-foreground lg:table-cell">
                         {period(item)}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                         <p>
                           {item.placements.length
                             ? item.placements
