@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
+import { AnnouncementBanners } from '@/components/announcements/announcement-banners';
 import { cn } from '@/lib/cn';
 import { DocumentBadge } from './document-badge';
 import { GlobalFloatingActions } from './floating-actions';
@@ -39,6 +40,7 @@ export function AppShell({ children, className }: { children: ReactNode; classNa
       <SidebarRail />
       <div className={cn('flex min-h-dvh flex-col', RAIL_OFFSET_CLASS)}>
         <SiteHeader />
+        <AnnouncementBanners className="mx-auto w-full max-w-[1440px] px-3 pt-3 md:px-6" />
         <main id="main" className="flex-1">
           {children}
         </main>

@@ -15,8 +15,6 @@ import type {
   AuditLogEntry,
   AuditLogStats,
   BookmarkDto,
-  BroadcastRequest,
-  BroadcastResult,
   BulkUsersRequest,
   BulkUsersResult,
   ContentDashboard,
@@ -65,7 +63,7 @@ import { api, apiFetchRaw, downloadFromResponse, type QueryParams } from '../api
 
 const toQuery = (params: object): QueryParams => params as QueryParams;
 
-// --- Dashboard / audit / broadcast / settings ---------------------------------
+// --- Dashboard / audit / settings -------------------------------------------
 
 export const adminApi = {
   dashboard: () => api.get<AdminDashboard>('/admin/dashboard'),
@@ -73,8 +71,6 @@ export const adminApi = {
   auditLog: (query: ListAuditLogQuery) =>
     api.get<Paginated<AuditLogEntry>>('/admin/audit-log', { query: toQuery(query) }),
   auditStats: () => api.get<AuditLogStats>('/admin/audit-log/stats'),
-
-  broadcast: (body: BroadcastRequest) => api.post<BroadcastResult>('/admin/broadcast', body),
 
   kvSettings: () => api.get<KvSettings>('/admin/settings'),
   upsertKvSettings: (body: UpsertSettingsRequest) => api.patch<KvSettings>('/admin/settings', body),

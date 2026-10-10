@@ -113,13 +113,6 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         requirement: ['settings.view', 'settings.site.view'],
         keywords: ['сайт', 'параметры', 'регистрация'],
       },
-      {
-        href: '/admin/broadcast',
-        label: 'Объявления',
-        icon: 'megaphone',
-        requirement: ['broadcast.create', 'settings.alert.view'],
-        keywords: ['рассылка', 'broadcast', 'уведомление', 'плашка', 'баннер'],
-      },
     ],
   },
   {
@@ -132,6 +125,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: 'mail',
         requirement: ['communications.messages.send', 'communications.messages.bulk'],
         keywords: ['системное', 'сообщение', 'рассылка', 'написать', 'twomc.su'],
+      },
+      {
+        href: '/admin/announcements',
+        label: 'Объявления',
+        icon: 'megaphone',
+        requirement: ['announcements.view', 'settings.alert.view'],
+        keywords: ['объявление', 'баннер', 'плашка', 'событие', 'техработы', 'broadcast'],
       },
     ],
   },

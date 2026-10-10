@@ -2,6 +2,7 @@
 /// точки). Неизвестный модуль показывается как есть.
 export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   achievements: 'Достижения',
+  announcements: 'Объявления',
   audit_log: 'Журнал аудита',
   awards: 'Награды',
   bookmarks: 'Закладки',

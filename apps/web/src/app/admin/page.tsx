@@ -7,6 +7,7 @@ import { PageHeader, PageSection, StatCard, StatGrid } from '@/components/admin/
 import { Can, PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { DashboardCharts } from './_components/dashboard-charts';
+import { AnnouncementBanners } from '@/components/announcements/announcement-banners';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -77,6 +78,8 @@ export default function DashboardPage() {
           </Can>
         }
       />
+
+      <AnnouncementBanners placement="dashboard" className="mb-5" />
 
       <QueryBoundary
         query={query}

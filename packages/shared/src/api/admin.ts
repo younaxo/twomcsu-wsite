@@ -62,45 +62,6 @@ export interface ExportAuditRequest {
   dateTo?: IsoDateString;
 }
 
-// --- Broadcast -----------------------------------------------------------------
-
-export const ANNOUNCEMENT_TYPES = ['info', 'success', 'warning', 'danger'] as const;
-export type AnnouncementType = (typeof ANNOUNCEMENT_TYPES)[number];
-
-export interface BroadcastRequest {
-  title: string;
-  message: string;
-  type?: AnnouncementType;
-  link?: string;
-  isDismissible?: boolean;
-  showUntil?: IsoDateString;
-  /// Имя роли (`Role.name`) — только пользователям с этой ролью; без значения — всем.
-  targetRole?: string;
-}
-
-export interface AnnouncementDto {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  link: string | null;
-  isActive: boolean;
-  isDismissible: boolean;
-  showFrom: IsoDateString | null;
-  showUntil: IsoDateString | null;
-  targetRole: string | null;
-  order: number;
-  createdBy: string | null;
-  createdAt: IsoDateString;
-  updatedAt: IsoDateString;
-}
-
-export interface BroadcastResult {
-  announcement: AnnouncementDto;
-  usersTargeted: number;
-  delivered: number;
-}
-
 // --- Settings ------------------------------------------------------------------
 
 /// Простые KV-настройки (`GET/PATCH /admin/settings`). PATCH — upsert

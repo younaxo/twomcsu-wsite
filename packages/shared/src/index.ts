@@ -14,4 +14,5 @@ export * from './api/moderation';
 export * from './api/admin';
 export * from './api/site';
 export * from './api/communications';
+export * from './api/announcements';
 export * from './privacy';
