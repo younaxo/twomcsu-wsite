@@ -3,6 +3,7 @@
 import { EyeOff, UserX } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { FriendButton } from '@/components/friends/friend-button';
+import { WriteButton } from '@/components/messages/write-button';
 import { ProfileInfoSection } from '@/components/profile/profile-info';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
 import { ProfileComments } from '@/components/profile/profile-comments';
@@ -93,7 +94,14 @@ export default function PublicProfilePage() {
         own={own}
         signedIn={!!me}
         reportable={reportable}
-        actions={befriendable ? <FriendButton username={data.username} /> : undefined}
+        actions={
+          me && !own ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <WriteButton username={data.username} />
+              {befriendable ? <FriendButton username={data.username} /> : null}
+            </div>
+          ) : undefined
+        }
         role={identity ? pickPrimaryRole(identity.roles) : null}
         badges={identity?.badges}
         mediaBadges={identity?.mediaBadges}
