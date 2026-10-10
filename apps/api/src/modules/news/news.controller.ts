@@ -10,6 +10,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -24,12 +25,14 @@ import { TagsQueryDto } from './dto/tags-query.dto';
 import { UpdateNewsCommentDto } from './dto/update-news-comment.dto';
 import { NewsService } from './news.service';
 import { SiteModule } from '../system/site-module.decorator';
+import { AvatarUrlInterceptor } from '../files/avatar-url.interceptor';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
 @SiteModule('news')
+@UseInterceptors(AvatarUrlInterceptor)
 @Controller()
 export class NewsController {
   constructor(private readonly news: NewsService) {}
