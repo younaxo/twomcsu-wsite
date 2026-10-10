@@ -246,3 +246,43 @@ export interface CreateProfileReportRequest {
   /// До 1000 символов.
   description?: string;
 }
+
+/// Реакции на комментарии профиля (ADR-0111) — ключи; иконки рисует web.
+export const COMMENT_REACTIONS = ['like', 'heart', 'laugh', 'fire', 'wow'] as const;
+export type CommentReactionKey = (typeof COMMENT_REACTIONS)[number];
+
+/// Комментарий профиля: автор — только публичные поля, реакции — счётчики.
+export interface ProfileCommentDto {
+  id: string;
+  parentId: string | null;
+  content: string;
+  createdAt: IsoDateString;
+  isEdited: boolean;
+  mentions: string[];
+  author: { id: string; username: string; tag: string; avatar: string | null };
+  reactions: Array<{ key: CommentReactionKey; count: number }>;
+  myReaction: CommentReactionKey | null;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+/// `GET /users/:username/comments` — видимость как у профиля (скрытый — 404).
+export interface ProfileCommentsPage {
+  items: ProfileCommentDto[];
+  total: number;
+  page: number;
+  limit: number;
+  /// Включены владельцем и не отключены модерацией.
+  commentsEnabled: boolean;
+  /// Зритель может написать (вошёл, политика владельца, нет блокировки).
+  canComment: boolean;
+}
+
+export const COMMENT_REPORT_REASONS = [
+  'SPAM',
+  'INAPPROPRIATE',
+  'HARASSMENT',
+  'IMPERSONATION',
+  'OTHER',
+] as const;
+export type CommentReportReason = (typeof COMMENT_REPORT_REASONS)[number];

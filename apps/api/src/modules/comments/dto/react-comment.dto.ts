@@ -1,10 +1,17 @@
-import { IsString, Length } from 'class-validator';
+import { IsIn } from 'class-validator';
 
-/// CommentReaction.emoji — свободная строка (любой эмодзи), в отличие от
-/// ProfileReaction.type (жёстко LIKE/DISLIKE). Один пользователь — одна
-/// активная реакция на комментарий (смена эмодзи заменяет предыдущую).
+/// Набор реакций на комментарии (ADR-0111): ключи, а не произвольный текст —
+/// в поле нельзя записать слово или оскорбление. Иконки — на стороне web
+/// (lucide, ADR-0085). Один пользователь — одна реакция на комментарий.
+export const COMMENT_REACTIONS = [
+  'like',
+  'heart',
+  'laugh',
+  'fire',
+  'wow',
+] as const;
+
 export class ReactCommentDto {
-  @IsString()
-  @Length(1, 16)
-  emoji!: string;
+  @IsIn(COMMENT_REACTIONS, { message: 'Неизвестная реакция' })
+  emoji!: (typeof COMMENT_REACTIONS)[number];
 }
