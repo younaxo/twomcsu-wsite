@@ -90,11 +90,10 @@ export function BanDialog({ open, onOpenChange, action, userIds, label, onDone }
         {isBan ? (
           <Field label="Срок, часов" hint="Пусто — навсегда">
             <Input
-              type="number"
-              min={1}
               inputMode="numeric"
+              pattern="[0-9]*"
               value={hours}
-              onChange={(event) => setHours(event.target.value)}
+              onChange={(event) => setHours(event.target.value.replace(/\D/g, ''))}
             />
           </Field>
         ) : null}

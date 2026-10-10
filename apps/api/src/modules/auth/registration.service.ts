@@ -27,6 +27,7 @@ import {
   RegisterStateDto,
   RegisterVerifyDto,
 } from './dto/registration.dto';
+import { testOtpOutcome } from './test-otp';
 
 const OTP_TTL_MS = 10 * 60_000;
 const COMPLETION_TTL_MS = 30 * 60_000;
@@ -291,7 +292,20 @@ export class RegistrationService {
       where: { id: record.id },
       data: { attempts: { increment: 1 } },
     });
-    if (!this.same(record.codeHash, this.hash(`otp:${record.id}`, dto.code))) {
+    // Тестовый OTP (только dev/test, ADR-0087): 123456 — принят, 000000 —
+    // гарантированный отказ; в production всегда обычная проверка.
+    const testOtp = testOtpOutcome(dto.code, {
+      nodeEnv: this.config.get<string>('NODE_ENV'),
+      flag: this.config.get<unknown>('AUTH_TEST_OTP_ENABLED'),
+    });
+    if (testOtp === 'accept') {
+      this.logger.warn('DEV: принят тестовый OTP (AUTH_TEST_OTP_ENABLED)');
+    }
+    const matches =
+      testOtp === 'accept' ||
+      (testOtp !== 'reject' &&
+        this.same(record.codeHash, this.hash(`otp:${record.id}`, dto.code)));
+    if (!matches) {
       const left = Math.max(0, MAX_ATTEMPTS - counted.attempts);
       throw new BadRequestException({
         code: left > 0 ? 'otp_invalid' : 'otp_attempts',

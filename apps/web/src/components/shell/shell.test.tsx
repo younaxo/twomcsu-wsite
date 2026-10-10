@@ -295,9 +295,10 @@ describe('SiteFooter', () => {
         'operational',
       ),
     );
+    // Внешняя status page не задана — встроенная /status (не мёртвый хост).
     expect(screen.getByRole('link', { name: /Статус серверов/ })).toHaveAttribute(
       'href',
-      'https://status.twomc.su',
+      '/status',
     );
     expect(
       within(screen.getByRole('list', { name: 'Способы оплаты' })).getAllByRole('listitem'),

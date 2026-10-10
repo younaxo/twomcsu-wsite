@@ -128,11 +128,15 @@ export const NumberStepper = forwardRef<HTMLInputElement, NumberStepperProps>(
         </IconButton>
         <input
           ref={ref}
-          type="number"
+          // Не числовой type: у него нативные стрелки браузера (ADR-0087).
+          // Текстовое поле + цифровая клавиатура; роль и значения spinbutton —
+          // явно, ↑/↓ меняют значение как у нативного поля.
+          type="text"
+          role="spinbutton"
           inputMode={precision > 0 ? 'decimal' : 'numeric'}
-          min={min}
-          max={max}
-          step={step}
+          aria-valuenow={current}
+          aria-valuemin={min}
+          aria-valuemax={max}
           value={displayed}
           disabled={disabled}
           readOnly={readOnly}
@@ -142,10 +146,21 @@ export const NumberStepper = forwardRef<HTMLInputElement, NumberStepperProps>(
             setEditing(true);
             onFocus?.(event);
           }}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            if (disabled || readOnly) return;
+            const next = clamp(current + (event.key === 'ArrowUp' ? step : -step), min, max);
+            setDraft(String(Number(next.toFixed(precision))));
+            commit(next);
+          }}
           onChange={(event) => {
-            setDraft(event.target.value);
-            const parsed = event.target.valueAsNumber;
-            if (Number.isFinite(parsed)) {
+            // Только число: цифры, знак и разделитель (запятая — как точка).
+            const raw = event.target.value.replace(',', '.');
+            if (!/^-?\d*\.?\d*$/.test(raw)) return;
+            setDraft(raw);
+            const parsed = Number(raw);
+            if (raw !== '' && raw !== '-' && Number.isFinite(parsed)) {
               commit(parsed);
             }
           }}

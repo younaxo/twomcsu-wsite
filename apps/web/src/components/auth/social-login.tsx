@@ -2,10 +2,11 @@
 
 import type { ExternalProvider } from '@twomc/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { BrandIcon } from '@/components/shell/brand-icon';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { LabeledSeparator } from '@/components/ui/separator';
+import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { PROVIDER_LABEL, PROVIDERS, socialLoginHref, useSocialProviders } from '@/lib/auth/social';
 import { PROVIDER_COLOR } from './social-auth-result';
@@ -13,24 +14,34 @@ import { PROVIDER_COLOR } from './social-auth-result';
 /// «или» + вход через Discord/Telegram (ADR-0069/0071). Только для аккаунтов,
 /// заранее привязанных в профиле — иначе экран «Аккаунт не привязан», без
 /// автосоздания. Обе кнопки — одна геометрия; ссылка на API, которое
-/// перенаправляет к провайдеру. Ненастроенный провайдер не показывается.
+/// перенаправляет к провайдеру.
+///
+/// Обе кнопки отображаются ВСЕГДА (ADR-0087): ненастроенный или временно
+/// недоступный провайдер — disabled с подсказкой, ошибка проверки — disabled и
+/// «Повторить». Провайдер не исчезает из интерфейса молча, layout стабилен.
 export function SocialLogin({ next, disabled = false }: { next: string; disabled?: boolean }) {
   const providers = useSocialProviders();
   const [pending, setPending] = useState<ExternalProvider | null>(null);
+  const hintId = useId();
   const loading = providers.isPending;
-  const visible = loading
-    ? PROVIDERS
-    : PROVIDERS.filter((provider) => providers.data?.[provider].enabled);
-  if (visible.length === 0) {
-    return null;
-  }
+  const failed = !loading && !providers.data;
   return (
-    <div className="flex flex-col gap-4" data-testid="social-login">
+    <div
+      className="flex flex-col gap-4"
+      data-testid="social-login"
+      aria-busy={loading || undefined}
+    >
       <LabeledSeparator>или</LabeledSeparator>
-      <div className={cn('grid gap-2', visible.length > 1 && 'sm:grid-cols-2')}>
-        {visible.map((provider) => {
-          const unavailable = loading || disabled || (pending !== null && pending !== provider);
-          return (
+      <div className="grid gap-2 sm:grid-cols-2">
+        {PROVIDERS.map((provider) => {
+          const configured = providers.data?.[provider].enabled ?? false;
+          const offline = !loading && !failed && !configured;
+          const unavailable =
+            loading || failed || offline || disabled || (pending !== null && pending !== provider);
+          const hint = offline
+            ? `Вход через ${PROVIDER_LABEL[provider]} временно недоступен`
+            : null;
+          const link = (
             <a
               key={provider}
               href={unavailable ? undefined : socialLoginHref(provider, next)}
@@ -39,7 +50,11 @@ export function SocialLogin({ next, disabled = false }: { next: string; disabled
               role={unavailable ? 'link' : undefined}
               aria-disabled={unavailable || undefined}
               aria-busy={pending === provider || undefined}
+              aria-describedby={hint ? `${hintId}-${provider}` : undefined}
               data-social={provider}
+              data-state={
+                loading ? 'loading' : failed ? 'error' : offline ? 'unavailable' : 'ready'
+              }
               onClick={(event) => {
                 if (unavailable) {
                   event.preventDefault();
@@ -52,15 +67,51 @@ export function SocialLogin({ next, disabled = false }: { next: string; disabled
               {pending === provider ? (
                 <Loader2 aria-hidden className="animate-spin" />
               ) : (
-                <span className={cn('inline-flex [&_svg]:size-[18px]', PROVIDER_COLOR[provider])}>
+                <span
+                  className={cn(
+                    'inline-flex [&_svg]:size-[18px]',
+                    offline ? 'text-muted-foreground' : PROVIDER_COLOR[provider],
+                  )}
+                >
                   <BrandIcon id={provider} />
                 </span>
               )}
               {PROVIDER_LABEL[provider]}
             </a>
           );
+          return hint ? (
+            <Tooltip key={provider} content={hint}>
+              {link}
+            </Tooltip>
+          ) : (
+            link
+          );
         })}
       </div>
+      {PROVIDERS.map((provider) =>
+        !loading && !failed && !providers.data?.[provider].enabled ? (
+          <span key={provider} id={`${hintId}-${provider}`} className="sr-only">
+            Вход через {PROVIDER_LABEL[provider]} временно недоступен
+          </span>
+        ) : null,
+      )}
+      {failed ? (
+        <p
+          className="flex flex-wrap items-center justify-center gap-x-2 text-xs text-muted-foreground"
+          role="status"
+        >
+          Не удалось проверить вход через Discord и Telegram.
+          <Button
+            variant="link"
+            size="sm"
+            className="text-xs"
+            loading={providers.isFetching}
+            onClick={() => void providers.refetch()}
+          >
+            Повторить
+          </Button>
+        </p>
+      ) : null}
     </div>
   );
 }

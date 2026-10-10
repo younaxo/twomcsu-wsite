@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { SiteLogo } from '@/components/shell/site-logo';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { shouldShowAuthTutorial, TUTORIAL_SEEN_KEY } from '@/lib/auth/tutorial';
+import { shouldShowAuthTutorial, TUTORIAL_SHOWN_KEY } from '@/lib/auth/tutorial';
 import { AuthTutorial } from './auth-tutorial';
 import { AuthModeSwitch, type AuthMode } from './auth-mode-switch';
 import { AuthVisual } from './auth-visual';
@@ -18,43 +18,38 @@ import { AuthVisual } from './auth-visual';
 /// экранах скрыт). Используется layout'ом `app/(auth)` для входа, регистрации,
 /// восстановления/сброса пароля и экранов результата Discord/Telegram, поэтому
 /// при переходах между ними панель не перемонтируется. Solid, без glass.
-function readSeen(): boolean {
+function readShown(): boolean {
   try {
-    return window.localStorage.getItem(TUTORIAL_SEEN_KEY) === '1';
+    return window.sessionStorage.getItem(TUTORIAL_SHOWN_KEY) === '1';
   } catch {
     return false;
   }
 }
 
-function markSeen() {
+function markShown() {
   try {
-    window.localStorage.setItem(TUTORIAL_SEEN_KEY, '1');
+    window.sessionStorage.setItem(TUTORIAL_SHOWN_KEY, '1');
   } catch {
-    // Хранилище недоступно (приватный режим) — просто покажем ещё раз.
+    // Хранилище недоступно (приватный режим) — откроется при следующем входе.
   }
 }
 
-/// Tutorial поверх панели: решение — `shouldShowAuthTutorial` (сейчас
-/// принудительно при каждом открытии auth-экрана, позже — только регистрация).
+/// Tutorial поверх панели: сам — только при входе в регистрацию
+/// (`shouldShowAuthTutorial`), вручную — кнопкой в шапке на любом auth-экране.
 function useAuthTutorial() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (!shouldShowAuthTutorial({ pathname, seen: readSeen() })) return;
+    if (!shouldShowAuthTutorial({ pathname, shown: readShown() })) return;
     // Открываем после гидрации формы (она в Suspense): иначе Radix ставит
     // aria-hidden на ещё не гидрированную разметку и React предупреждает.
-    const id = window.setTimeout(() => setOpen(true), 350);
+    const id = window.setTimeout(() => {
+      markShown();
+      setOpen(true);
+    }, 350);
     return () => window.clearTimeout(id);
-    // Только при открытии auth-экрана, не при переключении Вход/Регистрация.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return {
-    open,
-    setOpen: (next: boolean) => {
-      setOpen(next);
-      if (!next) markSeen();
-    },
-  };
+  }, [pathname]);
+  return { open, setOpen };
 }
 
 export function AuthLayout({ children }: { children: ReactNode }) {

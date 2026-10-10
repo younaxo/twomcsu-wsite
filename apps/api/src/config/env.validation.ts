@@ -49,6 +49,18 @@ export const envValidationSchema = Joi.object({
   AUDIT_RETENTION_DAYS: Joi.number().integer().min(1).max(3650).default(90),
 
   /// Cloudflare Turnstile: secret обязателен, если проверка не отключена.
+  /// Тестовый OTP регистрации (ADR-0087): 123456 — принят, 000000 — отказ.
+  /// Только development/test; в production значение `true` не даёт запустить
+  /// API (ошибка валидации env), по умолчанию — выключено.
+  AUTH_TEST_OTP_ENABLED: Joi.boolean()
+    .default(false)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.valid(false).messages({
+        'any.only': 'AUTH_TEST_OTP_ENABLED запрещён в production',
+      }),
+    }),
+
   /// TURNSTILE_DISABLED — только для автотестов без сети (CI e2e).
   TURNSTILE_DISABLED: Joi.boolean().default(false),
   TURNSTILE_SECRET_KEY: Joi.string()
