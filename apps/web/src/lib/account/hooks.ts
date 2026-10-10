@@ -5,6 +5,7 @@ import type {
   ProfileSocialLinkDto,
   SocialPlatform,
   UpdateOwnProfileRequest,
+  WalletSummaryDto,
 } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
@@ -14,7 +15,20 @@ import { useAuthStore } from '@/lib/auth/store';
 export const accountKeys = {
   profile: ['account', 'profile'] as const,
   socialLinks: ['account', 'social-links'] as const,
+  wallet: ['account', 'wallet'] as const,
 };
+
+/// Свой баланс (ADR-0094) — `GET /wallet`; запрашивается, когда нужен
+/// (открыт mini profile).
+export function useWallet(enabled: boolean) {
+  const authenticated = useAuthStore((state) => state.status === 'authenticated');
+  return useQuery({
+    queryKey: accountKeys.wallet,
+    queryFn: () => api.get<WalletSummaryDto>('/wallet'),
+    enabled: authenticated && enabled,
+    staleTime: 30_000,
+  });
+}
 
 export function useOwnProfile() {
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
@@ -30,7 +44,13 @@ export function useUpdateProfile() {
   return useMutation({
     mutationFn: (body: UpdateOwnProfileRequest) =>
       api.patch<OwnProfileDto>('/users/me/profile', body),
-    onSuccess: (data) => client.setQueryData(accountKeys.profile, data),
+    onSuccess: (data) => {
+      client.setQueryData(accountKeys.profile, data);
+      // Публичный профиль и mini profile читают те же поля (статус, баннер…) —
+      // иначе после «Сохранить → Мой профиль» до минуты видно старое.
+      void client.invalidateQueries({ queryKey: ['profile', 'public'] });
+      void client.invalidateQueries({ queryKey: ['profile', 'summary'] });
+    },
   });
 }
 

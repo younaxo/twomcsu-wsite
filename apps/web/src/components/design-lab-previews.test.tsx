@@ -162,9 +162,12 @@ describe('Connected Accounts и Social Links', () => {
   });
 
   it('привязка без имени — «привязан», без внешних ID', () => {
-    render(<ConnectedAccountsSection accounts={[{ provider: 'telegram', name: null }]} />, {
-      wrapper: Providers,
-    });
+    render(
+      <ConnectedAccountsSection accounts={[{ provider: 'telegram', name: null, url: null }]} />,
+      {
+        wrapper: Providers,
+      },
+    );
     expect(screen.getByRole('region', { name: 'Привязанные аккаунты' })).toHaveTextContent(
       'Telegram:привязан',
     );

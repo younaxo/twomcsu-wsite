@@ -17,4 +17,5 @@ export * from './api/communications';
 export * from './api/announcements';
 export * from './api/system';
 export * from './api/account';
+export * from './api/wallet';
 export * from './privacy';

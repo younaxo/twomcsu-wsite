@@ -52,6 +52,7 @@ export function identityFromSummary(
     badges: summary.badges,
     mediaBadges: summary.mediaBadges,
     decoration: summary.decoration,
+    status: summary.statusText,
     presence: {
       online: summary.online,
       currentServer: summary.currentServer,

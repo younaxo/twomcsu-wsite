@@ -24,6 +24,8 @@ export interface ProfileIdentityView {
   badges?: UserBadgeKind[];
   mediaBadges?: MediaBadgeKind[];
   decoration?: ProfileDecorationView | null;
+  /// Свой статус под ником (из профиля, не отдельный источник).
+  status?: string | null;
   /// Присутствие — только если данные есть (не выдумываем «онлайн»).
   presence?: {
     online: boolean;
@@ -109,8 +111,17 @@ export function ProfileHeader({
           username={identity.username}
           role={identity.role ?? undefined}
           tag={identity.tag ?? undefined}
-          prefixSize="sm"
+          prefixSize="xs"
         />
+        {identity.status ? (
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={identity.status}
+            data-testid="profile-status"
+          >
+            {identity.status}
+          </p>
+        ) : null}
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {identity.shortId ? (
             <span className="text-xs tabular-nums text-subtle-foreground">

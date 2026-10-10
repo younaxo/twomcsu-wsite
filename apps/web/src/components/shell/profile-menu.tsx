@@ -26,15 +26,25 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ADMIN_ENTRY_REQUIREMENT } from '@/lib/admin/navigation';
 import { useAuthStore } from '@/lib/auth/store';
 import { usePermissions } from '@/lib/auth/use-permissions';
+import { useWallet } from '@/lib/account/hooks';
+import { cn } from '@/lib/cn';
 import { useProfileSummary } from '@/lib/profile/hooks';
-import { MiniProfileSummary, miniProfileEntries } from './mini-profile';
+import {
+  MINI_PROFILE_ADMIN,
+  MiniProfileAdminContent,
+  MiniProfileSummary,
+  miniProfileAdminClassName,
+  miniProfileEntries,
+} from './mini-profile';
+import { floatingClearance } from './floating-actions';
 import { ProfileTrigger } from './profile-trigger';
 
 const SOON = 'скоро';
 
-/// Аватар + mini profile в header (ADR-0088). Анонимам — кнопка «Войти».
+/// Аватар + mini profile в header (ADR-0088, ADR-0093). Анонимам — «Войти».
 /// Desktop — меню-popover с шапкой профиля; mobile — bottom sheet с тем же
-/// содержимым и тем же источником данных.
+/// содержимым и теми же данными. Порядок: шапка → кошелёк → меню аккаунта →
+/// отдельный блок «Админ-панель» (только по праву) → «Выйти».
 export function ProfileMenu() {
   const router = useRouter();
   const pathname = usePathname();
@@ -45,7 +55,10 @@ export function ProfileMenu() {
   const { can } = usePermissions();
   const presentation = useMenuPresentation();
   const [open, setOpen] = useState(false);
+  // Не заходить на плавающие кнопки (см. floatingClearance) — замер при открытии.
+  const [bottomClearance, setBottomClearance] = useState(8);
   const summary = useProfileSummary(user?.username ?? '', open && !!user);
+  const wallet = useWallet(open && !!user);
 
   useEffect(() => {
     if (status === 'idle') {
@@ -67,13 +80,15 @@ export function ProfileMenu() {
     );
   }
 
-  const entries = miniProfileEntries(user.username, can(ADMIN_ENTRY_REQUIREMENT));
+  const entries = miniProfileEntries(user.username);
+  const admin = can(ADMIN_ENTRY_REQUIREMENT);
   const signOut = () => logout().then(() => router.refresh());
   const header = (bleed: boolean) => (
     <MiniProfileSummary
       user={user}
       summary={summary.data}
-      loading={summary.isPending}
+      wallet={wallet.data}
+      walletLoading={wallet.isPending && wallet.fetchStatus !== 'idle'}
       bleed={bleed}
     />
   );
@@ -130,6 +145,24 @@ export function ProfileMenu() {
                   ),
                 )}
               </nav>
+              {admin ? (
+                <>
+                  <div className="h-px bg-border-subtle" />
+                  <nav aria-label="Администрирование" data-testid="mini-profile-admin">
+                    <DrawerClose asChild>
+                      <Button
+                        asChild
+                        variant="ghost"
+                        className={cn('w-full justify-start', miniProfileAdminClassName)}
+                      >
+                        <Link href={MINI_PROFILE_ADMIN.href}>
+                          <MiniProfileAdminContent />
+                        </Link>
+                      </Button>
+                    </DrawerClose>
+                  </nav>
+                </>
+              ) : null}
               <div className="h-px bg-border-subtle" />
               <Button variant="ghost" className="h-11 justify-start" onClick={() => void signOut()}>
                 <LogOut />
@@ -143,9 +176,19 @@ export function ProfileMenu() {
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setBottomClearance(floatingClearance());
+        setOpen(next);
+      }}
+    >
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 overflow-hidden p-0">
+      <DropdownMenuContent
+        align="end"
+        collisionPadding={{ top: 8, right: 8, left: 8, bottom: bottomClearance }}
+        className="w-80 overflow-y-auto overflow-x-hidden p-0 scrollbar-thin"
+      >
         <div className="pb-3">{header(true)}</div>
         <DropdownMenuSeparator className="mx-0 my-0" />
         <div className="p-1">
@@ -166,6 +209,18 @@ export function ProfileMenu() {
             ),
           )}
         </div>
+        {admin ? (
+          <>
+            <DropdownMenuSeparator className="mx-0 my-0" />
+            <div className="p-1" data-testid="mini-profile-admin">
+              <DropdownMenuItem asChild className={miniProfileAdminClassName}>
+                <Link href={MINI_PROFILE_ADMIN.href}>
+                  <MiniProfileAdminContent />
+                </Link>
+              </DropdownMenuItem>
+            </div>
+          </>
+        ) : null}
         <DropdownMenuSeparator className="mx-0 my-0" />
         <div className="p-1">
           <DropdownMenuItem onSelect={() => void signOut()}>

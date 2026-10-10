@@ -440,6 +440,7 @@ model User {
   eventParticipations   EventParticipant[]
   streamChannels        StreamChannel[]
   playerVotes           PlayerVote[]
+  wallets               Wallet[]
 
   @@index([email])
   @@index([username])
@@ -455,6 +456,32 @@ model User {
   @@index([displayBadgeId])
   @@index([selectedDecorationId])
   @@map("users")
+}
+
+/// Валюты кошелька (ADR-0094): RUB — рубли сайта (копейки), RUBY — рубины,
+/// внутренняя валюта twomc.su (штуки). Обратного обмена и вывода нет.
+enum WalletCurrency {
+  RUB
+  RUBY
+}
+
+/// Баланс пользователя в одной валюте — агрегат для чтения (ADR-0094).
+/// Целые минимальные единицы, без float. Строки нет — баланс 0. Менять баланс
+/// будет только журнал проводок (переводы, магазин, мини-игры) в одной
+/// транзакции с `version` (оптимистичная блокировка); сейчас операций нет.
+model Wallet {
+  id        String         @id @default(cuid())
+  userId    String
+  currency  WalletCurrency
+  balance   BigInt         @default(0)
+  version   Int            @default(0)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, currency])
+  @@map("wallets")
 }
 
 /// Регистрация с подтверждением почты (ADR-0070). Пароль здесь НЕ хранится:

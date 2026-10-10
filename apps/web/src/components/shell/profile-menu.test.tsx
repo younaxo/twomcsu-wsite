@@ -38,6 +38,7 @@ function me(overrides: Partial<MeResponse> = {}): MeResponse {
 const summary: PublicProfileSummary = {
   username: 'Steve_With_A_Very_Long_Nick',
   hidden: false,
+  statusText: 'Делаю twomc.su',
   shortId: 42,
   tag: 'steve',
   avatar: AVATAR,
@@ -59,6 +60,23 @@ const summary: PublicProfileSummary = {
   achievementsCompleted: 5,
 };
 
+const WALLET = {
+  balances: [
+    { currency: 'RUB', amountMinor: '125050', scale: 2 },
+    { currency: 'RUBY', amountMinor: '1500', scale: 0 },
+  ],
+};
+
+const CHIEF_CURATOR = {
+  id: 'r1',
+  name: 'chief-curator',
+  slug: 'chief-curator',
+  displayName: 'Главный куратор',
+  color: null,
+  priority: 90,
+  isSuperuser: false,
+};
+
 function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider
@@ -77,6 +95,7 @@ beforeEach(() => {
   fetchMock.mockImplementation(async (...args) => {
     const { path } = requestInfo(args);
     if (path.includes('/summary')) return jsonResponse(summary);
+    if (path.endsWith('/wallet')) return jsonResponse(WALLET);
     return new Response(null, { status: 404 });
   });
   useAuthStore.setState({ status: 'authenticated', user: me() });
@@ -129,9 +148,16 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(within(badges).getByLabelText('Создатель контента · YouTube')).toBeInTheDocument();
     expect(within(badges).getByLabelText('Украшение: Аврора')).toBeInTheDocument();
     expect(menu).toHaveTextContent('В игре · Выживание');
-    const stats = within(menu).getByLabelText('Статистика');
-    expect(stats).toHaveTextContent('12');
-    expect(stats).toHaveTextContent('2 ч 5 мин');
+    // Статус — тот же, что в публичном профиле (summary), с полным текстом в title.
+    expect(within(menu).getByTestId('profile-status')).toHaveAttribute('title', 'Делаю twomc.su');
+    // Вместо «Друзья / Достижения» — реальный кошелёк из /wallet.
+    const wallet = within(menu).getByLabelText('Кошелёк');
+    await waitFor(() =>
+      expect(within(wallet).getByTestId('wallet-rub')).toHaveTextContent(/1\s250,50\s₽/),
+    );
+    expect(within(wallet).getByTestId('wallet-ruby')).toHaveTextContent(/1\s500/);
+    expect(menu).not.toHaveTextContent('Друзья12');
+    expect(within(menu).queryByTestId('mini-profile-admin')).toBeNull();
 
     const items = within(menu)
       .getAllByRole('menuitem')
@@ -155,7 +181,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     );
   });
 
-  it('админ-панель — только при effective permission', async () => {
+  it('админ-панель — отдельный блок только при effective permission, «Выйти» — последним', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({
       status: 'authenticated',
@@ -163,10 +189,52 @@ describe('Mini profile в header (ADR-0088)', () => {
     });
     render(<ProfileMenu />, { wrapper: Providers });
     await user.click(screen.getByRole('button', { name: /^Профиль: / }));
-    expect(await screen.findByRole('menuitem', { name: 'Админ-панель' })).toHaveAttribute(
-      'href',
-      '/admin',
-    );
+    const menu = await screen.findByRole('menu');
+    const block = within(menu).getByTestId('mini-profile-admin');
+    const admin = within(block).getByRole('menuitem', { name: /Админ-панель/ });
+    expect(admin).toHaveAttribute('href', '/admin');
+    expect(admin).toHaveTextContent('Администрирование twomc.su');
+    // Красный admin-акцент, но не стиль «опасного действия».
+    expect(admin.className).not.toMatch(/destructive/);
+    expect(block.querySelector('.text-admin')).not.toBeNull();
+    const items = within(menu).getAllByRole('menuitem');
+    expect(items.at(-1)).toHaveTextContent('Выйти');
+    expect(items.at(-2)).toBe(admin);
+    expect(items.slice(0, -2).some((item) => /Админ/.test(item.textContent ?? ''))).toBe(false);
+  });
+
+  it('префикс роли — маленький (×2 от исходника 7 px), без растяжения', async () => {
+    const user = userEvent.setup();
+    useAuthStore.setState({ status: 'authenticated', user: me({ roles: [CHIEF_CURATOR] }) });
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.endsWith('/wallet')) return jsonResponse(WALLET);
+      return jsonResponse({ ...summary, roles: [CHIEF_CURATOR] });
+    });
+    render(<ProfileMenu />, { wrapper: Providers });
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    const menu = await screen.findByRole('menu');
+    const prefix = await waitFor(() => {
+      const img = menu.querySelector('img[height="14"]');
+      expect(img).not.toBeNull();
+      return img!;
+    });
+    expect(prefix.getAttribute('style')).toMatch(/width: auto/);
+    expect(menu.querySelector('img[height="21"]')).toBeNull();
+  });
+
+  it('кошелёк недоступен — «—», а не выдуманный ноль', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.includes('/summary')) return jsonResponse(summary);
+      return new Response(null, { status: 503 });
+    });
+    render(<ProfileMenu />, { wrapper: Providers });
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    const wallet = within(await screen.findByRole('menu')).getByLabelText('Кошелёк');
+    await waitFor(() => expect(within(wallet).getByTestId('wallet-rub')).toHaveTextContent('—'));
+    expect(within(wallet).getByTestId('wallet-ruby')).toHaveTextContent('—');
   });
 
   it('нет баннера — нейтральная поверхность, без выдуманной картинки', async () => {
@@ -200,6 +268,11 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(within(nav).getByRole('link', { name: 'Мой профиль' })).toBeInTheDocument();
     expect(within(nav).getByRole('button', { name: /Друзья/ })).toBeDisabled();
     expect(within(sheet).getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
+    // Те же данные, что в popover: кошелёк из /wallet, обычному игроку — без админ-блока.
+    await waitFor(() =>
+      expect(within(sheet).getByTestId('wallet-rub')).toHaveTextContent(/1\s250,50\s₽/),
+    );
+    expect(within(sheet).queryByTestId('mini-profile-admin')).toBeNull();
     expect(
       fetchMock.mock.calls.filter((call) => String(call[0]).includes('/summary')),
     ).toHaveLength(1);

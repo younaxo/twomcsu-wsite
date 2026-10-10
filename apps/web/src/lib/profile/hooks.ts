@@ -18,8 +18,13 @@ export type PublicProfileDto = Partial<OwnProfileDto> &
   Pick<OwnProfileDto, 'id' | 'username'> & {
     minecraftName?: string | null;
     stats?: ProfileStatsDto;
-    /// Привязанные Discord/Telegram: провайдер и имя, без внешних ID.
-    connectedAccounts?: { provider: 'discord' | 'telegram'; name: string | null }[];
+    /// Привязанные Discord/Telegram: провайдер, имя и публичная ссылка (если
+    /// у провайдера она есть), без внешних ID.
+    connectedAccounts?: {
+      provider: 'discord' | 'telegram';
+      name: string | null;
+      url: string | null;
+    }[];
   };
 
 export const profileKeys = {

@@ -141,6 +141,7 @@ export function RolePrefixesSection() {
               summary={{
                 username: 'player',
                 hidden: false,
+                statusText: null,
                 shortId: 1042,
                 banner: null,
                 decoration: null,

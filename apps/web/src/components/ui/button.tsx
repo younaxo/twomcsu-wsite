@@ -3,7 +3,14 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Loader2 } from 'lucide-react';
 import { Slot } from 'radix-ui';
-import { forwardRef, type ButtonHTMLAttributes } from 'react';
+import {
+  Children,
+  Fragment,
+  forwardRef,
+  isValidElement,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { cn } from '@/lib/cn';
 
 export const buttonVariants = cva(
@@ -49,11 +56,43 @@ export const buttonVariants = cva(
   },
 );
 
+/// Loading без второго спиннера (ADR-0093): «одна кнопка — один icon slot».
+/// Если у кнопки есть своя иконка (первый дочерний элемент), во время загрузки
+/// анимируется именно она — движение по смыслу иконки; при reduced motion —
+/// без бесконечной анимации, только приглушение. Нет иконки — спиннер встаёт
+/// поверх невидимого текста: ширина и высота кнопки не меняются.
+export type LoadingMotion = 'spin' | 'rise' | 'drop' | 'nudge' | 'pulse';
+
+const MOTION_BY_ICON: Array<[RegExp, LoadingMotion]> = [
+  [/^(Refresh|Rotate|Repeat|Loader|History|Undo|Redo)/, 'spin'],
+  [/^(Upload|CloudUpload|ImageUp|FileUp|ArrowUpFromLine|HardDriveUpload)/, 'rise'],
+  [/^(Download|CloudDownload|FileDown|ArrowDownToLine|HardDriveDownload)/, 'drop'],
+  [/^(Send|Forward|Reply|MailPlus)/, 'nudge'],
+];
+
+/// Имя первой иконки среди дочерних элементов (lucide — displayName, своя
+/// `<svg>`, обёртка с `data-slot="icon"`); нет иконки — null.
+export function buttonIconName(children: ReactNode): string | null {
+  const first = Children.toArray(children)[0];
+  if (!isValidElement(first) || first.type === Fragment) return null;
+  if (first.type === 'svg') return 'svg';
+  const props = first.props as { 'data-slot'?: string };
+  if (props['data-slot'] === 'icon') return 'icon';
+  if (typeof first.type === 'string') return null;
+  const type = first.type as { displayName?: string; name?: string };
+  return type.displayName ?? type.name ?? 'icon';
+}
+
+export function loadingMotionOf(iconName: string): LoadingMotion {
+  return MOTION_BY_ICON.find(([pattern]) => pattern.test(iconName))?.[1] ?? 'pulse';
+}
+
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   /// Рендерить дочерний элемент (например `<Link>`) с классами кнопки.
   asChild?: boolean;
-  /// Показать спиннер и заблокировать повторный клик; текст остаётся.
+  /// Загрузка: заблокировать повторный клик; анимируется своя иконка кнопки
+  /// (без второго спиннера), без иконки — спиннер на месте текста.
   loading?: boolean;
 }
 
@@ -63,23 +102,28 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const Comp = asChild ? Slot.Root : 'button';
+    const icon = loading && !asChild ? buttonIconName(children) : null;
+    const overlay = loading && !asChild && icon === null;
     return (
       <Comp
         ref={ref}
-        className={cn(buttonVariants({ variant, size }), className)}
+        className={cn(buttonVariants({ variant, size }), overlay && 'relative', className)}
         disabled={disabled || loading}
         aria-busy={loading || undefined}
         data-loading={loading || undefined}
+        data-loading-motion={icon ? loadingMotionOf(icon) : undefined}
         type={asChild ? undefined : (props.type ?? 'button')}
         {...props}
       >
-        {asChild ? (
-          children
-        ) : (
+        {overlay ? (
           <>
-            {loading ? <Loader2 aria-hidden className="animate-spin" /> : null}
-            {children}
+            <span className="inline-flex items-center gap-2 opacity-0">{children}</span>
+            <span aria-hidden className="absolute inset-0 flex items-center justify-center">
+              <Loader2 className="animate-spin motion-reduce:animate-none motion-reduce:opacity-60" />
+            </span>
           </>
+        ) : (
+          children
         )}
       </Comp>
     );

@@ -1,27 +1,34 @@
 'use client';
 
-import type { MeResponse, PublicProfileSummary } from '@twomc/shared';
+import type {
+  MeResponse,
+  PublicProfileSummary,
+  WalletCurrency,
+  WalletSummaryDto,
+} from '@twomc/shared';
 import {
+  Gem,
   Heart,
-  LayoutDashboard,
   MessageSquare,
   Package,
   Settings,
+  ShieldCheck,
   UserRound,
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { identityFromSummary, playTime } from '@/components/profile/profile-preview';
+import { identityFromSummary } from '@/components/profile/profile-preview';
 import { ProfileHeader, type ProfileIdentityView } from '@/components/profile/profile-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/cn';
-import { formatNumber } from '@/lib/format';
+import { formatMinorUnits } from '@/lib/format';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
 
-/// Mini profile (ADR-0088): шапка с баннером, аватаром, ником, ID, префиксом
-/// роли, бейджами и присутствием → компактная статистика → меню. Один
-/// источник данных для popover (desktop) и bottom sheet (mobile): `/auth/me`
-/// даёт шапку сразу, summary профиля — бейджи, статистику и присутствие.
+/// Mini profile (ADR-0088, ADR-0093): шапка с баннером, аватаром, ником, ID,
+/// небольшим префиксом роли, статусом, бейджами и присутствием → баланс и
+/// рубины → меню аккаунта → отдельный блок «Админ-панель» (только по праву) →
+/// «Выйти». Один источник данных для popover (desktop) и bottom sheet
+/// (mobile): `/auth/me` даёт шапку сразу, summary профиля — бейджи, статус и
+/// присутствие, `/wallet` — баланс.
 
 export interface MiniProfileEntry {
   key: string;
@@ -31,8 +38,8 @@ export interface MiniProfileEntry {
   href: string | null;
 }
 
-export function miniProfileEntries(username: string, admin: boolean): MiniProfileEntry[] {
-  const entries: MiniProfileEntry[] = [
+export function miniProfileEntries(username: string): MiniProfileEntry[] {
+  return [
     {
       key: 'profile',
       label: 'Мой профиль',
@@ -46,11 +53,41 @@ export function miniProfileEntries(username: string, admin: boolean): MiniProfil
     { key: 'favorites', label: 'Избранное', icon: Heart, href: null },
     { key: 'orders', label: 'Заказы', icon: Package, href: null },
   ];
-  if (admin) {
-    entries.push({ key: 'admin', label: 'Админ-панель', icon: LayoutDashboard, href: '/admin' });
-  }
-  return entries;
 }
+
+/// Вход в админку — отдельный административный блок (не пункт общего меню).
+/// Показывается только при effective-праве входа (`ADMIN_ENTRY_REQUIREMENT`).
+export const MINI_PROFILE_ADMIN = {
+  label: 'Админ-панель',
+  description: 'Администрирование twomc.su',
+  href: '/admin',
+} as const;
+
+/// Содержимое пункта «Админ-панель»: красный admin-акцент (не danger) —
+/// иконка на мягкой красной подложке, подпись вторичным текстом.
+export function MiniProfileAdminContent() {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="flex size-8 shrink-0 items-center justify-center rounded-md bg-admin-soft text-admin"
+      >
+        <ShieldCheck className="size-4" />
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate font-medium">{MINI_PROFILE_ADMIN.label}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          {MINI_PROFILE_ADMIN.description}
+        </span>
+      </span>
+    </>
+  );
+}
+
+/// Классы пункта админ-блока поверх обычного пункта меню: выше, со своей
+/// мягкой красной подсветкой при наведении и фокусе.
+export const miniProfileAdminClassName =
+  'h-auto min-h-11 gap-3 py-1.5 hover:bg-admin-soft/60 focus:bg-admin-soft/70';
 
 /// Шапка из `/auth/me` — пока summary не пришёл (или недоступен).
 export function identityFromMe(user: MeResponse): ProfileIdentityView {
@@ -65,24 +102,50 @@ export function identityFromMe(user: MeResponse): ProfileIdentityView {
   };
 }
 
-function CompactStat({ label, value }: { label: string; value: string }) {
+function CompactStat({
+  label,
+  value,
+  icon,
+  testId,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+  testId: string;
+}) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-0.5" data-testid={testId}>
       <dt className="truncate text-[11px] text-muted-foreground">{label}</dt>
-      <dd className="truncate text-sm font-semibold tabular-nums">{value}</dd>
+      <dd className="flex min-w-0 items-center gap-1 text-base font-semibold leading-tight tabular-nums">
+        {icon}
+        <span className="truncate">{value}</span>
+      </dd>
     </div>
   );
+}
+
+/// Сумма валюты из ответа `/wallet`; нет ответа (ошибка) — «—», не ноль.
+export function walletAmount(wallet: WalletSummaryDto | undefined, currency: WalletCurrency) {
+  const entry = wallet?.balances?.find((item) => item.currency === currency);
+  if (!entry) return '—';
+  const amount = formatMinorUnits(entry.amountMinor, entry.scale);
+  return currency === 'RUB' ? `${amount} ₽` : amount;
 }
 
 export function MiniProfileSummary({
   user,
   summary,
-  loading,
+  wallet,
+  walletLoading = false,
   bleed = false,
 }: {
   user: MeResponse;
   summary: PublicProfileSummary | undefined;
-  loading: boolean;
+  /// Кошелёк из `/wallet` (тот же для popover и sheet).
+  wallet: WalletSummaryDto | undefined;
+  walletLoading?: boolean;
+  /// Устарело: шапка сразу из `/auth/me`, ожидание summary не блокирует.
+  loading?: boolean;
   bleed?: boolean;
 }) {
   const full = summary && !summary.hidden ? summary : null;
@@ -91,23 +154,22 @@ export function MiniProfileSummary({
     <div className="flex flex-col gap-3" data-testid="mini-profile">
       <ProfileHeader identity={identity} bleed={bleed} />
       <div className={bleed ? 'px-4' : 'px-3'}>
-        {loading ? (
-          <Skeleton className="h-9 w-full" />
-        ) : full ? (
+        {walletLoading ? (
+          <Skeleton className="h-11 w-full" />
+        ) : (
           <dl
-            className={cn(
-              'grid gap-3 rounded-lg bg-surface-sunken px-3 py-2',
-              full.statistics ? 'grid-cols-3' : 'grid-cols-2',
-            )}
-            aria-label="Статистика"
+            className="grid grid-cols-2 gap-3 rounded-lg bg-surface-sunken px-3 py-2"
+            aria-label="Кошелёк"
           >
-            <CompactStat label="Друзья" value={formatNumber(full.friendsCount)} />
-            <CompactStat label="Достижения" value={formatNumber(full.achievementsCompleted)} />
-            {full.statistics ? (
-              <CompactStat label="В игре" value={playTime(full.statistics.playTimeMinutes)} />
-            ) : null}
+            <CompactStat label="Баланс" value={walletAmount(wallet, 'RUB')} testId="wallet-rub" />
+            <CompactStat
+              label="Рубины"
+              value={walletAmount(wallet, 'RUBY')}
+              icon={<Gem aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
+              testId="wallet-ruby"
+            />
           </dl>
-        ) : null}
+        )}
       </div>
     </div>
   );

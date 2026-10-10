@@ -170,6 +170,8 @@ export type PublicProfileSummary =
       /// Готовые URL (ADR-0088) или null — без выдуманных картинок.
       avatar: string | null;
       banner: string | null;
+      /// Свой статус под ником (Settings → «Статус»), тот же, что в профиле.
+      statusText: string | null;
       /// Выбранная декорация профиля (если активна).
       decoration: { slug: string; name: string; imageUrl: string | null } | null;
       /// Активные бейджи в порядке показа.

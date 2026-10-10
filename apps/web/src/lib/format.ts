@@ -58,6 +58,25 @@ export function formatMoney(value: number | string | null | undefined): string {
   return money.format(typeof value === 'string' ? Number(value) : value);
 }
 
+/// Сумма кошелька из целых минимальных единиц (строка BigInt, `scale` знаков
+/// после запятой) — без float и без потери точности: `125050`, 2 → «1 250,50».
+export function formatMinorUnits(amountMinor: string, scale: number): string {
+  let minor: bigint;
+  try {
+    minor = BigInt(amountMinor);
+  } catch {
+    return '—';
+  }
+  const negative = minor < 0n;
+  const abs = negative ? -minor : minor;
+  const divisor = 10n ** BigInt(scale);
+  const whole = number.format(abs / divisor);
+  const fraction = abs % divisor;
+  const text =
+    scale > 0 && fraction > 0n ? `${whole},${fraction.toString().padStart(scale, '0')}` : whole;
+  return negative ? `−${text}` : text;
+}
+
 const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 1000 * 60 * 60 * 24 * 365],
   ['month', 1000 * 60 * 60 * 24 * 30],
