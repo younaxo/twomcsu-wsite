@@ -750,6 +750,122 @@ describe('Forms (e2e)', () => {
     expect(afterDelete.body.responsesCount).toBe(1);
   });
 
+  async function publishedForm(
+    name: string,
+    extra: Record<string, unknown>,
+  ): Promise<{ slug: string; id: string; fieldId: string }> {
+    const slug = slugFor(name);
+    const created = await request(app.getHttpServer())
+      .post('/admin/forms')
+      .set('Authorization', auth(admin))
+      .send({
+        slug,
+        title: `Форма ${name}`,
+        requiresCaptcha: false,
+        fields: [{ type: 'TEXT', label: 'Ник', isRequired: true }],
+        ...extra,
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/admin/forms/${created.body.id}/publish`)
+      .set('Authorization', auth(admin))
+      .expect(201);
+    return { slug, id: created.body.id, fieldId: created.body.fields[0].id };
+  }
+
+  it('admin: автор ответа — только публичные поля; анонимная форма — без автора (ADR-0122)', async () => {
+    const named = await publishedForm('named', {});
+    const anonymous = await publishedForm('anon', { isAnonymous: true });
+    for (const form of [named, anonymous]) {
+      await request(app.getHttpServer())
+        .post(`/forms/${form.slug}/responses`)
+        .set('Authorization', auth(bob))
+        .send({ answers: [{ fieldId: form.fieldId, value: 'Black_Bob' }] })
+        .expect(201);
+    }
+
+    const namedList = await request(app.getHttpServer())
+      .get(`/admin/forms/${named.id}/responses`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const namedItem = namedList.body.items[0];
+    expect(namedItem.respondent).toEqual({
+      id: bob.id,
+      username: bob.username,
+      tag: expect.anything(),
+      avatar: null,
+    });
+    expect(namedItem.ipHash).toBeUndefined();
+
+    const anonList = await request(app.getHttpServer())
+      .get(`/admin/forms/${anonymous.id}/responses`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const anonItem = anonList.body.items[0];
+    expect(anonItem.respondent).toBeNull();
+    expect(anonItem.respondentId).toBeNull();
+    expect(anonItem.userAgent).toBeNull();
+    const anonOne = await request(app.getHttpServer())
+      .get(`/admin/forms/${anonymous.id}/responses/${anonItem.id}`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+    expect(anonOne.body.respondent).toBeNull();
+    expect(JSON.stringify(anonOne.body)).not.toContain(bob.email);
+  });
+
+  it('draft: недоступен для скрытой формы; после отправки черновик удаляется (ADR-0122)', async () => {
+    const hidden = await publishedForm('hidden-draft', {
+      visibility: 'HELPER_ONLY',
+    });
+    await request(app.getHttpServer())
+      .post(`/forms/${hidden.slug}/responses/save-draft`)
+      .set('Authorization', auth(alice))
+      .send({ answers: [{ fieldId: hidden.fieldId, value: 'x' }] })
+      .expect(404);
+
+    const open = await publishedForm('draft-then-submit', {});
+    const draft = await request(app.getHttpServer())
+      .post(`/forms/${open.slug}/responses/save-draft`)
+      .set('Authorization', auth(alice))
+      .send({ answers: [{ fieldId: open.fieldId, value: 'Ali' }] })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/forms/${open.slug}/responses`)
+      .set('Authorization', auth(alice))
+      .send({ answers: [{ fieldId: open.fieldId, value: 'Alice' }] })
+      .expect(201);
+    const mine = await request(app.getHttpServer())
+      .get('/forms/my/responses')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    const forForm = mine.body.filter(
+      (r: { formId: string }) => r.formId === open.id,
+    );
+    expect(forForm).toHaveLength(1);
+    expect(forForm[0].isComplete).toBe(true);
+    expect(forForm[0].id).not.toBe(draft.body.id);
+  });
+
+  it('submit: параллельные отправки не превышают maxResponses (ADR-0122)', async () => {
+    const limited = await publishedForm('race', {
+      maxResponses: 1,
+      onePerUser: false,
+    });
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        request(app.getHttpServer())
+          .post(`/forms/${limited.slug}/responses`)
+          .send({ answers: [{ fieldId: limited.fieldId, value: `p${i}` }] }),
+      ),
+    );
+    expect(results.filter((res) => res.status === 201)).toHaveLength(1);
+    expect(results.filter((res) => res.status === 403)).toHaveLength(4);
+    const form = await prisma.form.findUniqueOrThrow({
+      where: { id: limited.id },
+    });
+    expect(form.responsesCount).toBe(1);
+  });
+
   it('admin: close/duplicate/archive меняют статус формы', async () => {
     const closed = await request(app.getHttpServer())
       .post(`/admin/forms/${formId}/close`)

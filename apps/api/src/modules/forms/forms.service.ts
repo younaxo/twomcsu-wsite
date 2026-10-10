@@ -268,6 +268,43 @@ export class FormsService {
       : undefined;
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // Отправки в одну форму идут по очереди: иначе параллельные запросы
+      // обходят onePerUser, maxResponses и лимит приглашения (ADR-0122).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`form:${form.id}`}))`;
+      const fresh = await tx.form.findUniqueOrThrow({
+        where: { id: form.id },
+        select: { responsesCount: true, maxResponses: true },
+      });
+      if (
+        fresh.maxResponses !== null &&
+        fresh.responsesCount >= fresh.maxResponses
+      ) {
+        throw new ForbiddenException('Достигнут лимит ответов на форму');
+      }
+      if (form.onePerUser && viewerId) {
+        const already = await tx.formResponse.findFirst({
+          where: { formId: form.id, respondentId: viewerId, isComplete: true },
+          select: { id: true },
+        });
+        if (already) {
+          throw new ForbiddenException('Вы уже отправили ответ на эту форму');
+        }
+      }
+      if (dto.inviteCode && form.visibility === FormVisibility.INVITE_ONLY) {
+        const invite = await tx.formInvite.findUniqueOrThrow({
+          where: { code: dto.inviteCode },
+          select: { usedCount: true, maxUses: true },
+        });
+        if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) {
+          throw new ForbiddenException('Приглашение исчерпано');
+        }
+      }
+      // Черновик этой формы после отправки больше не нужен.
+      if (viewerId) {
+        await tx.formResponse.deleteMany({
+          where: { formId: form.id, respondentId: viewerId, isComplete: false },
+        });
+      }
       const response = await tx.formResponse.create({
         data: {
           formId: form.id,
@@ -281,7 +318,12 @@ export class FormsService {
             create: prepared.map((p) => ({ fieldId: p.fieldId, ...p.data })),
           },
         },
-        include: { answers: true },
+        select: {
+          id: true,
+          isComplete: true,
+          isAnonymous: true,
+          completedAt: true,
+        },
       });
       await tx.form.update({
         where: { id: form.id },
@@ -299,14 +341,14 @@ export class FormsService {
     return created;
   }
 
+  /// Черновик — по тем же правилам доступа, что и отправка (видимость,
+  /// приглашение, сроки приёма; ADR-0122).
   async saveDraft(slug: string, viewerId: string, dto: SaveDraftDto) {
-    const form = await this.prisma.form.findUnique({
-      where: { slug },
-      include: { fields: true },
-    });
-    if (!form || form.status !== FormStatus.PUBLISHED) {
-      throw new NotFoundException('Форма не найдена');
-    }
+    const form = await this.requireSubmittableForm(
+      slug,
+      viewerId,
+      dto.inviteCode,
+    );
 
     const fieldsById = new Map(form.fields.map((f) => [f.id, f]));
     const existing = await this.prisma.formResponse.findFirst({
