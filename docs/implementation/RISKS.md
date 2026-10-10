@@ -211,16 +211,13 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
-## R26 — Скриншоты TwoMC ещё не загружены на CDN — OPEN (доступ к хосту)
+## R26 — Скриншоты TwoMC на CDN — CLOSED (2026-10-10)
 
-Реестр, карусель и интеграция готовы (ADR-0096), производные AVIF/WebP и
-оригиналы подготовлены. Для загрузки в
-`/www/wwwroot/cdn-files.twomc.su/assets/images/screenshots/` нужен доступ к
-хосту: локальный файл с ним удалён перед compact по требованию владельца,
-SSH-ключи на сервер не добавлялись. До загрузки сайт показывает вместо кадров
-нейтральную поверхность с названием (без битых картинок). **Нужно от
-владельца:** снова дать временный доступ (ignored `.env.host`) или загрузить
-файлы самому по списку из PR.
+Все 8 кадров (88 файлов: AVIF/WebP 640–1920 + `original.png`) загружены в
+`assets/images/screenshots/<id>/` вместе с ассетами ADR-0098. Через Cloudflare —
+200, верный `Content-Type` (`image/avif`, `image/webp`, `image/png`), md5 совпадает
+с локальными файлами, `original.png` — байт-в-байт исходник. Доступ к хосту —
+временный, credentials только в локальном secret store вне Git.
 
 ## R25 — Apple-style emoji: лицензия пака — OPEN (решение владельца)
 

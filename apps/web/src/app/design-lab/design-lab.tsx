@@ -23,7 +23,7 @@ const SECTIONS = [
   { id: 'auth', label: 'Auth' },
   { id: 'auth-extra', label: 'Auth: коды и восстановление' },
   { id: 'cursors', label: 'Курсоры' },
-  { id: 'prefixes', label: 'Role prefixes' },
+  { id: 'prefixes', label: 'Префиксы и валюты' },
   { id: 'identity', label: 'Профиль и сезоны' },
 ] as const;
 
@@ -134,8 +134,8 @@ export function DesignLab() {
 
         <section id="prefixes" className="scroll-mt-20">
           <SectionHeading
-            title="Role prefixes"
-            description="Официальные PNG-префиксы ролей из resource pack (CDN). Только визуализация роли — права определяет backend."
+            title="Префиксы и валюты"
+            description="Официальные PNG из resource pack (CDN): префиксы ролей команды, медиа-партнёров и донат-привилегий (пока только ассеты), один префикс возле ника по приоритету, иконки валют. Только визуализация — права определяет backend."
           />
           <RolePrefixesSection />
         </section>

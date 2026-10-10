@@ -76,3 +76,97 @@ export function hasRolePrefix(slug: string | null | undefined): slug is RolePref
 export function rolePrefixRelativePath(slug: string): string {
   return `${ROLE_PREFIX_PATH}/${slug}.png`;
 }
+
+// ---------------------------------------------------------------------------
+// Единый реестр префиксов (ADR-0098): STAFF — роли команды (выше), MEDIA —
+// медиа-партнёры, DONATION — донат-привилегии. Те же PNG 7 px из resource pack,
+// каталоги на CDN — рядом со staff-префиксами. Возле ника — ОДИН префикс:
+// STAFF > MEDIA > DONATION; остальные статусы — значки и награды.
+//
+// DONATION — пока только ассеты (asset foundation): привилегии, уровни доната
+// и покупки не реализованы, выдавать донат-префикс некому.
+
+export type PrefixCategory = 'STAFF' | 'MEDIA' | 'DONATION';
+
+export interface PrefixDefinition {
+  category: PrefixCategory;
+  slug: string;
+  /// Подпись (alt, тултип, текстовый fallback).
+  name: string;
+  /// Ширина оригинального PNG; высота всегда ROLE_PREFIX_HEIGHT.
+  width: number;
+}
+
+export const PREFIX_PATHS: Readonly<Record<PrefixCategory, string>> = {
+  STAFF: ROLE_PREFIX_PATH,
+  MEDIA: `${ROLE_PREFIX_PATH}/media`,
+  DONATION: `${ROLE_PREFIX_PATH}/donations`,
+};
+
+/// Медиа-префиксы: конкретная площадка (`MediaBadgeKind` → slug) и общий
+/// `media` — когда определить одну площадку нельзя. Размеры — по файлам
+/// (2026-10-10).
+export const MEDIA_PREFIXES = [
+  { category: 'MEDIA', slug: 'media', name: 'Медиа', width: 35 },
+  { category: 'MEDIA', slug: 'youtube', name: 'YouTube', width: 51 },
+  { category: 'MEDIA', slug: 'twitch', name: 'Twitch', width: 42 },
+  { category: 'MEDIA', slug: 'tiktok', name: 'TikTok', width: 42 },
+] as const satisfies readonly PrefixDefinition[];
+
+/// Донат-префиксы в порядке иерархии (Dionysus → Zeus). Не путать с артами
+/// магазина `minecraft/donations/<slug>.png` — это другие ассеты.
+export const DONATION_PREFIXES = [
+  { category: 'DONATION', slug: 'dionysus', name: 'Dionysus', width: 56 },
+  { category: 'DONATION', slug: 'hermes', name: 'Hermes', width: 44 },
+  { category: 'DONATION', slug: 'heracles', name: 'Heracles', width: 58 },
+  { category: 'DONATION', slug: 'apollo', name: 'Apollo', width: 44 },
+  { category: 'DONATION', slug: 'ares', name: 'Ares', width: 30 },
+  { category: 'DONATION', slug: 'poseidon', name: 'Poseidon', width: 56 },
+  { category: 'DONATION', slug: 'zeus', name: 'Zeus', width: 30 },
+] as const satisfies readonly PrefixDefinition[];
+
+export type MediaPrefixSlug = (typeof MEDIA_PREFIXES)[number]['slug'];
+export type DonationPrefixSlug = (typeof DONATION_PREFIXES)[number]['slug'];
+
+const MEDIA_BY_KIND: Readonly<Record<string, MediaPrefixSlug>> = {
+  YOUTUBE: 'youtube',
+  TWITCH: 'twitch',
+  TIKTOK: 'tiktok',
+};
+
+export function staffPrefix(slug: string | null | undefined): PrefixDefinition | null {
+  const definition = getRolePrefix(slug);
+  return definition ? { category: 'STAFF', ...definition } : null;
+}
+
+/// Медиа-префикс по площадкам медиа-партнёра: одна площадка — её префикс,
+/// несколько (или неизвестная) — общий «Медиа», ни одной — null.
+export function mediaPrefix(kinds: readonly string[] | null | undefined): PrefixDefinition | null {
+  if (!kinds?.length) return null;
+  const known = [...new Set(kinds)].map((kind) => MEDIA_BY_KIND[kind]);
+  const slug = known.length === 1 && known[0] ? known[0] : 'media';
+  return MEDIA_PREFIXES.find((prefix) => prefix.slug === slug) ?? null;
+}
+
+export function donationPrefix(slug: string | null | undefined): PrefixDefinition | null {
+  if (!slug) return null;
+  return DONATION_PREFIXES.find((prefix) => prefix.slug === slug) ?? null;
+}
+
+/// Один основной префикс возле ника: STAFF > MEDIA > DONATION.
+export function resolvePrimaryPrefix(input: {
+  /// slug основной роли (самая старшая с префиксом — `pickPrimaryRole`).
+  staffSlug?: string | null;
+  mediaBadges?: readonly string[] | null;
+  donationSlug?: string | null;
+}): PrefixDefinition | null {
+  return (
+    staffPrefix(input.staffSlug) ??
+    mediaPrefix(input.mediaBadges) ??
+    donationPrefix(input.donationSlug)
+  );
+}
+
+export function prefixRelativePath(prefix: Pick<PrefixDefinition, 'category' | 'slug'>): string {
+  return `${PREFIX_PATHS[prefix.category]}/${prefix.slug}.png`;
+}

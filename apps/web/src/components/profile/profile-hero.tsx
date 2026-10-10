@@ -10,7 +10,7 @@ import { ProfileMetrics } from '@/components/profile/profile-metrics';
 import { Avatar } from '@/components/ui/avatar';
 import { RolePrefix } from '@/components/ui/role-prefix';
 import type { ProfileStatsDto } from '@/lib/profile/hooks';
-import type { DisplayableRole } from '@/lib/roles/primary-role';
+import { identityPrefix, type DisplayableRole } from '@/lib/roles/primary-role';
 
 /// Шапка публичного профиля `/u/…` (B5, D5). На баннере: слева сверху —
 /// круглая «Редактировать» (только свой профиль), справа сверху — метрики
@@ -64,6 +64,7 @@ export function ProfileHero({
   titleAs?: 'h1' | 'h3';
 }) {
   const hasBadges = !!(badges?.length || mediaBadges?.length || decoration);
+  const prefix = identityPrefix(role, mediaBadges);
   return (
     <section className="overflow-hidden rounded-xl bg-surface shadow-sm" data-testid="profile-hero">
       <div className="relative">
@@ -88,7 +89,9 @@ export function ProfileHero({
           className="flex min-w-0 flex-1 basis-56 flex-col gap-1 pt-3"
           data-testid="profile-identity"
         >
-          {role ? <RolePrefix role={role} size="xs" className="self-start" /> : null}
+          {role || prefix ? (
+            <RolePrefix role={role} prefix={prefix} size="xs" className="self-start" />
+          ) : null}
           <Title className="truncate font-display text-2xl font-bold">{username}</Title>
           {statusText ? (
             <p

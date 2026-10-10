@@ -1,9 +1,14 @@
 'use client';
 
-import { ROLE_PREFIX_HEIGHT } from '@twomc/shared';
+import {
+  ROLE_PREFIX_HEIGHT,
+  staffPrefix,
+  type PrefixCategory,
+  type PrefixDefinition,
+} from '@twomc/shared';
 import { useState, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
-import { getRolePrefixAsset, type DisplayableRole } from '@/lib/roles/primary-role';
+import { getPrefixAsset, getRolePrefixAsset, type DisplayableRole } from '@/lib/roles/primary-role';
 import { Badge } from './badge';
 import { Tooltip } from './tooltip';
 
@@ -15,10 +20,20 @@ export type RolePrefixSize = 'xs' | 'sm' | 'md' | 'lg';
 
 const SCALE: Record<RolePrefixSize, number> = { xs: 2, sm: 3, md: 4, lg: 6 };
 
-export interface RolePrefixProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'role'> {
+/// Вторая строка тултипа — что это за префикс.
+export const PREFIX_KIND_LABEL: Record<PrefixCategory, string> = {
+  STAFF: 'Роль команды twomc.su',
+  MEDIA: 'Медиа-партнёр twomc.su',
+  DONATION: 'Привилегия twomc.su',
+};
+
+export interface RolePrefixProps extends Omit<HTMLAttributes<HTMLSpanElement>, 'role' | 'prefix'> {
   /// Роль из контракта (`MeRole` / `RoleDto` / `UserRoleDto.role`): нужны slug,
   /// displayName, priority, color. Либо передайте `slug` + `name`.
   role?: DisplayableRole | null;
+  /// Уже выбранный префикс любой категории (`identityPrefix`) — важнее `role`
+  /// для картинки; роль остаётся для текстового fallback.
+  prefix?: PrefixDefinition | null;
   slug?: string | null;
   /// Подпись для alt/fallback, если передан только slug.
   name?: string;
@@ -36,6 +51,7 @@ export interface RolePrefixProps extends Omit<HTMLAttributes<HTMLSpanElement>, '
 /// визуализация роли — права определяет backend RBAC, не изображение.
 export function RolePrefix({
   role,
+  prefix,
   slug,
   name,
   size = 'sm',
@@ -46,8 +62,10 @@ export function RolePrefix({
   ...props
 }: RolePrefixProps) {
   const resolvedSlug = role?.slug ?? slug ?? null;
-  const label = role?.displayName ?? name ?? resolvedSlug ?? '';
-  const asset = getRolePrefixAsset(resolvedSlug);
+  const definition = prefix ?? staffPrefix(resolvedSlug);
+  const label = (prefix ? prefix.name : null) ?? role?.displayName ?? name ?? resolvedSlug ?? '';
+  const asset = prefix ? getPrefixAsset(prefix) : getRolePrefixAsset(resolvedSlug);
+  const kind = PREFIX_KIND_LABEL[definition?.category ?? 'STAFF'];
   const [failed, setFailed] = useState(false);
 
   if (!asset || failed) {
@@ -68,6 +86,8 @@ export function RolePrefix({
     // ником префикс не сжимается раньше времени.
     <span
       className={cn('inline-flex max-w-full shrink-0 items-center align-middle', className)}
+      data-prefix-category={definition?.category ?? 'STAFF'}
+      data-prefix-slug={asset.slug}
       {...props}
     >
       {/* Обычный <img>, не next/image: pixel-art 7px нельзя ресемплить. */}
@@ -95,7 +115,7 @@ export function RolePrefix({
       content={
         <span className="block">
           <span className="block font-medium">{label}</span>
-          <span className="block text-muted-foreground">Роль команды twomc.su</span>
+          <span className="block text-muted-foreground">{kind}</span>
         </span>
       }
     >

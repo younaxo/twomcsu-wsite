@@ -7,7 +7,6 @@ import type {
   WalletSummaryDto,
 } from '@twomc/shared';
 import {
-  Gem,
   Heart,
   MessageSquare,
   Package,
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { identityFromSummary } from '@/components/profile/profile-preview';
 import { ProfileHeader, type ProfileIdentityView } from '@/components/profile/profile-header';
+import { CurrencyIcon } from '@/components/ui/currency-icon';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMinorUnits } from '@/lib/format';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
@@ -161,11 +161,16 @@ export function MiniProfileSummary({
             className="grid grid-cols-2 gap-3 rounded-lg bg-surface-sunken px-3 py-2"
             aria-label="Кошелёк"
           >
-            <CompactStat label="Баланс" value={walletAmount(wallet, 'RUB')} testId="wallet-rub" />
+            <CompactStat
+              label="Баланс"
+              value={walletAmount(wallet, 'RUB')}
+              icon={<CurrencyIcon currency="RUB" />}
+              testId="wallet-rub"
+            />
             <CompactStat
               label="Рубины"
               value={walletAmount(wallet, 'RUBY')}
-              icon={<Gem aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
+              icon={<CurrencyIcon currency="RUBY" />}
               testId="wallet-ruby"
             />
           </dl>
