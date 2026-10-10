@@ -12,6 +12,7 @@ import { ListNewsQueryDto } from './dto/list-news-query.dto';
 import { ReactNewsCommentDto } from './dto/react-news-comment.dto';
 import { TagsQueryDto } from './dto/tags-query.dto';
 import { UpdateNewsCommentDto } from './dto/update-news-comment.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 const PUBLIC_WHERE: Prisma.NewsWhereInput = { status: NewsStatus.PUBLISHED };
 
@@ -33,7 +34,7 @@ export class NewsService {
     const [items, total] = await Promise.all([
       this.prisma.news.findMany({
         where,
-        include: { author: true, tags: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
         orderBy: [{ isPinned: 'desc' }, { publishedAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
@@ -46,7 +47,7 @@ export class NewsService {
   async featured() {
     return this.prisma.news.findMany({
       where: { ...PUBLIC_WHERE, isFeatured: true },
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
       orderBy: { publishedAt: 'desc' },
       take: 10,
     });
@@ -55,7 +56,7 @@ export class NewsService {
   async latest(limit: number) {
     return this.prisma.news.findMany({
       where: PUBLIC_WHERE,
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
       orderBy: { publishedAt: 'desc' },
       take: limit,
     });
@@ -67,7 +68,7 @@ export class NewsService {
   async popular() {
     return this.prisma.news.findMany({
       where: PUBLIC_WHERE,
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
       orderBy: { viewsCount: 'desc' },
       take: 10,
     });
@@ -136,7 +137,7 @@ ${entries}
   async getBySlug(slug: string, viewerId: string | null) {
     const news = await this.prisma.news.findUnique({
       where: { slug },
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
     });
     if (!news || news.status !== NewsStatus.PUBLISHED) {
       throw new NotFoundException('Новость не найдена');
@@ -220,7 +221,7 @@ ${entries}
     const [items, total] = await Promise.all([
       this.prisma.newsComment.findMany({
         where,
-        include: { author: true, reactions: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, reactions: true },
         orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
@@ -258,7 +259,7 @@ ${entries}
           contentHtml: escapeToHtml(dto.content),
           parentId: dto.parentId,
         },
-        include: { author: true },
+        include: { author: { select: PUBLIC_USER_SELECT } },
       }),
       this.prisma.news.update({
         where: { id: news.id },

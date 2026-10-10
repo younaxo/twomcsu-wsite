@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 function onlineKey(channelId: string): string {
   return `chat:online:${channelId}`;
@@ -60,7 +61,7 @@ export class ChatService {
     const [items, total] = await Promise.all([
       this.prisma.chatMessage.findMany({
         where: { channelId: channel.id, isDeleted: false },
-        include: { author: true },
+        include: { author: { select: PUBLIC_USER_SELECT } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -76,7 +77,7 @@ export class ChatService {
     const channel = await this.getChannelBySlug(slug);
     return this.prisma.chatMessage.findMany({
       where: { channelId: channel.id, isPinned: true, isDeleted: false },
-      include: { author: true },
+      include: { author: { select: PUBLIC_USER_SELECT } },
       orderBy: { pinnedAt: 'desc' },
     });
   }
@@ -165,7 +166,7 @@ export class ChatService {
         mentions,
         parentId: dto.parentId,
       },
-      include: { author: true },
+      include: { author: { select: PUBLIC_USER_SELECT } },
     });
 
     await this.notifyMentioned(created.author, channelId, mentions);

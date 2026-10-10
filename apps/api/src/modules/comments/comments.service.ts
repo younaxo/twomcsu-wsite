@@ -12,6 +12,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { ReactCommentDto } from './dto/react-comment.dto';
 import { ReportCommentDto } from './dto/report-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 @Injectable()
 export class CommentsService {
@@ -54,7 +55,7 @@ export class CommentsService {
     const [items, total] = await Promise.all([
       this.prisma.profileComment.findMany({
         where: { profileId: owner.id, isDeleted: false },
-        include: { author: true, reactions: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, reactions: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -97,7 +98,7 @@ export class CommentsService {
         parentId: dto.parentId,
         mentions,
       },
-      include: { author: true },
+      include: { author: { select: PUBLIC_USER_SELECT } },
     });
 
     await this.notifyParticipants(created, owner, parent, mentions);

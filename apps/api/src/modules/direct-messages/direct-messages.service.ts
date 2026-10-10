@@ -17,6 +17,7 @@ import { CreateInviteDto } from './dto/create-invite.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { ReactMessageDto } from './dto/react-message.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 function directKeyOf(userAId: string, userBId: string): string {
   return [userAId, userBId].sort().join(':');
@@ -50,7 +51,7 @@ export class DirectMessagesService {
       include: {
         conversation: {
           include: {
-            members: { include: { user: true } },
+            members: { include: { user: { select: PUBLIC_USER_SELECT } } },
             messages: { orderBy: { createdAt: 'desc' }, take: 1 },
           },
         },
@@ -127,7 +128,9 @@ export class DirectMessagesService {
     if (existing) {
       return this.prisma.conversation.findUniqueOrThrow({
         where: { id: existing.id },
-        include: { members: { include: { user: true } } },
+        include: {
+          members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+        },
       });
     }
 
@@ -143,7 +146,9 @@ export class DirectMessagesService {
           ],
         },
       },
-      include: { members: { include: { user: true } } },
+      include: {
+        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+      },
     });
   }
 
@@ -171,7 +176,9 @@ export class DirectMessagesService {
           })),
         },
       },
-      include: { members: { include: { user: true } } },
+      include: {
+        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+      },
     });
   }
 
@@ -179,7 +186,9 @@ export class DirectMessagesService {
     await this.requireMember(userId, conversationId);
     return this.prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
-      include: { members: { include: { user: true } } },
+      include: {
+        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+      },
     });
   }
 
@@ -193,7 +202,7 @@ export class DirectMessagesService {
     const [items, total] = await Promise.all([
       this.prisma.directMessage.findMany({
         where: { conversationId },
-        include: { sender: true, reactions: true },
+        include: { sender: { select: PUBLIC_USER_SELECT }, reactions: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -230,7 +239,7 @@ export class DirectMessagesService {
           contentHtml: escapeToHtml(dto.content),
           parentId: dto.parentId,
         },
-        include: { sender: true },
+        include: { sender: { select: PUBLIC_USER_SELECT } },
       }),
       this.prisma.conversation.update({
         where: { id: conversationId },
