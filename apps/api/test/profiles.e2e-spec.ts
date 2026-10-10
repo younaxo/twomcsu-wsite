@@ -16,6 +16,8 @@ describe('Profiles (e2e)', () => {
 
   let user: { id: string; accessToken: string; username: string };
   const email = `profile-${unique}@example.com`;
+  const otherEmail = `profile-other-${unique}@example.com`;
+  let other: { id: string; accessToken: string; username: string };
   const password = 'Sup3rSecretPassw0rd!';
 
   beforeAll(async () => {
@@ -40,14 +42,34 @@ describe('Profiles (e2e)', () => {
       .expect(200);
     const dbUser = await prisma.user.findUniqueOrThrow({ where: { email } });
     user = { id: dbUser.id, accessToken: loginRes.body.accessToken, username };
+
+    const otherName = `pother${unique}`.slice(0, 16);
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ email: otherEmail, username: otherName, password })
+      .expect(201);
+    const otherLogin = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ emailOrUsername: otherEmail, password })
+      .expect(200);
+    const otherDb = await prisma.user.findUniqueOrThrow({
+      where: { email: otherEmail },
+    });
+    other = {
+      id: otherDb.id,
+      accessToken: otherLogin.body.accessToken,
+      username: otherName,
+    };
   });
 
   afterAll(async () => {
+    // Только по известным e-mail этого набора (const) — без undefined-фильтров.
+    const emails = [email, otherEmail];
     await prisma.auditLog.deleteMany({
-      where: { actor: { email } },
+      where: { actor: { email: { in: emails } } },
     });
-    await prisma.user.deleteMany({ where: { email } });
-    await app.close();
+    await prisma.user.deleteMany({ where: { email: { in: emails } } });
+    await app?.close();
   });
 
   it('PATCH /users/me/profile обновляет поля профиля', async () => {
@@ -296,5 +318,107 @@ describe('Profiles (e2e)', () => {
     await prisma.profileDecoration.deleteMany({
       where: { id: { in: [foreignDecoration.id, ownedDecoration.id] } },
     });
+  });
+
+  it('B5: профиль по нику Minecraft-привязки; просмотры без self-view и без дублей', async () => {
+    const mcName = `mc_${unique}`.slice(0, 16);
+    await prisma.minecraftAccount.create({
+      data: { userId: user.id, uuid: randomUUID(), name: mcName },
+    });
+    const byMinecraft = await request(app.getHttpServer())
+      .get(`/users/${mcName.toUpperCase()}/public`)
+      .expect(200);
+    expect(byMinecraft.body.username).toBe(user.username);
+    expect(byMinecraft.body.minecraftName).toBe(mcName);
+
+    const view = (token: string) =>
+      request(app.getHttpServer())
+        .post(`/users/${user.username}/view`)
+        .set('Authorization', `Bearer ${token}`);
+    expect((await view(user.accessToken).expect(201)).body.views).toBe(0);
+    expect((await view(other.accessToken).expect(201)).body.views).toBe(1);
+    expect((await view(other.accessToken).expect(201)).body.views).toBe(1);
+    await request(app.getHttpServer())
+      .post(`/users/${user.username}/view`)
+      .expect(401);
+  });
+
+  it('B5: лайк/дизлайк — одна реакция на пару, смена и снятие; себе нельзя', async () => {
+    const react = (token: string, type: string | null) =>
+      request(app.getHttpServer())
+        .put(`/users/${user.username}/reaction`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ type });
+    const liked = await react(other.accessToken, 'LIKE').expect(200);
+    expect(liked.body).toMatchObject({
+      likes: 1,
+      dislikes: 0,
+      myReaction: 'LIKE',
+    });
+    const disliked = await react(other.accessToken, 'DISLIKE').expect(200);
+    expect(disliked.body).toMatchObject({
+      likes: 0,
+      dislikes: 1,
+      myReaction: 'DISLIKE',
+    });
+    const cleared = await react(other.accessToken, null).expect(200);
+    expect(cleared.body).toMatchObject({
+      likes: 0,
+      dislikes: 0,
+      myReaction: null,
+    });
+    await react(other.accessToken, 'LOVE').expect(400);
+    await react(user.accessToken, 'LIKE').expect(403);
+  });
+
+  it('B5: Connected Accounts — провайдер и имя без внешних ID; соцсети — отдельно и с проверкой ссылок', async () => {
+    await prisma.userExternalAccount.create({
+      data: {
+        userId: user.id,
+        provider: 'discord',
+        providerUserId: `snowflake-${unique}`,
+        username: 'steve_discord',
+      },
+    });
+    const put = (platform: string, value: string) =>
+      request(app.getHttpServer())
+        .put(`/users/me/social-links/${platform}`)
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ value });
+    await put('WEBSITE', 'http://example.com').expect(400);
+    await put('WEBSITE', 'javascript:alert(1)').expect(400);
+    await put('WEBSITE', 'https://example.com/me').expect(200);
+    const github = await put('GITHUB', 'octocat').expect(200);
+    expect(github.body.value).toBe('https://github.com/octocat');
+    await put('DISCORD', 'old#tag').expect(200);
+
+    const pub = await request(app.getHttpServer())
+      .get(`/users/${user.username}/public`)
+      .expect(200);
+    expect(pub.body.connectedAccounts).toEqual([
+      { provider: 'discord', name: 'steve_discord' },
+    ]);
+    expect(JSON.stringify(pub.body)).not.toContain(`snowflake-${unique}`);
+    const platforms = pub.body.socialLinks.map(
+      (link: { platform: string }) => link.platform,
+    );
+    expect(platforms).toEqual(expect.arrayContaining(['WEBSITE', 'GITHUB']));
+    expect(platforms).not.toContain('DISCORD');
+
+    await request(app.getHttpServer())
+      .patch('/users/me/profile')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ hideSocials: true })
+      .expect(200);
+    const hidden = await request(app.getHttpServer())
+      .get(`/users/${user.username}/public`)
+      .expect(200);
+    expect(hidden.body.connectedAccounts).toBeUndefined();
+    expect(hidden.body.socialLinks).toBeUndefined();
+    await request(app.getHttpServer())
+      .patch('/users/me/profile')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ hideSocials: false })
+      .expect(200);
   });
 });
