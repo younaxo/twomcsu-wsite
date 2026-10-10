@@ -198,6 +198,7 @@ export const FOOTER_PLAYER_LINKS: FooterLink[] = [
   { href: '/wiki', label: 'Wiki', available: false },
   { href: '/news', label: 'Новости', available: true },
   { href: '/vote', label: 'Голосование', available: true },
+  { href: '/leaderboards', label: 'Рейтинги', available: true },
   { href: '/forms', label: 'Формы и заявки', available: true },
 ];
 

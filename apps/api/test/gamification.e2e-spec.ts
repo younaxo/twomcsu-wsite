@@ -485,4 +485,37 @@ describe('Gamification (e2e)', () => {
       ),
     ).toBe(true);
   });
+
+  it('leaderboards (ADR-0127): скрытая статистика и закрытый профиль — не в рейтинге', async () => {
+    await prisma.playerStatistics.upsert({
+      where: { userId: alice.id },
+      create: { userId: alice.id, kills: 2_000_000_000 },
+      update: { kills: 2_000_000_000 },
+    });
+    const kills = async () =>
+      (await request(app.getHttpServer()).get('/leaderboards').expect(200)).body
+        .kills as Array<{ userId: string; rank: number }>;
+
+    await prisma.user.update({
+      where: { id: alice.id },
+      data: { hideStatistics: true },
+    });
+    expect((await kills()).some((e) => e.userId === alice.id)).toBe(false);
+
+    await prisma.user.update({
+      where: { id: alice.id },
+      data: { hideStatistics: false, profileVisibility: 'FRIENDS_ONLY' },
+    });
+    expect((await kills()).some((e) => e.userId === alice.id)).toBe(false);
+
+    await prisma.user.update({
+      where: { id: alice.id },
+      data: { profileVisibility: 'EVERYONE' },
+    });
+    const visible = await kills();
+    expect(visible[0]).toMatchObject({ userId: alice.id, rank: 1 });
+    expect(visible.map((e) => e.rank)).toEqual(
+      visible.map((_, index) => index + 1),
+    );
+  });
 });
