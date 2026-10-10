@@ -145,7 +145,14 @@ describe('OtpInput с шаблоном (A12)', () => {
   it('X0XX0: буквы и цифры по позициям, верхний регистр, вставка, неверные символы отброшены', async () => {
     const user = userEvent.setup();
     const onComplete = vi.fn();
-    render(<OtpInput autoFocus pattern="X0XX0" onComplete={onComplete} aria-label="Код подтверждения Minecraft" />);
+    render(
+      <OtpInput
+        autoFocus
+        pattern="X0XX0"
+        onComplete={onComplete}
+        aria-label="Код подтверждения Minecraft"
+      />,
+    );
     const first = screen.getByLabelText('Код, символ 1');
     expect(first).toHaveFocus();
     expect(first).toHaveAttribute('inputmode', 'text');

@@ -204,7 +204,10 @@ export function ForgotPasswordForm() {
           </Field>
         ) : null}
         {found ? (
-          <div className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2.5" data-testid="masked-email">
+          <div
+            className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2.5"
+            data-testid="masked-email"
+          >
             <span className="text-xs text-muted-foreground">Почта аккаунта</span>
             <span className="font-mono text-sm">{lookup!.maskedEmail}</span>
             <button
@@ -251,9 +254,7 @@ export function ForgotPasswordForm() {
           type="submit"
           size="lg"
           loading={submitting}
-          disabled={
-            !captchaReady || (mode === 'username' && !found ? !usernameValid : !emailValid)
-          }
+          disabled={!captchaReady || (mode === 'username' && !found ? !usernameValid : !emailValid)}
         >
           {mode === 'username' && !found ? <Search /> : <Send />}
           {mode === 'username' && !found ? 'Найти аккаунт' : 'Отправить ссылку'}
