@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,6 +14,7 @@ import { RedisService } from '../redis/redis.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
+import { StorageService } from '../files/storage.service';
 
 function onlineKey(channelId: string): string {
   return `chat:online:${channelId}`;
@@ -24,7 +27,23 @@ export class ChatService {
     private readonly redis: RedisService,
     private readonly permissions: PermissionService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
+
+  /// Аватар автора — URL (как во всех ответах с медиа), а не ключ хранилища.
+  private withAvatar<T extends { author: { avatar: string | null } | null }>(
+    message: T,
+  ): T {
+    return message.author
+      ? {
+          ...message,
+          author: {
+            ...message.author,
+            avatar: this.storage.publicUrl(message.author.avatar),
+          },
+        }
+      : message;
+  }
 
   async listActiveChannels() {
     return this.prisma.chatChannel.findMany({
@@ -70,16 +89,22 @@ export class ChatService {
         where: { channelId: channel.id, isDeleted: false },
       }),
     ]);
-    return { items: items.reverse(), total, page, limit };
+    return {
+      items: items.reverse().map((item) => this.withAvatar(item)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async getPinned(slug: string) {
     const channel = await this.getChannelBySlug(slug);
-    return this.prisma.chatMessage.findMany({
+    const pinned = await this.prisma.chatMessage.findMany({
       where: { channelId: channel.id, isPinned: true, isDeleted: false },
       include: { author: { select: PUBLIC_USER_SELECT } },
       orderBy: { pinnedAt: 'desc' },
     });
+    return pinned.map((item) => this.withAvatar(item));
   }
 
   async getOnlineUserIds(channelId: string): Promise<string[]> {
@@ -130,10 +155,27 @@ export class ChatService {
     }
   }
 
+  /// Лимит частоты (ADR-0113): не больше 5 сообщений за 10 секунд на игрока
+  /// во всех каналах — защита от флуда; счётчик в Redis.
+  private async requireNotFlooding(userId: string): Promise<void> {
+    const key = `chat:rate:${userId}`;
+    const count = await this.redis.client.incr(key);
+    if (count === 1) {
+      await this.redis.client.expire(key, 10);
+    }
+    if (count > 5) {
+      throw new HttpException(
+        'Слишком часто — подождите несколько секунд.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
   async sendMessage(userId: string, channelId: string, dto: SendMessageDto) {
     const channel = await this.requireActiveChannel(channelId);
     await this.requireNotChatBanned(userId);
     await this.requireNotMuted(userId, channelId);
+    await this.requireNotFlooding(userId);
 
     if (channel.isReadOnly) {
       const canPostReadonly = await this.permissions.hasPermission(
@@ -171,7 +213,7 @@ export class ChatService {
 
     await this.notifyMentioned(created.author, channelId, mentions);
 
-    return created;
+    return this.withAvatar(created);
   }
 
   private async notifyMentioned(
