@@ -211,6 +211,16 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R21 — Брендированные страницы ошибок Cloudflare 502/503/504 — DEFERRED
+
+Офлайн-режим внутри сайта готов (ADR-0086): страница `/offline` через Service
+Worker, плашка «нет связи», состояния «сервер не отвечает». Если недоступен
+сам origin (web-сервер), посетитель без установленного SW видит стандартную
+страницу Cloudflare. Брендированные страницы ошибок Cloudflare отложены по
+решению владельца: настраиваются в Cloudflare Dashboard (Custom Pages), это
+production-настройка, а не код. **Нужно от владельца:** доступ к Cloudflare
+(или настроить самостоятельно) — шаблон страницы можно собрать из `/offline`.
+
 ## R20 — Minecraft-плагин для `/site-connect` — OPEN (внешняя работа)
 
 API привязки готов (ADR-0072, `MINECRAFT-PLUGIN-CONTRACT.md`), в dev — имитатор

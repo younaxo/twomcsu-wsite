@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
-Current branch: feature/flags-emoji (стопка на feature/storage-retention, PR #60)
+Current branch: feature/offline-fallback (стопка на feature/flags-emoji, PR #61)
 
 Completed:
 
@@ -86,7 +86,8 @@ In progress:
   twomc.su, ADR-0080). #57 (объявления, ADR-0081), #58 (техработы и модули, ADR-0082), #59 (навигация
   админки и сводка состояния, ADR-0083). Хранилище и журналы (ADR-0084) — PR #60.
   SVG-флаги и политика emoji (ADR-0085), проверка адаптивности 375–1920
-  (`RESPONSIVE-AUDIT.md`) — `feature/flags-emoji`.
+  (`RESPONSIVE-AUDIT.md`) — PR #61. Offline / Fallback UX (ADR-0086) —
+  `feature/offline-fallback`.
   Блокеры: доставка писем (R4), Telegram OIDC в BotFather (R18), Minecraft-плагин (R20).
 - PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
   дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,
