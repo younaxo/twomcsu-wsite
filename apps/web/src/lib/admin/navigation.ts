@@ -18,6 +18,7 @@ export type AdminIconName =
   | 'mail'
   | 'power'
   | 'sparkles'
+  | 'database'
   | 'settings'
   | 'lock'
   | 'newspaper'
@@ -155,6 +156,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: 'power',
         requirement: ['system.maintenance.view', 'system.modules.view'],
         keywords: ['техработы', 'обслуживание', 'модули', 'выключить', 'maintenance'],
+      },
+      {
+        href: '/admin/storage',
+        label: 'Хранилище и журналы',
+        icon: 'database',
+        requirement: 'system.storage.view',
+        keywords: ['журналы', 'логи', 'очистка', 'хранение', 'retention', 'место'],
       },
       {
         href: '/admin/settings',

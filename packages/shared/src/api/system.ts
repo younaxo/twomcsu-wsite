@@ -74,3 +74,65 @@ export interface AdminSystemOverview {
   health: { database: 'ok' | 'error'; redis: 'ok' | 'error' };
   serverTime: IsoDateString;
 }
+
+// --- Хранилище и журналы (ADR-0084) ------------------------------------------
+
+/// Категории служебных журналов. Пользовательские данные (профили, сообщения,
+/// заказы, уведомления, файлы) в очистку не входят никогда.
+export type StorageCategory = 'audit' | 'security' | 'serverStatus' | 'technical';
+
+/// Срок автоматического хранения в днях; 0 — не удалять.
+export const STORAGE_RETENTION_OPTIONS = [7, 30, 90, 180, 365, 0] as const;
+export type StorageRetentionDays = (typeof STORAGE_RETENTION_OPTIONS)[number];
+
+/// Ручная очистка: старше N дней или все записи категории (`null`).
+export const STORAGE_CLEANUP_PERIODS = [7, 30, 90, 180, 365, null] as const;
+export type StorageCleanupPeriod = (typeof STORAGE_CLEANUP_PERIODS)[number];
+
+export interface StorageCategoryDto {
+  key: StorageCategory;
+  label: string;
+  description: string;
+  /// Аудит и безопасность — отдельное право `system.storage.audit`.
+  sensitive: boolean;
+  retentionDays: StorageRetentionDays;
+  /// Записей всего / к удалению по текущему сроку (0 — если «не удалять»).
+  total: number;
+  due: number;
+  /// Оценка объёма по размеру таблиц, байты.
+  totalBytes: number;
+  dueBytes: number;
+}
+
+export interface StorageOverviewDto {
+  autoCleanup: boolean;
+  categories: StorageCategoryDto[];
+  lastRunAt: IsoDateString | null;
+  lastRunTrigger: 'auto' | 'manual' | null;
+  lastResult: Partial<Record<StorageCategory, number>> | null;
+}
+
+export interface UpdateStorageRetentionRequest {
+  autoCleanup?: boolean;
+  retention?: Partial<Record<StorageCategory, StorageRetentionDays>>;
+}
+
+export interface StorageCleanupPreviewRequest {
+  category: StorageCategory;
+  olderThanDays: StorageCleanupPeriod;
+}
+
+export interface StorageCleanupPreview {
+  count: number;
+  bytes: number;
+}
+
+/// `confirmCount` — число из предпросмотра: если записей к удалению стало
+/// больше, сервер отклонит очистку (409).
+export interface StorageCleanupRequest extends StorageCleanupPreviewRequest {
+  confirmCount: number;
+}
+
+export interface StorageCleanupResult {
+  deleted: number;
+}

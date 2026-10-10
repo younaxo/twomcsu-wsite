@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Database,
   Download,
   Key,
   LayoutDashboard,
@@ -77,6 +78,7 @@ const ICONS: Record<AdminIconName, LucideIcon> = {
   mail: Mail,
   power: Power,
   sparkles: Sparkles,
+  database: Database,
   settings: Settings,
   lock: Lock,
   newspaper: Newspaper,
