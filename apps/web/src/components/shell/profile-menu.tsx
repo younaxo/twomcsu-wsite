@@ -68,9 +68,11 @@ export function ProfileMenu() {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
-          <UserRound />
-          Профиль
+        <DropdownMenuItem asChild>
+          <Link href={`/u/${encodeURIComponent(user.username)}`}>
+            <UserRound />
+            Профиль
+          </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link href="/settings">
