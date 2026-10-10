@@ -119,7 +119,7 @@ export function DesignLab() {
         <section id="auth-extra" className="scroll-mt-20">
           <SectionHeading
             title="Auth: spotlight, коды и восстановление"
-            description="Подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), восстановление по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу», активность профиля — production-компоненты."
+            description="Подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), «Забыли пароль?» по e-mail и по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу» — production-компоненты, без запросов к API."
           />
           <AuthAdditionsSection />
         </section>
@@ -143,7 +143,7 @@ export function DesignLab() {
         <section id="identity" className="scroll-mt-20">
           <SectionHeading
             title="Профиль и сезоны"
-            description="Mini profile, шапка профиля с баннером и без, бейджи и украшения, украшение шапки ON/OFF и ошибка ассета, падающие эффекты и звёзды Дня Победы — production-компоненты на демо-данных."
+            description="Публичный профиль (свой и чужой), 3D-голова, просмотры и оценки, привязанные аккаунты и соцсети, mini profile, баннеры, бейджи и украшения, украшение шапки ON/OFF и ошибка ассета, независимые сезон и эффект, звёзды Дня Победы — production-компоненты на демо-данных."
           />
           <IdentitySeasonalSection />
         </section>

@@ -71,11 +71,37 @@ export function RecoveryProviders({ providers }: { providers: ForgotLookupRespon
   );
 }
 
-export function ForgotPasswordForm() {
-  const [mode, setMode] = useState<Mode>('email');
+/// Подсказка адреса аккаунта: маску строит сервер, полный e-mail не приходит.
+export function MaskedEmail({ masked, onChange }: { masked: string; onChange?: () => void }) {
+  return (
+    <div
+      className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2.5"
+      data-testid="masked-email"
+    >
+      <span className="text-xs text-muted-foreground">Почта аккаунта</span>
+      <span className="break-all font-mono text-sm">{masked}</span>
+      {onChange ? (
+        <button
+          type="button"
+          className="self-start text-xs text-primary hover:underline"
+          onClick={onChange}
+        >
+          Другой ник
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/// `preview` — показ в design-lab: без автофокуса и без запросов; можно
+/// начать с состояния «аккаунт найден» (маска и провайдеры — как от сервера).
+export type ForgotPreview = { mode?: Mode; username?: string; lookup?: ForgotLookupResponse };
+
+export function ForgotPasswordForm({ preview }: { preview?: ForgotPreview } = {}) {
+  const [mode, setMode] = useState<Mode>(preview?.mode ?? 'email');
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
-  const [lookup, setLookup] = useState<ForgotLookupResponse | null>(null);
+  const [username, setUsername] = useState(preview?.username ?? '');
+  const [lookup, setLookup] = useState<ForgotLookupResponse | null>(preview?.lookup ?? null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -130,7 +156,7 @@ export function ForgotPasswordForm() {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitting) return;
+    if (submitting || preview) return;
     if (mode === 'username' && !found ? !usernameValid : !emailValid) return;
     setSubmitting(true);
     setError(null);
@@ -191,7 +217,7 @@ export function ForgotPasswordForm() {
             <Input
               name="username"
               autoComplete="username"
-              autoFocus
+              autoFocus={!preview}
               required
               spellCheck={false}
               value={username}
@@ -204,20 +230,7 @@ export function ForgotPasswordForm() {
           </Field>
         ) : null}
         {found ? (
-          <div
-            className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2.5"
-            data-testid="masked-email"
-          >
-            <span className="text-xs text-muted-foreground">Почта аккаунта</span>
-            <span className="font-mono text-sm">{lookup!.maskedEmail}</span>
-            <button
-              type="button"
-              className="self-start text-xs text-primary hover:underline"
-              onClick={() => switchMode('username')}
-            >
-              Другой ник
-            </button>
-          </div>
+          <MaskedEmail masked={lookup!.maskedEmail!} onChange={() => switchMode('username')} />
         ) : null}
         {mode === 'email' || found ? (
           <Field
@@ -233,7 +246,7 @@ export function ForgotPasswordForm() {
               type="email"
               name="email"
               autoComplete="email"
-              autoFocus={mode === 'email' || found}
+              autoFocus={!preview && (mode === 'email' || found)}
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}

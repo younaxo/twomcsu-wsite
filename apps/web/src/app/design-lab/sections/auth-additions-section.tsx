@@ -1,19 +1,52 @@
 'use client';
 
-import { BookOpen } from 'lucide-react';
+import type { ForgotLookupResponse } from '@twomc/shared';
 import { useState } from 'react';
-import { BackToLogin, RecoveryProviders } from '@/app/(auth)/forgot-password/forgot-form';
-import { SpotlightCoachmark } from '@/components/auth/auth-layout';
+import {
+  BackToLogin,
+  ForgotPasswordForm,
+  MaskedEmail,
+  RecoveryProviders,
+  type ForgotPreview,
+} from '@/app/(auth)/forgot-password/forgot-form';
+import {
+  AuthPanel,
+  RegistrationSpotlight,
+  SpotlightCoachmark,
+} from '@/components/auth/auth-layout';
+import { AuthTutorial } from '@/components/auth/auth-tutorial';
 import { LinkCodeInput } from '@/components/auth/link-code-input';
-import { ProfileEngagement } from '@/components/profile/profile-engagement';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { OtpInput } from '@/components/ui/otp-input';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { CHALLENGE_PATTERN, LINK_CODE_PATTERN } from '@/lib/auth/minecraft-code';
 
-/// Auth-дополнения (ADR-0092) и активность профиля (ADR-0091) — production-
-/// компоненты: spotlight регистрации, поля кодов Minecraft, восстановление
-/// по нику (маска, провайдеры), «← Вернуться ко входу», просмотры и реакции.
+/// Auth-дополнения (ADR-0092) — production-компоненты: spotlight регистрации,
+/// поля кодов Minecraft, «Забыли пароль?» по e-mail и по нику (маска от
+/// сервера, недоступные провайдеры), «← Вернуться ко входу». Запросов к API
+/// превью не делает.
+
+/// Ответ lookup в том виде, как его отдаёт сервер (маска — пример формата).
+const FOUND: ForgotLookupResponse = {
+  maskedEmail: 'y***o@i*****.com',
+  providers: ['discord', 'telegram'],
+};
+
+const FORGOT_STATES: Array<{ value: string; label: string; preview: ForgotPreview }> = [
+  { value: 'email', label: 'По e-mail', preview: { mode: 'email' } },
+  { value: 'username', label: 'По нику', preview: { mode: 'username' } },
+  {
+    value: 'found',
+    label: 'Аккаунт найден',
+    preview: { mode: 'username', username: 'younaxo', lookup: FOUND },
+  },
+  {
+    value: 'found-plain',
+    label: 'Без привязок',
+    preview: { mode: 'username', username: 'player', lookup: { ...FOUND, providers: [] } },
+  },
+];
 
 function Block({
   title,
@@ -35,75 +68,121 @@ function Block({
   );
 }
 
-export function AuthAdditionsSection() {
+function SpotlightPreview() {
+  const [active, setActive] = useState(false);
+  const [tutorial, setTutorial] = useState(false);
+  return (
+    <Block
+      title="Registration Spotlight"
+      note="При входе в регистрацию (раз за вкладку, не на «Вход»): затемнение, кнопка над ним, подсказка у кнопки. «Мне понятно», клик по фону и Escape закрывают."
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 shadow-sm">
+        <span className="text-sm text-muted-foreground">Шапка auth</span>
+        <RegistrationSpotlight
+          active={active}
+          onDismiss={() => setActive(false)}
+          onTutorial={() => {
+            setActive(false);
+            setTutorial(true);
+          }}
+        />
+      </div>
+      <Button size="sm" variant="secondary" className="self-start" onClick={() => setActive(true)}>
+        Показать spotlight
+      </Button>
+      <div className="w-72 max-w-full rounded-lg bg-surface-overlay p-4 shadow-lg">
+        <SpotlightCoachmark onTutorial={() => setTutorial(true)} onDismiss={() => undefined} />
+      </div>
+      <AuthTutorial open={tutorial} onOpenChange={setTutorial} />
+    </Block>
+  );
+}
+
+function CodesPreview() {
   const [linkCode, setLinkCode] = useState('');
   const [challenge, setChallenge] = useState('');
   return (
-    <div className="grid gap-8 md:grid-cols-2">
-      <Block
-        title="Registration Spotlight"
-        note="При входе в регистрацию: затемнение, кнопка над ним и подсказка рядом."
+    <Block
+      title="Коды Minecraft"
+      note={`Код привязки ${LINK_CODE_PATTERN} (16 символов) и код подтверждения ${CHALLENGE_PATTERN}. Коды выдаёт только сервер.`}
+    >
+      <Field
+        label="Код привязки Minecraft (16 символов)"
+        hint="Вставьте abc123a1b23c4 — дефисы и регистр поправятся сами"
       >
-        <div className="relative flex flex-col items-end gap-2 overflow-hidden rounded-xl bg-black/45 p-4">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="bg-surface-raised shadow-lg ring-2 ring-primary hover:bg-surface-raised"
-          >
-            <BookOpen />
-            Как зарегистрироваться
-          </Button>
-          <div className="w-72 max-w-full rounded-lg bg-surface-overlay p-4 text-foreground shadow-lg">
-            <SpotlightCoachmark onTutorial={() => undefined} onDismiss={() => undefined} />
-          </div>
-        </div>
-      </Block>
-
-      <Block
-        title="Коды Minecraft"
-        note={`Код привязки ${LINK_CODE_PATTERN} (16 символов) и код подтверждения ${CHALLENGE_PATTERN}.`}
-      >
-        <Field
-          label="Код привязки Minecraft (16 символов)"
-          hint="Вставьте abc123a1b23c4 — дефисы встанут сами"
-        >
-          <LinkCodeInput value={linkCode} onValueChange={setLinkCode} />
-        </Field>
-        <Field label="Код подтверждения (5 символов)">
-          <OtpInput pattern={CHALLENGE_PATTERN} value={challenge} onChange={setChallenge} />
-        </Field>
+        <LinkCodeInput value={linkCode} onValueChange={setLinkCode} />
+      </Field>
+      <Field label="Код подтверждения (5 символов)" hint="Буквы и цифры строго на своих местах">
+        <OtpInput pattern={CHALLENGE_PATTERN} value={challenge} onChange={setChallenge} />
+      </Field>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs text-muted-foreground">Неполный код (invalid)</span>
         <LinkCodeInput
           value="ABC-123-A1B2"
           onValueChange={() => undefined}
           invalid
-          aria-label="Неверный код"
+          aria-label="Неполный код привязки"
         />
-      </Block>
-
-      <Block
-        title="Восстановление по нику"
-        note="Маска e-mail строится на сервере; провайдеры — только привязанные, пока недоступны."
-      >
-        <div className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2.5">
-          <span className="text-xs text-muted-foreground">Почта аккаунта</span>
-          <span className="font-mono text-sm">y***o@i*****.com</span>
-        </div>
-        <RecoveryProviders providers={['discord', 'telegram']} />
-        <div className="text-sm text-muted-foreground">
-          <BackToLogin />
-        </div>
-      </Block>
-
-      <Block
-        title="Активность профиля"
-        note="Просмотры без своих и дублей; лайк/дизлайк — одна оценка, свой профиль — нельзя."
-      >
-        <ProfileEngagement
-          handle="design-lab"
-          stats={{ views: 128, likes: 24, dislikes: 2, myReaction: 'LIKE' }}
-          own={false}
-          signedIn={false}
+        <span className="text-xs text-muted-foreground">Недоступно (disabled)</span>
+        <LinkCodeInput
+          value=""
+          onValueChange={() => undefined}
+          disabled
+          aria-label="Код привязки недоступен"
         />
+        <span className="text-xs text-muted-foreground">Проверка и успех</span>
+        <OtpInput pattern={CHALLENGE_PATTERN} value="K7QM2" loading aria-label="Идёт проверка" />
+        <OtpInput pattern={CHALLENGE_PATTERN} value="K7QM2" success aria-label="Код принят" />
+      </div>
+    </Block>
+  );
+}
+
+function ForgotPreviewBlock() {
+  const [state, setState] = useState(FORGOT_STATES[0]!.value);
+  const current = FORGOT_STATES.find((item) => item.value === state) ?? FORGOT_STATES[0]!;
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="max-w-full overflow-x-auto pb-1 scrollbar-thin">
+        <SegmentedControl
+          size="sm"
+          aria-label="Состояние восстановления"
+          value={state}
+          onValueChange={setState}
+          options={FORGOT_STATES.map(({ value, label }) => ({ value, label }))}
+        />
+      </div>
+      <div className="flex justify-center rounded-xl bg-background p-3 md:p-8">
+        <AuthPanel>
+          <ForgotPasswordForm key={current.value} preview={current.preview} />
+        </AuthPanel>
+      </div>
+    </div>
+  );
+}
+
+export function AuthAdditionsSection() {
+  return (
+    <div className="flex flex-col gap-10">
+      <div className="grid gap-8 md:grid-cols-2">
+        <SpotlightPreview />
+        <CodesPreview />
+        <Block
+          title="Части восстановления"
+          note="Маска e-mail строится на сервере; провайдеры — только привязанные и пока недоступны («Скоро»)."
+        >
+          <MaskedEmail masked={FOUND.maskedEmail!} />
+          <RecoveryProviders providers={FOUND.providers} />
+          <div className="text-sm text-muted-foreground">
+            <BackToLogin />
+          </div>
+        </Block>
+      </div>
+      <Block
+        title="Забыли пароль?"
+        note="Та же форма, что на /forgot-password: по e-mail или по нику, маска адреса, полный e-mail вводит человек."
+      >
+        <ForgotPreviewBlock />
       </Block>
     </div>
   );

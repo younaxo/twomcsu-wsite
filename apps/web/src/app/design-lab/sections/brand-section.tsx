@@ -61,9 +61,10 @@ export function BrandSection() {
         <p className="text-sm text-muted-foreground">
           Логотип не меняется никогда; сезон может менять только букву «o».
         </p>
-        <div className="grid gap-6 md:grid-cols-2">
+        {/* Две колонки — только когда в колонку помещается hero-размер (xl). */}
+        <div className="grid gap-6 lg:grid-cols-2">
           {[false, true].map((seasonal) => (
-            <div key={String(seasonal)} className="flex flex-col gap-4">
+            <div key={String(seasonal)} className="flex min-w-0 flex-col gap-4">
               <p className="text-xs font-medium uppercase tracking-wide text-subtle-foreground">
                 {seasonal ? 'Сезон: Хэллоуин' : 'По умолчанию'}
               </p>
