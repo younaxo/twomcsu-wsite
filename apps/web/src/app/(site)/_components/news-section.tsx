@@ -3,6 +3,7 @@
 import type { NewsCategory, NewsListItem } from '@twomc/shared';
 import { Newspaper } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -21,7 +22,7 @@ const TABS: { value: NewsTab; label: string; categories: NewsCategory[] }[] = [
   { value: 'articles', label: 'Статьи', categories: ['GUIDE'] },
 ];
 
-const CATEGORY_LABEL: Record<NewsCategory, string> = {
+export const CATEGORY_LABEL: Record<NewsCategory, string> = {
   UPDATE: 'Обновление',
   EVENT: 'Событие',
   GUIDE: 'Статья',
@@ -36,59 +37,64 @@ export function filterNews(items: NewsListItem[], tab: NewsTab): NewsListItem[] 
   return items.filter((item) => categories.includes(item.category));
 }
 
-function NewsCard({ item, large }: { item: NewsListItem; large: boolean }) {
+export function NewsCard({ item, large }: { item: NewsListItem; large: boolean }) {
   return (
-    <article
-      data-testid={large ? 'news-featured' : 'news-compact'}
-      className={cn(
-        'flex overflow-hidden rounded-xl border bg-surface shadow',
-        large ? 'flex-col' : 'flex-row items-stretch',
-      )}
+    <Link
+      href={`/news/${encodeURIComponent(item.slug)}`}
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div
+      <article
+        data-testid={large ? 'news-featured' : 'news-compact'}
         className={cn(
-          'relative shrink-0 bg-surface-sunken',
-          large ? 'aspect-[16/9] w-full' : 'w-28 sm:w-36',
+          'flex overflow-hidden rounded-xl border bg-surface shadow',
+          large ? 'flex-col' : 'flex-row items-stretch',
         )}
       >
-        {item.coverImage ? (
-          <Image
-            src={item.coverImage}
-            alt=""
-            fill
-            sizes={large ? '(min-width: 1024px) 50vw, 100vw' : '160px'}
-            className="object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <Newspaper aria-hidden className="size-6 text-subtle-foreground" />
+        <div
+          className={cn(
+            'relative shrink-0 bg-surface-sunken',
+            large ? 'aspect-[16/9] w-full' : 'w-28 sm:w-36',
+          )}
+        >
+          {item.coverImage ? (
+            <Image
+              src={item.coverImage}
+              alt=""
+              fill
+              sizes={large ? '(min-width: 1024px) 50vw, 100vw' : '160px'}
+              className="object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Newspaper aria-hidden className="size-6 text-subtle-foreground" />
+            </div>
+          )}
+        </div>
+        <div className={cn('flex min-w-0 flex-1 flex-col gap-1', large ? 'p-5' : 'p-3')}>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge tone="neutral">{CATEGORY_LABEL[item.category]}</Badge>
+            {item.publishedAt ? (
+              <time dateTime={item.publishedAt}>{formatDate(item.publishedAt)}</time>
+            ) : null}
           </div>
-        )}
-      </div>
-      <div className={cn('flex min-w-0 flex-1 flex-col gap-1', large ? 'p-5' : 'p-3')}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Badge tone="neutral">{CATEGORY_LABEL[item.category]}</Badge>
-          {item.publishedAt ? (
-            <time dateTime={item.publishedAt}>{formatDate(item.publishedAt)}</time>
+          <h3
+            className={cn('font-display font-semibold', large ? 'text-xl' : 'line-clamp-2 text-sm')}
+          >
+            {item.title}
+          </h3>
+          {item.excerpt ? (
+            <p
+              className={cn(
+                'text-sm text-muted-foreground',
+                large ? 'line-clamp-3' : 'line-clamp-2 max-sm:hidden',
+              )}
+            >
+              {item.excerpt}
+            </p>
           ) : null}
         </div>
-        <h3
-          className={cn('font-display font-semibold', large ? 'text-xl' : 'line-clamp-2 text-sm')}
-        >
-          {item.title}
-        </h3>
-        {item.excerpt ? (
-          <p
-            className={cn(
-              'text-sm text-muted-foreground',
-              large ? 'line-clamp-3' : 'line-clamp-2 max-sm:hidden',
-            )}
-          >
-            {item.excerpt}
-          </p>
-        ) : null}
-      </div>
-    </article>
+      </article>
+    </Link>
   );
 }
 
