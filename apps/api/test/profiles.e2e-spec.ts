@@ -103,6 +103,79 @@ describe('Profiles (e2e)', () => {
       .expect(200);
   });
 
+  it('FRIENDS_ONLY виден друзьям; блокировка в любую сторону скрывает профиль', async () => {
+    const http = () => request(app.getHttpServer());
+    const extra: string[] = [];
+    const make = async (label: string) => {
+      const mail = `profile-${label}-${unique}@example.com`;
+      const name = `pf${label}${unique}`.slice(0, 16);
+      await http()
+        .post('/auth/register')
+        .send({ email: mail, username: name, password })
+        .expect(201);
+      const login = await http()
+        .post('/auth/login')
+        .send({ emailOrUsername: name, password })
+        .expect(200);
+      const row = await prisma.user.findUniqueOrThrow({
+        where: { email: mail },
+      });
+      extra.push(row.id);
+      return { id: row.id, auth: `Bearer ${login.body.accessToken}` };
+    };
+    try {
+      const friend = await make('f');
+      const stranger = await make('s');
+      await prisma.friendship.create({
+        data: {
+          requesterId: user.id,
+          addresseeId: friend.id,
+          status: 'ACCEPTED',
+        },
+      });
+      await http()
+        .patch('/users/me/profile')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ profileVisibility: 'FRIENDS_ONLY' })
+        .expect(200);
+      const path = `/users/${user.username}/public`;
+      await http().get(path).set('Authorization', friend.auth).expect(200);
+      await http().get(path).set('Authorization', stranger.auth).expect(404);
+      await http().get(path).expect(404);
+      const summary = await http()
+        .get(`/users/${user.username}/summary`)
+        .set('Authorization', friend.auth)
+        .expect(200);
+      expect(summary.body.hidden).toBe(false);
+
+      await http()
+        .patch('/users/me/profile')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ profileVisibility: 'EVERYONE' })
+        .expect(200);
+      await http().get(path).set('Authorization', stranger.auth).expect(200);
+      // Владелец заблокировал постороннего — профиль скрыт для него.
+      await prisma.friendship.create({
+        data: {
+          requesterId: user.id,
+          addresseeId: stranger.id,
+          status: 'BLOCKED',
+        },
+      });
+      await http().get(path).set('Authorization', stranger.auth).expect(404);
+      const hidden = await http()
+        .get(`/users/${user.username}/summary`)
+        .set('Authorization', stranger.auth)
+        .expect(200);
+      expect(hidden.body.hidden).toBe(true);
+    } finally {
+      await prisma.refreshToken.deleteMany({
+        where: { userId: { in: extra } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: extra } } });
+    }
+  });
+
   it('profileVisibility=NOBODY скрывает профиль от посторонних, но не от владельца', async () => {
     await request(app.getHttpServer())
       .patch('/users/me/profile')
