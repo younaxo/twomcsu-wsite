@@ -191,6 +191,71 @@
   }
 }
 
+/* Loading кнопки (ADR-0093): анимируется своя иконка — первый дочерний
+   элемент (svg или [data-slot=icon]); второго спиннера нет. */
+@keyframes btn-icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes btn-icon-rise {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes btn-icon-drop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(2px);
+  }
+}
+@keyframes btn-icon-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+@keyframes btn-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+[data-loading='true'][data-loading-motion='spin'] > :is(svg, [data-slot='icon']):first-child {
+  animation: btn-icon-spin 0.9s linear infinite;
+}
+[data-loading='true'][data-loading-motion='rise'] > :is(svg, [data-slot='icon']):first-child {
+  animation: btn-icon-rise 0.9s ease-in-out infinite;
+}
+[data-loading='true'][data-loading-motion='drop'] > :is(svg, [data-slot='icon']):first-child {
+  animation: btn-icon-drop 0.9s ease-in-out infinite;
+}
+[data-loading='true'][data-loading-motion='nudge'] > :is(svg, [data-slot='icon']):first-child {
+  animation: btn-icon-nudge 0.8s ease-in-out infinite;
+}
+[data-loading='true'][data-loading-motion='pulse'] > :is(svg, [data-slot='icon']):first-child {
+  animation: btn-icon-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-loading='true'][data-loading-motion] > :is(svg, [data-slot='icon']):first-child {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
 @layer utilities {
   /* Тонкая верхняя кромка — подсветка листа на тёмных поверхностях. */
   .scrollbar-thin {

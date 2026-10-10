@@ -152,6 +152,19 @@ export function ChatButton({ className }: { className?: string }) {
   );
 }
 
+/// Отступ снизу для окон из шапки (уведомления, mini profile), чтобы они не
+/// заходили на зону плавающих кнопок: окна выше по z-index и иначе накрывают
+/// круглые кнопки, а снизу торчит их срезанная дуга. Меряется при открытии по
+/// фактической зоне (одна или две кнопки, desktop/mobile); кнопок нет — 8 px.
+export function floatingClearance(): number {
+  if (typeof document === 'undefined') return 8;
+  const zone = document.querySelector('[data-testid="floating-actions"]');
+  if (!zone) return 8;
+  const rect = zone.getBoundingClientRect();
+  if (rect.height === 0) return 8;
+  return Math.max(8, Math.ceil(window.innerHeight - rect.top) + 8);
+}
+
 /// Единая точка плавающих действий: правый нижний угол, над футером и
 /// мобильной навигацией (safe-area), ниже модалок и тостов по z-index.
 export function GlobalFloatingActions({ className }: { className?: string }) {

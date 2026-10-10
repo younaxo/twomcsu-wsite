@@ -6,9 +6,13 @@ import {
   LayoutGrid,
   List,
   Plus,
+  RefreshCw,
+  Save,
   Search,
+  Send,
   Settings,
   Table2,
+  Upload,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -833,11 +837,12 @@ const BUTTON_VARIANTS: NonNullable<ButtonProps['variant']>[] = [
 const BUTTON_SIZES = ['sm', 'md', 'lg'] as const;
 
 function ButtonDemo() {
+  const [busy, setBusy] = useState(false);
   return (
     <DemoBlock
       title="Button / IconButton"
       span={3}
-      use="Матрица вариантов и размеров + loading, disabled и icon-only кнопки (обязателен aria-label). Глагол в подписи."
+      use="Матрица вариантов и размеров + loading, disabled и icon-only кнопки (обязателен aria-label). Глагол в подписи. Loading: одна кнопка — один icon slot — анимируется своя иконка (обновить — вращение, загрузить — подъём, отправить — сдвиг, прочие — пульс), без иконки — спиннер на месте текста; ширина не меняется; при «уменьшении движения» — без анимации."
       avoid="ссылок на страницы — там Link с asChild, чтобы работал Cmd-клик."
     >
       <div className="overflow-x-auto scrollbar-thin">
@@ -879,6 +884,46 @@ function ButtonDemo() {
           </tbody>
         </table>
       </div>
+      <DemoRow>
+        <SwitchField
+          label="Загрузка"
+          description="Переключите — сравните ширину и иконки"
+          checked={busy}
+          onCheckedChange={setBusy}
+        />
+      </DemoRow>
+      <DemoRow>
+        <Button variant="secondary" loading={busy}>
+          <RefreshCw />
+          Повторить
+        </Button>
+        <Button variant="secondary" loading={busy}>
+          <Upload />
+          Загрузить
+        </Button>
+        <Button variant="secondary" loading={busy}>
+          <Download />
+          Скачать
+        </Button>
+        <Button loading={busy}>
+          <Send />
+          Отправить
+        </Button>
+        <Button variant="secondary" loading={busy}>
+          <Save />
+          Сохранить
+        </Button>
+        <Button variant="secondary" loading={busy}>
+          Показать ещё
+        </Button>
+        <IconButton aria-label="Обновить" variant="outline" loading={busy}>
+          <RefreshCw />
+        </IconButton>
+        <Button variant="destructive-outline">
+          <RefreshCw />
+          Ошибка · повторить
+        </Button>
+      </DemoRow>
       <DemoRow>
         <Button loading>Сохраняем</Button>
         <Button variant="secondary" loading>

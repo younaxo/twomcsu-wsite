@@ -1,7 +1,6 @@
 'use client';
 
 import type { ExternalProvider } from '@twomc/shared';
-import { Loader2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { BrandIcon } from '@/components/shell/brand-icon';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -50,6 +49,8 @@ export function SocialLogin({ next, disabled = false }: { next: string; disabled
               role={unavailable ? 'link' : undefined}
               aria-disabled={unavailable || undefined}
               aria-busy={pending === provider || undefined}
+              data-loading={pending === provider || undefined}
+              data-loading-motion="pulse"
               aria-describedby={hint ? `${hintId}-${provider}` : undefined}
               data-social={provider}
               data-state={
@@ -64,18 +65,16 @@ export function SocialLogin({ next, disabled = false }: { next: string; disabled
               }}
               className={cn(buttonVariants({ variant: 'secondary', size: 'lg' }), 'w-full')}
             >
-              {pending === provider ? (
-                <Loader2 aria-hidden className="animate-spin" />
-              ) : (
-                <span
-                  className={cn(
-                    'inline-flex [&_svg]:size-[18px]',
-                    offline ? 'text-muted-foreground' : PROVIDER_COLOR[provider],
-                  )}
-                >
-                  <BrandIcon id={provider} />
-                </span>
-              )}
+              {/* Переход к провайдеру: пульсирует сама иконка (без второго спиннера). */}
+              <span
+                data-slot="icon"
+                className={cn(
+                  'inline-flex [&_svg]:size-[18px]',
+                  offline ? 'text-muted-foreground' : PROVIDER_COLOR[provider],
+                )}
+              >
+                <BrandIcon id={provider} />
+              </span>
               {PROVIDER_LABEL[provider]}
             </a>
           );
