@@ -2,6 +2,7 @@ import { INestApplicationContext } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { ServerOptions } from 'socket.io';
+import { allowedOrigins, corsOrigin } from './config/cors';
 
 /// CORS для всех Socket.IO namespace настраивается здесь централизованно
 /// (через ConfigService, а не статическую опцию `cors` в @WebSocketGateway),
@@ -20,7 +21,8 @@ export class ConfigurableIoAdapter extends IoAdapter {
     return super.createIOServer(port, {
       ...options,
       cors: {
-        origin: config.get<string>('WEB_ORIGIN'),
+        // Тот же явный allowlist, что у HTTP API (ADR-0104).
+        origin: corsOrigin(allowedOrigins(config)),
         credentials: true,
       },
     } as ServerOptions);

@@ -18,6 +18,8 @@ export const envValidationSchema = Joi.object({
   REDIS_PASSWORD: Joi.string().allow('').default(''),
 
   WEB_ORIGIN: Joi.string().uri().default('http://localhost:3000'),
+  /// Явный CORS allowlist через запятую (ADR-0104); пусто — только WEB_ORIGIN.
+  WEB_ORIGINS: Joi.string().allow('').optional(),
   FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
 
   JWT_ACCESS_SECRET: Joi.string().min(16).required(),
