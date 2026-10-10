@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { CalendarEventDto } from '@twomc/shared';
 import { CalendarClock, Radio } from 'lucide-react';
 import Image from 'next/image';
@@ -38,7 +39,7 @@ function useNow(intervalMs: number) {
   return now;
 }
 
-function EventCard({
+export function EventCard({
   event,
   kind,
   now,
@@ -49,61 +50,66 @@ function EventCard({
 }) {
   const highlighted = kind !== 'upcoming';
   return (
-    <article
-      data-testid={`event-${kind}`}
-      className={cn(
-        'flex flex-col overflow-hidden rounded-xl border bg-surface shadow',
-        highlighted && 'md:flex-row',
-      )}
+    <Link
+      href={`/events/${encodeURIComponent(event.slug)}`}
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      {event.coverImage ? (
-        <div
-          className={cn(
-            'relative aspect-[16/7] bg-surface-sunken',
-            highlighted && 'md:w-2/5 md:aspect-auto',
-          )}
-        >
-          <Image
-            src={event.coverImage}
-            alt=""
-            fill
-            sizes="(min-width: 768px) 40vw, 100vw"
-            className="object-cover"
-          />
+      <article
+        data-testid={`event-${kind}`}
+        className={cn(
+          'flex flex-col overflow-hidden rounded-xl border bg-surface shadow',
+          highlighted && 'md:flex-row',
+        )}
+      >
+        {event.coverImage ? (
+          <div
+            className={cn(
+              'relative aspect-[16/7] bg-surface-sunken',
+              highlighted && 'md:w-2/5 md:aspect-auto',
+            )}
+          >
+            <Image
+              src={event.coverImage}
+              alt=""
+              fill
+              sizes="(min-width: 768px) 40vw, 100vw"
+              className="object-cover"
+            />
+          </div>
+        ) : null}
+        <div className="flex flex-1 flex-col gap-2 p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {kind === 'active' ? (
+              <Badge tone="success" icon={<Radio />}>
+                Идёт сейчас
+              </Badge>
+            ) : kind === 'next' ? (
+              <Badge tone="primary" icon={<CalendarClock />}>
+                Следующее · {formatCountdown(event.startsAt, now)}
+              </Badge>
+            ) : (
+              <Badge tone="neutral">{formatCountdown(event.startsAt, now)}</Badge>
+            )}
+            {event.server ? <Badge tone="neutral">{event.server}</Badge> : null}
+          </div>
+          <h3 className={cn('font-display font-semibold', highlighted ? 'text-xl' : 'text-base')}>
+            {event.title}
+          </h3>
+          <p
+            className={cn(
+              'text-sm text-muted-foreground',
+              highlighted ? 'line-clamp-3' : 'line-clamp-2',
+            )}
+          >
+            {event.description}
+          </p>
+          <p className="mt-auto text-xs text-subtle-foreground tabular">
+            {formatDateTime(event.startsAt)}
+            {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ''}
+          </p>
         </div>
-      ) : null}
-      <div className="flex flex-1 flex-col gap-2 p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          {kind === 'active' ? (
-            <Badge tone="success" icon={<Radio />}>
-              Идёт сейчас
-            </Badge>
-          ) : kind === 'next' ? (
-            <Badge tone="primary" icon={<CalendarClock />}>
-              Следующее · {formatCountdown(event.startsAt, now)}
-            </Badge>
-          ) : (
-            <Badge tone="neutral">{formatCountdown(event.startsAt, now)}</Badge>
-          )}
-          {event.server ? <Badge tone="neutral">{event.server}</Badge> : null}
-        </div>
-        <h3 className={cn('font-display font-semibold', highlighted ? 'text-xl' : 'text-base')}>
-          {event.title}
-        </h3>
-        <p
-          className={cn(
-            'text-sm text-muted-foreground',
-            highlighted ? 'line-clamp-3' : 'line-clamp-2',
-          )}
-        >
-          {event.description}
-        </p>
-        <p className="mt-auto text-xs text-subtle-foreground tabular">
-          {formatDateTime(event.startsAt)}
-          {event.endsAt ? ` — ${formatDateTime(event.endsAt)}` : ''}
-        </p>
-      </div>
-    </article>
+      </article>
+    </Link>
   );
 }
 

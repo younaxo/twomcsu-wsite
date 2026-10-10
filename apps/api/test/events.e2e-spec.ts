@@ -215,6 +215,31 @@ describe('Events (e2e)', () => {
       .expect(201);
   });
 
+  it('ADR-0118: на прошедшее событие записаться нельзя', async () => {
+    const past = await prisma.calendarEvent.create({
+      data: {
+        slug: `e2e-past-${unique}`,
+        title: 'Прошедшее',
+        description: 'Было',
+        descriptionHtml: '<p>Было</p>',
+        category: 'COMMUNITY',
+        status: 'PUBLISHED',
+        startsAt: new Date(Date.now() - 2 * 86_400_000),
+        endsAt: new Date(Date.now() - 86_400_000),
+        createdById: organizer.id,
+      },
+    });
+    try {
+      await request(app.getHttpServer())
+        .post(`/events/${past.id}/attendance`)
+        .set('Authorization', auth(alice))
+        .send({ status: 'GOING' })
+        .expect(403);
+    } finally {
+      await prisma.calendarEvent.delete({ where: { id: past.id } });
+    }
+  });
+
   it('изменение расписания опубликованного события уведомляет участников (EVENT_UPDATED)', async () => {
     const newStartsAt = new Date(
       Date.now() + 10 * 24 * 60 * 60 * 1000,
