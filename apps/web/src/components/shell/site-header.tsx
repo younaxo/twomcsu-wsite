@@ -78,7 +78,9 @@ export function SiteHeader({ className }: { className?: string }) {
         <SiteLogo />
         <HeaderNav className="mx-auto hidden lg:block" />
         <div className="ml-auto flex items-center gap-1 lg:ml-0">
-          <div className="lg:hidden">
+          {/* На самых узких телефонах (360 px) счётчик онлайна не помещается рядом
+              с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
+          <div className="lg:hidden max-[379px]:hidden">
             <OnlineCounter compact />
           </div>
           {authenticated ? <NotificationsPopover /> : null}

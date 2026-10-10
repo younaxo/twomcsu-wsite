@@ -4,6 +4,7 @@ import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { resolve } from 'path';
+import { allowedOrigins, corsOrigin } from './config/cors';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
@@ -15,8 +16,9 @@ export function configureApp(app: INestApplication): void {
 
   app.use(helmet());
   app.use(cookieParser());
+  // Явный allowlist origin'ов сайта (ADR-0104), без «*»; тот же — у Socket.IO.
   app.enableCors({
-    origin: config.get<string>('WEB_ORIGIN'),
+    origin: corsOrigin(allowedOrigins(config)),
     credentials: true,
   });
   app.useGlobalPipes(
