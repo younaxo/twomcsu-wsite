@@ -86,6 +86,22 @@ export class ActivityController {
     return this.activity.getOne(id, viewerIdOf(req));
   }
 
+  /// Комментарии записи — по её видимости (ADR-0114).
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':id/comments')
+  async comments(
+    @Param('id') id: string,
+    @Query() query: ListActivityQueryDto,
+    @Req() req: Request,
+  ) {
+    return this.activity.listComments(
+      id,
+      viewerIdOf(req),
+      query.page ?? 1,
+      query.limit ?? 20,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post(':id/reactions')
   async react(
