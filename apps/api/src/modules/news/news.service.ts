@@ -13,6 +13,7 @@ import { ReactNewsCommentDto } from './dto/react-news-comment.dto';
 import { TagsQueryDto } from './dto/tags-query.dto';
 import { UpdateNewsCommentDto } from './dto/update-news-comment.dto';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
+import { NEWS_COMMENT_REACTIONS } from './dto/react-news-comment.dto';
 
 const PUBLIC_WHERE: Prisma.NewsWhereInput = { status: NewsStatus.PUBLISHED };
 
@@ -212,9 +213,17 @@ ${entries}
     return { liked: true };
   }
 
-  async listComments(slug: string, page: number, limit: number) {
+  /// Комментарии — только у опубликованной новости (черновик — 404, ADR-0117).
+  /// Реакции — счётчики по набору и своя (без userId реагировавших), права
+  /// зрителя на правку и удаление.
+  async listComments(
+    slug: string,
+    page: number,
+    limit: number,
+    viewerId: string | null = null,
+  ) {
     const news = await this.prisma.news.findUnique({ where: { slug } });
-    if (!news) {
+    if (!news || news.status !== NewsStatus.PUBLISHED) {
       throw new NotFoundException('Новость не найдена');
     }
     const where = { newsId: news.id, isDeleted: false };
@@ -228,7 +237,41 @@ ${entries}
       }),
       this.prisma.newsComment.count({ where }),
     ]);
-    return { items, total, page, limit };
+    return {
+      items: items.map((item) => {
+        const counts = new Map<string, number>();
+        for (const reaction of item.reactions) {
+          if (!NEWS_COMMENT_REACTIONS.includes(reaction.emoji as never))
+            continue;
+          counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+        }
+        const mine = viewerId
+          ? (item.reactions.find((reaction) => reaction.userId === viewerId)
+              ?.emoji ?? null)
+          : null;
+        return {
+          id: item.id,
+          parentId: item.parentId,
+          content: item.content,
+          createdAt: item.createdAt,
+          isEdited: item.isEdited,
+          isPinned: item.isPinned,
+          author: item.author,
+          reactions: NEWS_COMMENT_REACTIONS.filter((key) =>
+            counts.has(key),
+          ).map((key) => ({ key, count: counts.get(key)! })),
+          myReaction:
+            mine && NEWS_COMMENT_REACTIONS.includes(mine as never)
+              ? mine
+              : null,
+          canEdit: viewerId === item.authorId,
+          canDelete: viewerId === item.authorId,
+        };
+      }),
+      total,
+      page,
+      limit,
+    };
   }
 
   async createComment(userId: string, slug: string, dto: CreateNewsCommentDto) {
@@ -377,6 +420,8 @@ ${entries}
     if (!comment || comment.isDeleted) {
       throw new NotFoundException('Комментарий не найден');
     }
+    // Реакции — только на комментарии опубликованной новости.
+    await this.requirePublished(comment.newsId);
     const existing = await this.prisma.newsCommentReaction.findUnique({
       where: { commentId_userId: { commentId, userId } },
     });
