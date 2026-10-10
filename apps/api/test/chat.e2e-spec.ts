@@ -317,12 +317,10 @@ describe('Chat (e2e)', () => {
       const results: Array<{ ok: boolean; error?: string }> = [];
       for (let index = 0; index < 6; index += 1) {
         results.push(
-          (await aliceSocket
-            .timeout(5000)
-            .emitWithAck('send_message', {
-              channelId,
-              content: `флуд ${index}`,
-            })) as {
+          (await aliceSocket.timeout(5000).emitWithAck('send_message', {
+            channelId,
+            content: `флуд ${index}`,
+          })) as {
             ok: boolean;
             error?: string;
           },
