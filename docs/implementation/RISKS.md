@@ -192,9 +192,9 @@ Socket.IO-сервера) — под полным `pnpm test:e2e` (CI: `.github/
 checklist в PHASE-31), e-mail поддержки/администрации и Telegram поддержки.
 Ещё нет: ссылки Telegram/Discord/TikTok (задать в /admin/settings или
 `NEXT_PUBLIC_*_URL`), ОГРНИП/адрес (`NEXT_PUBLIC_LEGAL_*`, не выдумываются),
-URL status page (`NEXT_PUBLIC_STATUS_PAGE_URL`), реальные скриншоты для
-hero/showcase главной (`NEXT_PUBLIC_HOME_HERO_IMAGES`, `NEXT_PUBLIC_HOME_FEATURE_*`),
-тексты правовых документов. Без них — честные заглушки, fake-данных нет.
+URL status page (`NEXT_PUBLIC_STATUS_PAGE_URL`), превью для остальных карточек
+showcase (`NEXT_PUBLIC_HOME_FEATURE_*`; hero, «3D-казино» и галерея — реальные
+скриншоты из реестра, ADR-0096), тексты правовых документов. Без них — честные заглушки, fake-данных нет.
 
 ## R16 — Внешний хостинг сезонного ассета — CLOSED
 
@@ -211,6 +211,17 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R26 — Скриншоты TwoMC ещё не загружены на CDN — OPEN (доступ к хосту)
+
+Реестр, карусель и интеграция готовы (ADR-0096), производные AVIF/WebP и
+оригиналы подготовлены. Для загрузки в
+`/www/wwwroot/cdn-files.twomc.su/assets/images/screenshots/` нужен доступ к
+хосту: локальный файл с ним удалён перед compact по требованию владельца,
+SSH-ключи на сервер не добавлялись. До загрузки сайт показывает вместо кадров
+нейтральную поверхность с названием (без битых картинок). **Нужно от
+владельца:** снова дать временный доступ (ignored `.env.host`) или загрузить
+файлы самому по списку из PR.
+
 ## R25 — Apple-style emoji: лицензия пака — OPEN (решение владельца)
 
 Архитектура готова (`components/ui/emoji.tsx`, ADR-0092). Ассеты Apple
@@ -226,8 +237,11 @@ DNS отдаёт `198.18.0.51` (диапазон fake-IP прокси/VPN), TLS-
 и прочие ассеты CDN с этой машины не загружаются. То же с `status.twomc.su`.
 Проверено на хосте (2026-10-10): nginx отдаёт файлы CDN с 200 и верным
 Content-Type, в т.ч. по публичному IP; запросы с машины разработки до сервера
-не доходят. **Нужно от владельца:** исключить `*.twomc.su` из прокси/VPN на
-этой машине (или проверить с другой сети).
+не доходят. **Подтверждено владельцем (2026-10-10):** DNS создан, Proxied
+через Cloudflare, HTTPS, ассеты 200, cache HIT, Minimum TLS 1.2 — проблема
+только в локальной среде (proxy/fake-IP), не в CDN/production. **Нужно от
+владельца:** исключить `*.twomc.su` из прокси/VPN на этой машине (или
+проверить с другой сети).
 
 ## R23 — Cleanup e2e с `undefined` удаляет всё — MITIGATED (инцидент 2026-10-10)
 

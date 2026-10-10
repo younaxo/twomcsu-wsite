@@ -119,7 +119,7 @@ export function DesignLab() {
         <section id="auth-extra" className="scroll-mt-20">
           <SectionHeading
             title="Auth: spotlight, коды и восстановление"
-            description="Подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), «Забыли пароль?» по e-mail и по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу» — production-компоненты, без запросов к API."
+            description="Карусель реальных скриншотов TwoMC в панели входа и регистрации, подсказка при входе в регистрацию, поля кодов Minecraft (XXX-000-X0X0-0X0 и X0XX0), «Забыли пароль?» по e-mail и по нику с маской e-mail и недоступными провайдерами, «← Вернуться ко входу» — production-компоненты, без запросов к API."
           />
           <AuthAdditionsSection />
         </section>

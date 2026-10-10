@@ -188,7 +188,7 @@ export function AuthPanel({ children, mode }: { children: ReactNode; mode?: Auth
       data-testid="auth-panel"
       className="grid w-full max-w-[1120px] overflow-hidden rounded-2xl bg-surface-raised shadow-lg lg:grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)]"
     >
-      <AuthVisual compact className="max-[379px]:hidden lg:hidden" />
+      <AuthVisual compact className="lg:hidden" />
       <section
         aria-labelledby="auth-title"
         className="flex min-w-0 flex-col gap-5 px-5 py-6 sm:px-8 sm:py-7 lg:px-10 lg:py-8"
@@ -202,7 +202,7 @@ export function AuthPanel({ children, mode }: { children: ReactNode; mode?: Auth
         </div>
         {children}
       </section>
-      <AuthVisual className="hidden lg:flex" />
+      <AuthVisual className="hidden lg:block" />
     </div>
   );
 }

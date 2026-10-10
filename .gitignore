@@ -43,3 +43,6 @@ Thumbs.db
 
 # локальные dev-учётки/заметки
 *.local.json
+
+# Локальное зеркало CDN для проверки, когда cdn-files.twomc.su недоступен из среды разработки (R24)
+apps/web/public/local-cdn/
