@@ -99,16 +99,37 @@ export class ProfilesService {
     }
 
     const isOwner = viewerId !== null && viewerId === user.id;
-    if (!isOwner) {
-      if (
-        user.profileVisibility === 'NOBODY' ||
-        user.profileVisibility === 'FRIENDS_ONLY'
-      ) {
-        throw new NotFoundException('Профиль не найден');
-      }
+    if (!(await this.canView(user, viewerId))) {
+      throw new NotFoundException('Профиль не найден');
     }
 
     return isOwner ? user : this.applyPrivacy(user);
+  }
+
+  /// Видимость профиля для зрителя: владелец — всегда; блокировка в любую
+  /// сторону — скрыт; NOBODY — скрыт; FRIENDS_ONLY — только принятым друзьям
+  /// (раньше скрывался и от друзей); EVERYONE — всем.
+  private async canView(
+    user: { id: string; profileVisibility: string },
+    viewerId: string | null,
+  ): Promise<boolean> {
+    if (viewerId === user.id) return true;
+    if (user.profileVisibility === 'NOBODY') return false;
+    if (!viewerId) return user.profileVisibility === 'EVERYONE';
+    const relations = await this.prisma.friendship.findMany({
+      where: {
+        OR: [
+          { requesterId: viewerId, addresseeId: user.id },
+          { requesterId: user.id, addresseeId: viewerId },
+        ],
+      },
+      select: { status: true },
+    });
+    if (relations.some((item) => item.status === 'BLOCKED')) return false;
+    if (user.profileVisibility === 'FRIENDS_ONLY') {
+      return relations.some((item) => item.status === 'ACCEPTED');
+    }
+    return true;
   }
 
   /// Карточка превью (ADR-0073). Те же правила видимости, что у публичного
@@ -158,11 +179,7 @@ export class ProfilesService {
       throw new NotFoundException('Профиль не найден');
     }
     const isOwner = viewerId !== null && viewerId === user.id;
-    if (
-      !isOwner &&
-      (user.profileVisibility === 'NOBODY' ||
-        user.profileVisibility === 'FRIENDS_ONLY')
-    ) {
+    if (!(await this.canView(user, viewerId))) {
       return { username: user.username, hidden: true as const };
     }
     const [friendsCount, achievementsCompleted] = await Promise.all([
