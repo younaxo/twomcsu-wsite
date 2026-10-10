@@ -48,6 +48,15 @@ export class ProfilesController {
     return this.profiles.getProfileSummary(username, viewer?.id ?? null);
   }
 
+  /// Витрина «Награды и значки» (ADR-0100): реальные награды пользователя и
+  /// выставленные им завершённые достижения. Скрытый профиль — 404.
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':username/showcase')
+  async showcase(@Param('username') username: string, @Req() req: Request) {
+    const viewer = (req as Request & { user?: AuthenticatedUser }).user;
+    return this.profiles.getShowcase(username, viewer?.id ?? null);
+  }
+
   /// Просмотр профиля (B5): свой не считается, повтор не дублирует.
   @UseGuards(JwtAuthGuard)
   @Post(':username/view')

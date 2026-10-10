@@ -46,6 +46,7 @@ export function ProfileHero({
   mediaBadges,
   decoration,
   awards,
+  showBadges = true,
   decorationCampaign,
   titleAs: Title = 'h1',
 }: {
@@ -64,6 +65,8 @@ export function ProfileHero({
   decoration?: ProfileDecorationView | null;
   /// Плашка наград — появится вместе с системой наград.
   awards?: ReactNode;
+  /// Значки под ником; на странице профиля они в витрине «Награды и значки».
+  showBadges?: boolean;
   /// Явная кампания украшения шапки (design-lab); по умолчанию — сайта.
   decorationCampaign?: SeasonalCampaign | null;
   /// Уровень заголовка с ником: на странице профиля — h1, в design-lab — h3.
@@ -116,7 +119,7 @@ export function ProfileHero({
               {statusText}
             </p>
           ) : null}
-          {hasBadges ? (
+          {showBadges && hasBadges ? (
             <ProfileBadges badges={badges} mediaBadges={mediaBadges} decoration={decoration} />
           ) : null}
         </div>

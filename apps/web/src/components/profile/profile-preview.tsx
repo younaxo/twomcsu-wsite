@@ -69,6 +69,7 @@ export function ProfilePreviewCard({
   error,
   bleed = false,
   showHeader = true,
+  showJoined = true,
 }: {
   username: string;
   summary: PublicProfileSummary | undefined;
@@ -78,6 +79,8 @@ export function ProfilePreviewCard({
   bleed?: boolean;
   /// Без шапки — на странице профиля баннер и аватар уже наверху.
   showHeader?: boolean;
+  /// Дата регистрации; на странице профиля она уже в «Информации».
+  showJoined?: boolean;
 }) {
   const pad = bleed ? 'px-4' : '';
   if (loading) {
@@ -139,11 +142,11 @@ export function ProfilePreviewCard({
             <ShieldCheck aria-hidden className="size-4 text-primary" />
             Системный аккаунт twomc.su
           </p>
-        ) : (
+        ) : showJoined ? (
           <p className="text-xs text-muted-foreground">
             На сайте с {formatDate(summary.createdAt)}
           </p>
-        )}
+        ) : null}
         {summary.banned ? (
           <p className="rounded bg-destructive-soft px-2.5 py-1.5 text-xs text-destructive">
             Аккаунт заблокирован

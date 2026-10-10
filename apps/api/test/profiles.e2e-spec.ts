@@ -98,6 +98,35 @@ describe('Profiles (e2e)', () => {
     expect(cleared.body.statusText).toBeNull();
   });
 
+  it('день рождения в публичном профиле — строго по приватности (скрыт / без года / с годом)', async () => {
+    const patch = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .patch('/users/me/profile')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send(body)
+        .expect(200);
+    const view = () =>
+      request(app.getHttpServer())
+        .get(`/users/${user.username}/public`)
+        .expect(200);
+
+    await patch({ birthDate: '2001-05-20', hideBirthDate: true });
+    const hidden = await view();
+    expect(hidden.body.birthday).toBeUndefined();
+    expect(hidden.body.birthDate).toBeUndefined();
+
+    await patch({ hideBirthDate: false, showBirthDate: false });
+    const noYear = await view();
+    expect(noYear.body.birthday).toEqual({ day: 20, month: 5, year: null });
+    expect(noYear.body.birthDate).toBeUndefined();
+
+    await patch({ showBirthDate: true });
+    const full = await view();
+    expect(full.body.birthday).toEqual({ day: 20, month: 5, year: 2001 });
+
+    await patch({ birthDate: null, hideBirthDate: true, showBirthDate: false });
+  });
+
   it('GET /users/:username/public скрывает country при hideCountry=true', async () => {
     await request(app.getHttpServer())
       .patch('/users/me/profile')
@@ -503,6 +532,99 @@ describe('Profiles (e2e)', () => {
       .get(`/users/${user.username}/summary`)
       .expect(200);
     expect(summary.body.statusText).toBe('Делаю twomc.su');
+  });
+
+  it('ADR-0100: витрина — реальные награды и выставленные достижения; пусто — пустые списки', async () => {
+    const empty = await request(app.getHttpServer())
+      .get(`/users/${user.username}/showcase`)
+      .expect(200);
+    expect(empty.body).toEqual({
+      awards: [],
+      achievements: [],
+      achievementsCompleted: 0,
+    });
+
+    const award = await prisma.award.create({
+      data: {
+        slug: `e2e-award-${unique}`,
+        name: 'Первый ивент',
+        iconUrl: '/awards/first.png',
+        rarity: 'rare',
+      },
+    });
+    const achievement = await prisma.achievement.create({
+      data: {
+        slug: `e2e-ach-${unique}`,
+        name: 'Строитель',
+        description: 'Построить дом',
+        iconUrl: 'achievements/builder.png',
+        category: 'GAME',
+        rarity: 'RARE',
+        conditionType: 'PLAYTIME_MINUTES',
+      },
+    });
+    const hidden = await prisma.achievement.create({
+      data: {
+        slug: `e2e-ach-hidden-${unique}`,
+        name: 'Не выставлено',
+        description: '—',
+        iconUrl: 'achievements/x.png',
+        category: 'GAME',
+        rarity: 'COMMON',
+        conditionType: 'PLAYTIME_MINUTES',
+      },
+    });
+    try {
+      await prisma.userAward.create({
+        data: { userId: user.id, awardId: award.id },
+      });
+      await prisma.userAchievement.create({
+        data: {
+          userId: user.id,
+          achievementId: achievement.id,
+          isCompleted: true,
+          completedAt: new Date(),
+          isShowcased: true,
+        },
+      });
+      await prisma.userAchievement.create({
+        data: { userId: user.id, achievementId: hidden.id, isCompleted: true },
+      });
+      const res = await request(app.getHttpServer())
+        .get(`/users/${user.username}/showcase`)
+        .expect(200);
+      expect(res.body.awards).toEqual([
+        expect.objectContaining({
+          slug: award.slug,
+          name: 'Первый ивент',
+          iconUrl: '/awards/first.png',
+          rarity: 'rare',
+        }),
+      ]);
+      expect(res.body.achievements).toEqual([
+        expect.objectContaining({
+          slug: achievement.slug,
+          name: 'Строитель',
+          rarity: 'RARE',
+        }),
+      ]);
+      expect(res.body.achievementsCompleted).toBe(2);
+      // Внутренние поля достижения наружу не уходят.
+      expect(res.body.achievements[0].conditionType).toBeUndefined();
+      expect(res.body.achievements[0].rewardRubies).toBeUndefined();
+    } finally {
+      await prisma.userAchievement.deleteMany({
+        where: { achievementId: { in: [achievement.id, hidden.id] } },
+      });
+      await prisma.userAward.deleteMany({ where: { awardId: award.id } });
+      await prisma.achievement.deleteMany({
+        where: { id: { in: [achievement.id, hidden.id] } },
+      });
+      await prisma.award.deleteMany({ where: { id: award.id } });
+    }
+    await request(app.getHttpServer())
+      .get('/users/__no_such_user__/showcase')
+      .expect(404);
   });
 
   it('ADR-0094: GET /wallet — только свой, честные нули без строк кошелька', async () => {

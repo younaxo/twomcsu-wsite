@@ -40,6 +40,111 @@ beforeEach(() => {
 });
 
 describe('Публичный профиль /u/[username]', () => {
+  it('«О себе» — только bio (Markdown), метаданные — в «Информации», дата регистрации один раз', async () => {
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path.endsWith('/public')) {
+        return {
+          id: 'u1',
+          username: 'Steve',
+          bio: '**Строю** спавн\n\n- редстоун\n- *фермы*\n\n<script>alert(1)</script>',
+          city: 'Москва',
+          country: 'Россия',
+          gender: 'MALE',
+          birthday: { day: 20, month: 5, year: null },
+          createdAt: '2026-10-09T10:00:00.000Z',
+        };
+      }
+      if (path.endsWith('/showcase'))
+        return { awards: [], achievements: [], achievementsCompleted: 0 };
+      return { username: 'Steve', hidden: false, roles: [], createdAt: '2026-10-09T10:00:00.000Z' };
+    });
+    render(<PublicProfilePage />, { wrapper: Providers });
+    const about = await screen.findByTestId('profile-about');
+    expect(within(about).getByText('Строю').tagName).toBe('STRONG');
+    expect(about.querySelectorAll('li')).toHaveLength(2);
+    expect(about.querySelector('script')).toBeNull();
+    expect(about).not.toHaveTextContent('Москва');
+    expect(about).not.toHaveTextContent('На twomc.su с');
+
+    const info = screen.getByTestId('profile-info');
+    expect(info).toHaveTextContent('Москва, Россия');
+    expect(info).toHaveTextContent('20 мая');
+    expect(info).not.toHaveTextContent('2001');
+    expect(info).toHaveTextContent('Мужской');
+    // Пол — SVG-иконка lucide, не emoji.
+    expect(info.querySelector('svg.lucide-mars')).not.toBeNull();
+    expect(screen.getAllByText(/На twomc\.su с|На сайте с/)).toHaveLength(1);
+  });
+
+  it('день рождения скрыт владельцем — в «Информации» его нет', async () => {
+    mocks.get.mockImplementation(async (path: string) =>
+      path.endsWith('/public')
+        ? { id: 'u1', username: 'Steve', createdAt: '2026-10-09T10:00:00.000Z' }
+        : path.endsWith('/showcase')
+          ? { awards: [], achievements: [], achievementsCompleted: 0 }
+          : { username: 'Steve', hidden: false, roles: [] },
+    );
+    render(<PublicProfilePage />, { wrapper: Providers });
+    const info = await screen.findByTestId('profile-info');
+    expect(info.querySelector('svg.lucide-cake')).toBeNull();
+    expect(info).toHaveTextContent('На twomc.su с');
+  });
+
+  it('«Награды и значки»: нет наград — честный пустой блок; есть — плитки с подсказками', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    let showcase: unknown = { awards: [], achievements: [], achievementsCompleted: 0 };
+    mocks.get.mockImplementation(async (path: string) =>
+      path.endsWith('/public')
+        ? { id: 'u1', username: 'Steve' }
+        : path.endsWith('/showcase')
+          ? showcase
+          : { username: 'Steve', hidden: false, roles: [], badges: [], mediaBadges: [] },
+    );
+    const first = render(<PublicProfilePage />, { wrapper: Providers });
+    expect(await screen.findByTestId('profile-showcase-empty')).toHaveTextContent(
+      'Пока нет наград и значков',
+    );
+    first.unmount();
+
+    showcase = {
+      awards: [
+        {
+          slug: 'event-1',
+          name: 'Первый ивент',
+          description: 'Участник открытия',
+          iconUrl: '/awards/first.png',
+          color: null,
+          rarity: 'rare',
+          grantedAt: '2026-10-09T10:00:00.000Z',
+        },
+      ],
+      achievements: [
+        {
+          slug: 'builder',
+          name: 'Строитель',
+          description: 'Построить дом',
+          iconUrl: 'https://cdn.example/builder.png',
+          category: 'GAME',
+          rarity: 'EPIC',
+          completedAt: '2026-10-09T10:00:00.000Z',
+        },
+      ],
+      achievementsCompleted: 3,
+    };
+    render(<PublicProfilePage />, { wrapper: Providers });
+    const section = await screen.findByTestId('profile-showcase');
+    const award = await within(section).findByTestId('showcase-award');
+    expect(award).toHaveAttribute('data-rarity', 'rare');
+    expect(award).toHaveTextContent('Первый ивент');
+    expect(within(section).getByTestId('showcase-achievement')).toHaveAttribute(
+      'data-rarity',
+      'epic',
+    );
+    await user.hover(award);
+    expect((await screen.findAllByText('Участник открытия')).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('profile-showcase-empty')).toBeNull();
+  });
+
   it('показывает только отданные сервером поля; ссылки соцсетей — только https', async () => {
     mocks.get.mockImplementation(async (path: string) =>
       path.endsWith('/public')
@@ -159,11 +264,20 @@ describe('Публичный профиль /u/[username]', () => {
           ? { available: false, model: null, cape: false, version: null }
           : { username: 'Steve', roles: [] },
     );
+    const user = (await import('@testing-library/user-event')).default.setup();
     render(<PublicProfilePage />, { wrapper: Providers });
-    // Свой профиль: оценки — просто счётчики, без кнопок.
+    // Свой профиль: оценки недоступны — not-allowed и наш Tooltip, запрос не уходит.
     const metrics = await screen.findByTestId('profile-metrics');
-    expect(within(metrics).getByLabelText('Нравится: 2')).toBeInTheDocument();
-    expect(within(metrics).queryByRole('button')).toBeNull();
+    const like = within(metrics).getByRole('button', { name: 'Нравится: 2' });
+    expect(like).toHaveAttribute('aria-disabled', 'true');
+    expect(like.className).toMatch(/cursor-not-allowed/);
+    expect(like).not.toHaveAttribute('title');
+    await user.click(like);
+    expect(mocks.put).not.toHaveBeenCalled();
+    await user.hover(like);
+    expect(
+      (await screen.findAllByText('Нельзя оценить собственный профиль')).length,
+    ).toBeGreaterThan(0);
     // «Редактировать» — круглая, в левом верхнем углу баннера.
     const edit = screen.getByRole('link', { name: 'Редактировать профиль' });
     expect(edit.className).toMatch(/rounded-full/);
