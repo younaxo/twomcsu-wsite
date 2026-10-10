@@ -1,6 +1,6 @@
 'use client';
 
-import type { OwnProfileDto, PublicProfileSummary } from '@twomc/shared';
+import type { ConnectedProvider, OwnProfileDto, PublicProfileSummary } from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { API_URL } from '@/lib/env';
@@ -21,8 +21,9 @@ export type PublicProfileDto = Partial<OwnProfileDto> &
     /// Привязанные Discord/Telegram: провайдер, имя и публичная ссылка (если
     /// у провайдера она есть), без внешних ID.
     connectedAccounts?: {
-      provider: 'discord' | 'telegram';
+      provider: ConnectedProvider;
       name: string | null;
+      avatarUrl?: string | null;
       url: string | null;
     }[];
   };

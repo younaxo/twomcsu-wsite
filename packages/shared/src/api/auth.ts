@@ -113,10 +113,30 @@ export interface ChangePasswordRequest {
 
 export type ExternalProvider = 'discord' | 'telegram';
 
-/// `GET /auth/social/providers` — какие кнопки показывать (без секретов).
+/// Привязываемые аккаунты (ADR-0095): один контракт для всех провайдеров.
+/// Вход — только `ExternalProvider`; VK и Steam пока без интеграции («Скоро»).
+export type ConnectedProvider = ExternalProvider | 'vk' | 'steam';
+
+export const CONNECTED_PROVIDERS: readonly ConnectedProvider[] = [
+  'discord',
+  'telegram',
+  'vk',
+  'steam',
+];
+
+export const CONNECTED_PROVIDER_LABELS: Record<ConnectedProvider, string> = {
+  discord: 'Discord',
+  telegram: 'Telegram',
+  vk: 'ВКонтакте',
+  steam: 'Steam',
+};
+
+/// `GET /auth/social/providers` — что можно привязать (без секретов).
 export interface SocialProvidersResponse {
   discord: { enabled: boolean };
   telegram: { enabled: boolean };
+  vk: { enabled: boolean };
+  steam: { enabled: boolean };
 }
 
 export type SocialAuthMode = 'login' | 'link';
@@ -135,11 +155,14 @@ export type SocialResultStatus =
   | 'unavailable'
   | 'error';
 
-/// `GET /auth/linked-accounts`.
+/// `GET /auth/linked-accounts` (свои привязки); `PATCH …/:provider` — видимость.
 export interface LinkedAccountDto {
-  provider: ExternalProvider;
+  provider: ConnectedProvider;
   username: string | null;
   displayName: string | null;
+  avatarUrl: string | null;
+  /// Показывать в публичном профиле.
+  isPublic: boolean;
   linkedAt: IsoDateString;
   lastLoginAt: IsoDateString | null;
 }

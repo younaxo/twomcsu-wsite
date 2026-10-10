@@ -76,7 +76,9 @@ function Providers({ children }: { children: ReactNode }) {
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.get.mockImplementation(async (path: string) =>
-    path === '/users/me/social-links' ? [{ platform: 'VK', value: 'vk.com/player' }] : profile,
+    path === '/users/me/social-links'
+      ? [{ platform: 'YOUTUBE', value: 'https://youtube.com/@player' }]
+      : profile,
   );
   mocks.patch.mockImplementation(async (_path: string, body: object) => ({ ...profile, ...body }));
   useAuthStore.setState({
@@ -104,11 +106,13 @@ describe('Настройки → Профиль', () => {
 
   it('соцсеть сохраняется при выходе из поля; очищенная — удаляется', async () => {
     render(<ProfileSettingsPage />, { wrapper: Providers });
-    const vk = await screen.findByRole('textbox', { name: 'ВКонтакте' });
-    await waitFor(() => expect(vk).toHaveValue('vk.com/player'));
-    fireEvent.change(vk, { target: { value: '' } });
-    fireEvent.blur(vk);
-    await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/users/me/social-links/VK'));
+    const youtube = await screen.findByRole('textbox', { name: 'YouTube' });
+    await waitFor(() => expect(youtube).toHaveValue('https://youtube.com/@player'));
+    fireEvent.change(youtube, { target: { value: '' } });
+    fireEvent.blur(youtube);
+    await waitFor(() =>
+      expect(mocks.delete).toHaveBeenCalledWith('/users/me/social-links/YOUTUBE'),
+    );
     const github = screen.getByRole('textbox', { name: 'GitHub' });
     fireEvent.change(github, { target: { value: 'player' } });
     fireEvent.blur(github);
@@ -117,9 +121,10 @@ describe('Настройки → Профиль', () => {
         value: 'player',
       }),
     );
-    // Discord и Telegram — только привязки (B5), не текст в соцсетях.
-    expect(screen.queryByRole('textbox', { name: 'Telegram' })).toBeNull();
-    expect(screen.queryByRole('textbox', { name: 'Discord' })).toBeNull();
+    // Discord, Telegram, VK и Steam — только привязки (ADR-0095), не текст.
+    for (const name of ['Telegram', 'Discord', 'ВКонтакте', 'Steam']) {
+      expect(screen.queryByRole('textbox', { name })).toBeNull();
+    }
     expect(screen.getByRole('textbox', { name: 'Сайт' })).toBeInTheDocument();
   });
 

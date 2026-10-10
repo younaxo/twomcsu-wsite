@@ -13,7 +13,7 @@ import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
-import { connectedProfileUrl } from './connected-accounts';
+import { connectedProfileUrl } from '../auth/connected-providers';
 
 const OWN_PROFILE_SELECT = {
   id: true,
@@ -57,9 +57,15 @@ const OWN_PROFILE_SELECT = {
   createdAt: true,
 } satisfies Prisma.UserSelect;
 
-/// Discord и Telegram в профиле — только реальные привязки (Connected
-/// Accounts), а не введённый текст: в публичных соцсетях их нет (B5).
-const CONNECTED_PLATFORMS = new Set<string>(['DISCORD', 'TELEGRAM']);
+/// Discord, Telegram, VK и Steam — только реальные привязки (Connected
+/// Accounts, ADR-0095), а не введённый текст: в соцсетях их нет, ввести
+/// вручную нельзя.
+export const CONNECTED_PLATFORMS = new Set<string>([
+  'DISCORD',
+  'TELEGRAM',
+  'VK',
+  'STEAM',
+]);
 
 /// Проверка ссылок соцсетей (B5): сайт — только https; GitHub — ник или
 /// https://github.com/… (нормализуется в ссылку).
@@ -192,16 +198,26 @@ export class ProfilesService {
   }
 
   private async connectedAccounts(userId: string) {
+    // Скрытые владельцем провайдеры не уходят в ответ вовсе (не только в UI).
     const accounts = await this.prisma.userExternalAccount.findMany({
-      where: { userId },
-      select: { provider: true, username: true, displayName: true },
+      where: { userId, isPublic: true },
+      select: {
+        provider: true,
+        providerUserId: true,
+        username: true,
+        displayName: true,
+        avatarUrl: true,
+      },
       orderBy: { linkedAt: 'asc' },
     });
+    // Внешний id в ответ не попадает (кроме того, что уже есть в публичной
+    // ссылке провайдера, например Steam ID в адресе профиля).
     return accounts.map((account) => ({
       provider: account.provider,
       name: account.username ?? account.displayName ?? null,
+      avatarUrl: account.avatarUrl,
       // Только из реальной привязки; нет публичной страницы — null.
-      url: connectedProfileUrl(account.provider, account.username),
+      url: connectedProfileUrl(account.provider, account),
     }));
   }
 
@@ -476,6 +492,12 @@ export class ProfilesService {
     platform: SocialPlatform,
     dto: UpsertSocialLinkDto,
   ) {
+    if (CONNECTED_PLATFORMS.has(platform)) {
+      // Подтверждённую платформу нельзя «выдать» ручной ссылкой.
+      throw new BadRequestException(
+        'Этот аккаунт привязывается в «Привязанные аккаунты», а не ссылкой',
+      );
+    }
     const value = normalizeSocialValue(platform, dto.value);
     if (!value) {
       throw new BadRequestException(

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -7,6 +8,7 @@ import {
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -29,6 +31,11 @@ import {
   SocialAuthService,
   SocialState,
 } from './social-auth.service';
+import {
+  isConnectedProvider,
+  type ConnectedProvider,
+} from './connected-providers';
+import { LinkedAccountVisibilityDto } from './dto/linked-account-visibility.dto';
 
 const NONCE_COOKIE = 'social_nonce';
 const PKCE_COOKIE = 'social_pkce';
@@ -225,6 +232,14 @@ export class SocialAuthController {
     }
   }
 
+  /// Любой провайдер реестра (для списка, видимости и отвязки).
+  private parseConnected(value: string): ConnectedProvider {
+    if (!isConnectedProvider(value)) {
+      throw new BadRequestException('Неизвестный провайдер');
+    }
+    return value;
+  }
+
   private parseProvider(value: string): ExternalProvider {
     if (value !== 'discord' && value !== 'telegram') {
       throw new BadRequestException('Неизвестный провайдер');
@@ -306,12 +321,25 @@ export class SocialAuthController {
     return this.social.list(user.id);
   }
 
+  @Patch('linked-accounts/:provider')
+  visibility(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('provider') providerParam: string,
+    @Body() dto: LinkedAccountVisibilityDto,
+  ) {
+    return this.social.setVisibility(
+      user.id,
+      this.parseConnected(providerParam),
+      dto.isPublic,
+    );
+  }
+
   @Delete('linked-accounts/:provider')
   async unlink(
     @CurrentUser() user: AuthenticatedUser,
     @Param('provider') providerParam: string,
   ) {
-    const provider = this.parseProvider(providerParam);
+    const provider = this.parseConnected(providerParam);
     await this.social.unlink(user.id, provider);
     return this.social.list(user.id);
   }
