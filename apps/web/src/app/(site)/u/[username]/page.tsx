@@ -6,6 +6,7 @@ import { FriendButton } from '@/components/friends/friend-button';
 import { WriteButton } from '@/components/messages/write-button';
 import { ProfileInfoSection } from '@/components/profile/profile-info';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
+import { ActivityFeed } from '@/components/activity/activity-feed';
 import { ProfileComments } from '@/components/profile/profile-comments';
 import { ProfileHero } from '@/components/profile/profile-hero';
 import { ConnectedAccountsSection, SocialLinksSection } from '@/components/profile/profile-links';
@@ -134,6 +135,17 @@ export default function PublicProfilePage() {
           />
           <ConnectedAccountsSection accounts={data.connectedAccounts ?? []} />
           <SocialLinksSection links={data.socialLinks ?? []} />
+          <section
+            className="flex flex-col gap-2 rounded-xl bg-surface py-3 shadow-sm"
+            aria-label="Активность"
+            data-testid="profile-activity"
+          >
+            <h2 className="px-5 text-sm font-semibold">Активность</h2>
+            <ActivityFeed
+              username={data.username}
+              emptyText="У игрока пока нет активности, которую вам можно видеть."
+            />
+          </section>
           {site.data?.modules?.comments === false ? null : (
             <ProfileComments username={data.username} signedIn={!!me} />
           )}

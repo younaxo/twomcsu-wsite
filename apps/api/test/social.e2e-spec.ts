@@ -481,4 +481,96 @@ describe('Social system (e2e)', () => {
       .expect(200);
     expect(settingsRes.body.userId).toBe(alice.id);
   });
+
+  it('ADR-0114: лента скрытого профиля не видна; глобальная — без скрытых; реакции-ключи; комментарии; настройка дружбы', async () => {
+    const http = () => request(app.getHttpServer());
+    const activity = await prisma.activity.create({
+      data: {
+        userId: carol.id,
+        type: 'FRIENDSHIP_STARTED',
+        title: 'Новая дружба',
+        visibility: 'PUBLIC',
+        metadata: { friendId: bob.id },
+      },
+    });
+    try {
+      const one = await http().get(`/activity/${activity.id}`).expect(200);
+      expect(one.body.friend).toEqual({ username: bob.username });
+      expect(one.body.user.username).toBe(carol.username);
+      await http()
+        .post(`/activity/${activity.id}/reactions`)
+        .set('Authorization', auth(alice))
+        .send({ emoji: 'плохое слово' })
+        .expect(400);
+      await http()
+        .post(`/activity/${activity.id}/reactions`)
+        .set('Authorization', auth(alice))
+        .send({ emoji: 'fire' })
+        .expect(201);
+      await http()
+        .post(`/activity/${activity.id}/comments`)
+        .set('Authorization', auth(alice))
+        .send({ content: 'Поздравляю!' })
+        .expect(201);
+      const withMine = await http()
+        .get(`/activity/${activity.id}`)
+        .set('Authorization', auth(alice))
+        .expect(200);
+      expect(withMine.body.reactions).toEqual([{ key: 'fire', count: 1 }]);
+      expect(withMine.body.myReaction).toBe('fire');
+      expect(withMine.body.commentsCount).toBe(1);
+      expect(JSON.stringify(withMine.body)).not.toContain(alice.id);
+      const comments = await http()
+        .get(`/activity/${activity.id}/comments`)
+        .expect(200);
+      expect(comments.body.items[0].content).toBe('Поздравляю!');
+
+      // Скрытый профиль: ни лента игрока, ни запись, ни глобальная лента.
+      await http()
+        .patch('/users/me/profile')
+        .set('Authorization', auth(carol))
+        .send({ profileVisibility: 'NOBODY' })
+        .expect(200);
+      await http().get(`/activity/feed/user/${carol.username}`).expect(404);
+      await http().get(`/activity/${activity.id}`).expect(404);
+      await http().get(`/activity/${activity.id}/comments`).expect(404);
+      const global = await http().get('/activity/feed?limit=50').expect(200);
+      expect(
+        global.body.items.some(
+          (item: { id: string }) => item.id === activity.id,
+        ),
+      ).toBe(false);
+      await http()
+        .patch('/users/me/profile')
+        .set('Authorization', auth(carol))
+        .send({ profileVisibility: 'EVERYONE' })
+        .expect(200);
+
+      // «Не показывать дружбу» — новая дружба в ленту не попадает.
+      await http()
+        .patch('/activity/settings')
+        .set('Authorization', auth(bob))
+        .send({ showFriendships: false })
+        .expect(200);
+      const request1 = await http()
+        .post(`/friends/requests/${carol.username}`)
+        .set('Authorization', auth(bob))
+        .expect(201);
+      await http()
+        .post(`/friends/requests/${request1.body.id}/accept`)
+        .set('Authorization', auth(carol))
+        .expect(201);
+      expect(
+        await prisma.activity.count({
+          where: { userId: bob.id, type: 'FRIENDSHIP_STARTED' },
+        }),
+      ).toBe(0);
+      await http()
+        .delete(`/friends/${carol.id}`)
+        .set('Authorization', auth(bob))
+        .expect(200);
+    } finally {
+      await prisma.activity.deleteMany({ where: { id: activity.id } });
+    }
+  });
 });
