@@ -81,6 +81,39 @@ export class DirectMessagesService {
     }
   }
 
+  /// Аватар участника/отправителя — URL, а не ключ хранилища (как все медиа).
+  private withAvatar<T extends { avatar: string | null }>(user: T): T {
+    return { ...user, avatar: this.storage.publicUrl(user.avatar) };
+  }
+
+  /// Беседа с участниками: аватары — URL.
+  private conversationView<
+    T extends { members: Array<{ user: { avatar: string | null } }> },
+  >(conversation: T): T {
+    return {
+      ...conversation,
+      members: conversation.members.map((member) => ({
+        ...member,
+        user: this.withAvatar(member.user),
+      })),
+    };
+  }
+
+  /// Сообщение: текст удалённого скрыт, аватар отправителя — URL.
+  private messageView<
+    T extends {
+      isDeleted: boolean;
+      content: string;
+      contentHtml: string;
+      sender?: { avatar: string | null } | null;
+    },
+  >(message: T): T {
+    const visible = hideDeleted(message);
+    return visible.sender
+      ? { ...visible, sender: this.withAvatar(visible.sender) }
+      : visible;
+  }
+
   async listConversations(userId: string) {
     const memberships = await this.prisma.conversationMember.findMany({
       where: { userId },
@@ -110,7 +143,7 @@ export class DirectMessagesService {
           type: m.conversation.type,
           title: m.conversation.title,
           avatar: this.storage.publicUrl(m.conversation.avatar),
-          members: m.conversation.members.map((cm) => cm.user),
+          members: m.conversation.members.map((cm) => this.withAvatar(cm.user)),
           lastMessage: m.conversation.messages[0]
             ? hideDeleted(m.conversation.messages[0])
             : null,
@@ -147,30 +180,34 @@ export class DirectMessagesService {
       where: { directKey },
     });
     if (existing) {
-      return this.prisma.conversation.findUniqueOrThrow({
-        where: { id: existing.id },
+      return this.conversationView(
+        await this.prisma.conversation.findUniqueOrThrow({
+          where: { id: existing.id },
+          include: {
+            members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+          },
+        }),
+      );
+    }
+
+    return this.conversationView(
+      await this.prisma.conversation.create({
+        data: {
+          type: ConversationType.DIRECT,
+          directKey,
+          createdById: userId,
+          members: {
+            create: [
+              { userId, role: ConversationRole.MEMBER },
+              { userId: target.id, role: ConversationRole.MEMBER },
+            ],
+          },
+        },
         include: {
           members: { include: { user: { select: PUBLIC_USER_SELECT } } },
         },
-      });
-    }
-
-    return this.prisma.conversation.create({
-      data: {
-        type: ConversationType.DIRECT,
-        directKey,
-        createdById: userId,
-        members: {
-          create: [
-            { userId, role: ConversationRole.MEMBER },
-            { userId: target.id, role: ConversationRole.MEMBER },
-          ],
-        },
-      },
-      include: {
-        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
-      },
-    });
+      }),
+    );
   }
 
   async createGroupConversation(
@@ -202,33 +239,39 @@ export class DirectMessagesService {
       new Set([userId, ...members.map((m) => m.id)]),
     );
 
-    return this.prisma.conversation.create({
-      data: {
-        type: ConversationType.GROUP,
-        title: dto.title,
-        createdById: userId,
-        members: {
-          create: memberIds.map((id) => ({
-            userId: id,
-            role:
-              id === userId ? ConversationRole.OWNER : ConversationRole.MEMBER,
-          })),
+    return this.conversationView(
+      await this.prisma.conversation.create({
+        data: {
+          type: ConversationType.GROUP,
+          title: dto.title,
+          createdById: userId,
+          members: {
+            create: memberIds.map((id) => ({
+              userId: id,
+              role:
+                id === userId
+                  ? ConversationRole.OWNER
+                  : ConversationRole.MEMBER,
+            })),
+          },
         },
-      },
-      include: {
-        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
-      },
-    });
+        include: {
+          members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+        },
+      }),
+    );
   }
 
   async getConversation(userId: string, conversationId: string) {
     await this.requireMember(userId, conversationId);
-    return this.prisma.conversation.findUniqueOrThrow({
-      where: { id: conversationId },
-      include: {
-        members: { include: { user: { select: PUBLIC_USER_SELECT } } },
-      },
-    });
+    return this.conversationView(
+      await this.prisma.conversation.findUniqueOrThrow({
+        where: { id: conversationId },
+        include: {
+          members: { include: { user: { select: PUBLIC_USER_SELECT } } },
+        },
+      }),
+    );
   }
 
   async listMessages(
@@ -249,7 +292,7 @@ export class DirectMessagesService {
       this.prisma.directMessage.count({ where: { conversationId } }),
     ]);
     return {
-      items: items.reverse().map(hideDeleted),
+      items: items.reverse().map((item) => this.messageView(item)),
       total,
       page,
       limit,
@@ -307,7 +350,7 @@ export class DirectMessagesService {
 
     await this.notifyRecipients(userId, conversationId, message);
 
-    return message;
+    return this.messageView(message);
   }
 
   private async notifyRecipients(
