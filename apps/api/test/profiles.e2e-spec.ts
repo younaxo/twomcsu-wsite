@@ -224,9 +224,9 @@ describe('Profiles (e2e)', () => {
 
   it('социальные ссылки: добавление/список/скрытие/удаление', async () => {
     await request(app.getHttpServer())
-      .put('/users/me/social-links/DISCORD')
+      .put('/users/me/social-links/YOUTUBE')
       .set('Authorization', `Bearer ${user.accessToken}`)
-      .send({ value: 'test#1234' })
+      .send({ value: 'https://youtube.com/@test' })
       .expect(200);
 
     const listRes = await request(app.getHttpServer())
@@ -234,7 +234,7 @@ describe('Profiles (e2e)', () => {
       .set('Authorization', `Bearer ${user.accessToken}`)
       .expect(200);
     expect(listRes.body).toHaveLength(1);
-    expect(listRes.body[0].platform).toBe('DISCORD');
+    expect(listRes.body[0].platform).toBe('YOUTUBE');
 
     const publicWithSocial = await request(app.getHttpServer())
       .get(`/users/${user.username}/public`)
@@ -252,7 +252,7 @@ describe('Profiles (e2e)', () => {
     expect(publicHidden.body.socialLinks).toBeUndefined();
 
     await request(app.getHttpServer())
-      .delete('/users/me/social-links/DISCORD')
+      .delete('/users/me/social-links/YOUTUBE')
       .set('Authorization', `Bearer ${user.accessToken}`)
       .expect(200);
     const listAfterDelete = await request(app.getHttpServer())
