@@ -129,12 +129,11 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-/// Tutorial открывается сам ТОЛЬКО в регистрации (ADR-0087): при входе на
-/// `/register`, в том числе при переключении «Вход → Регистрация». На обычном
-/// «Вход» сам не открывается. Один раз за вкладку (sessionStorage): закрытый
-/// tutorial не всплывает снова при перезагрузке посреди регистрации; открыть
-/// вручную можно кнопкой «Как зарегистрироваться».
-export const TUTORIAL_SHOWN_KEY = 'twomc.auth-tutorial.shown';
+/// Registration Spotlight (A11) показывается ТОЛЬКО при входе в регистрацию
+/// (`/register`, в т.ч. «Вход → Регистрация»), один раз за вкладку
+/// (sessionStorage); на «Вход» — нет. Tutorial открывает сам человек — кнопкой
+/// «Как зарегистрироваться» в шапке или в подсказке.
+export const TUTORIAL_SHOWN_KEY = 'twomc.auth-spotlight.shown';
 
 export function shouldShowAuthTutorial(input: { pathname: string; shown: boolean }): boolean {
   return input.pathname === '/register' && !input.shown;

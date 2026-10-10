@@ -78,9 +78,10 @@ describe('auth-формы «Полдня»', () => {
       { wrapper: Providers },
     );
     expect(screen.getByTestId('auth-panel')).toBeInTheDocument();
-    // На обычном «Вход» tutorial сам НЕ открывается (только в регистрации).
+    // На обычном «Вход» ни spotlight, ни tutorial сами не появляются.
     await new Promise((resolve) => setTimeout(resolve, 450));
     expect(screen.queryByTestId('auth-tutorial')).toBeNull();
+    expect(screen.queryByTestId('registration-spotlight')).toBeNull();
     expect(screen.getByRole('link', { name: 'twomc.su — на главную' })).toBeInTheDocument();
     const modes = screen.getByRole('navigation', { name: 'Вход или регистрация' });
     expect(within(modes).getByRole('link', { name: 'Вход' })).toHaveAttribute(
@@ -136,7 +137,7 @@ describe('auth-формы «Полдня»', () => {
     expect(safeNext('https://evil.example')).toBe('/');
   });
 
-  it('tutorial: сам открывается при входе в регистрацию (один раз за вкладку), вручную — кнопкой', async () => {
+  it('spotlight (A11): при входе в регистрацию — подсказка у кнопки; «Мне понятно» закрывает; tutorial — по кнопке', async () => {
     const user = userEvent.setup();
     fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
     navigation.pathname = '/register';
@@ -146,11 +147,21 @@ describe('auth-формы «Полдня»', () => {
       </AuthLayout>,
       { wrapper: Providers },
     );
-    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
-    await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByTestId('auth-tutorial')).toBeNull());
+    const coachmark = await screen.findByTestId('registration-spotlight');
+    expect(coachmark).toHaveTextContent('Впервые здесь?');
+    expect(screen.getByTestId('auth-spotlight-dim')).toBeInTheDocument();
+    // Tutorial сам не открывается — только подсказка.
+    expect(screen.queryByTestId('auth-tutorial')).toBeNull();
+    // Подсвеченная кнопка остаётся рабочей (над затемнением).
+    const highlighted = screen
+      .getAllByRole('button', { name: 'Как зарегистрироваться' })
+      .find((button) => button.hasAttribute('data-spotlight'))!;
+    expect(highlighted.className).toMatch(/z-dropdown/);
+    await user.click(within(coachmark).getByRole('button', { name: 'Мне понятно' }));
+    await waitFor(() => expect(screen.queryByTestId('registration-spotlight')).toBeNull());
+    expect(screen.queryByTestId('auth-spotlight-dim')).toBeNull();
     unmount();
-    // Перезагрузка в той же вкладке — сам больше не всплывает…
+    // Повторный вход в той же вкладке — подсказка не всплывает снова…
     render(
       <AuthLayout>
         <RegisterForm />
@@ -158,10 +169,26 @@ describe('auth-формы «Полдня»', () => {
       { wrapper: Providers },
     );
     await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(screen.queryByTestId('auth-tutorial')).toBeNull();
-    // …но открыть вручную можно в любой момент, без перезагрузки.
+    expect(screen.queryByTestId('registration-spotlight')).toBeNull();
+    // …а tutorial открывается кнопкой в любой момент.
     await user.click(screen.getByRole('button', { name: 'Как зарегистрироваться' }));
     expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
+  });
+
+  it('spotlight: кнопка в подсказке открывает tutorial', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
+    navigation.pathname = '/register';
+    render(
+      <AuthLayout>
+        <RegisterForm />
+      </AuthLayout>,
+      { wrapper: Providers },
+    );
+    const coachmark = await screen.findByTestId('registration-spotlight');
+    await user.click(within(coachmark).getByRole('button', { name: 'Как зарегистрироваться' }));
+    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
+    expect(screen.queryByTestId('registration-spotlight')).toBeNull();
   });
 
   it('register: проверка полей, согласия обязательны и раздельны, реферальный код', async () => {
@@ -413,10 +440,64 @@ describe('auth-формы «Полдня»', () => {
     });
     render(<ForgotPasswordForm />, { wrapper: Providers });
     await user.type(screen.getByLabelText(/E-mail/), 'someone@example.com');
-    await user.click(screen.getByRole('button', { name: 'Отправить инструкцию' }));
+    await user.click(screen.getByRole('button', { name: 'Отправить ссылку' }));
     expect(await screen.findByTestId('forgot-sent')).toHaveTextContent(
       'Если на этот e-mail зарегистрирован аккаунт',
     );
+    // «← Вернуться ко входу» — со стрелкой из icon system (A16).
+    const back = screen.getByTestId('back-to-login');
+    expect(back).toHaveAttribute('href', '/login');
+    expect(back.querySelector('svg')).not.toBeNull();
+  });
+
+  it('forgot по нику (A13/A14): маска e-mail, ввод полного адреса, плитки только привязанных провайдеров', async () => {
+    const user = userEvent.setup();
+    const bodies: { path: string; body: Record<string, unknown> }[] = [];
+    fetchMock.mockImplementation(async (...args) => {
+      const { path, body } = requestInfo(args);
+      bodies.push({ path, body: body ? JSON.parse(String(body)) : {} });
+      if (path.startsWith('/auth/forgot-password/lookup')) {
+        return jsonResponse({ maskedEmail: 'y***o@i*****.com', providers: ['discord'] });
+      }
+      return path.startsWith('/auth/forgot-password')
+        ? new Response(null, { status: 204 })
+        : new Response(null, { status: 404 });
+    });
+    render(<ForgotPasswordForm />, { wrapper: Providers });
+    await user.click(screen.getByRole('radio', { name: 'По нику' }));
+    expect(screen.queryByLabelText(/E-mail/)).toBeNull();
+    await user.type(screen.getByLabelText(/^Ник/), 'younaxo');
+    await user.click(screen.getByRole('button', { name: 'Найти аккаунт' }));
+    expect(await screen.findByTestId('masked-email')).toHaveTextContent('y***o@i*****.com');
+    expect(screen.getByText(/Введите полный адрес электронной почты/)).toBeInTheDocument();
+    // Только привязанный Discord — недоступная плитка «Скоро», без имени и ID.
+    const tiles = screen.getByTestId('recovery-providers');
+    expect(within(tiles).getByRole('button', { name: /Discord/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(within(tiles).queryByText(/Telegram/)).toBeNull();
+    await user.type(screen.getByLabelText(/E-mail/), 'Younaxo@icloud.com');
+    await user.click(screen.getByRole('button', { name: 'Отправить ссылку' }));
+    expect(await screen.findByTestId('forgot-sent')).toHaveTextContent('Если адрес совпал');
+    const reset = bodies.find((item) => item.path === '/auth/forgot-password');
+    expect(reset?.body).toMatchObject({ email: 'younaxo@icloud.com', username: 'younaxo' });
+  });
+
+  it('forgot по нику: ник не найден — понятная ошибка, письмо не отправляется', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      return path.startsWith('/auth/forgot-password/lookup')
+        ? jsonResponse({ maskedEmail: null, providers: [] })
+        : new Response(null, { status: 404 });
+    });
+    render(<ForgotPasswordForm />, { wrapper: Providers });
+    await user.click(screen.getByRole('radio', { name: 'По нику' }));
+    await user.type(screen.getByLabelText(/^Ник/), 'nobody_here');
+    await user.click(screen.getByRole('button', { name: 'Найти аккаунт' }));
+    expect(await screen.findByText(/Аккаунт с таким ником не найден/)).toBeInTheDocument();
+    expect(screen.queryByTestId('masked-email')).toBeNull();
   });
 
   it('reset: без токена — ошибка ссылки; с токеном — валидация и success state', async () => {

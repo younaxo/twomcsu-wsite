@@ -39,6 +39,15 @@ export interface RegisterRequest {
 export interface ForgotPasswordRequest {
   email: string;
   captchaToken?: string;
+  /// Восстановление по нику (A13): ссылка — только если e-mail совпал с аккаунтом.
+  username?: string;
+}
+
+/// `POST /auth/forgot-password/lookup` (A13): маска e-mail аккаунта по нику и
+/// привязанные провайдеры (без имён и ID); не найден — `maskedEmail: null`.
+export interface ForgotLookupResponse {
+  maskedEmail: string | null;
+  providers: ('discord' | 'telegram')[];
 }
 
 /// `POST /auth/reset-password` — токен из письма + новый пароль.
