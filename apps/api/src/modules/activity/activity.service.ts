@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateActivityCommentDto } from './dto/create-activity-comment.dto';
 import { ReactActivityDto } from './dto/react-activity.dto';
 import { UpdateActivitySettingsDto } from './dto/update-activity-settings.dto';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 
 const DEFAULT_SETTINGS: Omit<Prisma.ActivityFeedSettingsCreateInput, 'user'> =
   {};
@@ -32,7 +33,7 @@ export class ActivityService {
       this.prisma.activity.findMany({
         where,
         include: {
-          user: true,
+          user: { select: PUBLIC_USER_SELECT },
           reactions: true,
           _count: { select: { comments: true } },
         },
@@ -80,7 +81,7 @@ export class ActivityService {
       this.prisma.activity.findMany({
         where,
         include: {
-          user: true,
+          user: { select: PUBLIC_USER_SELECT },
           reactions: true,
           _count: { select: { comments: true } },
         },
@@ -170,7 +171,7 @@ export class ActivityService {
         content: dto.content,
         contentHtml: escapeToHtml(dto.content),
       },
-      include: { author: true },
+      include: { author: { select: PUBLIC_USER_SELECT } },
     });
 
     await this.notifyCommentParticipants(
