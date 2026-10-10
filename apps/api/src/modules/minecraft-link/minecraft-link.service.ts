@@ -7,16 +7,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import {
+  CHALLENGE_PATTERN,
+  LINK_CODE_PATTERN,
+  generateByPattern,
+  matchesPattern,
+  normalizeCode,
+} from './code-format';
 import { PrismaService } from '../prisma/prisma.service';
 
 /// Алфавит кодов без похожих символов (нет I, O, 0, 1): 32 символа.
-export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const LINK_CODE_LENGTH = 15;
-export const CHALLENGE_LENGTH = 5;
-/// Срок ссылки и 15-символьного кода после `/site-connect`.
+/// Срок ссылки и кода привязки (XXX-000-X0X0-0X0) после `/site-connect`.
 export const CONNECT_TTL_MS = 10 * 60_000;
-/// Срок 5-символьного кода для ввода в игре.
+/// Срок кода подтверждения (X0XX0) для ввода в игре.
 export const CHALLENGE_TTL_MS = 5 * 60_000;
 export const CHALLENGE_MAX_ATTEMPTS = 5;
 const MAX_SESSIONS_PER_UUID_HOUR = 6;
@@ -24,20 +28,6 @@ const MAX_SESSIONS_PER_UUID_HOUR = 6;
 export const MINECRAFT_UUID =
   /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
 export const MINECRAFT_NAME = /^[A-Za-z0-9_]{3,16}$/;
-
-/// Криптостойкий код из CODE_ALPHABET без смещения (randomInt).
-export function generateCode(length: number): string {
-  let out = '';
-  for (let i = 0; i < length; i += 1) {
-    out += CODE_ALPHABET[randomInt(0, CODE_ALPHABET.length)];
-  }
-  return out;
-}
-
-/// Нормализация ввода: верхний регистр, без пробелов и дефисов.
-export function normalizeCode(raw: string): string {
-  return raw.replace(/[\s-]+/g, '').toUpperCase();
-}
 
 /// UUID в каноническом виде с дефисами, в нижнем регистре.
 export function normalizeUuid(raw: string): string {
@@ -54,7 +44,7 @@ export type ChallengeResult =
 ///
 /// 1. Игрок вводит `/site-connect` → плагин (подпись HMAC) создаёт сеанс и
 ///    получает одноразовую ссылку.
-/// 2. Ссылка показывает 15-символьный код (в БД только HMAC, TTL 10 минут).
+/// 2. Ссылка показывает код привязки (16 символов) (в БД только HMAC, TTL 10 минут).
 /// 3. Код вводится в регистрации → сайт выдаёт 5-символьный код (TTL 5 минут,
 ///    5 попыток) — ник сеанса обязан совпадать с ником регистрации.
 /// 4. Игрок вводит `/site-connect <код>` → плагин подтверждает → аккаунт
@@ -126,7 +116,7 @@ export class MinecraftLinkService {
     };
   }
 
-  // --- 2. Сайт: открытие ссылки → 15-символьный код ---------------------------
+  // --- 2. Сайт: открытие ссылки → код привязки (16 символов) ---------------------------
 
   async openLink(token: string) {
     const session = await this.prisma.minecraftConnectSession.findUnique({
@@ -151,10 +141,15 @@ export class MinecraftLinkService {
       });
     }
     // Каждое открытие выдаёт новый код (старый перестаёт действовать).
-    const code = generateCode(LINK_CODE_LENGTH);
+    // Код привязки XXX-000-X0X0-0X0 (A12): показывается с дефисами, хеш —
+    // от значимых символов.
+    const code = generateByPattern(LINK_CODE_PATTERN);
     await this.prisma.minecraftConnectSession.update({
       where: { id: session.id },
-      data: { codeHash: this.hash('code', code), codeIssuedAt: new Date() },
+      data: {
+        codeHash: this.hash('code', normalizeCode(code)),
+        codeIssuedAt: new Date(),
+      },
     });
     return {
       code,
@@ -163,16 +158,13 @@ export class MinecraftLinkService {
     };
   }
 
-  // --- 3. Регистрация: 15-символьный код → сеанс ------------------------------
+  // --- 3. Регистрация: код привязки (16 символов) → сеанс ------------------------------
 
   /// Проверяет и «гасит» код (одноразово, атомарно). Ник сеанса обязан
   /// совпадать с ником регистрации; UUID не может принадлежать другому аккаунту.
   async claimCode(rawCode: string, expectedName: string) {
     const code = normalizeCode(rawCode);
-    if (
-      code.length !== LINK_CODE_LENGTH ||
-      [...code].some((c) => !CODE_ALPHABET.includes(c))
-    ) {
+    if (!matchesPattern(code, LINK_CODE_PATTERN)) {
       throw new BadRequestException({
         code: 'mc_code_invalid',
         message: 'Неверный код привязки',
@@ -230,7 +222,7 @@ export class MinecraftLinkService {
   }
 
   newChallenge() {
-    const challenge = generateCode(CHALLENGE_LENGTH);
+    const challenge = generateByPattern(CHALLENGE_PATTERN);
     return {
       challenge,
       expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS),

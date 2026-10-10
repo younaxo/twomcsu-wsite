@@ -40,7 +40,7 @@ export class MinecraftLinkController {
     return this.link.confirmChallenge(dto);
   }
 
-  /// Страница `/site-connect/<token>` → 15-символьный код.
+  /// Страница `/site-connect/<token>` → код привязки XXX-000-X0X0-0X0 (16 символов).
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('site-connect/open')
   @HttpCode(HttpStatus.OK)

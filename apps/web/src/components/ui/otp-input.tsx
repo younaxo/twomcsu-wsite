@@ -47,6 +47,9 @@ export interface OtpInputProps extends Omit<
   size?: 'md' | 'lg';
   /// Имя скрытого input для нативной отправки формы.
   name?: string;
+  /// Шаблон кода (A12): `X` — буква A–Z, `0` — цифра; например `X0XX0`.
+  /// Длина = длине шаблона, буквы — в верхний регистр. Без шаблона — цифры.
+  pattern?: string;
   'aria-invalid'?: boolean | 'true' | 'false';
 }
 
@@ -55,12 +58,11 @@ const cellSizeClass = {
   lg: 'h-14 w-12 text-2xl',
 } as const;
 
-const digitsOf = (raw: string) => raw.replace(/\D/g, '');
-
 export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
   (
     {
-      length = 6,
+      length: lengthProp = 6,
+      pattern,
       value,
       defaultValue = '',
       onChange,
@@ -80,8 +82,24 @@ export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
     },
     ref,
   ) => {
-    const [inner, setInner] = useState(() => digitsOf(defaultValue).slice(0, length));
-    const code = digitsOf(value ?? inner).slice(0, length);
+    const length = pattern?.length ?? lengthProp;
+    // Допустимый символ позиции: по шаблону (буква/цифра) или цифра.
+    const accept = (char: string, position: number) => {
+      const slot = pattern?.[position];
+      if (!pattern) return /^\d$/.test(char);
+      return slot === 'X' ? /^[A-Z]$/.test(char) : slot === '0' ? /^\d$/.test(char) : false;
+    };
+    // Ввод с позиции `start`: чужие символы отбрасываются, буквы — в верхний регистр.
+    const sanitize = (raw: string, start = 0) => {
+      let out = '';
+      for (const char of raw.toUpperCase()) {
+        if (start + out.length >= length) break;
+        if (accept(char, start + out.length)) out += char;
+      }
+      return out;
+    };
+    const [inner, setInner] = useState(() => sanitize(defaultValue));
+    const code = sanitize(value ?? inner);
     const cells = useRef<(HTMLInputElement | null)[]>([]);
     // Актуальный код для обработчиков фокуса: commit обновляет его сразу,
     // не дожидаясь нового рендера.
@@ -100,7 +118,7 @@ export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
     );
 
     const commit = (next: string, focusAt?: number) => {
-      const clean = digitsOf(next).slice(0, length);
+      const clean = sanitize(next);
       latest.current = clean;
       if (value === undefined) setInner(clean);
       if (clean !== code) {
@@ -121,9 +139,9 @@ export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
     }, [autoFocus, locked, empty, focusCell]);
 
     const insert = (index: number, raw: string) => {
-      const digits = digitsOf(raw);
-      if (!digits) return;
       const at = Math.min(index, code.length);
+      const digits = sanitize(raw, at);
+      if (!digits) return;
       const next = (code.slice(0, at) + digits + code.slice(at + digits.length)).slice(0, length);
       commit(next, Math.min(at + digits.length, length - 1));
     };
@@ -162,15 +180,20 @@ export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
           focusCell(Math.min(code.length, length - 1));
           break;
         default:
-          if (event.key.length === 1 && !/\d/.test(event.key)) event.preventDefault();
+          if (
+            event.key.length === 1 &&
+            !accept(event.key.toUpperCase(), Math.min(index, code.length))
+          ) {
+            event.preventDefault();
+          }
       }
     };
 
     const onPaste = (index: number) => (event: ClipboardEvent<HTMLInputElement>) => {
       event.preventDefault();
-      const digits = digitsOf(event.clipboardData.getData('text'));
+      const text = event.clipboardData.getData('text');
       // Целый код вставляем с начала, часть — с текущей ячейки.
-      insert(digits.length >= length ? 0 : index, digits);
+      insert(sanitize(text).length >= length ? 0 : index, text);
     };
 
     return (
@@ -192,18 +215,19 @@ export const OtpInput = forwardRef<HTMLDivElement, OtpInputProps>(
                 cells.current[index] = node;
               }}
               type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
+              inputMode={pattern && pattern[index] !== '0' ? 'text' : 'numeric'}
+              pattern={pattern ? (pattern[index] === '0' ? '[0-9]' : '[A-Za-z]') : '[0-9]*'}
+              autoCapitalize={pattern ? 'characters' : undefined}
               autoComplete={index === 0 ? 'one-time-code' : 'off'}
               maxLength={length}
               value={char}
               disabled={locked}
-              aria-label={`Код, цифра ${index + 1}`}
+              aria-label={`Код, ${pattern ? 'символ' : 'цифра'} ${index + 1}`}
               aria-invalid={isInvalid || undefined}
               aria-describedby={describedBy}
               data-filled={char ? '' : undefined}
               onChange={(event) => {
-                let raw = digitsOf(event.target.value);
+                let raw = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
                 // Каретка стояла рядом с уже введённой цифрой — ячейка получила
                 // две; новая цифра заменяет старую, а не сдвигает код.
                 if (char && raw.length === 2) raw = raw[0] === char ? raw[1]! : raw[0]!;

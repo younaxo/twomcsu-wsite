@@ -22,6 +22,9 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
+import { resolveUserIdByHandle } from '../profiles/handle';
+import { ForgotLookupDto } from './dto/forgot-lookup.dto';
+import { maskEmailStrict } from './email-mask';
 
 export interface RequestContext {
   ip: string;
@@ -458,9 +461,18 @@ export class AuthService {
     if (!captchaOk) {
       throw new ForbiddenException('Проверка captcha не пройдена');
     }
-    const email = dto.email.toLowerCase();
-    const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    const email = dto.email.trim().toLowerCase();
+    // По нику (A13) — только если введённый полный e-mail совпал с адресом
+    // аккаунта; иначе молча (ответ всегда одинаковый).
+    const byHandle = dto.username
+      ? await resolveUserIdByHandle(this.prisma, dto.username)
+      : null;
+    const user = dto.username
+      ? byHandle
+        ? await this.prisma.user.findFirst({ where: { id: byHandle, email } })
+        : null
+      : await this.prisma.user.findUnique({ where: { email } });
+    if (!user || user.accountType === 'SYSTEM') {
       // Молчим при неизвестном email — не раскрываем существование аккаунта.
       return;
     }
@@ -487,6 +499,39 @@ export class AuthService {
       html: `<p>Для сброса пароля перейдите по ссылке (действительна 1 час): <a href="${resetUrl}">${resetUrl}</a></p>`,
       text: `Для сброса пароля перейдите по ссылке (действительна 1 час): ${resetUrl}`,
     });
+  }
+
+  /// Восстановление по нику (A13/A14): маска e-mail и привязанные провайдеры
+  /// (без имён и ID) — чтобы человек вспомнил, какой адрес вводить. Полный
+  /// e-mail не отдаётся; системные аккаунты не находятся.
+  async forgotLookup(dto: ForgotLookupDto): Promise<{
+    maskedEmail: string | null;
+    providers: string[];
+  }> {
+    const captchaOk = await this.captcha.verify(dto.captchaToken);
+    if (!captchaOk) {
+      throw new ForbiddenException('Проверка captcha не пройдена');
+    }
+    const id = await resolveUserIdByHandle(this.prisma, dto.username);
+    const user = id
+      ? await this.prisma.user.findUnique({
+          where: { id },
+          select: {
+            email: true,
+            accountType: true,
+            externalAccounts: { select: { provider: true } },
+          },
+        })
+      : null;
+    if (!user || user.accountType === 'SYSTEM') {
+      return { maskedEmail: null, providers: [] };
+    }
+    return {
+      maskedEmail: maskEmailStrict(user.email),
+      providers: [
+        ...new Set(user.externalAccounts.map((item) => item.provider)),
+      ],
+    };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {

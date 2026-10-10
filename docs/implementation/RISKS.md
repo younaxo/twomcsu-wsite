@@ -211,6 +211,13 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R25 — Apple-style emoji: лицензия пака — OPEN (решение владельца)
+
+Архитектура готова (`components/ui/emoji.tsx`, ADR-0092). Ассеты Apple
+нельзя скачивать или хотлинкать с Emojipedia без разрешения. **Нужно от
+владельца:** выбрать пак с допустимой лицензией и разместить на CDN
+(`NEXT_PUBLIC_EMOJI_PACK_URL`).
+
 ## R24 — CDN `cdn-files.twomc.su` недоступен с машины разработки — OPEN (сеть)
 
 DNS отдаёт `198.18.0.51` (диапазон fake-IP прокси/VPN), TLS-соединение
