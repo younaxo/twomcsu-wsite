@@ -9,6 +9,7 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { RedisService } from '../src/modules/redis/redis.service';
+import { wsRateKey } from '../src/modules/redis/ws-rate-limit';
 import { SiteStatusService } from '../src/modules/system/site-status.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом; этот
@@ -307,6 +308,25 @@ describe('Chat (e2e)', () => {
       }
       aliceSocket = await connectSocket(alice);
       expect(aliceSocket.connected).toBe(true);
+    });
+
+    it('ADR-0123: «печатает» сверх 10 за 10 с не рассылается', async () => {
+      const redis = app.get(RedisService);
+      await redis.client.del(wsRateKey('chat', 'typing', alice.id));
+      aliceSocket = await connectSocket(alice);
+      bobSocket = await connectSocket(bob);
+      await joinChannel(aliceSocket, alice.id, channelId);
+      await joinChannel(bobSocket, bob.id, channelId);
+      let typing = 0;
+      bobSocket.on('user:typing', () => {
+        typing += 1;
+      });
+      for (let index = 0; index < 15; index += 1) {
+        aliceSocket.emit('typing_start', { channelId });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      expect(typing).toBe(10);
+      await redis.client.del(wsRateKey('chat', 'typing', alice.id));
     });
 
     it('ADR-0113: send_message отвечает ack; больше 5 сообщений за 10 с — отказ', async () => {
