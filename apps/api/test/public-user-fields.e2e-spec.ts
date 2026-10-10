@@ -73,7 +73,11 @@ describe('Публичные поля пользователя (e2e)', () => {
     token = login.body.accessToken;
     const row = await prisma.user.update({
       where: { email },
-      data: { lastLoginIp: '203.0.113.7', banReason: 'тест' },
+      data: {
+        lastLoginIp: '203.0.113.7',
+        banReason: 'тест',
+        avatar: `users/e2e/avatar/${unique}.webp`,
+      },
     });
     userId = row.id;
   });
@@ -104,6 +108,8 @@ describe('Публичные поля пользователя (e2e)', () => {
       (news: { slug: string }) => news.slug === slug,
     );
     expect(item.author).toMatchObject({ id: userId, username });
+    // ADR-0115: аватар автора — URL, а не ключ хранилища.
+    expect(item.author.avatar).toMatch(/^https?:\/\//);
     expectNoPrivateFields(list.body, email);
     const one = await request(app.getHttpServer())
       .get(`/news/${slug}`)
