@@ -157,6 +157,36 @@ export type UserBadgeKind =
 
 export type MediaBadgeKind = 'YOUTUBE' | 'TWITCH' | 'TIKTOK';
 
+/// `GET /users/:username/showcase` — витрина «Награды и значки» (ADR-0100):
+/// только реальные награды и выставленные завершённые достижения.
+export interface ProfileShowcaseAward {
+  slug: string;
+  name: string;
+  description: string | null;
+  iconUrl: string;
+  color: string | null;
+  /// common | rare | epic | legendary (если задано).
+  rarity: string | null;
+  grantedAt: IsoDateString;
+}
+
+export interface ProfileShowcaseAchievement {
+  slug: string;
+  name: string;
+  description: string;
+  iconUrl: string;
+  category: string;
+  rarity: string;
+  completedAt: IsoDateString | null;
+}
+
+export interface ProfileShowcaseDto {
+  awards: ProfileShowcaseAward[];
+  achievements: ProfileShowcaseAchievement[];
+  /// Всего завершённых достижений (в т.ч. не выставленных).
+  achievementsCompleted: number;
+}
+
 /// `GET /users/:username/summary` — карточка превью. Нет данных — `null`
 /// (никаких выдуманных значений); скрытый профиль — только `hidden: true`.
 export type PublicProfileSummary =

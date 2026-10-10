@@ -1,6 +1,11 @@
 'use client';
 
-import type { ConnectedProvider, OwnProfileDto, PublicProfileSummary } from '@twomc/shared';
+import type {
+  ConnectedProvider,
+  OwnProfileDto,
+  ProfileShowcaseDto,
+  PublicProfileSummary,
+} from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { API_URL } from '@/lib/env';
@@ -17,6 +22,9 @@ export interface ProfileStatsDto {
 export type PublicProfileDto = Partial<OwnProfileDto> &
   Pick<OwnProfileDto, 'id' | 'username'> & {
     minecraftName?: string | null;
+    /// День рождения по приватности (ADR-0100): нет поля — скрыт; year: null —
+    /// показываются только день и месяц.
+    birthday?: { day: number; month: number; year: number | null } | null;
     stats?: ProfileStatsDto;
     /// Привязанные Discord/Telegram: провайдер, имя и публичная ссылка (если
     /// у провайдера она есть), без внешних ID.
@@ -41,6 +49,18 @@ export function useProfileSummary(username: string, enabled: boolean) {
         retryOn401: false,
       }),
     enabled,
+    staleTime: 60_000,
+  });
+}
+
+/// Витрина «Награды и значки» (`GET /users/:username/showcase`, ADR-0100).
+export function useProfileShowcase(username: string) {
+  return useQuery({
+    queryKey: ['profile', 'showcase', username.toLowerCase()] as const,
+    queryFn: () =>
+      api.get<ProfileShowcaseDto>(`/users/${encodeURIComponent(username)}/showcase`, {
+        retryOn401: false,
+      }),
     staleTime: 60_000,
   });
 }

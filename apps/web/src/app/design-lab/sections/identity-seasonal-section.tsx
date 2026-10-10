@@ -15,6 +15,8 @@ import { ProfileBadges } from '@/components/profile/profile-badges';
 import { ProfileHeader } from '@/components/profile/profile-header';
 import { MinecraftHead } from '@/components/profile/minecraft-head';
 import { ProfileHero } from '@/components/profile/profile-hero';
+import { GENDER_VIEW, ProfileInfoSection } from '@/components/profile/profile-info';
+import { ProfileShowcase } from '@/components/profile/profile-showcase';
 import {
   ConnectedAccountsSection,
   SocialLinksSection,
@@ -32,6 +34,7 @@ import { menuItemClassName } from '@/components/ui/dropdown-menu';
 import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import {
   Select,
@@ -499,6 +502,99 @@ function ProfilePagePreview() {
   );
 }
 
+const DEMO_BIO = `**Строю спавн** к открытию сезона и *иногда* стримлю.
+
+- редстоун и фермы
+- ивенты по выходным
+
+> Заходи в гости — координаты в [Discord](https://discord.gg/twomc).
+
+Сырой HTML не работает: <script>alert(1)</script>`;
+
+const DEMO_SHOWCASE = {
+  awards: [
+    {
+      slug: 'opening',
+      name: 'Открытие сезона',
+      description: 'Был на открытии TwoMC',
+      iconUrl: '/icons/icon-192.png',
+      color: null,
+      rarity: 'legendary',
+      grantedAt: '2026-10-01T10:00:00.000Z',
+    },
+    {
+      slug: 'builder',
+      name: 'Строитель',
+      description: 'Построил дом на спавне',
+      iconUrl: '/icons/icon-192.png',
+      color: null,
+      rarity: 'rare',
+      grantedAt: '2026-10-05T10:00:00.000Z',
+    },
+  ],
+  achievements: [
+    {
+      slug: 'first-day',
+      name: 'Первый день',
+      description: 'Сыграть первый час',
+      iconUrl: '/icons/icon-192.png',
+      category: 'GAME',
+      rarity: 'COMMON',
+      completedAt: '2026-10-02T10:00:00.000Z',
+    },
+  ],
+  achievementsCompleted: 4,
+};
+
+/// «О себе» (безопасный Markdown), «Информация» и «Награды и значки» —
+/// production-компоненты страницы профиля на демо-данных.
+function ProfileDetailsPreview() {
+  return (
+    <Card
+      title="Профиль: О себе, Информация, Награды и значки"
+      note="«О себе» — только bio: безопасный Markdown (жирный, курсив, зачёркнутый, код, ссылки, списки, цитата), без HTML и картинок; ссылки — через подтверждение перехода. «Информация» — город, день рождения (по приватности: без года или с годом), пол с SVG-иконкой, дата регистрации — один раз. «Награды и значки» — только реальные данные; нет ничего — честный пустой блок."
+    >
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          <section className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+            <h3 className="text-sm font-semibold">О себе</h3>
+            <SafeMarkdown source={DEMO_BIO} className="text-foreground/90" />
+          </section>
+          <ProfileInfoSection
+            city="Москва"
+            country="Россия"
+            birthday={{ day: 20, month: 5, year: null }}
+            gender="MALE"
+            createdAt="2026-10-09T10:00:00.000Z"
+          />
+          <div className="flex flex-wrap gap-4 rounded-xl bg-surface p-5 text-sm shadow-sm">
+            {Object.entries(GENDER_VIEW).map(([key, view]) => (
+              <span key={key} className="flex items-center gap-2">
+                <view.icon aria-hidden className="size-4 text-subtle-foreground" />
+                {view.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <section className="rounded-xl bg-surface p-5 shadow-sm">
+            <ProfileShowcase
+              showcase={DEMO_SHOWCASE}
+              badges={['VERIFIED', 'PROJECT_TEAM']}
+              mediaBadges={['YOUTUBE']}
+            />
+          </section>
+          <section className="rounded-xl bg-surface p-5 shadow-sm">
+            <ProfileShowcase
+              showcase={{ awards: [], achievements: [], achievementsCompleted: 0 }}
+            />
+          </section>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function MinecraftHeadPreview() {
   const [nick, setNick] = useState('younaxo_');
   const name = nick.trim();
@@ -611,6 +707,7 @@ export function IdentitySeasonalSection() {
   return (
     <div className="flex flex-col gap-10">
       <ProfilePagePreview />
+      <ProfileDetailsPreview />
       <MinecraftHeadPreview />
       <div className="grid gap-8 lg:grid-cols-[auto_minmax(0,1fr)]">
         <MiniProfilePreview />
