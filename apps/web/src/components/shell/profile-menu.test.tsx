@@ -196,7 +196,7 @@ describe('Mini profile в header (ADR-0088)', () => {
       'Мой профиль',
       'Настройки',
       'Друзья3',
-      'Сообщенияскоро',
+      'Сообщения',
       'Избранноескоро',
       'Заказыскоро',
       'Выйти',
@@ -210,6 +210,10 @@ describe('Mini profile в header (ADR-0088)', () => {
       '/u/Steve_With_A_Very_Long_Nick',
     );
     expect(within(menu).getByRole('menuitem', { name: /Сообщения/ })).toHaveAttribute(
+      'href',
+      '/messages',
+    );
+    expect(within(menu).getByRole('menuitem', { name: /Избранное/ })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
@@ -350,7 +354,11 @@ describe('Mini profile в header (ADR-0088)', () => {
     const nav = within(sheet).getByRole('navigation', { name: 'Разделы аккаунта' });
     expect(within(nav).getByRole('link', { name: 'Мой профиль' })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: /Друзья/ })).toHaveAttribute('href', '/friends');
-    expect(within(nav).getByRole('button', { name: /Сообщения/ })).toBeDisabled();
+    expect(within(nav).getByRole('link', { name: /Сообщения/ })).toHaveAttribute(
+      'href',
+      '/messages',
+    );
+    expect(within(nav).getByRole('button', { name: /Избранное/ })).toBeDisabled();
     expect(within(sheet).getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
     // Те же данные, что в popover: кошелёк из /wallet, обычному игроку — без админ-блока.
     await waitFor(() =>

@@ -228,7 +228,10 @@ describe('Публичный профиль /u/[username]', () => {
     await waitFor(() =>
       expect(mocks.get).toHaveBeenCalledWith('/site/settings', expect.anything()),
     );
-    expect(screen.queryByTestId('profile-actions')).toBeNull();
+    // Модуль «Друзья» выключен — «Написать» остаётся (срез 2.4), «В друзья» нет.
+    const withoutFriends = await screen.findByTestId('profile-actions');
+    expect(within(withoutFriends).getByRole('button', { name: 'Написать' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'В друзья' })).toBeNull();
     disabled.unmount();
 
     useAuthStore.setState({ status: 'anonymous', user: null });

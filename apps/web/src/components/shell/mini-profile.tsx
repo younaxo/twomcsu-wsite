@@ -61,7 +61,7 @@ export function miniProfileEntries(
       badge: counts.friendRequests,
     },
     // Разделы волн Social (2) и Store (4) — появятся вместе с функцией.
-    { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: null },
+    { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: '/messages' },
     { key: 'favorites', label: 'Избранное', icon: Heart, href: null },
     { key: 'orders', label: 'Заказы', icon: Package, href: null },
   ];
