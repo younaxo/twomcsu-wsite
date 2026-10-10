@@ -634,6 +634,21 @@ export const PERMISSIONS = [
     module: 'system',
     description: 'Выключение защищённых модулей (уведомления, профили, магазин)',
   },
+  {
+    key: 'system.storage.view',
+    module: 'system',
+    description: 'Просмотр объёма служебных журналов и сроков хранения',
+  },
+  {
+    key: 'system.storage.manage',
+    module: 'system',
+    description: 'Сроки хранения и очистка технических журналов и статусов серверов',
+  },
+  {
+    key: 'system.storage.audit',
+    module: 'system',
+    description: 'Сроки хранения и очистка журнала аудита и журнала безопасности',
+  },
 
   {
     key: 'saved_filters.view',

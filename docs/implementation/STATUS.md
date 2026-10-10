@@ -4,7 +4,7 @@ Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
 Current phase: PHASE 31 — All pages (оболочка, бренд, UI-примитивы); PHASE 21 — Admin panel
-Current branch: feature/admin-nav-groups (от main после PR #58)
+Current branch: feature/storage-retention (от main после PR #59)
 
 Completed:
 
@@ -83,8 +83,9 @@ In progress:
   ADR-0074), #51 (курсор, ADR-0075), #52 (Date Picker, ADR-0076), #53
   (контекстное меню, ADR-0077). PR #54 — острова и графики админки (ADR-0078).
   #55 (сезонная система и эффекты, ADR-0079), #56 (системные сообщения от
-  twomc.su, ADR-0080). #57 (объявления, ADR-0081), #58 (техработы и модули, ADR-0082). Навигация
-  админки по группам и сводка состояния (ADR-0083) — `feature/admin-nav-groups`.
+  twomc.su, ADR-0080). #57 (объявления, ADR-0081), #58 (техработы и модули, ADR-0082), #59 (навигация
+  админки и сводка состояния, ADR-0083). Хранилище и журналы (ADR-0084) —
+  `feature/storage-retention`.
   Блокеры: доставка писем (R4), Telegram OIDC в BotFather (R18), Minecraft-плагин (R20).
 - PHASE 31 — Главная страница целиком + оболочка v2 (плавающие header/footer,
   дисклеймер Mojang, поддержка, язык/валюта независимо, edge-peek chat/cart,

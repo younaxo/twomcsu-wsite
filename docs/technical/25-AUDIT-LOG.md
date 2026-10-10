@@ -20,6 +20,8 @@ Staff-мутаций (POST/PATCH/PUT/DELETE с `@Roles`): **186**; вызово�
 POST/PATCH/PUT/DELETE на хендлерах с `@RequirePermissions` (action = ключ
 permission). Ручные записи с обогащённым payload остаются для broadcast,
 settings (diff), site settings, ip-whitelist, bulk-бан (по цели) — эти
-хендлеры помечены `@SkipAudit()`. Ретенция — `AUDIT_RETENTION_DAYS` (ENV,
-default 90), очистка ежедневно в 04:00. Для `critical` ошибка записи не
+хендлеры помечены `@SkipAudit()`. Ретенция — «Система → Хранилище и журналы»
+(ADR-0084): срок аудита задаётся в админке (7/30/90/180/365 дней или «не
+удалять»; `AUDIT_RETENTION_DAYS` — значение по умолчанию), автоочистка раз в
+сутки в 04:00 (`StorageRetentionScheduler`). Для `critical` ошибка записи не
 проглатывается. См. `docs/implementation/phases/PHASE-22-audit-log.md`.

@@ -89,3 +89,16 @@ export function plural(count: number, forms: { one: string; few: string; many: s
   }
   return forms.many;
 }
+
+/// Объём в байтах — «12,4 МБ» (двоичные кратные, русские единицы).
+export function formatBytes(bytes: number): string {
+  const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 || value >= 100 ? 0 : 1;
+  return `${value.toLocaleString('ru-RU', { maximumFractionDigits: digits })} ${units[unit]}`;
+}

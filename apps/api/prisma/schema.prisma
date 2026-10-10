@@ -1676,6 +1676,26 @@ model MaintenanceMode {
   @@map("maintenance_mode")
 }
 
+/// ADR-0084: сроки хранения служебных журналов (singleton, id `global`).
+/// Дни: 7 | 30 | 90 | 180 | 365; 0 — не удалять автоматически.
+/// Пользовательские данные сюда не входят никогда.
+model StorageRetention {
+  id               String    @id @default("global")
+  auditDays        Int       @default(90)
+  securityDays     Int       @default(90)
+  serverStatusDays Int       @default(30)
+  technicalDays    Int       @default(7)
+  autoCleanup      Boolean   @default(true)
+  lastRunAt        DateTime?
+  /// auto | manual
+  lastRunTrigger   String?
+  lastResult       Json?
+  updatedBy        String?
+  updatedAt        DateTime  @updatedAt
+
+  @@map("storage_retention")
+}
+
 model ModuleStatus {
   id         String    @id @default(cuid())
   module     String    @unique
