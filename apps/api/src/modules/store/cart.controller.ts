@@ -16,7 +16,9 @@ import { ApplyPromoDto } from './dto/apply-promo.dto';
 import { CalculateCartDto } from './dto/calculate-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 import { CartService } from './cart.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('store')
 @Controller('store/cart')
 @UseGuards(JwtAuthGuard)
 export class CartController {

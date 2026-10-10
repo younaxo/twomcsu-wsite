@@ -4,7 +4,9 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CartService } from './cart.service';
 import { ValidatePromoDto } from './dto/validate-promo.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('store')
 @Controller('store/promocodes')
 export class PromocodesController {
   constructor(private readonly cart: CartService) {}

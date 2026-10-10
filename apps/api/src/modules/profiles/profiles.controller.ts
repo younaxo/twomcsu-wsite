@@ -23,7 +23,9 @@ import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
 import { ProfilesService } from './profiles.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('profiles')
 @Controller('users')
 export class ProfilesController {
   constructor(private readonly profiles: ProfilesService) {}

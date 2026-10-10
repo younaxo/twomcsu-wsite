@@ -36,6 +36,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   settings: 'Настройки',
   store: 'Магазин',
   streams: 'Стримы',
+  system: 'Система',
   support: 'Поддержка',
   topics: 'Топики и документы',
   users: 'Пользователи',

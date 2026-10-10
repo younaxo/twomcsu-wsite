@@ -13,6 +13,7 @@ import { SkeletonRows } from '@/components/ui/skeleton';
 import { formatBadgeCount } from '@/lib/site/document-badge';
 import { useNotificationList, type NotificationFilter } from '@/lib/notifications/hooks';
 import { useUnreadCount } from '@/lib/site/hooks';
+import { ModuleGate } from '@/components/system/site-availability';
 
 function NotificationsList() {
   const [filter, setFilter] = useState<NotificationFilter>('all');
@@ -88,7 +89,7 @@ function NotificationsList() {
 }
 
 /// /notifications — все уведомления (ADR-0074): фильтр, действия, ПКМ.
-export default function NotificationsPage() {
+function NotificationsPageContent() {
   return (
     <div className="mx-auto flex max-w-[860px] flex-col gap-6 px-4 py-8 md:px-6">
       <PageHeader title="Уведомления" description="Всё, что произошло в вашем аккаунте twomc.su." />
@@ -96,5 +97,14 @@ export default function NotificationsPage() {
         <NotificationsList />
       </RequireSession>
     </div>
+  );
+}
+
+/// Страница модуля «notifications» (ADR-0082): выключен или на техработах — понятное состояние.
+export default function NotificationsPage() {
+  return (
+    <ModuleGate module="notifications">
+      <NotificationsPageContent />
+    </ModuleGate>
   );
 }

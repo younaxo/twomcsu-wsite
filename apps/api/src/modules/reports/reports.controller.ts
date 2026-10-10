@@ -19,7 +19,9 @@ import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 import { ReportRulesQueryDto } from './dto/report-rules-query.dto';
 import { UpdateOwnReportMessageDto } from './dto/update-own-report-message.dto';
 import { ReportsService } from './reports.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('reports')
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class ReportsController {

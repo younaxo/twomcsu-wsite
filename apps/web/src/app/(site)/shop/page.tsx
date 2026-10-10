@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { api } from '@/lib/api/client';
 import { formatMoney } from '@/lib/format';
+import { ModuleGate } from '@/components/system/site-availability';
 
 interface ProductListItem {
   id: string;
@@ -24,7 +25,7 @@ interface ProductListItem {
 /// Магазин — реальный каталог (GET /store/products). Карточка товара,
 /// корзина и оформление — PHASE 31; глобальная корзина уже доступна в
 /// плавающих действиях.
-export default function ShopPage() {
+function ShopPageContent() {
   const products = useQuery({
     queryKey: ['site', 'store', 'products'],
     queryFn: () =>
@@ -101,5 +102,14 @@ export default function ShopPage() {
         </Card>
       </section>
     </div>
+  );
+}
+
+/// Страница модуля «store» (ADR-0082): выключен или на техработах — понятное состояние.
+export default function ShopPage() {
+  return (
+    <ModuleGate module="store">
+      <ShopPageContent />
+    </ModuleGate>
   );
 }

@@ -16,6 +16,7 @@ export type AdminIconName =
   | 'scroll'
   | 'megaphone'
   | 'mail'
+  | 'power'
   | 'settings'
   | 'lock'
   | 'newspaper'
@@ -105,6 +106,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'security.ip_whitelist.create',
         ],
         keywords: ['сессии', 'входы', 'ip', 'whitelist'],
+      },
+      {
+        href: '/admin/system',
+        label: 'Техработы и модули',
+        icon: 'power',
+        requirement: ['system.maintenance.view', 'system.modules.view'],
+        keywords: ['техработы', 'обслуживание', 'модули', 'выключить', 'maintenance'],
       },
       {
         href: '/admin/settings',

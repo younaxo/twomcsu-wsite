@@ -20,12 +20,8 @@ export const EDITABLE_KEYS = [
   'metaDescription',
   'googleAnalyticsId',
   'yandexMetrikaId',
-  'chatEnabled',
-  'friendsEnabled',
-  'storeEnabled',
-  'commentsEnabled',
-  'newsEnabled',
-  'reportsEnabled',
+  // Флаги модулей (chat/store/…) больше не редактируются здесь — реестр
+  // модулей в «Система → Техработы и модули» (ADR-0082).
   'defaultNotificationsEnabled',
   'requireAdmin2fa',
 ] as const satisfies readonly (keyof SiteSettingsDto)[];

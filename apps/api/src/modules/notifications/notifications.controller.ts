@@ -23,7 +23,9 @@ import { UpdateTypeSettingDto } from './dto/update-type-setting.dto';
 import { NotificationSettingsService } from './notification-settings.service';
 import { NotificationsService } from './notifications.service';
 import { PushService } from './push.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('notifications')
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {

@@ -1663,6 +1663,15 @@ model MaintenanceMode {
   enabledBy    String?
   enabledAt    DateTime?
   updatedAt    DateTime  @updatedAt
+  /// ADR-0082: full — весь сайт (кроме ядра); partial — только `modules`.
+  scope        String    @default("full")
+  modules      String[]  @default([])
+  /// Плановое начало (null — сразу после включения). Конец — `estimatedEnd`
+  /// (ожидаемый, автоматически не выключает).
+  startsAt     DateTime?
+  /// Внутренняя причина — только для админки и аудита.
+  reason       String?
+  updatedBy    String?
 
   @@map("maintenance_mode")
 }

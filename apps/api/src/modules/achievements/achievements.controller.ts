@@ -4,11 +4,13 @@ import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { AchievementsService } from './achievements.service';
 import { ListAchievementsQueryDto } from './dto/list-achievements-query.dto';
+import { SiteModule } from '../system/site-module.decorator';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
+@SiteModule('achievements')
 @Controller('achievements')
 export class AchievementsController {
   constructor(private readonly achievements: AchievementsService) {}

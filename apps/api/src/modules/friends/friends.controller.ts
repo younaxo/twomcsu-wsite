@@ -10,7 +10,9 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { FriendsService } from './friends.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('friends')
 @Controller('friends')
 @UseGuards(JwtAuthGuard)
 export class FriendsController {

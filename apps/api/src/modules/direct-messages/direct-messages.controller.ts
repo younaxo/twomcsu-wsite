@@ -21,6 +21,7 @@ import { EditMessageDto } from './dto/edit-message.dto';
 import { ReactMessageDto } from './dto/react-message.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { DirectMessagesService } from './direct-messages.service';
+import { SiteModule } from '../system/site-module.decorator';
 
 class ListMessagesQueryDto {
   @IsOptional()
@@ -37,6 +38,7 @@ class ListMessagesQueryDto {
   limit?: number = 30;
 }
 
+@SiteModule('direct-messages')
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
 export class DirectMessagesController {

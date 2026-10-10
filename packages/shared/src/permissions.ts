@@ -604,6 +604,36 @@ export const PERMISSIONS = [
     module: 'announcements',
     description: 'Создание, изменение, публикация, снятие и удаление объявлений',
   },
+  {
+    key: 'system.maintenance.view',
+    module: 'system',
+    description: 'Просмотр настроек технических работ',
+  },
+  {
+    key: 'system.maintenance.manage',
+    module: 'system',
+    description: 'Включение и выключение технических работ (полных и частичных)',
+  },
+  {
+    key: 'system.maintenance.bypass',
+    module: 'system',
+    description: 'Доступ к сайту во время техработ и к выключенным модулям',
+  },
+  {
+    key: 'system.modules.view',
+    module: 'system',
+    description: 'Просмотр модулей сайта и их состояния',
+  },
+  {
+    key: 'system.modules.manage',
+    module: 'system',
+    description: 'Включение и выключение обычных модулей сайта',
+  },
+  {
+    key: 'system.modules.protected',
+    module: 'system',
+    description: 'Выключение защищённых модулей (уведомления, профили, магазин)',
+  },
 
   {
     key: 'saved_filters.view',

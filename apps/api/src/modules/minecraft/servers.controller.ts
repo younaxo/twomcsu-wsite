@@ -1,6 +1,8 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ServersService } from './servers.service';
+import { SiteModule } from '../system/site-module.decorator';
 
+@SiteModule('minecraft')
 @Controller('servers')
 export class ServersController {
   constructor(private readonly servers: ServersService) {}
