@@ -211,6 +211,14 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R28 — Фавиконки внешних сайтов: живая проверка с настоящим DNS — MANUAL QA
+
+Резолвер `GET /link-preview/favicon` (ADR-0102) покрыт тестами (SSRF, redirect, размер,
+формат, живой HTTP на локальном сервере). На машине разработки внешние хосты резолвятся в
+fake-IP прокси (198.18/15, см. R24), и резолвер их правильно блокирует — локально в окне
+перехода видна Globe. **Проверить на staging/production:** ссылка на произвольный сайт
+(например, reallyworld.ru) показывает его иконку, повторный переход — из кэша Redis.
+
 ## R27 — Web Push: production-ключи VAPID и учёт вкладок — OPEN
 
 Код готов (ADR-0097). **Нужно от владельца при деплое:** сгенерировать

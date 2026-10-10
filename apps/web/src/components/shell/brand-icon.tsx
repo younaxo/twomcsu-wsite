@@ -2,6 +2,7 @@ import type { SiteSocialPlatform } from '@twomc/shared';
 import {
   siDiscord,
   siFacebook,
+  siGithub,
   siInstagram,
   siSteam,
   siTelegram,
@@ -13,8 +14,9 @@ import {
 } from 'simple-icons';
 import { cn } from '@/lib/cn';
 
-/// Соцсети сайта + привязываемые аккаунты (Steam — только как привязка).
-export type BrandIconId = SiteSocialPlatform | 'steam';
+/// Соцсети сайта + привязываемые аккаунты (Steam — только как привязка) +
+/// известные сайты для подтверждения внешнего перехода (GitHub).
+export type BrandIconId = SiteSocialPlatform | 'steam' | 'github';
 
 const ICONS: Record<BrandIconId, { path: string; title: string }> = {
   telegram: siTelegram,
@@ -27,6 +29,7 @@ const ICONS: Record<BrandIconId, { path: string; title: string }> = {
   x: siX,
   facebook: siFacebook,
   steam: siSteam,
+  github: siGithub,
 };
 
 /// Официальные brand-иконки соцсетей (Simple Icons). Монохром в currentColor —
