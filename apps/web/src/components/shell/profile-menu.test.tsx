@@ -197,6 +197,7 @@ describe('Mini profile в header (ADR-0088)', () => {
       'Настройки',
       'Друзья3',
       'Сообщения',
+      'Обращения',
       'Избранноескоро',
       'Заказыскоро',
       'Выйти',
@@ -212,6 +213,10 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(within(menu).getByRole('menuitem', { name: /Сообщения/ })).toHaveAttribute(
       'href',
       '/messages',
+    );
+    expect(within(menu).getByRole('menuitem', { name: /Обращения/ })).toHaveAttribute(
+      'href',
+      '/support',
     );
     expect(within(menu).getByRole('menuitem', { name: /Избранное/ })).toHaveAttribute(
       'aria-disabled',
