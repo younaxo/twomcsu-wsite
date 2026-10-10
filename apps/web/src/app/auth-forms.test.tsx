@@ -16,11 +16,12 @@ import { RegisterForm, validateRegister } from './(auth)/register/register-form'
 import { ResetPasswordForm, isTokenShapeValid } from './(auth)/reset-password/reset-form';
 
 const navigation = vi.hoisted(() => ({
+  pathname: '/login',
   params: new URLSearchParams(),
   replace: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/login',
+  usePathname: () => navigation.pathname,
   useRouter: () => ({ push: vi.fn(), replace: navigation.replace, refresh: vi.fn() }),
   useSearchParams: () => navigation.params,
 }));
@@ -45,8 +46,10 @@ let fetchMock: FetchMock;
 
 beforeEach(() => {
   fetchMock = installFetchMock();
+  navigation.pathname = '/login';
   navigation.params = new URLSearchParams();
   navigation.replace.mockReset();
+  window.sessionStorage.clear();
   resetAuthBootstrapForTests();
   useAuthStore.setState({ status: 'anonymous', user: null });
 });
@@ -75,10 +78,9 @@ describe('auth-формы «Полдня»', () => {
       { wrapper: Providers },
     );
     expect(screen.getByTestId('auth-panel')).toBeInTheDocument();
-    // Сейчас (FORCE_AUTH_TUTORIAL) tutorial открывается поверх панели всегда.
-    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
-    await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.queryByTestId('auth-tutorial')).toBeNull());
+    // На обычном «Вход» tutorial сам НЕ открывается (только в регистрации).
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(screen.queryByTestId('auth-tutorial')).toBeNull();
     expect(screen.getByRole('link', { name: 'twomc.su — на главную' })).toBeInTheDocument();
     const modes = screen.getByRole('navigation', { name: 'Вход или регистрация' });
     expect(within(modes).getByRole('link', { name: 'Вход' })).toHaveAttribute(
@@ -134,6 +136,34 @@ describe('auth-формы «Полдня»', () => {
     expect(safeNext('https://evil.example')).toBe('/');
   });
 
+  it('tutorial: сам открывается при входе в регистрацию (один раз за вкладку), вручную — кнопкой', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
+    navigation.pathname = '/register';
+    const { unmount } = render(
+      <AuthLayout>
+        <RegisterForm />
+      </AuthLayout>,
+      { wrapper: Providers },
+    );
+    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByTestId('auth-tutorial')).toBeNull());
+    unmount();
+    // Перезагрузка в той же вкладке — сам больше не всплывает…
+    render(
+      <AuthLayout>
+        <RegisterForm />
+      </AuthLayout>,
+      { wrapper: Providers },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(screen.queryByTestId('auth-tutorial')).toBeNull();
+    // …но открыть вручную можно в любой момент, без перезагрузки.
+    await user.click(screen.getByRole('button', { name: 'Как зарегистрироваться' }));
+    expect(await screen.findByTestId('auth-tutorial')).toBeInTheDocument();
+  });
+
   it('register: проверка полей, согласия обязательны и раздельны, реферальный код', async () => {
     const user = userEvent.setup();
     expect(
@@ -161,11 +191,32 @@ describe('auth-формы «Полдня»', () => {
     // Чекбоксы не отмечены заранее; без согласий код не отправляется.
     expect(screen.getByTestId('consent-terms')).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByTestId('consent-personal-data')).toHaveAttribute('aria-checked', 'false');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить почту' }));
-    expect(await screen.findByText('Оба согласия обязательны.')).toBeInTheDocument();
+    // Без обоих согласий кнопка недоступна по-настоящему: disabled, клавиатура
+    // и клик ничего не отправляют; рядом — подсказка.
+    const primary = screen.getByRole('button', { name: 'Подтвердить почту' });
+    expect(primary).toBeDisabled();
+    expect(primary).toHaveAccessibleDescription(
+      'Оба согласия обязательны — отметьте их, чтобы продолжить.',
+    );
+    await user.click(primary);
+    await user.click(within(form).getByLabelText(/^Ник/));
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByTestId('consent-terms'));
+    expect(primary).toBeDisabled();
+    await user.click(screen.getByTestId('consent-personal-data'));
+    expect(primary).toBeEnabled();
+    // Снятие одного согласия снова блокирует кнопку.
+    await user.click(screen.getByTestId('consent-terms'));
+    expect(primary).toBeDisabled();
     expect(
       fetchMock.mock.calls.some((call) => String(call[0]).includes('/auth/register/start')),
     ).toBe(false);
+    // Строка политики — часть legal-блока, но не согласие (без чекбокса).
+    const legal = screen.getByTestId('legal-block');
+    expect(within(legal).getByTestId('privacy-row')).toHaveTextContent(
+      'Политика конфиденциальности',
+    );
+    expect(within(legal).getAllByRole('checkbox')).toHaveLength(2);
     // Реферальный код — моноширинный и в верхнем регистре.
     const referral = within(form).getByLabelText(/Реферальный код/);
     expect(referral.className).toMatch(/font-mono/);
@@ -419,7 +470,7 @@ describe('вход через Discord/Telegram (только привязанн�
     expect(screen.getByRole('separator')).toHaveTextContent('или');
   });
 
-  it('пока список провайдеров грузится — кнопки недоступны; не настроены — блока нет', async () => {
+  it('пока список провайдеров грузится — кнопки недоступны; не настроены — остаются disabled', async () => {
     let release: (value: Response) => void = () => undefined;
     fetchMock.mockImplementation(
       () =>
@@ -432,10 +483,17 @@ describe('вход через Discord/Telegram (только привязанн�
     expect(pendingLink).toHaveAttribute('aria-disabled', 'true');
     expect(pendingLink).not.toHaveAttribute('href');
     release(jsonResponse({ discord: { enabled: false }, telegram: { enabled: false } }));
-    await waitFor(() => expect(screen.queryByTestId('social-login')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Telegram' })).toHaveAttribute(
+        'data-state',
+        'unavailable',
+      ),
+    );
+    expect(screen.getByTestId('social-login')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Discord' })).toHaveAttribute('aria-disabled', 'true');
   });
 
-  it('настроен только Discord — показывается только он', async () => {
+  it('Telegram не настроен — кнопка не исчезает, а disabled с пояснением; layout тот же', async () => {
     fetchMock.mockImplementation(async () =>
       jsonResponse({ discord: { enabled: true }, telegram: { enabled: false } }),
     );
@@ -443,7 +501,30 @@ describe('вход через Discord/Telegram (только привязанн�
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Discord' })).toHaveAttribute('href'),
     );
-    expect(screen.queryByRole('link', { name: 'Telegram' })).toBeNull();
+    const telegram = screen.getByRole('link', { name: 'Telegram' });
+    expect(telegram).toHaveAttribute('aria-disabled', 'true');
+    expect(telegram).not.toHaveAttribute('href');
+    expect(telegram).toHaveAccessibleDescription('Вход через Telegram временно недоступен');
+    expect(telegram.className).toBe(screen.getByRole('link', { name: 'Discord' }).className);
+  });
+
+  it('ошибка проверки провайдеров — обе кнопки остаются (disabled) и есть «Повторить»', async () => {
+    let calls = 0;
+    fetchMock.mockImplementation(async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response(null, { status: 429 })
+        : jsonResponse({ discord: { enabled: true }, telegram: { enabled: true } });
+    });
+    const user = userEvent.setup();
+    render(<LoginForm />, { wrapper: Providers });
+    const retry = await screen.findByRole('button', { name: 'Повторить' });
+    expect(screen.getByRole('link', { name: 'Telegram' })).toHaveAttribute('data-state', 'error');
+    expect(screen.getByRole('link', { name: 'Discord' })).toHaveAttribute('aria-disabled', 'true');
+    await user.click(retry);
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Telegram' })).toHaveAttribute('href'),
+    );
   });
 });
 

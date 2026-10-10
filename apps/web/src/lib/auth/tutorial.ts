@@ -14,6 +14,8 @@ export interface TutorialImage {
 export interface TutorialStep {
   id: string;
   title: string;
+  /// Короткая подпись для навигации по шагам (1–2 слова).
+  short: string;
   /// Короткое объяснение (1–2 предложения).
   description: string;
   /// Нумерованные действия этапа (если есть).
@@ -49,17 +51,24 @@ export function validVideoUrl(
 }
 
 /// Видео-инструкции: URL задаются env (`NEXT_PUBLIC_TUTORIAL_YOUTUBE_URL`,
-/// `NEXT_PUBLIC_TUTORIAL_RUTUBE_URL`); пусто/чужой домен — кнопки нет.
+/// `NEXT_PUBLIC_TUTORIAL_RUTUBE_URL`). Пусто/чужой домен — кнопка видна, но
+/// недоступна с подсказкой «Видео готовится» (никогда не ведёт на `#`).
 export const TUTORIAL_VIDEOS: Record<TutorialVideoPlatform, string | null> = {
   youtube: validVideoUrl('youtube', process.env.NEXT_PUBLIC_TUTORIAL_YOUTUBE_URL),
   rutube: validVideoUrl('rutube', process.env.NEXT_PUBLIC_TUTORIAL_RUTUBE_URL),
 };
+
+/// Официальный логотип RuTube: в Simple Icons его нет, рисовать «похожий» —
+/// нельзя. Файл от владельца кладётся в `public/assets/brand/rutube.svg` и
+/// включается здесь; до этого — нейтральная иконка воспроизведения.
+export const RUTUBE_ICON_SRC: string | null = null;
 
 export const SITE_CONNECT_COMMAND = '/site-connect';
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'register',
+    short: 'Регистрация',
     title: 'Создайте аккаунт',
     description: 'Заполните форму регистрации на этой странице.',
     points: [
@@ -74,6 +83,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'site-connect',
+    short: 'Команда',
     title: 'Получите ссылку в Minecraft',
     description:
       'Зайдите на сервер TwoMC под ником, который указали при регистрации, и введите команду. Сервер пришлёт в чат персональную ссылку.',
@@ -82,6 +92,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'open-link',
+    short: 'Ссылка',
     title: 'Откройте ссылку',
     description:
       'Откройте ссылку из чата. На странице появится одноразовый код из 15 символов — скопируйте его.',
@@ -90,6 +101,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'enter-code',
+    short: 'Код из 15',
     title: 'Подтвердите Minecraft-аккаунт',
     description:
       'Вернитесь к регистрации и вставьте 15-символьный код в поле «Код привязки Minecraft».',
@@ -97,6 +109,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'confirm-in-game',
+    short: 'Код из 5',
     title: 'Подтвердите привязку в игре',
     description:
       'Сайт покажет код из 5 символов. Введите его в игре командой ниже — так сервер подтвердит, что аккаунт ваш.',
@@ -106,6 +119,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     id: 'done',
+    short: 'Готово',
     title: 'Готово!',
     description: 'Регистрация завершена — можно переходить в профиль.',
     points: ['Почта подтверждена', 'Minecraft-аккаунт подтверждён', 'Аккаунт twomc.su создан'],
@@ -113,23 +127,13 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
 ];
 
-/// ВРЕМЕННО (разработка и проверка интерфейса): tutorial открывается при
-/// каждом открытии auth-экрана. Production-режим — `false`: только при
-/// регистрации и только если человек его ещё не видел.
-export const FORCE_AUTH_TUTORIAL = true;
+/// Tutorial открывается сам ТОЛЬКО в регистрации (ADR-0087): при входе на
+/// `/register`, в том числе при переключении «Вход → Регистрация». На обычном
+/// «Вход» сам не открывается. Один раз за вкладку (sessionStorage): закрытый
+/// tutorial не всплывает снова при перезагрузке посреди регистрации; открыть
+/// вручную можно кнопкой «Как зарегистрироваться».
+export const TUTORIAL_SHOWN_KEY = 'twomc.auth-tutorial.shown';
 
-export const TUTORIAL_SEEN_KEY = 'twomc.auth-tutorial.seen';
-
-/// Страницы входа в auth-панель, где tutorial может открываться сам (не на
-/// экранах результата, ссылки /site-connect и восстановления пароля).
-const TUTORIAL_ENTRY_PATHS = ['/login', '/register'];
-
-export function shouldShowAuthTutorial(input: {
-  pathname: string;
-  force?: boolean;
-  seen: boolean;
-}): boolean {
-  if (!TUTORIAL_ENTRY_PATHS.includes(input.pathname)) return false;
-  if (input.force ?? FORCE_AUTH_TUTORIAL) return true;
-  return input.pathname === '/register' && !input.seen;
+export function shouldShowAuthTutorial(input: { pathname: string; shown: boolean }): boolean {
+  return input.pathname === '/register' && !input.shown;
 }

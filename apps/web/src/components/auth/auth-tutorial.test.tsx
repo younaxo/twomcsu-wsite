@@ -3,12 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  FORCE_AUTH_TUTORIAL,
   shouldShowAuthTutorial,
   TUTORIAL_STEPS,
   validVideoUrl,
   type TutorialStep,
 } from '@/lib/auth/tutorial';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthTutorial } from './auth-tutorial';
 
 function Harness({
@@ -22,7 +22,7 @@ function Harness({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <>
+    <TooltipProvider delayDuration={0}>
       <button type="button" onClick={() => setOpen(true)}>
         Открыть
       </button>
@@ -35,25 +35,30 @@ function Harness({
           if (!next) onClose();
         }}
       />
-    </>
+    </TooltipProvider>
   );
 }
 
-const progress = () => screen.getByRole('progressbar', { name: 'Прогресс обучения' });
+/// Номер текущего шага — по aria-current в навигации (1…6).
+const current = () => {
+  const nav = screen.getByRole('navigation', { name: 'Шаги обучения' });
+  const buttons = within(nav).getAllByRole('button');
+  return buttons.findIndex((button) => button.getAttribute('aria-current') === 'step') + 1;
+};
 
 describe('AuthTutorial', () => {
-  it('шесть этапов: у каждого заголовок, пояснение и свой слот скриншота; Далее/Назад; «Понятно» закрывает', async () => {
+  it('шесть шагов: у каждого заголовок, пояснение и свой слот скриншота; Далее/Назад; «Понятно» закрывает', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     render(<Harness onClose={onClose} />);
     expect(TUTORIAL_STEPS).toHaveLength(6);
-    expect(progress()).toHaveAttribute('aria-valuenow', '1');
+    expect(current()).toBe(1);
     expect(screen.getByRole('button', { name: 'Назад' })).toBeDisabled();
     const seen = new Set<string>();
     for (let i = 0; i < TUTORIAL_STEPS.length; i += 1) {
       const step = TUTORIAL_STEPS[i]!;
       expect(screen.getByRole('heading', { name: step.title })).toBeInTheDocument();
-      expect(screen.getByText(`Этап ${i + 1} из 6`)).toBeInTheDocument();
+      expect(screen.getByText(`Шаг ${i + 1} из 6`)).toBeInTheDocument();
       const shot = screen.getByTestId('tutorial-screenshot');
       expect(shot).toHaveAttribute('data-step', step.id);
       seen.add(shot.getAttribute('data-step') ?? '');
@@ -62,14 +67,39 @@ describe('AuthTutorial', () => {
       }
     }
     expect(seen.size).toBe(6);
-    expect(progress()).toHaveAttribute('aria-valuenow', '6');
+    expect(current()).toBe(6);
     expect(screen.queryByRole('button', { name: 'Далее' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Назад' }));
-    expect(progress()).toHaveAttribute('aria-valuenow', '5');
+    expect(current()).toBe(5);
     await user.click(screen.getByRole('button', { name: 'Далее' }));
     await user.click(screen.getByRole('button', { name: 'Понятно' }));
     expect(onClose).toHaveBeenCalled();
     expect(screen.queryByTestId('auth-tutorial')).toBeNull();
+  });
+
+  it('сегменты сверху кликабельны: переход на любой шаг; состояния пройден/текущий/впереди', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const nav = screen.getByRole('navigation', { name: 'Шаги обучения' });
+    const segments = within(nav).getAllByRole('button');
+    expect(segments).toHaveLength(6);
+    await user.click(
+      within(nav).getByRole('button', { name: `Шаг 4: ${TUTORIAL_STEPS[3]!.title}` }),
+    );
+    expect(current()).toBe(4);
+    expect(screen.getByRole('heading', { name: TUTORIAL_STEPS[3]!.title })).toBeInTheDocument();
+    expect(segments.map((segment) => segment.getAttribute('data-state'))).toEqual([
+      'completed',
+      'completed',
+      'completed',
+      'active',
+      'upcoming',
+      'upcoming',
+    ]);
+    // Назад к первому — тоже кликом по сегменту; все шаги доступны свободно.
+    await user.click(segments[0]!);
+    expect(current()).toBe(1);
+    expect(segments.every((segment) => !segment.hasAttribute('disabled'))).toBe(true);
   });
 
   it('этап /site-connect: команда моноширинно с копированием; пример 5 символов помечен как пример', async () => {
@@ -83,7 +113,7 @@ describe('AuthTutorial', () => {
     expect(screen.getByText('(пример)')).toBeInTheDocument();
   });
 
-  it('скриншота нет — явно помеченный временный слот; есть — изображение из конфига', () => {
+  it('скриншота нет — помеченный слот (не фейковый скриншот); есть — изображение из конфига', () => {
     const steps: TutorialStep[] = [
       {
         ...TUTORIAL_STEPS[0]!,
@@ -94,12 +124,19 @@ describe('AuthTutorial', () => {
     expect(screen.getByRole('img', { name: 'Регистрация' })).toBeInTheDocument();
     unmount();
     render(<Harness />);
-    expect(screen.getByText('Временный макет — скриншот будет добавлен')).toBeInTheDocument();
+    expect(screen.getByText('Скриншот появится позже')).toBeInTheDocument();
   });
 
-  it('видео: без URL кнопок нет; с URL — ссылки YouTube/RuTube', () => {
+  it('видео: обе кнопки видны всегда; без URL — недоступны с «Видео готовится», не ведут на #', () => {
     const { unmount } = render(<Harness />);
-    expect(screen.queryByTestId('tutorial-videos')).toBeNull();
+    const empty = screen.getByTestId('tutorial-videos');
+    expect(empty).toHaveTextContent('Видеоинструкция');
+    for (const name of ['YouTube', 'RuTube']) {
+      const button = within(empty).getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      expect(button).not.toHaveAttribute('href');
+    }
+    expect(within(empty).queryAllByRole('link')).toHaveLength(0);
     unmount();
     render(
       <Harness
@@ -110,48 +147,45 @@ describe('AuthTutorial', () => {
       />,
     );
     const videos = screen.getByTestId('tutorial-videos');
-    expect(within(videos).getByRole('link', { name: 'Смотреть на YouTube' })).toHaveAttribute(
+    expect(within(videos).getByRole('link', { name: 'YouTube' })).toHaveAttribute(
       'href',
       'https://www.youtube.com/watch?v=abc',
     );
-    expect(within(videos).getByRole('link', { name: 'Смотреть на RuTube' })).toBeInTheDocument();
+    expect(within(videos).getByRole('link', { name: 'RuTube' })).toHaveAttribute(
+      'href',
+      'https://rutube.ru/video/x/',
+    );
   });
 
-  it('клавиатура: стрелки листают этапы, Esc закрывает, фокус возвращается', async () => {
+  it('клавиатура: стрелки листают шаги, Esc закрывает, повторное открытие — с первого шага', async () => {
     const user = userEvent.setup();
     render(<Harness />);
     await user.keyboard('{ArrowRight}');
-    expect(progress()).toHaveAttribute('aria-valuenow', '2');
+    expect(current()).toBe(2);
     await user.keyboard('{ArrowLeft}');
-    expect(progress()).toHaveAttribute('aria-valuenow', '1');
+    expect(current()).toBe(1);
     await user.keyboard('{Escape}');
     expect(screen.queryByTestId('auth-tutorial')).toBeNull();
-    // Повторное открытие начинается с первого этапа.
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
-    expect(progress()).toHaveAttribute('aria-valuenow', '1');
+    expect(current()).toBe(1);
   });
 
-  it('mobile: скриншот идёт первым, на md+ — две колонки', () => {
+  it('layout: скриншот первым (mobile — вертикально), на lg+ — скриншот и инструкция рядом', () => {
     render(<Harness />);
     const shot = screen.getByTestId('tutorial-screenshot');
     const grid = shot.parentElement as HTMLElement;
     expect(grid.firstElementChild).toBe(shot);
-    expect(grid.className).toMatch(/md:grid-cols-/);
+    expect(grid.className).toMatch(/lg:grid-cols-/);
   });
 });
 
 describe('правило показа tutorial', () => {
-  it('сейчас — принудительно на входе и регистрации', () => {
-    expect(FORCE_AUTH_TUTORIAL).toBe(true);
-    expect(shouldShowAuthTutorial({ pathname: '/login', seen: true })).toBe(true);
-    expect(shouldShowAuthTutorial({ pathname: '/register', seen: true })).toBe(true);
-    expect(shouldShowAuthTutorial({ pathname: '/site-connect/abc', seen: false })).toBe(false);
-  });
-
-  it('production-режим (force=false) — только регистрация и только впервые', () => {
-    expect(shouldShowAuthTutorial({ pathname: '/register', seen: false, force: false })).toBe(true);
-    expect(shouldShowAuthTutorial({ pathname: '/register', seen: true, force: false })).toBe(false);
-    expect(shouldShowAuthTutorial({ pathname: '/login', seen: false, force: false })).toBe(false);
+  it('сам открывается только в регистрации и один раз за вкладку; на входе — нет', () => {
+    expect(shouldShowAuthTutorial({ pathname: '/register', shown: false })).toBe(true);
+    expect(shouldShowAuthTutorial({ pathname: '/register', shown: true })).toBe(false);
+    expect(shouldShowAuthTutorial({ pathname: '/login', shown: false })).toBe(false);
+    expect(shouldShowAuthTutorial({ pathname: '/site-connect/abc', shown: false })).toBe(false);
+    expect(shouldShowAuthTutorial({ pathname: '/forgot-password', shown: false })).toBe(false);
   });
 
   it('видео: только https и только домены платформы', () => {

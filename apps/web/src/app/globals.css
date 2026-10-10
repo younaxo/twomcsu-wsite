@@ -5,6 +5,19 @@
 @tailwind utilities;
 
 @layer base {
+  /* Страховка (ADR-0087): нативные стрелки числовых полей не показываются,
+     даже если type="number" попадёт из сторонней разметки. Свои поля —
+     NumberStepper или inputMode="numeric". */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   html {
     font-family: var(--font-sans);
     font-size: var(--text-base);

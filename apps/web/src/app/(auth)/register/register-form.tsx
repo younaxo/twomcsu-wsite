@@ -32,6 +32,7 @@ import { Input } from '@/components/ui/input';
 import { OtpInput } from '@/components/ui/otp-input';
 import { MinecraftLinkStep } from '@/components/auth/minecraft-link-step';
 import { api } from '@/lib/api/client';
+import { cn } from '@/lib/cn';
 import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import { TURNSTILE_SITE_KEY } from '@/lib/env';
@@ -192,6 +193,7 @@ export function RegisterForm({
   const turnstileRef = useRef<TurnstileHandle>(null);
   const errorId = useId();
   const otpLabelId = useId();
+  const consentsHintId = useId();
   const emailRef = useRef<HTMLInputElement>(null);
   const resendIn = useCountdown(verification?.resendAvailableAt ?? null);
 
@@ -503,7 +505,16 @@ export function RegisterForm({
           <Turnstile ref={turnstileRef} action="register" onToken={setCaptchaToken} />
         ) : null}
 
-        <fieldset className="flex flex-col" aria-label="Согласия" disabled={locked}>
+        {/* Legal-блок (ADR-0087): два обязательных согласия + информационная
+            строка о политике конфиденциальности — одна группа на общей
+            поверхности; строка политики отделена тонкой линией и без чекбокса,
+            чтобы не читаться третьим согласием. */}
+        <fieldset
+          className="flex flex-col rounded-lg bg-surface-sunken px-3 py-2"
+          aria-label="Согласия"
+          disabled={locked}
+          data-testid="legal-block"
+        >
           <CheckboxField
             checked={consents.terms}
             disabled={locked}
@@ -544,7 +555,10 @@ export function RegisterForm({
           />
           {/* Информационная строка той же группы: не согласие — поэтому без чекбокса,
               на его месте иконка; шрифт и отступы как у согласий. */}
-          <p className="flex items-start gap-3 py-1.5 text-sm font-medium leading-5">
+          <p
+            className="mt-1 flex items-start gap-3 border-t border-border-subtle pb-1 pt-2.5 text-sm font-medium leading-5"
+            data-testid="privacy-row"
+          >
             <span aria-hidden className="mt-0.5 flex size-5 shrink-0 items-center justify-center">
               <FileText className="size-4 text-subtle-foreground" />
             </span>
@@ -555,10 +569,18 @@ export function RegisterForm({
               </Link>
             </span>
           </p>
-          {touched.consents && !consentsOk ? (
-            <p className="text-xs text-destructive">Оба согласия обязательны.</p>
-          ) : null}
         </fieldset>
+        {step === 'details' && !consentsOk ? (
+          <p
+            id={consentsHintId}
+            className={cn(
+              '-mt-2 text-xs',
+              touched.consents ? 'text-destructive' : 'text-muted-foreground',
+            )}
+          >
+            Оба согласия обязательны — отметьте их, чтобы продолжить.
+          </p>
+        ) : null}
 
         {step === 'code' && verification ? (
           <section
@@ -593,7 +615,7 @@ export function RegisterForm({
               }}
               onComplete={(value) => void verifyCode(value)}
               invalid={!!error}
-              disabled={pending}
+              loading={pending}
               aria-describedby={error ? errorId : undefined}
             />
             <Button
@@ -653,9 +675,17 @@ export function RegisterForm({
             type="submit"
             size="lg"
             loading={pending}
+            // Без обоих согласий кнопка недоступна по-настоящему (disabled:
+            // нельзя нажать ни мышью, ни клавиатурой); сервер проверяет их
+            // повторно (@Equals(true) в RegisterStartDto).
             disabled={
-              step === 'details' ? !captchaReady : step === 'code' ? code.length !== 6 : false
+              step === 'details'
+                ? !captchaReady || !consentsOk
+                : step === 'code'
+                  ? code.length !== 6
+                  : false
             }
+            aria-describedby={step === 'details' && !consentsOk ? consentsHintId : undefined}
             data-testid="register-primary"
           >
             {step === 'details' ? (

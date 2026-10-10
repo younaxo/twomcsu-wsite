@@ -1,26 +1,34 @@
 /* twomc.su — Service Worker (ADR-0086).
  *
- * Что делает: без сети навигация открывает /offline; неизменяемая статика
- * (/_next/static, /assets, /fonts) отдаётся из кэша.
+ * Что делает: без сети навигация открывает /offline; хешированная статика
+ * сборки (/_next/static) отдаётся из кэша; /assets и /fonts (имена файлов не
+ * хешированы — файл могут заменить) — из кэша с обновлением в фоне
+ * (stale-while-revalidate), чтобы замена появлялась при следующем открытии.
  *
  * Чего НЕ делает никогда: не кэширует API (другой origin), запросы с
  * Authorization, HTML страниц (в нём могут быть данные пользователя),
  * запросы с параметрами и всё, что не GET. Чувствительные данные в кэш не
  * попадают.
  */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `twomc-static-${VERSION}`;
 const OFFLINE_URL = '/offline';
 const PRECACHE = [OFFLINE_URL, '/icon.png'];
 
-/// Статика с неизменяемыми (хешированными) путями — безопасна для кэша.
-function isStaticAsset(url) {
+/// Статика сборки: в production-сборке пути `/_next/static` хешированы —
+/// содержимое по адресу не меняется, безопасно cache-first.
+function isBuildAsset(url) {
+  return (
+    url.origin === self.location.origin && !url.search && url.pathname.startsWith('/_next/static/')
+  );
+}
+
+/// Публичные файлы без хеша в имени — stale-while-revalidate.
+function isPublicAsset(url) {
   return (
     url.origin === self.location.origin &&
     !url.search &&
-    (url.pathname.startsWith('/_next/static/') ||
-      url.pathname.startsWith('/assets/') ||
-      url.pathname.startsWith('/fonts/'))
+    (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/fonts/'))
   );
 }
 
@@ -79,7 +87,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (isStaticAsset(url)) {
+  if (isBuildAsset(url)) {
     event.respondWith(
       caches.open(CACHE).then(async (cache) => {
         const cached = await cache.match(request);
@@ -89,6 +97,21 @@ self.addEventListener('fetch', (event) => {
         if (response.ok) await cache.put(request, response.clone());
         return response;
       }),
+    );
+    return;
+  }
+
+  if (isPublicAsset(url)) {
+    const network = fetch(request).then(async (response) => {
+      if (response.ok) {
+        const cache = await caches.open(CACHE);
+        await cache.put(request, response.clone());
+      }
+      return response;
+    });
+    if (event.waitUntil) event.waitUntil(network.catch(() => undefined));
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => (await cache.match(request)) || network),
     );
   }
 });

@@ -103,6 +103,27 @@ describe('Service Worker (ADR-0086)', () => {
     const cached = await dispatch(new Request('https://twomc.su/_next/static/app.js'));
     expect(await cached!.text()).toBe('net:/_next/static/app.js');
   });
+
+  it('/assets (имена без хеша) — из кэша, но обновляются в фоне: замена файла видна при следующем открытии', async () => {
+    let version = 1;
+    const { dispatch, store } = loadServiceWorker((request) =>
+      Promise.resolve(new Response(`v${version}:${new URL(request.url).pathname}`)),
+    );
+    const url = 'https://twomc.su/assets/tutorial/register.webp';
+    expect(await (await dispatch(new Request(url)))!.text()).toBe(
+      'v1:/assets/tutorial/register.webp',
+    );
+    version = 2;
+    // Сразу — кэш (быстро и офлайн), в фоне — сеть кладёт новую версию…
+    expect(await (await dispatch(new Request(url)))!.text()).toBe(
+      'v1:/assets/tutorial/register.webp',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // …и следующее открытие получает заменённый файл.
+    expect(await store.get('/assets/tutorial/register.webp')!.clone().text()).toBe(
+      'v2:/assets/tutorial/register.webp',
+    );
+  });
 });
 
 describe('ConnectivityMonitor', () => {
