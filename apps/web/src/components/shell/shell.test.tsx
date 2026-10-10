@@ -196,6 +196,8 @@ describe('SiteHeader', () => {
         accountType: 'DEFAULT',
         accessLevel: 0,
         mustChangePassword: false,
+        avatar: null,
+        banner: null,
         roles: [
           {
             id: 'r',
@@ -334,6 +336,8 @@ describe('CartButton', () => {
         accountType: 'DEFAULT',
         accessLevel: 0,
         mustChangePassword: false,
+        avatar: null,
+        banner: null,
         roles: [],
         permissions: { superuser: false, permissions: [], maxPriority: null },
       },
@@ -359,6 +363,8 @@ describe('CartButton', () => {
         accountType: 'DEFAULT',
         accessLevel: 0,
         mustChangePassword: false,
+        avatar: null,
+        banner: null,
         roles: [],
         permissions: { superuser: false, permissions: [], maxPriority: null },
       },

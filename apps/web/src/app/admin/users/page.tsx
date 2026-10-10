@@ -75,7 +75,7 @@ export default function UsersPage() {
       header: 'Пользователь',
       cell: (user) => (
         <div className="flex items-center gap-3">
-          <Avatar name={user.username} size="sm" shape="round" />
+          <Avatar src={user.avatar} name={user.username} size="sm" shape="round" />
           <UserIdentity username={user.username} tag={user.tag} previewable />
         </div>
       ),

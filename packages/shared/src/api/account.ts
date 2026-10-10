@@ -26,11 +26,14 @@ export interface ProfileSocialLinkDto {
 
 export interface OwnProfileDto {
   id: string;
+  shortId: number;
   username: string;
   tag: string;
   email: string;
+  /// Готовые URL (ADR-0088) или null; в БД хранится ключ хранилища.
   avatar: string | null;
   banner: string | null;
+  selectedDecoration: { id: string; slug: string; name: string; imageUrl: string } | null;
   statusText: string | null;
   bio: string | null;
   country: string | null;

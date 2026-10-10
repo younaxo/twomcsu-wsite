@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, SocialPlatform } from '@prisma/client';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
@@ -56,13 +57,41 @@ type OwnProfile = Prisma.UserGetPayload<{ select: typeof OWN_PROFILE_SELECT }>;
 
 @Injectable()
 export class ProfilesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /// Медиа профиля наружу — только готовыми URL (ADR-0088): в БД лежат ключи
+  /// хранилища, браузер не должен их достраивать.
+  private withMedia<
+    T extends {
+      avatar: string | null;
+      banner: string | null;
+      selectedDecoration: { imageUrl: string } | null;
+    },
+  >(user: T): T {
+    return {
+      ...user,
+      avatar: this.storage.publicUrl(user.avatar),
+      banner: this.storage.publicUrl(user.banner),
+      selectedDecoration: user.selectedDecoration
+        ? {
+            ...user.selectedDecoration,
+            imageUrl:
+              this.storage.publicUrl(user.selectedDecoration.imageUrl) ?? '',
+          }
+        : null,
+    };
+  }
 
   async getOwnProfile(userId: string): Promise<OwnProfile> {
-    return this.prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: OWN_PROFILE_SELECT,
-    });
+    return this.withMedia(
+      await this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: OWN_PROFILE_SELECT,
+      }),
+    );
   }
 
   async updateOwnProfile(
@@ -70,7 +99,7 @@ export class ProfilesService {
     dto: UpdateProfileDto,
   ): Promise<OwnProfile> {
     const { birthDate, ...rest } = dto;
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: {
         ...rest,
@@ -81,6 +110,7 @@ export class ProfilesService {
       },
       select: OWN_PROFILE_SELECT,
     });
+    return this.withMedia(updated);
   }
 
   /// Фильтрует профиль по приватности для чужого просмотра. FRIENDS_ONLY
@@ -103,7 +133,8 @@ export class ProfilesService {
       throw new NotFoundException('Профиль не найден');
     }
 
-    return isOwner ? user : this.applyPrivacy(user);
+    const resolved = this.withMedia(user);
+    return isOwner ? resolved : this.applyPrivacy(resolved);
   }
 
   /// Видимость профиля для зрителя: владелец — всегда; блокировка в любую
@@ -141,11 +172,29 @@ export class ProfilesService {
       where: { username: { equals: username, mode: 'insensitive' } },
       select: {
         id: true,
+        shortId: true,
         username: true,
         tag: true,
         avatar: true,
+        banner: true,
         createdAt: true,
         accountType: true,
+        selectedDecoration: {
+          select: { slug: true, name: true, imageUrl: true, isActive: true },
+        },
+        badges: {
+          where: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          select: { type: true },
+          orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
+        },
+        mediaBadges: {
+          where: { isApproved: true },
+          select: { mediaGroup: true },
+          orderBy: { approvedAt: 'asc' },
+        },
         isBanned: true,
         profileVisibility: true,
         hideStatistics: true,
@@ -197,8 +246,22 @@ export class ProfilesService {
     return {
       username: user.username,
       hidden: false as const,
+      shortId: user.shortId,
       tag: user.tag,
-      avatar: user.avatar,
+      avatar: this.storage.publicUrl(user.avatar),
+      banner: this.storage.publicUrl(user.banner),
+      decoration:
+        user.selectedDecoration?.isActive && user.selectedDecoration.imageUrl
+          ? {
+              slug: user.selectedDecoration.slug,
+              name: user.selectedDecoration.name,
+              imageUrl: this.storage.publicUrl(
+                user.selectedDecoration.imageUrl,
+              ),
+            }
+          : null,
+      badges: user.badges.map((badge) => badge.type),
+      mediaBadges: user.mediaBadges.map((badge) => badge.mediaGroup),
       createdAt: user.createdAt.toISOString(),
       system: user.accountType === 'SYSTEM',
       banned: user.isBanned,

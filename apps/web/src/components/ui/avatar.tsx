@@ -27,7 +27,14 @@ export interface AvatarProps extends ComponentPropsWithoutRef<typeof RadixAvatar
   /// Квадратный (голова скина Minecraft) или круглый — решает направление дизайна
   /// через `--avatar-radius`; здесь только override.
   shape?: 'auto' | 'square' | 'round';
+  /// Пиксельное масштабирование — для голов скинов Minecraft (16×16 →
+  /// крупно без размытия). Загруженное фото с ним выглядит рваным, поэтому
+  /// по умолчанию — только для известных источников голов.
+  pixelated?: boolean;
 }
+
+const MINECRAFT_HEAD =
+  /(mc-heads\.net|minotar\.net|crafatar\.com|textures\.minecraft\.net|\/skins?\/)/i;
 
 function initials(name: string): string {
   return (
@@ -39,7 +46,7 @@ function initials(name: string): string {
 }
 
 export const Avatar = forwardRef<ElementRef<typeof RadixAvatar.Root>, AvatarProps>(
-  ({ className, src, name, size = 'md', shape = 'auto', ...props }, ref) => (
+  ({ className, src, name, size = 'md', shape = 'auto', pixelated, ...props }, ref) => (
     <RadixAvatar.Root
       ref={ref}
       className={cn(
@@ -57,7 +64,10 @@ export const Avatar = forwardRef<ElementRef<typeof RadixAvatar.Root>, AvatarProp
           src={src}
           alt={name}
           draggable={false}
-          className="size-full object-cover [image-rendering:pixelated]"
+          className={cn(
+            'size-full object-cover',
+            (pixelated ?? MINECRAFT_HEAD.test(src)) && '[image-rendering:pixelated]',
+          )}
         />
       ) : null}
       <RadixAvatar.Fallback delayMs={src ? 400 : 0} aria-label={name}>

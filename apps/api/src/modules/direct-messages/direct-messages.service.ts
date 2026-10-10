@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import { escapeToHtml } from '../../common/html.util';
 import { FriendsService } from '../friends/friends.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDirectConversationDto } from './dto/create-direct-conversation.dto';
 import { CreateGroupConversationDto } from './dto/create-group-conversation.dto';
@@ -27,6 +28,7 @@ export class DirectMessagesService {
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
   /// Публичный метод (не private): используется также DirectMessagesGateway
@@ -70,7 +72,7 @@ export class DirectMessagesService {
           id: m.conversation.id,
           type: m.conversation.type,
           title: m.conversation.title,
-          avatar: m.conversation.avatar,
+          avatar: this.storage.publicUrl(m.conversation.avatar),
           members: m.conversation.members.map((cm) => cm.user),
           lastMessage: m.conversation.messages[0] ?? null,
           lastMessageAt: m.conversation.lastMessageAt,

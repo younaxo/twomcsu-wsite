@@ -27,6 +27,8 @@ vi.mock('next/navigation', () => ({
 
 const profile: OwnProfileDto = {
   id: 'u1',
+  shortId: 7,
+  selectedDecoration: null,
   username: 'player',
   tag: 'player',
   email: 'p@example.com',

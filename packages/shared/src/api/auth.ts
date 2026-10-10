@@ -74,6 +74,9 @@ export interface MeResponse {
   tag: string;
   email: string;
   username: string;
+  /// Готовые URL аватара и баннера (ADR-0088) или null.
+  avatar: string | null;
+  banner: string | null;
   /// Уровень доступа (ADR-0062) — отдельный от priority ролей параметр.
   accessLevel: number;
   accountType: AccountType;

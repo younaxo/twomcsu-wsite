@@ -1,30 +1,40 @@
 'use client';
 
-import { LayoutDashboard, LogIn, LogOut, Settings, Shield, UserRound, Link2 } from 'lucide-react';
+import { LogIn, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import {
+  BottomSheet,
+  DrawerBody,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  useMenuPresentation,
 } from '@/components/ui/dropdown-menu';
-import { ProfileTrigger } from './profile-trigger';
-import { UserIdentity } from '@/components/ui/user-identity';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ADMIN_ENTRY_REQUIREMENT } from '@/lib/admin/navigation';
 import { useAuthStore } from '@/lib/auth/store';
 import { usePermissions } from '@/lib/auth/use-permissions';
-import { pickPrimaryRole } from '@/lib/roles/primary-role';
+import { useProfileSummary } from '@/lib/profile/hooks';
+import { MiniProfileSummary, miniProfileEntries } from './mini-profile';
+import { ProfileTrigger } from './profile-trigger';
 
-/// Аватар + меню профиля в header. Анонимам — кнопка «Войти». Пункты,
-/// маршруты которых ещё не существуют (настройки/безопасность/сессии),
-/// ведут на /login?next= только когда появятся — пока показываем
-/// недоступными, чтобы не вести в 404.
+const SOON = 'скоро';
+
+/// Аватар + mini profile в header (ADR-0088). Анонимам — кнопка «Войти».
+/// Desktop — меню-popover с шапкой профиля; mobile — bottom sheet с тем же
+/// содержимым и тем же источником данных.
 export function ProfileMenu() {
   const router = useRouter();
   const pathname = usePathname();
@@ -33,6 +43,9 @@ export function ProfileMenu() {
   const bootstrap = useAuthStore((state) => state.bootstrap);
   const logout = useAuthStore((state) => state.logout);
   const { can } = usePermissions();
+  const presentation = useMenuPresentation();
+  const [open, setOpen] = useState(false);
+  const summary = useProfileSummary(user?.username ?? '', open && !!user);
 
   useEffect(() => {
     if (status === 'idle') {
@@ -54,57 +67,112 @@ export function ProfileMenu() {
     );
   }
 
-  const primary = pickPrimaryRole(user.roles);
+  const entries = miniProfileEntries(user.username, can(ADMIN_ENTRY_REQUIREMENT));
+  const signOut = () => logout().then(() => router.refresh());
+  const header = (bleed: boolean) => (
+    <MiniProfileSummary
+      user={user}
+      summary={summary.data}
+      loading={summary.isPending}
+      bleed={bleed}
+    />
+  );
+  const trigger = (
+    <ProfileTrigger
+      username={user.username}
+      avatar={user.avatar}
+      aria-label={`Профиль: ${user.username}`}
+    />
+  );
+
+  if (presentation === 'sheet') {
+    return (
+      <>
+        <ProfileTrigger
+          username={user.username}
+          avatar={user.avatar}
+          aria-label={`Профиль: ${user.username}`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+        />
+        <BottomSheet open={open} onOpenChange={setOpen}>
+          <DrawerContent>
+            <DrawerHeader className="sr-only">
+              <DrawerTitle>Профиль {user.username}</DrawerTitle>
+              <DrawerDescription>Мой профиль и разделы аккаунта</DrawerDescription>
+            </DrawerHeader>
+            <DrawerBody className="flex flex-col gap-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
+              {header(false)}
+              <nav aria-label="Разделы аккаунта" className="flex flex-col gap-0.5">
+                {entries.map((entry) =>
+                  entry.href ? (
+                    <DrawerClose key={entry.key} asChild>
+                      <Button asChild variant="ghost" className="h-11 justify-start">
+                        <Link href={entry.href}>
+                          <entry.icon />
+                          {entry.label}
+                        </Link>
+                      </Button>
+                    </DrawerClose>
+                  ) : (
+                    <Button
+                      key={entry.key}
+                      variant="ghost"
+                      disabled
+                      className="h-11 justify-start"
+                      data-entry={entry.key}
+                    >
+                      <entry.icon />
+                      {entry.label}
+                      <span className="ml-auto text-xs text-subtle-foreground">{SOON}</span>
+                    </Button>
+                  ),
+                )}
+              </nav>
+              <div className="h-px bg-border-subtle" />
+              <Button variant="ghost" className="h-11 justify-start" onClick={() => void signOut()}>
+                <LogOut />
+                Выйти
+              </Button>
+            </DrawerBody>
+          </DrawerContent>
+        </BottomSheet>
+      </>
+    );
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <ProfileTrigger username={user.username} aria-label={`Профиль: ${user.username}`} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="flex flex-col gap-1">
-          <UserIdentity username={user.username} role={primary} />
-          <span className="text-xs font-normal text-muted-foreground">
-            {primary?.displayName ?? 'Игрок'}
-          </span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href={`/u/${encodeURIComponent(user.username)}`}>
-            <UserRound />
-            Профиль
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings">
-            <Settings />
-            Настройки
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings/security">
-            <Shield />
-            Безопасность и сессии
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings/linked-accounts">
-            <Link2 />
-            Связанные аккаунты
-          </Link>
-        </DropdownMenuItem>
-        {can(ADMIN_ENTRY_REQUIREMENT) ? (
-          <DropdownMenuItem asChild>
-            <Link href="/admin">
-              <LayoutDashboard />
-              Админ-панель
-            </Link>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-80 overflow-hidden p-0">
+        <div className="pb-3">{header(true)}</div>
+        <DropdownMenuSeparator className="mx-0 my-0" />
+        <div className="p-1">
+          {entries.map((entry) =>
+            entry.href ? (
+              <DropdownMenuItem key={entry.key} asChild>
+                <Link href={entry.href}>
+                  <entry.icon />
+                  {entry.label}
+                </Link>
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem key={entry.key} disabled data-entry={entry.key}>
+                <entry.icon />
+                {entry.label}
+                <span className="ml-auto text-xs text-subtle-foreground">{SOON}</span>
+              </DropdownMenuItem>
+            ),
+          )}
+        </div>
+        <DropdownMenuSeparator className="mx-0 my-0" />
+        <div className="p-1">
+          <DropdownMenuItem onSelect={() => void signOut()}>
+            <LogOut />
+            Выйти
           </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => logout().then(() => router.refresh())}>
-          <LogOut />
-          Выйти
-        </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

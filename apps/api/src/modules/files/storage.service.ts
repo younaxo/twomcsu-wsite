@@ -144,6 +144,16 @@ export class StorageService implements StorageDriver {
     return `${this.cdnBaseUrl}/${key.replace(/^\/+/, '')}`;
   }
 
+  /// URL для значения из БД (avatar, banner, картинки): ключ хранилища →
+  /// CDN URL; уже абсолютный адрес (старые записи, внешние источники) — как
+  /// есть; пусто → null. Каждый ответ API с медиа пользователя идёт через
+  /// этот метод — сырой ключ наружу не отдаётся (ADR-0088).
+  publicUrl(value: string | null | undefined): string | null {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) return value;
+    return this.toUrl(value);
+  }
+
   put(key: string, body: Buffer, mime: string): Promise<void> {
     return this.driver.put(key, body, mime);
   }

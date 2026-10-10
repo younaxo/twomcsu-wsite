@@ -9,6 +9,7 @@ import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes, timingSafeEqual } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { maskNickname } from '../../common/privacy.util';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -32,6 +33,7 @@ export class OrdersService {
     private readonly pricing: PricingService,
     private readonly payments: PaymentProviderRegistry,
     private readonly config: ConfigService,
+    private readonly storage: StorageService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -288,7 +290,7 @@ export class OrdersService {
         image: i.product?.image ?? i.bundle?.image ?? null,
         quantity: i.quantity,
         nickname: maskNickname(user?.username ?? i.order.guestMinecraftNick),
-        avatar: user?.avatar ?? null,
+        avatar: this.storage.publicUrl(user?.avatar),
         purchasedAt: i.order.paidAt,
       };
     });

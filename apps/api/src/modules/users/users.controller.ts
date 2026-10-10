@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { AuditService } from '../audit/audit.service';
 import { SkipAudit } from '../audit/skip-audit.decorator';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
@@ -31,6 +32,7 @@ const SAFE_USER_SELECT = {
   tag: true,
   email: true,
   username: true,
+  avatar: true,
   accessLevel: true,
   accountType: true,
   isBanned: true,
@@ -48,7 +50,13 @@ export class UsersController {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
+
+  /// Аватар — готовым URL (ADR-0088), как во всех остальных ответах API.
+  private withAvatar<T extends { avatar: string | null }>(user: T): T {
+    return { ...user, avatar: this.storage.publicUrl(user.avatar) };
+  }
 
   @Get()
   async list(@Query() query: ListUsersDto) {
@@ -75,7 +83,12 @@ export class UsersController {
       this.prisma.user.count({ where }),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: items.map((item) => this.withAvatar(item)),
+      total,
+      page,
+      limit,
+    };
   }
 
   @Get(':id/full')
@@ -92,7 +105,7 @@ export class UsersController {
     if (!user) {
       throw new NotFoundException('Пользователь не найден');
     }
-    return user;
+    return this.withAvatar(user);
   }
 
   /// Уровень доступа (ADR-0062) — отдельно от permissions и priority ролей.
@@ -165,7 +178,7 @@ export class UsersController {
         self,
       },
     });
-    return updated;
+    return this.withAvatar(updated);
   }
 
   @Get(':userId/badges')

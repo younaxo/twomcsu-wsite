@@ -5,6 +5,7 @@ import { CalendarDays, MapPin, UserX } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
+import { ProfileBanner } from '@/components/profile/profile-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -79,11 +80,7 @@ export default function PublicProfilePage() {
       data-testid="public-profile"
     >
       <section className="overflow-hidden rounded-xl bg-surface shadow-sm">
-        <div
-          className="h-28 bg-background-subtle bg-cover bg-center md:h-40"
-          style={data.banner ? { backgroundImage: `url("${data.banner}")` } : undefined}
-          aria-hidden
-        />
+        <ProfileBanner src={data.banner ?? null} className="h-28 md:h-40" />
         <div className="flex flex-wrap items-end gap-4 px-5 pb-5">
           <Avatar
             src={data.avatar ?? null}

@@ -637,7 +637,7 @@ function UserDetails({ user }: { user: AdminUserFull }) {
         breadcrumbs={[{ label: 'Пользователи', href: '/admin/users' }, { label: user.username }]}
         title={
           <span className="inline-flex items-center gap-3">
-            <Avatar name={user.username} size="md" shape="round" />
+            <Avatar src={user.avatar} name={user.username} size="md" shape="round" />
             <span className="inline-flex items-center gap-2">
               {primary ? <RolePrefix role={primary} size="sm" /> : null}
               {user.username}
