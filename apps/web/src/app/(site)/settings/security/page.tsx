@@ -27,6 +27,7 @@ const SESSIONS_KEY = ['account', 'sessions'] as const;
 type SessionDto = SessionSummary;
 
 function ChangePassword() {
+  const client = useQueryClient();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -47,6 +48,12 @@ function ChangePassword() {
     try {
       await change.mutateAsync();
       toast.success('Пароль изменён');
+      // Обязательная смена выполнена — снять флаг сразу (сервер уже сбросил его),
+      // иначе оболочка продолжит возвращать на эту страницу.
+      useAuthStore.setState((state) =>
+        state.user ? { user: { ...state.user, mustChangePassword: false } } : state,
+      );
+      void client.invalidateQueries({ queryKey: SESSIONS_KEY });
       setCurrent('');
       setNext('');
       setRepeat('');
@@ -225,11 +232,28 @@ function Sessions() {
   );
 }
 
+/// Аккаунту нужно сменить пароль (mustChangePassword) — понятное объяснение.
+function RequiredChangeNotice() {
+  const required = useAuthStore((state) => Boolean(state.user?.mustChangePassword));
+  if (!required) return null;
+  return (
+    <p
+      className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning"
+      role="status"
+      data-testid="password-change-required"
+    >
+      Смените пароль, чтобы продолжить пользоваться twomc.su. После смены другие устройства будут
+      разлогинены.
+    </p>
+  );
+}
+
 /// «Настройки → Безопасность»: смена пароля и активные сессии.
 export default function SecuritySettingsPage() {
   return (
     <>
       <PageHeader title="Безопасность" description="Пароль и устройства, где выполнен вход." />
+      <RequiredChangeNotice />
       <RequireSession>
         <div className="flex flex-col gap-5">
           <ChangePassword />
