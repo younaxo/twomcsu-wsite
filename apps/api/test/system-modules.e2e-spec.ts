@@ -13,6 +13,7 @@ import {
   PrismaSiteStatusStore,
   SiteStatusStore,
 } from '../src/modules/system/site-status.store';
+import { SiteStatusService } from '../src/modules/system/site-status.service';
 
 jest.setTimeout(30_000);
 
@@ -361,6 +362,35 @@ describe('System: modules & maintenance (e2e)', () => {
       'system.maintenance.update:critical',
       'system.maintenance.disable:warning',
     ]);
+  });
+
+  it('сводка для дашборда: права, реальные значения здоровья и состояния', async () => {
+    const plain = await createUser('op');
+    const admin = await createUser('oa');
+    await grant(admin.id, ['dashboard.view']);
+    await http()
+      .get('/admin/system/overview')
+      .set('Authorization', plain.auth)
+      .expect(403);
+    store.modules.set('topics', {
+      isEnabled: false,
+      reason: null,
+      disabledAt: new Date(),
+    });
+    store.maintenance = null;
+    app.get(SiteStatusService).invalidate();
+    const overview = await http()
+      .get('/admin/system/overview')
+      .set('Authorization', admin.auth)
+      .expect(200);
+    expect(overview.body).toMatchObject({
+      maintenance: null,
+      disabledModules: ['topics'],
+      health: { database: 'ok', redis: 'ok' },
+    });
+    expect(overview.body.activeAnnouncements).toEqual(expect.any(Number));
+    store.modules.delete('topics');
+    app.get(SiteStatusService).invalidate();
   });
 
   it('Prisma-хранилище: запись модуля и техработ (служебный ключ, без включения)', async () => {

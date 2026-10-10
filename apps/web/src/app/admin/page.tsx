@@ -7,6 +7,8 @@ import { PageHeader, PageSection, StatCard, StatGrid } from '@/components/admin/
 import { Can, PermissionGate } from '@/components/admin/permission-gate';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { DashboardCharts } from './_components/dashboard-charts';
+import { QuickActions } from './_components/quick-actions';
+import { StatusOverview } from './_components/status-overview';
 import { AnnouncementBanners } from '@/components/announcements/announcement-banners';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -80,6 +82,9 @@ export default function DashboardPage() {
       />
 
       <AnnouncementBanners placement="dashboard" className="mb-5" />
+      <div className="mb-6">
+        <StatusOverview />
+      </div>
 
       <QueryBoundary
         query={query}
@@ -171,8 +176,9 @@ export default function DashboardPage() {
                   </Card>
                 </PageSection>
 
-                <PageSection title="Быстрые переходы">
-                  <Card className="flex flex-col gap-2">
+                <PageSection title="Быстрые действия">
+                  <Card className="flex flex-col gap-2" data-testid="quick-actions">
+                    <QuickActions />
                     <Can requirement="users.view">
                       <Button asChild variant="secondary" className="justify-start">
                         <Link href="/admin/users">

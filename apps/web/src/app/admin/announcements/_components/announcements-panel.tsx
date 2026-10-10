@@ -2,7 +2,7 @@
 
 import type { AdminAnnouncementDto } from '@twomc/shared';
 import { Megaphone, Pencil, Plus, Send, Trash2, Undo2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +61,14 @@ export function AnnouncementsPanel() {
     setEditing(item);
     setEditorOpen(true);
   };
+
+  // `?new=1` — быстрое действие «Создать объявление» с дашборда.
+  useEffect(() => {
+    if (manage && new URLSearchParams(window.location.search).get('new') === '1') {
+      setEditing(null);
+      setEditorOpen(true);
+    }
+  }, [manage]);
 
   const confirm = async () => {
     if (!pending) return;

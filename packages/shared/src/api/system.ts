@@ -64,3 +64,13 @@ export interface PublicSiteStatus {
   disabledModules: string[];
   serverTime: IsoDateString;
 }
+
+/// `GET /admin/system/overview` — сводка состояния на дашборде (`dashboard.view`).
+export interface AdminSystemOverview {
+  maintenance: PublicSiteStatus['maintenance'];
+  disabledModules: string[];
+  /// Опубликованные объявления, чьё окно показа идёт сейчас.
+  activeAnnouncements: number;
+  health: { database: 'ok' | 'error'; redis: 'ok' | 'error' };
+  serverTime: IsoDateString;
+}
