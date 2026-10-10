@@ -36,6 +36,11 @@ export type PublicProfileDto = Partial<OwnProfileDto> &
     }[];
   };
 
+/// Ответ `GET /users/:username/public` (ADR-0106): видимый профиль или только
+/// ник скрытого (приватность, блокировка). Несуществующий ник — 404.
+export type PublicProfileResponse =
+  (PublicProfileDto & { hidden?: false }) | { username: string; hidden: true };
+
 export const profileKeys = {
   summary: (username: string) => ['profile', 'summary', username.toLowerCase()] as const,
 };
@@ -66,12 +71,12 @@ export function useProfileShowcase(username: string) {
 }
 
 /// Публичный профиль (`GET /users/:username/public`): поля уже отфильтрованы
-/// сервером по приватности; скрытый профиль — 404.
+/// сервером по приватности; скрытый профиль — `{ username, hidden: true }`.
 export function usePublicProfile(username: string) {
   return useQuery({
     queryKey: ['profile', 'public', username.toLowerCase()] as const,
     queryFn: () =>
-      api.get<PublicProfileDto>(`/users/${encodeURIComponent(username)}/public`, {
+      api.get<PublicProfileResponse>(`/users/${encodeURIComponent(username)}/public`, {
         retryOn401: false,
       }),
     staleTime: 60_000,

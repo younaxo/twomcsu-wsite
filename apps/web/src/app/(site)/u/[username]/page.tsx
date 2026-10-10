@@ -1,6 +1,6 @@
 'use client';
 
-import { UserX } from 'lucide-react';
+import { EyeOff, UserX } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { ProfileInfoSection } from '@/components/profile/profile-info';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
@@ -16,9 +16,11 @@ import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import { useProfileShowcase, useProfileSummary, usePublicProfile } from '@/lib/profile/hooks';
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
+import { usePublicSiteSettings } from '@/lib/site/hooks';
 
 /// Публичный профиль игрока (ADR-0100): данные уже отфильтрованы сервером по
-/// приватности; скрытый или несуществующий профиль — понятное состояние.
+/// приватности. Скрытый (приватность, блокировка) и несуществующий профиль —
+/// разные понятные состояния (ADR-0106).
 /// «О себе» — только bio (безопасный Markdown), «Информация» — метаданные,
 /// «Игрок» — витрина наград и значков и игровая статистика.
 export default function PublicProfilePage() {
@@ -28,8 +30,11 @@ export default function PublicProfilePage() {
   const profile = usePublicProfile(username);
   const summary = useProfileSummary(username, true);
   const showcase = useProfileShowcase(username);
+  const site = usePublicSiteSettings();
+  const visible = profile.data && !profile.data.hidden ? profile.data : null;
   // Владелец — по id (адрес может быть alias или Minecraft-ником).
-  const own = !!me && !!profile.data && me.id === profile.data.id;
+  const own = !!me && !!visible && me.id === visible.id;
+  const reportable = !!me && !own && site.data?.modules?.reports === true;
 
   if (profile.isPending) {
     return (
@@ -45,12 +50,24 @@ export default function PublicProfilePage() {
         {missing ? (
           <EmptyState
             icon={<UserX />}
-            title="Профиль не найден или скрыт"
-            description="Игрок мог закрыть профиль настройками приватности."
+            title="Профиль не найден"
+            description={`Игрока с ником «${username}» нет на twomc.su. Проверьте адрес.`}
           />
         ) : (
           <ErrorState error={profile.error} onRetry={() => profile.refetch()} />
         )}
+      </div>
+    );
+  }
+
+  if (profile.data.hidden) {
+    return (
+      <div className="mx-auto max-w-xl px-3 py-10 md:px-6" data-testid="profile-hidden">
+        <EmptyState
+          icon={<EyeOff />}
+          title={`Профиль ${profile.data.username} скрыт`}
+          description="Игрок ограничил доступ к профилю настройками приватности."
+        />
       </div>
     );
   }
@@ -72,6 +89,7 @@ export default function PublicProfilePage() {
         stats={data.stats}
         own={own}
         signedIn={!!me}
+        reportable={reportable}
         role={identity ? pickPrimaryRole(identity.roles) : null}
         badges={identity?.badges}
         mediaBadges={identity?.mediaBadges}
@@ -129,6 +147,7 @@ export default function PublicProfilePage() {
               error={summary.isError}
               showHeader={false}
               showJoined={false}
+              showOpenLink={false}
             />
           </section>
         </aside>

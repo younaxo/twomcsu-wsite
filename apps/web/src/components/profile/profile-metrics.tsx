@@ -9,7 +9,7 @@ import { api } from '@/lib/api/client';
 import { getErrorMessage } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
-import type { ProfileStatsDto, PublicProfileDto } from '@/lib/profile/hooks';
+import type { ProfileStatsDto, PublicProfileResponse } from '@/lib/profile/hooks';
 
 /// Метрики профиля (B5, D5) — один компактный solid-контейнер в правом верхнем
 /// углу баннера: просмотры (только показатель), «нравится» и «не нравится».
@@ -42,7 +42,9 @@ export function ProfileMetrics({
   const client = useQueryClient();
   const key = ['profile', 'public', handle.toLowerCase()] as const;
   const apply = (next: ProfileStatsDto) =>
-    client.setQueryData<PublicProfileDto>(key, (prev) => (prev ? { ...prev, stats: next } : prev));
+    client.setQueryData<PublicProfileResponse>(key, (prev) =>
+      prev && !prev.hidden ? { ...prev, stats: next } : prev,
+    );
   const sent = useRef(false);
 
   useEffect(() => {

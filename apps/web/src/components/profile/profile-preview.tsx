@@ -1,8 +1,10 @@
 'use client';
 
 import type { PublicProfileSummary } from '@twomc/shared';
-import { EyeOff, Gamepad2, ShieldCheck } from 'lucide-react';
+import { ArrowRight, EyeOff, Gamepad2, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
 import { useState, type ReactElement } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   BottomSheet,
   DrawerBody,
@@ -70,6 +72,8 @@ export function ProfilePreviewCard({
   bleed = false,
   showHeader = true,
   showJoined = true,
+  showOpenLink = true,
+  onOpenProfile,
 }: {
   username: string;
   summary: PublicProfileSummary | undefined;
@@ -81,6 +85,10 @@ export function ProfilePreviewCard({
   showHeader?: boolean;
   /// Дата регистрации; на странице профиля она уже в «Информации».
   showJoined?: boolean;
+  /// Ссылка «Открыть профиль» (`/u/…`); на самой странице профиля не нужна.
+  showOpenLink?: boolean;
+  /// Переход по ссылке — закрыть popover/sheet превью.
+  onOpenProfile?: () => void;
 }) {
   const pad = bleed ? 'px-4' : '';
   if (loading) {
@@ -177,6 +185,18 @@ export function ProfilePreviewCard({
             </dd>
           </div>
         </dl>
+        {showOpenLink ? (
+          <Button asChild variant="secondary" size="sm" className="w-full">
+            <Link
+              href={`/u/${encodeURIComponent(summary.username)}`}
+              onClick={onOpenProfile}
+              data-testid="profile-preview-open"
+            >
+              Открыть профиль
+              <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -201,6 +221,7 @@ export function ProfilePreview({
       summary={query.data}
       loading={query.isPending}
       error={query.isError}
+      onOpenProfile={() => setOpen(false)}
     />
   );
 
@@ -241,6 +262,7 @@ export function ProfilePreview({
           loading={query.isPending}
           error={query.isError}
           bleed
+          onOpenProfile={() => setOpen(false)}
         />
       </HoverCardContent>
     </HoverCard>

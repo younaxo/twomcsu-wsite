@@ -7,6 +7,7 @@ import { ProfileBadges, type ProfileDecorationView } from '@/components/profile/
 import { ProfileBanner } from '@/components/profile/profile-header';
 import { ProfileEditButton } from '@/components/profile/profile-links';
 import { ProfileMetrics } from '@/components/profile/profile-metrics';
+import { ProfileReportButton } from '@/components/profile/profile-report';
 import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Avatar } from '@/components/ui/avatar';
 import { RolePrefix } from '@/components/ui/role-prefix';
@@ -16,8 +17,8 @@ import { identityPrefix, type DisplayableRole } from '@/lib/roles/primary-role';
 
 /// Шапка публичного профиля `/u/…` (B5, D5). Над баннером — то же сезонное
 /// украшение, что в шапке сайта (один компонент, флаг «Украшение шапки»). На
-/// баннере: слева сверху — круглая «Редактировать» (только свой профиль),
-/// справа сверху — метрики (просмотры, оценки). Ниже — аватар с 3D-головой
+/// баннере: слева сверху — круглая «Редактировать» (свой профиль) или
+/// «Пожаловаться» (чужой, `reportable`), справа сверху — метрики (просмотры, оценки). Ниже — аватар с 3D-головой
 /// скина и identity: `[PREFIX] ник` одной строкой, под ней статус и бейджи. Правый нижний угол — место под будущие награды
 /// (`ProfileAwardsSlot`): пока наград нет, там ничего не рисуется. Та же
 /// шапка — в design-lab.
@@ -41,6 +42,7 @@ export function ProfileHero({
   stats,
   own,
   signedIn,
+  reportable = false,
   role,
   badges,
   mediaBadges,
@@ -59,6 +61,9 @@ export function ProfileHero({
   stats?: ProfileStatsDto | null;
   own: boolean;
   signedIn: boolean;
+  /// Показать «Пожаловаться»: вошедший зритель чужого профиля при включённом
+  /// модуле жалоб (решает страница).
+  reportable?: boolean;
   role?: DisplayableRole | null;
   badges?: UserBadgeKind[];
   mediaBadges?: MediaBadgeKind[];
@@ -79,7 +84,11 @@ export function ProfileHero({
       <div className="relative">
         <ProfileBanner src={banner} className="h-28 md:h-40" />
         <SeasonalHeaderDecoration campaign={decorationCampaign} />
-        {own ? <ProfileEditButton className="absolute left-3 top-3" /> : null}
+        {own ? (
+          <ProfileEditButton className="absolute left-3 top-3" />
+        ) : reportable ? (
+          <ProfileReportButton username={username} className="absolute left-3 top-3" />
+        ) : null}
         {stats ? (
           <ProfileMetrics
             handle={handle}

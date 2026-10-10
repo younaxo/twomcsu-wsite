@@ -228,3 +228,21 @@ export type PublicProfileSummary =
       friendsCount: number;
       achievementsCompleted: number;
     };
+
+/// Причина жалобы на профиль — как enum `ProfileReportReason` в Prisma.
+export const PROFILE_REPORT_REASONS = [
+  'SPAM',
+  'INAPPROPRIATE_CONTENT',
+  'HARASSMENT',
+  'IMPERSONATION',
+  'OTHER',
+] as const;
+export type ProfileReportReason = (typeof PROFILE_REPORT_REASONS)[number];
+
+/// `POST /users/:username/report` (только вошедшим, не на себя; повторная
+/// жалоба того же игрока обновляет прежнюю).
+export interface CreateProfileReportRequest {
+  reason: ProfileReportReason;
+  /// До 1000 символов.
+  description?: string;
+}
