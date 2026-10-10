@@ -98,6 +98,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         requirement: 'content.view',
         keywords: ['новости', 'формы', 'жалобы'],
       },
+      {
+        href: '/admin/reports',
+        label: 'Обращения',
+        icon: 'scroll',
+        requirement: 'reports.view',
+        keywords: ['жалобы', 'тикеты', 'обжалования', 'поддержка'],
+      },
     ],
   },
   {

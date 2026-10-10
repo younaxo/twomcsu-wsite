@@ -6,6 +6,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
@@ -41,7 +42,12 @@ export class ReportsModerationService {
     const [items, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-        include: { author: true, assignedTo: true, targets: true },
+        // Персоналу — только публичные поля пользователей (ADR-0128, ADR-0107).
+        include: {
+          author: { select: PUBLIC_USER_SELECT },
+          assignedTo: { select: PUBLIC_USER_SELECT },
+          targets: true,
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
