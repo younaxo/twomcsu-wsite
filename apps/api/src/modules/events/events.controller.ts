@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -18,12 +19,14 @@ import { EventAttendanceDto } from './dto/event-attendance.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { EventsService } from './events.service';
 import { SiteModule } from '../system/site-module.decorator';
+import { AvatarUrlInterceptor } from '../files/avatar-url.interceptor';
 
 function viewerOf(req: Request): AuthenticatedUser | null {
   return (req as Request & { user?: AuthenticatedUser | null }).user ?? null;
 }
 
 @SiteModule('events')
+@UseInterceptors(AvatarUrlInterceptor)
 @Controller('events')
 export class EventsController {
   constructor(private readonly events: EventsService) {}
