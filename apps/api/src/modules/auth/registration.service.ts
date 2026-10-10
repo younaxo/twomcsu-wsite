@@ -149,6 +149,31 @@ export class RegistrationService {
     };
   }
 
+  /// Регистрация выключена или достигнут `maxUsersLimit` (ADR-0125) — 403
+  /// `registration_closed`. Системные аккаунты в лимит не входят.
+  private async assertRegistrationOpen(): Promise<void> {
+    const settings = await this.prisma.siteSettings.findFirst({
+      select: { registrationEnabled: true, maxUsersLimit: true },
+    });
+    if (settings && !settings.registrationEnabled) {
+      throw new ForbiddenException({
+        code: 'registration_closed',
+        message: 'Регистрация временно закрыта',
+      });
+    }
+    if (settings?.maxUsersLimit && settings.maxUsersLimit > 0) {
+      const users = await this.prisma.user.count({
+        where: { accountType: { not: 'SYSTEM' } },
+      });
+      if (users >= settings.maxUsersLimit) {
+        throw new ForbiddenException({
+          code: 'registration_closed',
+          message: 'Регистрация временно закрыта: достигнут лимит игроков',
+        });
+      }
+    }
+  }
+
   async start(dto: RegisterStartDto, context: RequestContext) {
     const captchaOk = await this.captcha.verify(dto.captchaToken, context.ip);
     if (!captchaOk) {
@@ -157,15 +182,7 @@ export class RegistrationService {
         requiresCaptcha: true,
       });
     }
-    const settings = await this.prisma.siteSettings.findFirst({
-      select: { registrationEnabled: true },
-    });
-    if (settings && !settings.registrationEnabled) {
-      throw new ForbiddenException({
-        code: 'registration_closed',
-        message: 'Регистрация временно закрыта',
-      });
-    }
+    await this.assertRegistrationOpen();
 
     const email = dto.email.toLowerCase();
     await this.auth.assertIdentityAvailable(email, dto.username);
@@ -499,6 +516,8 @@ export class RegistrationService {
     }
 
     await this.auth.assertIdentityAvailable(record.email, record.username);
+    // Регистрацию могли закрыть (или исчерпать лимит) между стартом и завершением.
+    await this.assertRegistrationOpen();
     const user = await this.auth.createAccount({
       email: record.email,
       username: record.username,

@@ -237,6 +237,28 @@ describe('Registration with e-mail OTP (e2e)', () => {
     });
   });
 
+  it('ADR-0125: достигнут maxUsersLimit — регистрация закрыта', async () => {
+    const site = await prisma.siteSettings.findFirst({
+      select: { id: true, maxUsersLimit: true },
+    });
+    const users = await prisma.user.count({
+      where: { accountType: { not: 'SYSTEM' } },
+    });
+    await prisma.siteSettings.updateMany({ data: { maxUsersLimit: users } });
+    try {
+      const closed = await start(baseBody('limit')).expect(403);
+      expect(closed.body.code).toBe('registration_closed');
+      await prisma.siteSettings.updateMany({
+        data: { maxUsersLimit: users + 1000 },
+      });
+      await start(baseBody('limitok')).expect(200);
+    } finally {
+      await prisma.siteSettings.updateMany({
+        data: { maxUsersLimit: site?.maxUsersLimit ?? null },
+      });
+    }
+  });
+
   it('повторная отправка: cooldown, новый код заменяет старый', async () => {
     const body = baseBody('rs');
     const started = await start(body).expect(200);

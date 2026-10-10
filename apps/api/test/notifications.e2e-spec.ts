@@ -359,6 +359,43 @@ describe('Notifications (e2e)', () => {
       .expect(200);
   });
 
+  it('ADR-0125: defaultNotificationsEnabled выключен — новые настройки и сброс без писем и push', async () => {
+    const site = await prisma.siteSettings.findFirst({
+      select: { defaultNotificationsEnabled: true },
+    });
+    await prisma.siteSettings.updateMany({
+      data: { defaultNotificationsEnabled: false },
+    });
+    const fresh = await createUser('dflt');
+    try {
+      const got = await request(app.getHttpServer())
+        .get('/notifications/settings')
+        .set('Authorization', auth(fresh))
+        .expect(200);
+      expect(got.body.emailEnabled).toBe(false);
+      expect(got.body.pushEnabled).toBe(false);
+
+      await request(app.getHttpServer())
+        .patch('/notifications/settings')
+        .set('Authorization', auth(fresh))
+        .send({ emailEnabled: true })
+        .expect(200);
+      const reset = await request(app.getHttpServer())
+        .post('/notifications/settings/reset')
+        .set('Authorization', auth(fresh))
+        .expect(201);
+      expect(reset.body.emailEnabled).toBe(false);
+    } finally {
+      await prisma.siteSettings.updateMany({
+        data: {
+          defaultNotificationsEnabled:
+            site?.defaultNotificationsEnabled ?? true,
+        },
+      });
+      await prisma.user.delete({ where: { id: fresh.id } });
+    }
+  });
+
   it('настройки: превью push и уведомления при открытом сайте', async () => {
     const updated = await request(app.getHttpServer())
       .patch('/notifications/settings')
