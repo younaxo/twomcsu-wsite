@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
+import { ProfileBanner } from '@/components/profile/profile-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -94,12 +95,9 @@ function ImageField({ kind, profile }: { kind: ProfileImageKind; profile: OwnPro
       {kind === 'avatar' ? (
         <Avatar src={current} name={profile.username} size="xl" />
       ) : (
-        <div
-          className="h-16 w-40 rounded-lg bg-background-subtle bg-cover bg-center"
-          style={current ? { backgroundImage: `url("${current}")` } : undefined}
-          aria-label={current ? 'Текущий баннер' : 'Баннер не загружен'}
-          role="img"
-        />
+        <div role="img" aria-label={current ? 'Текущий баннер' : 'Баннер не загружен'}>
+          <ProfileBanner src={current ?? null} className="h-16 w-40 rounded-lg" />
+        </div>
       )}
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">{label}</p>

@@ -12,6 +12,11 @@ import { ProfilePreviewCard } from './profile-preview';
 const summary: Extract<PublicProfileSummary, { hidden: false }> = {
   username: 'younaxo_',
   hidden: false,
+  shortId: 1042,
+  banner: null,
+  decoration: null,
+  badges: [],
+  mediaBadges: [],
   tag: 'younaxo_#a1b2',
   avatar: null,
   createdAt: '2025-03-01T10:00:00.000Z',

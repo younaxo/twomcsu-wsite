@@ -13,6 +13,8 @@ const me: MeResponse = {
   accountType: 'DEFAULT',
   accessLevel: 0,
   mustChangePassword: false,
+  avatar: null,
+  banner: null,
   roles: [],
   permissions: { superuser: false, permissions: ['dashboard.view'], maxPriority: 10 },
 };

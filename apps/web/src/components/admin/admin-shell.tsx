@@ -208,7 +208,7 @@ function SidebarUser() {
   const primary = pickPrimaryRole(user.roles);
   return (
     <div className="m-3 flex items-center gap-3 rounded-lg bg-surface-sunken p-3">
-      <Avatar name={user.username} size="sm" shape="round" />
+      <Avatar src={user.avatar} name={user.username} size="sm" shape="round" />
       <UserIdentity username={user.username} role={primary} tag={user.tag} />
     </div>
   );
@@ -257,7 +257,11 @@ function AccountMenu() {
     <DropdownMenu>
       <Tooltip content="Аккаунт">
         <DropdownMenuTrigger asChild>
-          <ProfileTrigger username={user.username} aria-label={`Аккаунт ${user.username}`} />
+          <ProfileTrigger
+            username={user.username}
+            avatar={user.avatar}
+            aria-label={`Аккаунт ${user.username}`}
+          />
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-64">

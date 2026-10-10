@@ -7,6 +7,8 @@ import { cn } from '@/lib/cn';
 
 export interface ProfileTriggerProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   username: string;
+  /// Готовый URL аватара из `/auth/me` (ADR-0088); нет — инициалы.
+  avatar?: string | null;
 }
 
 /// Кнопка «свой профиль» для раскрывающихся меню/preview: [avatar] [ник] [˅].
@@ -16,7 +18,7 @@ export interface ProfileTriggerProps extends ButtonHTMLAttributes<HTMLButtonElem
 /// motion-токен duration-fast, без bounce. Только там, где по нажатию
 /// действительно что-то раскрывается.
 export const ProfileTrigger = forwardRef<HTMLButtonElement, ProfileTriggerProps>(
-  ({ username, className, ...props }, ref) => (
+  ({ username, avatar, className, ...props }, ref) => (
     <button
       ref={ref}
       type="button"
@@ -29,7 +31,7 @@ export const ProfileTrigger = forwardRef<HTMLButtonElement, ProfileTriggerProps>
       )}
       {...props}
     >
-      <Avatar name={username} size="sm" shape="round" />
+      <Avatar src={avatar} name={username} size="sm" shape="round" />
       <span className="hidden min-w-0 max-w-32 truncate text-sm font-medium md:inline">
         {username}
       </span>

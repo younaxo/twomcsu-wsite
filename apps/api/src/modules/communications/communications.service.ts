@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   BulkSystemMessageDto,
@@ -38,11 +39,12 @@ export class CommunicationsService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   async searchRecipients(q: string | undefined) {
     const query = q?.trim();
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: {
         ...ACTIVE_USER,
         ...(query
@@ -58,6 +60,10 @@ export class CommunicationsService {
       orderBy: { username: 'asc' },
       take: 10,
     });
+    return users.map((user) => ({
+      ...user,
+      avatar: this.storage.publicUrl(user.avatar),
+    }));
   }
 
   async send(dto: SendSystemMessageDto, actorId: string) {

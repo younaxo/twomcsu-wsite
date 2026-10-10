@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
 import { EmailService } from '../email/email.service';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from './discord.service';
 import { NotificationSettingsService } from './notification-settings.service';
@@ -38,6 +39,7 @@ export class NotificationsService {
     private readonly gateway: NotificationsGateway,
     private readonly email: EmailService,
     private readonly push: PushService,
+    private readonly storage: StorageService,
     private readonly discord: DiscordService,
   ) {}
 
@@ -198,7 +200,22 @@ export class NotificationsService {
       }),
       this.prisma.notification.count({ where }),
     ]);
-    return { items, total, page, limit };
+    return {
+      items: items.map((item) =>
+        item.fromUser
+          ? {
+              ...item,
+              fromUser: {
+                ...item.fromUser,
+                avatar: this.storage.publicUrl(item.fromUser.avatar),
+              },
+            }
+          : item,
+      ),
+      total,
+      page,
+      limit,
+    };
   }
 
   async unreadCount(userId: string): Promise<number> {

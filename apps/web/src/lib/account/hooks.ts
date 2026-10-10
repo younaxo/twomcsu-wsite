@@ -62,6 +62,9 @@ export function useProfileImage(kind: ProfileImageKind) {
   const reloadUser = useAuthStore((state) => state.reload);
   const done = () => {
     void client.invalidateQueries({ queryKey: accountKeys.profile });
+    // Превью, публичный профиль и mini-profile показывают те же картинки —
+    // без сброса они держали бы старый аватар до истечения staleTime.
+    void client.invalidateQueries({ queryKey: ['profile'] });
     void reloadUser();
   };
   const upload = useMutation({

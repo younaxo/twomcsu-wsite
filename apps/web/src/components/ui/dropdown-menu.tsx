@@ -34,7 +34,9 @@ export const menuItemClassName = cn(
   'relative flex h-control-sm cursor-default select-none items-center gap-2 rounded-sm px-2 text-sm text-foreground outline-none',
   '[@media(pointer:coarse)]:h-10',
   'transition-colors duration-fast focus:bg-muted',
-  'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  // Недоступный пункт — курсор not-allowed (правило «Полдня»); Radix сам не
+  // выбирает и не подсвечивает disabled-пункты.
+  'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
   '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&>svg]:text-muted-foreground',
 );
 

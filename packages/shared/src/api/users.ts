@@ -53,6 +53,8 @@ export interface AdminUserListItem {
   tag: string;
   email: string;
   username: string;
+  /// Готовый URL аватара (ADR-0088) или null.
+  avatar: string | null;
   /// Уровень доступа (ADR-0062).
   accessLevel: number;
   accountType: AccountType;
@@ -150,6 +152,11 @@ export interface ProfileSummaryRole {
   color: string | null;
 }
 
+export type UserBadgeKind =
+  'LEADERSHIP' | 'VERIFIED' | 'SUBSCRIBER_PLUS' | 'PROJECT_TEAM' | 'DEVELOPERS_TEAM';
+
+export type MediaBadgeKind = 'YOUTUBE' | 'TWITCH' | 'TIKTOK';
+
 /// `GET /users/:username/summary` — карточка превью. Нет данных — `null`
 /// (никаких выдуманных значений); скрытый профиль — только `hidden: true`.
 export type PublicProfileSummary =
@@ -157,8 +164,18 @@ export type PublicProfileSummary =
   | {
       username: string;
       hidden: false;
+      /// Публичный числовой ID (ADR-0003).
+      shortId: number;
       tag: string;
+      /// Готовые URL (ADR-0088) или null — без выдуманных картинок.
       avatar: string | null;
+      banner: string | null;
+      /// Выбранная декорация профиля (если активна).
+      decoration: { slug: string; name: string; imageUrl: string | null } | null;
+      /// Активные бейджи в порядке показа.
+      badges: UserBadgeKind[];
+      /// Подтверждённые медиа-бейджи.
+      mediaBadges: MediaBadgeKind[];
       createdAt: string;
       system: boolean;
       banned: boolean;

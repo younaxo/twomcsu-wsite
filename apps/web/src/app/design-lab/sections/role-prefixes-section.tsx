@@ -141,6 +141,11 @@ export function RolePrefixesSection() {
               summary={{
                 username: 'player',
                 hidden: false,
+                shortId: 1042,
+                banner: null,
+                decoration: null,
+                badges: [],
+                mediaBadges: [],
                 tag: 'player#0001',
                 avatar: null,
                 createdAt: '2025-03-01T10:00:00.000Z',

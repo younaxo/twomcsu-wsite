@@ -48,6 +48,10 @@ export function configureApp(app: INestApplication): void {
             if (path.endsWith('.avif')) {
               res.setHeader('Content-Type', 'image/avif');
             }
+            // helmet по умолчанию ставит CORP same-origin — тогда сайт
+            // (другой origin) не может показать аватар/баннер. Публичные
+            // загрузки — cross-origin (ADR-0088).
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
           },
         },
       );

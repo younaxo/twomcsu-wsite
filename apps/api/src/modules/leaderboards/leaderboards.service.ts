@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
+import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface LeaderboardEntry {
@@ -17,7 +18,10 @@ const LIMIT = 10;
 /// Achievement/Order — считаются по БД).
 @Injectable()
 export class LeaderboardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   private async topByPlayerStatistics(
     field: 'playTime' | 'kills' | 'coins',
@@ -32,7 +36,7 @@ export class LeaderboardsService {
       rank: index + 1,
       userId: row.user.id,
       username: row.user.username,
-      avatar: row.user.avatar,
+      avatar: this.storage.publicUrl(row.user.avatar),
       value: row[field],
     }));
   }
@@ -58,7 +62,7 @@ export class LeaderboardsService {
         rank: index + 1,
         userId: user.id,
         username: user.username,
-        avatar: user.avatar,
+        avatar: this.storage.publicUrl(user.avatar),
         value: g._count._all,
       });
     });
@@ -90,7 +94,7 @@ export class LeaderboardsService {
         rank: index + 1,
         userId: user.id,
         username: user.username,
-        avatar: user.avatar,
+        avatar: this.storage.publicUrl(user.avatar),
         value: g._count._all,
       });
     });

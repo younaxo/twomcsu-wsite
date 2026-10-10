@@ -36,6 +36,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
 import { RegistrationService } from './registration.service';
+import { StorageService } from '../files/storage.service';
 
 function requestContext(req: Request): RequestContext {
   return {
@@ -52,6 +53,7 @@ export class AuthController {
     private readonly permissions: PermissionService,
     private readonly config: ConfigService,
     private readonly registration: RegistrationService,
+    private readonly storage: StorageService,
   ) {}
 
   @Public()
@@ -232,6 +234,10 @@ export class AuthController {
       tag: fullUser.tag,
       email: fullUser.email,
       username: fullUser.username,
+      // Готовые URL (ADR-0088) — шапка и mini-profile показывают свой аватар
+      // и баннер сразу, без отдельного запроса профиля.
+      avatar: this.storage.publicUrl(fullUser.avatar),
+      banner: this.storage.publicUrl(fullUser.banner),
       accessLevel: fullUser.accessLevel,
       accountType: fullUser.accountType,
       mustChangePassword: fullUser.mustChangePassword,
