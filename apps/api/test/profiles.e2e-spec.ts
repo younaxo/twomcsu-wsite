@@ -386,6 +386,14 @@ describe('Profiles (e2e)', () => {
         username: 'steve_discord',
       },
     });
+    await prisma.userExternalAccount.create({
+      data: {
+        userId: user.id,
+        provider: 'telegram',
+        providerUserId: `tg-${unique}`,
+        username: 'steve_tg',
+      },
+    });
     const put = (platform: string, value: string) =>
       request(app.getHttpServer())
         .put(`/users/me/social-links/${platform}`)
@@ -401,10 +409,13 @@ describe('Profiles (e2e)', () => {
     const pub = await request(app.getHttpServer())
       .get(`/users/${user.username}/public`)
       .expect(200);
+    // Telegram — ссылка только из привязки; у Discord публичного URL нет.
     expect(pub.body.connectedAccounts).toEqual([
-      { provider: 'discord', name: 'steve_discord' },
+      { provider: 'discord', name: 'steve_discord', url: null },
+      { provider: 'telegram', name: 'steve_tg', url: 'https://t.me/steve_tg' },
     ]);
     expect(JSON.stringify(pub.body)).not.toContain(`snowflake-${unique}`);
+    expect(JSON.stringify(pub.body)).not.toContain(`tg-${unique}`);
     const platforms = pub.body.socialLinks.map(
       (link: { platform: string }) => link.platform,
     );
@@ -426,5 +437,35 @@ describe('Profiles (e2e)', () => {
       .set('Authorization', `Bearer ${user.accessToken}`)
       .send({ hideSocials: false })
       .expect(200);
+  });
+
+  it('D5: статус — один источник для публичного профиля и summary (mini profile)', async () => {
+    await request(app.getHttpServer())
+      .patch('/users/me/profile')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .send({ statusText: 'Делаю twomc.su' })
+      .expect(200);
+    const pub = await request(app.getHttpServer())
+      .get(`/users/${user.username}/public`)
+      .expect(200);
+    expect(pub.body.statusText).toBe('Делаю twomc.su');
+    const summary = await request(app.getHttpServer())
+      .get(`/users/${user.username}/summary`)
+      .expect(200);
+    expect(summary.body.statusText).toBe('Делаю twomc.su');
+  });
+
+  it('ADR-0094: GET /wallet — только свой, честные нули без строк кошелька', async () => {
+    await request(app.getHttpServer()).get('/wallet').expect(401);
+    const res = await request(app.getHttpServer())
+      .get('/wallet')
+      .set('Authorization', `Bearer ${user.accessToken}`)
+      .expect(200);
+    expect(res.body).toEqual({
+      balances: [
+        { currency: 'RUB', amountMinor: '0', scale: 2 },
+        { currency: 'RUBY', amountMinor: '0', scale: 0 },
+      ],
+    });
   });
 });

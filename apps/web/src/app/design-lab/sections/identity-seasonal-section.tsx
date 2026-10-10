@@ -6,7 +6,9 @@ import type {
   PublicProfileSummary,
   PublicSeasonalSettings,
   SeasonalFallingMode,
+  WalletSummaryDto,
 } from '@twomc/shared';
+import { LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { ProfileBadges } from '@/components/profile/profile-badges';
 import { ProfileHeader } from '@/components/profile/profile-header';
@@ -19,7 +21,13 @@ import {
 } from '@/components/profile/profile-links';
 import { EffectsCanvas } from '@/components/seasonal/seasonal-effects';
 import { SeasonalPreviewFrame } from '@/components/seasonal/seasonal-preview-frame';
-import { MiniProfileSummary, miniProfileEntries } from '@/components/shell/mini-profile';
+import {
+  MiniProfileAdminContent,
+  MiniProfileSummary,
+  miniProfileAdminClassName,
+  miniProfileEntries,
+} from '@/components/shell/mini-profile';
+import { menuItemClassName } from '@/components/ui/dropdown-menu';
 import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -33,6 +41,7 @@ import {
 } from '@/components/ui/select';
 import { SwitchField } from '@/components/ui/switch';
 import { cn } from '@/lib/cn';
+import { pickPrimaryRole } from '@/lib/roles/primary-role';
 import { HOME_HERO_IMAGES } from '@/lib/site/config';
 import {
   SEASONAL_CAMPAIGNS,
@@ -72,6 +81,7 @@ const me: MeResponse = {
 const summary: PublicProfileSummary = {
   username: demo.username,
   hidden: false,
+  statusText: 'Строю спавн к открытию сезона',
   shortId: 1042,
   tag: demo.tag,
   avatar: demo.avatar,
@@ -98,10 +108,16 @@ const summary: PublicProfileSummary = {
   achievementsCompleted: 11,
 };
 
+const DEMO_ROLE = {
+  slug: 'chief-curator',
+  displayName: 'Главный куратор',
+  priority: 90,
+  color: null,
+};
 const DEMO_STATS = { views: 128, likes: 24, dislikes: 2, myReaction: 'LIKE' as const };
 const DEMO_ACCOUNTS: ConnectedAccount[] = [
-  { provider: 'discord', name: 'steve_mainer' },
-  { provider: 'telegram', name: null },
+  { provider: 'discord', name: 'steve_mainer', url: null },
+  { provider: 'telegram', name: 'steve_mainer', url: 'https://t.me/steve_mainer' },
 ];
 const DEMO_SOCIALS: ProfileSocialLinkDto[] = [
   { platform: 'YOUTUBE', value: 'https://youtube.com/@twomc' },
@@ -133,33 +149,112 @@ function Card({
   );
 }
 
+const WALLET_ZERO: WalletSummaryDto = {
+  balances: [
+    { currency: 'RUB', amountMinor: '0', scale: 2 },
+    { currency: 'RUBY', amountMinor: '0', scale: 0 },
+  ],
+};
+const WALLET_DEMO: WalletSummaryDto = {
+  balances: [
+    { currency: 'RUB', amountMinor: '125000', scale: 2 },
+    { currency: 'RUBY', amountMinor: '1500', scale: 0 },
+  ],
+};
+
+const adminMe: MeResponse = {
+  ...me,
+  username: 'Ochen_Dlinnyi_Nik_Admina',
+  roles: [
+    {
+      id: 'role-demo',
+      name: 'chief-curator',
+      slug: 'chief-curator',
+      displayName: 'Главный куратор',
+      priority: 90,
+      color: null,
+      isSuperuser: false,
+    },
+  ],
+};
+const adminSummary: PublicProfileSummary = {
+  ...summary,
+  username: adminMe.username,
+  statusText:
+    'Очень длинный статус, который не должен ломать шапку mini profile ни на телефоне, ни на компьютере',
+  roles: [{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90, color: null }],
+};
+
+/// Та же разметка, что у меню профиля (пункты, admin-блок, «Выйти»), на тех же
+/// production-частях: `miniProfileEntries`, `MiniProfileAdminContent`, классы
+/// пунктов меню. Настоящий DropdownMenu здесь не открываем: он забирает фокус.
+function MiniProfileCard({
+  user,
+  data,
+  wallet,
+  admin,
+}: {
+  user: MeResponse;
+  data: PublicProfileSummary;
+  wallet: WalletSummaryDto;
+  admin: boolean;
+}) {
+  return (
+    <div className="w-80 max-w-full overflow-hidden rounded-lg bg-surface-overlay text-sm shadow-lg">
+      <div className="pb-3">
+        <MiniProfileSummary user={user} summary={data} wallet={wallet} bleed />
+      </div>
+      <ul className="border-t border-border-subtle p-1">
+        {miniProfileEntries(user.username).map((entry) => (
+          <li
+            key={entry.key}
+            className={cn(
+              menuItemClassName,
+              entry.href ? 'hover:bg-muted' : 'cursor-not-allowed opacity-50',
+            )}
+          >
+            <entry.icon aria-hidden className="size-4 text-muted-foreground" />
+            {entry.label}
+            {entry.href ? null : (
+              <span className="ml-auto text-xs text-subtle-foreground">скоро</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {admin ? (
+        <div className="border-t border-border-subtle p-1" data-testid="mini-profile-admin">
+          <div className={cn(menuItemClassName, miniProfileAdminClassName)}>
+            <MiniProfileAdminContent />
+          </div>
+        </div>
+      ) : null}
+      <div className="border-t border-border-subtle p-1">
+        <div className={cn(menuItemClassName, 'hover:bg-muted')}>
+          <LogOut aria-hidden className="size-4 text-muted-foreground" />
+          Выйти
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MiniProfilePreview() {
   return (
     <Card
       title="Mini profile"
-      note="Шапка → статистика → меню. Desktop — меню-popover, mobile — bottom sheet с тем же содержимым."
+      note="Шапка (маленький префикс роли, статус) → баланс и рубины из /wallet → меню → отдельный блок «Админ-панель» только по праву → «Выйти». Desktop — popover, mobile — bottom sheet с теми же данными."
     >
-      <div className="w-80 max-w-full overflow-hidden rounded-lg bg-surface-overlay shadow-lg">
-        <div className="pb-3">
-          <MiniProfileSummary user={me} summary={summary} loading={false} bleed />
+      <div className="flex flex-wrap gap-6">
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">Игрок · без админ-блока · честный 0</span>
+          <MiniProfileCard user={me} data={summary} wallet={WALLET_ZERO} admin={false} />
         </div>
-        <ul className="border-t border-border-subtle p-1 text-sm">
-          {miniProfileEntries(me.username, true).map((entry) => (
-            <li
-              key={entry.key}
-              className={cn(
-                'flex h-control-sm items-center gap-2 rounded-sm px-2',
-                entry.href ? '' : 'cursor-not-allowed opacity-50',
-              )}
-            >
-              <entry.icon aria-hidden className="size-4 text-muted-foreground" />
-              {entry.label}
-              {entry.href ? null : (
-                <span className="ml-auto text-xs text-subtle-foreground">скоро</span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">
+            Администратор · длинные ник, роль и статус · пример баланса
+          </span>
+          <MiniProfileCard user={adminMe} data={adminSummary} wallet={WALLET_DEMO} admin />
+        </div>
       </div>
     </Card>
   );
@@ -284,7 +379,7 @@ function ProfilePagePreview() {
   return (
     <Card
       title="Публичный профиль"
-      note="Свой профиль — круглая «Редактировать» справа сверху, оценить себя нельзя; чужой без входа — оценки заблокированы с подсказкой. Просмотры без своих и дублей."
+      note="На баннере: слева сверху — круглая «Редактировать» (только свой профиль), справа сверху — метрики одним блоком (просмотры, оценки). Свой профиль — счётчики без действий; чужой без входа — оценки недоступны с подсказкой. Правый нижний угол свободен под будущую плашку «Награды» (наград пока нет — ничего не рисуем)."
     >
       <div className="grid gap-4 xl:grid-cols-2">
         <ProfileHero
@@ -297,6 +392,9 @@ function ProfilePagePreview() {
           stats={{ ...DEMO_STATS, myReaction: null }}
           own
           signedIn
+          role={pickPrimaryRole([DEMO_ROLE])}
+          badges={['VERIFIED', 'PROJECT_TEAM']}
+          mediaBadges={['YOUTUBE']}
         />
         <ProfileHero
           titleAs="h3"
@@ -304,6 +402,7 @@ function ProfilePagePreview() {
           username="Ochen_Dlinnyi_Nik_Igroka_32"
           avatar={null}
           banner={null}
+          statusText="Очень длинный статус игрока, который обрезается многоточием, а полный текст виден в подсказке"
           stats={DEMO_STATS}
           own={false}
           signedIn={false}

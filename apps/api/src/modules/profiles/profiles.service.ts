@@ -13,6 +13,7 @@ import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
+import { connectedProfileUrl } from './connected-accounts';
 
 const OWN_PROFILE_SELECT = {
   id: true,
@@ -199,6 +200,8 @@ export class ProfilesService {
     return accounts.map((account) => ({
       provider: account.provider,
       name: account.username ?? account.displayName ?? null,
+      // Только из реальной привязки; нет публичной страницы — null.
+      url: connectedProfileUrl(account.provider, account.username),
     }));
   }
 
@@ -316,6 +319,7 @@ export class ProfilesService {
         tag: true,
         avatar: true,
         banner: true,
+        statusText: true,
         createdAt: true,
         accountType: true,
         selectedDecoration: {
@@ -389,6 +393,8 @@ export class ProfilesService {
       tag: user.tag,
       avatar: this.storage.publicUrl(user.avatar),
       banner: this.storage.publicUrl(user.banner),
+      // Тот же статус, что в публичном профиле (один источник — User.statusText).
+      statusText: user.statusText ?? null,
       decoration:
         user.selectedDecoration?.isActive && user.selectedDecoration.imageUrl
           ? {

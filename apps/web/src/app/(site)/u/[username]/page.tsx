@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import { formatDate } from '@/lib/format';
 import { useProfileSummary, usePublicProfile } from '@/lib/profile/hooks';
+import { pickPrimaryRole } from '@/lib/roles/primary-role';
 
 const GENDER_LABELS: Record<string, string> = {
   MALE: 'Мужской',
@@ -57,6 +58,8 @@ export default function PublicProfilePage() {
 
   const data = profile.data;
   const location = [data.city, data.country].filter(Boolean).join(', ');
+  // Префикс роли и бейджи — из summary (тот же источник, что у mini profile).
+  const identity = summary.data && !summary.data.hidden ? summary.data : null;
   return (
     <div
       className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-3 py-6 md:px-6"
@@ -71,6 +74,10 @@ export default function PublicProfilePage() {
         stats={data.stats}
         own={own}
         signedIn={!!me}
+        role={identity ? pickPrimaryRole(identity.roles) : null}
+        badges={identity?.badges}
+        mediaBadges={identity?.mediaBadges}
+        decoration={identity?.decoration}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">

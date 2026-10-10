@@ -64,6 +64,10 @@ const config: Config = {
           foreground: token('warning-foreground'),
           soft: token('warning-soft'),
         },
+        admin: {
+          DEFAULT: token('admin'),
+          soft: token('admin-soft'),
+        },
         destructive: {
           DEFAULT: token('destructive'),
           foreground: token('destructive-foreground'),

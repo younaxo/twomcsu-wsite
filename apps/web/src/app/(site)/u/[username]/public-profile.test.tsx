@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -104,7 +104,10 @@ describe('Публичный профиль /u/[username]', () => {
           id: 'u1',
           username: 'younaxo_',
           stats: STATS,
-          connectedAccounts: [{ provider: 'discord', name: 'steve_discord' }],
+          connectedAccounts: [
+            { provider: 'discord', name: 'steve_discord', url: null },
+            { provider: 'telegram', name: 'steve_tg', url: 'https://t.me/steve_tg' },
+          ],
           socialLinks: [{ platform: 'GITHUB', value: 'https://github.com/steve' }],
         };
       }
@@ -115,8 +118,12 @@ describe('Публичный профиль /u/[username]', () => {
     });
     mocks.put.mockResolvedValue({ ...STATS, likes: 3, myReaction: 'LIKE' });
     render(<PublicProfilePage />, { wrapper: Providers });
-    const engagement = await screen.findByTestId('profile-engagement');
-    expect(engagement).toHaveTextContent('3');
+    // Метрики — один контейнер в правом верхнем углу баннера.
+    const metrics = await screen.findByTestId('profile-metrics');
+    expect(metrics).toHaveAttribute('role', 'group');
+    expect(metrics.className).toMatch(/right-3/);
+    expect(metrics.className).toMatch(/top-3/);
+    expect(within(metrics).getByLabelText('Просмотров: 3')).toBeInTheDocument();
     await waitFor(() => expect(mocks.post).toHaveBeenCalledTimes(1));
     expect(mocks.post).toHaveBeenCalledWith('/users/younaxo/view');
     await user.click(screen.getByRole('button', { name: 'Нравится: 2' }));
@@ -127,6 +134,15 @@ describe('Публичный профиль /u/[username]', () => {
     );
     const connected = screen.getByRole('region', { name: 'Привязанные аккаунты' });
     expect(connected).toHaveTextContent('Discord:steve_discord');
+    // Telegram — ссылка из привязки; Discord — без выдуманного URL, только «Скопировать».
+    expect(within(connected).getByRole('link', { name: /steve_tg/ })).toHaveAttribute(
+      'href',
+      'https://t.me/steve_tg',
+    );
+    expect(within(connected).queryByRole('link', { name: /steve_discord/ })).toBeNull();
+    expect(
+      within(connected).getByRole('button', { name: 'Скопировать имя Discord' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /github\.com\/steve/ })).toBeInTheDocument();
     expect(await screen.findByTestId('minecraft-head')).toBeInTheDocument();
   });
@@ -144,11 +160,15 @@ describe('Публичный профиль /u/[username]', () => {
           : { username: 'Steve', roles: [] },
     );
     render(<PublicProfilePage />, { wrapper: Providers });
-    const like = await screen.findByRole('button', { name: 'Нравится: 2' });
-    expect(like).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('link', { name: 'Редактировать профиль' }).className).toMatch(
-      /rounded-full/,
-    );
+    // Свой профиль: оценки — просто счётчики, без кнопок.
+    const metrics = await screen.findByTestId('profile-metrics');
+    expect(within(metrics).getByLabelText('Нравится: 2')).toBeInTheDocument();
+    expect(within(metrics).queryByRole('button')).toBeNull();
+    // «Редактировать» — круглая, в левом верхнем углу баннера.
+    const edit = screen.getByRole('link', { name: 'Редактировать профиль' });
+    expect(edit.className).toMatch(/rounded-full/);
+    expect(edit.className).toMatch(/left-3/);
+    expect(edit.className).not.toMatch(/right-3/);
     expect(mocks.post).not.toHaveBeenCalled();
     expect(screen.queryByTestId('minecraft-head')).toBeNull();
   });

@@ -12,6 +12,7 @@ import { ProfilePreviewCard } from './profile-preview';
 const summary: Extract<PublicProfileSummary, { hidden: false }> = {
   username: 'younaxo_',
   hidden: false,
+  statusText: null,
   shortId: 1042,
   banner: null,
   decoration: null,

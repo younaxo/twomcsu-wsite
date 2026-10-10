@@ -1,11 +1,13 @@
 'use client';
 
 import type { ProfileSocialLinkDto, SocialPlatform } from '@twomc/shared';
-import { Globe, Link2, Pencil } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, Globe, Link2, Pencil } from 'lucide-react';
 import Link from 'next/link';
+import { useState } from 'react';
 import { siGithub, siSteam, siTiktok, siTwitch, siVk, siYoutube } from 'simple-icons';
 import { BrandIcon } from '@/components/shell/brand-icon';
 import { IconButton } from '@/components/ui/button';
+import { toast } from '@/components/ui/toast';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 
@@ -13,7 +15,18 @@ import { cn } from '@/lib/cn';
 /// design-lab: кнопка «Редактировать профиль», привязанные аккаунты (только
 /// реальные привязки Discord/Telegram) и соцсети пользователя.
 
-export type ConnectedAccount = { provider: 'discord' | 'telegram'; name: string | null };
+export type ConnectedAccount = {
+  provider: 'discord' | 'telegram';
+  name: string | null;
+  /// Публичная страница из реальной привязки (Telegram — t.me/…); у Discord
+  /// её нет — тогда вместо ссылки «Скопировать».
+  url: string | null;
+};
+
+const PROVIDER_LABEL: Record<ConnectedAccount['provider'], string> = {
+  discord: 'Discord',
+  telegram: 'Telegram',
+};
 
 const SOCIAL_LABELS: Record<SocialPlatform, string> = {
   DISCORD: 'Discord',
@@ -87,20 +100,67 @@ function ProfileSection({ label, children }: { label: string; children: React.Re
   );
 }
 
+function CopyName({ value, provider }: { value: string; provider: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error('Не удалось скопировать — выделите имя вручную.');
+    }
+  };
+  return (
+    <Tooltip content={copied ? 'Скопировано' : 'Скопировать имя'}>
+      <IconButton
+        size="sm"
+        variant="ghost"
+        aria-label={`Скопировать имя ${provider}`}
+        onClick={() => void copy()}
+      >
+        {copied ? <Check /> : <Copy />}
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 export function ConnectedAccountsSection({ accounts }: { accounts: ConnectedAccount[] }) {
   if (accounts.length === 0) return null;
   return (
     <ProfileSection label="Привязанные аккаунты">
       <ul className="grid gap-2 sm:grid-cols-2">
-        {accounts.map((account) => (
-          <li key={account.provider} className="flex min-w-0 items-center gap-2 text-sm">
-            <BrandIcon id={account.provider} className="text-muted-foreground" />
-            <span className="text-subtle-foreground">
-              {account.provider === 'discord' ? 'Discord' : 'Telegram'}:
-            </span>
-            <span className="truncate">{account.name ?? 'привязан'}</span>
-          </li>
-        ))}
+        {accounts.map((account) => {
+          const label = PROVIDER_LABEL[account.provider];
+          const name = account.name ?? 'привязан';
+          return (
+            <li
+              key={account.provider}
+              className="flex min-w-0 items-center gap-2 text-sm"
+              data-provider={account.provider}
+            >
+              <BrandIcon id={account.provider} className="shrink-0 text-muted-foreground" />
+              <span className="shrink-0 text-subtle-foreground">{label}:</span>
+              {account.url ? (
+                // Внешний переход подтверждает общий ExternalLinkGuard.
+                <a
+                  href={account.url}
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  className="inline-flex min-w-0 items-center gap-1 text-primary hover:underline"
+                >
+                  <span className="truncate">{name}</span>
+                  <ArrowUpRight aria-hidden className="size-3.5 shrink-0" />
+                </a>
+              ) : (
+                <>
+                  <span className="truncate">{name}</span>
+                  {account.name ? <CopyName value={account.name} provider={label} /> : null}
+                </>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </ProfileSection>
   );
