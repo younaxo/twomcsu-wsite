@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Lock,
   LogOut,
+  Mail,
   Megaphone,
   Menu,
   Newspaper,
@@ -14,10 +15,10 @@ import {
   Search,
   Settings,
   Shield,
+  type LucideIcon,
   UserRound,
   Users,
   Wrench,
-  type LucideIcon,
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -71,6 +72,7 @@ const ICONS: Record<AdminIconName, LucideIcon> = {
   key: Key,
   scroll: ScrollText,
   megaphone: Megaphone,
+  mail: Mail,
   settings: Settings,
   lock: Lock,
   newspaper: Newspaper,

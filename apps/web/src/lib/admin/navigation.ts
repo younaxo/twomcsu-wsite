@@ -15,6 +15,7 @@ export type AdminIconName =
   | 'key'
   | 'scroll'
   | 'megaphone'
+  | 'mail'
   | 'settings'
   | 'lock'
   | 'newspaper'
@@ -118,6 +119,19 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: 'megaphone',
         requirement: ['broadcast.create', 'settings.alert.view'],
         keywords: ['рассылка', 'broadcast', 'уведомление', 'плашка', 'баннер'],
+      },
+    ],
+  },
+  {
+    id: 'communications',
+    title: 'Коммуникации',
+    items: [
+      {
+        href: '/admin/communications',
+        label: 'Сообщения',
+        icon: 'mail',
+        requirement: ['communications.messages.send', 'communications.messages.bulk'],
+        keywords: ['системное', 'сообщение', 'рассылка', 'написать', 'twomc.su'],
       },
     ],
   },

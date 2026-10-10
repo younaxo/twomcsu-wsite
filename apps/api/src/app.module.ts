@@ -13,6 +13,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { CommunicationsModule } from './modules/communications/communications.module';
 import { CustomPositionsModule } from './modules/custom-positions/custom-positions.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { DirectMessagesModule } from './modules/direct-messages/direct-messages.module';
@@ -56,6 +57,7 @@ import { VotingModule } from './modules/voting/voting.module';
     AuthModule,
     RolesModule,
     NotificationsModule,
+    CommunicationsModule,
     PositionsModule,
     DepartmentsModule,
     CustomPositionsModule,

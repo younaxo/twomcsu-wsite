@@ -585,6 +585,17 @@ export const PERMISSIONS = [
   },
 
   {
+    key: 'communications.messages.send',
+    module: 'communications',
+    description: 'Отправка личных системных сообщений от имени twomc.su',
+  },
+  {
+    key: 'communications.messages.bulk',
+    module: 'communications',
+    description: 'Массовая рассылка системных сообщений (всем, роли, выбранным)',
+  },
+
+  {
     key: 'saved_filters.view',
     module: 'saved_filters',
     description: 'Просмотр своих сохранённых фильтров админки',

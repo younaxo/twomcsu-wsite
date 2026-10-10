@@ -25,6 +25,9 @@ export interface CreateNotificationInput {
   priority?: NotificationPriority;
   actionUrl?: string;
   actionLabel?: string;
+  /// Сообщения сайта (системные, ADR-0080) доставляются даже при отключённом
+  /// типе в настройках пользователя.
+  bypassPreferences?: boolean;
 }
 
 @Injectable()
@@ -45,10 +48,9 @@ export class NotificationsService {
   /// per-type рубильник (NotificationSettings.typeSettings), общий для всех
   /// источников одного типа.
   async create(input: CreateNotificationInput) {
-    const typeEnabled = await this.settings.isTypeEnabled(
-      input.userId,
-      input.type,
-    );
+    const typeEnabled =
+      input.bypassPreferences ||
+      (await this.settings.isTypeEnabled(input.userId, input.type));
     if (!typeEnabled) {
       return null;
     }
@@ -176,8 +178,13 @@ export class NotificationsService {
     page: number,
     limit: number,
     unreadOnly?: boolean,
+    type?: 'system',
   ) {
-    const where = { userId, ...(unreadOnly ? { isRead: false } : {}) };
+    const where = {
+      userId,
+      ...(unreadOnly ? { isRead: false } : {}),
+      ...(type === 'system' ? { type: NotificationType.SYSTEM } : {}),
+    };
     const [items, total] = await Promise.all([
       this.prisma.notification.findMany({
         where,

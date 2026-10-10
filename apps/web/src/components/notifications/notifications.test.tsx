@@ -17,7 +17,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const base = {
-  type: 'SYSTEM',
+  type: 'FRIEND_REQUEST',
   message: null,
   link: null,
   imageUrl: null,
@@ -84,7 +84,9 @@ function serve(unread = 1, initial: NotificationDto[] = items) {
       return jsonResponse({ count: 0 });
     }
     if (clean === '/notifications' && method === 'GET') {
-      return jsonResponse({ items: list, total: list.length, page: 1, limit: 20 });
+      const type = new URLSearchParams(path.split('?')[1] ?? '').get('type');
+      const visible = type === 'system' ? list.filter((item) => item.type === 'SYSTEM') : list;
+      return jsonResponse({ items: visible, total: visible.length, page: 1, limit: 20 });
     }
     return jsonResponse({});
   });
@@ -143,5 +145,36 @@ describe('Уведомления', () => {
     render(<NotificationsPopover />, { wrapper: Providers });
     await waitFor(() => expect(calls).toContain('GET /notifications/unread-count'));
     expect(screen.queryByTestId('unread-badge')).toBeNull();
+  });
+
+  it('системное сообщение — отправитель «twomc.su · Системное»; фильтр «От twomc.su»', async () => {
+    const user = userEvent.setup();
+    const system = {
+      ...base,
+      id: 'n3',
+      type: 'SYSTEM',
+      title: 'Проверка аккаунта',
+      isRead: false,
+      metadata: { sender: 'system' },
+    } as NotificationDto;
+    serve(1, [...items, system]);
+    render(<NotificationsPage />, { wrapper: Providers });
+    const rows = within(await screen.findByTestId('notifications-list')).getAllByTestId(
+      'notification-item',
+    );
+    expect(rows).toHaveLength(3);
+    const marked = rows.filter((row) => row.dataset.system === 'true');
+    expect(marked).toHaveLength(1);
+    expect(within(marked[0]!).getByTestId('system-sender')).toHaveTextContent('twomc.suСистемное');
+    // Обычные уведомления без метки отправителя-сайта.
+    expect(within(rows[0]!).queryByTestId('system-sender')).toBeNull();
+
+    await user.click(screen.getByRole('radio', { name: 'От twomc.su' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('notifications-list')).getAllByTestId('notification-item'),
+      ).toHaveLength(1),
+    );
+    expect(screen.getByText('Проверка аккаунта')).toBeInTheDocument();
   });
 });
