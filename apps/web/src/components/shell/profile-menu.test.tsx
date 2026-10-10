@@ -156,6 +156,14 @@ describe('Mini profile в header (ADR-0088)', () => {
       expect(within(wallet).getByTestId('wallet-rub')).toHaveTextContent(/1\s250,50\s₽/),
     );
     expect(within(wallet).getByTestId('wallet-ruby')).toHaveTextContent(/1\s500/);
+    // Иконки валют — официальные PNG из реестра (монета, рубин), не lucide.
+    const money = wallet.querySelector('[data-testid="wallet-rub"] img[data-currency]');
+    const ruby = wallet.querySelector('[data-testid="wallet-ruby"] img[data-currency]');
+    expect(money).toHaveAttribute('data-currency', 'MONEY');
+    expect(money?.getAttribute('src')).toMatch(/minecraft\/resourspack\/currencies\/money\.png$/);
+    expect(ruby).toHaveAttribute('data-currency', 'RUBY');
+    expect(ruby?.getAttribute('src')).toMatch(/minecraft\/resourspack\/currencies\/ruby\.png$/);
+    expect(wallet.querySelector('svg')).toBeNull();
     expect(menu).not.toHaveTextContent('Друзья12');
     expect(within(menu).queryByTestId('mini-profile-admin')).toBeNull();
 

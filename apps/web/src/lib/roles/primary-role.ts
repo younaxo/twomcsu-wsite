@@ -1,4 +1,11 @@
-import { getRolePrefix, rolePrefixRelativePath, type RolePrefixDefinition } from '@twomc/shared';
+import {
+  getRolePrefix,
+  prefixRelativePath,
+  resolvePrimaryPrefix,
+  rolePrefixRelativePath,
+  type PrefixDefinition,
+  type RolePrefixDefinition,
+} from '@twomc/shared';
 import { cdnUrl } from '../env';
 
 /// Минимум, который нужен для отображения роли: slug (ключ префикса),
@@ -35,4 +42,23 @@ export function getRolePrefixAsset(slug: string | null | undefined): RolePrefixA
     return null;
   }
   return { ...definition, url: cdnUrl(rolePrefixRelativePath(definition.slug)) };
+}
+
+export interface PrefixAsset extends PrefixDefinition {
+  url: string;
+}
+
+/// Префикс любой категории (STAFF / MEDIA / DONATION) с абсолютным CDN URL.
+export function getPrefixAsset(prefix: PrefixDefinition | null | undefined): PrefixAsset | null {
+  return prefix ? { ...prefix, url: cdnUrl(prefixRelativePath(prefix)) } : null;
+}
+
+/// Один префикс возле ника (ADR-0098): роль команды с префиксом важнее
+/// медиа-партнёрства, медиа — важнее доната. Донат-привилегий пока нет —
+/// выдать донат-префикс нечем, поэтому сюда он не передаётся.
+export function identityPrefix(
+  role: Pick<DisplayableRole, 'slug'> | null | undefined,
+  mediaBadges?: readonly string[] | null,
+): PrefixDefinition | null {
+  return resolvePrimaryPrefix({ staffSlug: role?.slug ?? null, mediaBadges });
 }

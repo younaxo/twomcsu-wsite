@@ -60,3 +60,27 @@ Orphan cleanup (cron): `TEMP` старше 24 ч и `DELETED` удаляются
 Схема B реализована в `apps/api/src/modules/files` — см.
 `docs/implementation/phases/PHASE-23-cdn-files.md`. Раздел A выше описывает
 старый проект и больше не соответствует коду.
+
+## Статические ассеты TwoMC на CDN — манифест (2026-10-10, ADR-0098)
+
+Корень на хосте: `/www/wwwroot/cdn-files.twomc.su/` → `https://cdn-files.twomc.su/`
+(Cloudflare Proxied, nginx отдаёт `image/png`, `image/webp`, `image/avif`). Пути в коде —
+только через реестры, не в JSX. Старые пути (в т.ч. историческая опечатка `resourspack`) — это
+production-контракт, не переименовываются.
+
+| Путь | Что | Реестр в коде |
+|---|---|---|
+| `assets/images/logo.png` | логотип сайта (неизменяемый) | `lib/site/config.ts` |
+| `assets/images/halloween_assets.webp` | украшение шапки | `lib/site/seasonal.ts` |
+| `assets/images/screenshots/<id>/{640,960,1280,1600,1920}.{avif,webp}` + `original.png` | 8 реальных скриншотов (88 файлов) | `lib/site/project-screenshots.ts` |
+| `minecraft/resourspack/prefixes/<slug>.png` | 29 префиксов ролей команды (STAFF), 7 px | `packages/shared/src/role-prefixes.ts` |
+| `minecraft/resourspack/prefixes/media/{media,youtube,twitch,tiktok}.png` | медиа-префиксы (MEDIA) | там же, `MEDIA_PREFIXES` |
+| `minecraft/resourspack/prefixes/donations/<tier>.png` | 7 донат-префиксов (DONATION, только ассеты) | там же, `DONATION_PREFIXES` |
+| `minecraft/resourspack/currencies/{money,ruby}.png` | иконки валют 16×16 | `packages/shared/src/currency-assets.ts` |
+| `minecraft/donations/<tier>.png` | арты привилегий для магазина (не префиксы) | — (этап Donation) |
+| `assets/images/level/1…70.png` | иконки уровней, загружены ранее; **по содержимому отличаются от официальных** из resource pack | — (Level System не начата) |
+| `assets/images/profile-assets/*.png` | 20 файлов, загружены ранее, в коде не используются | — |
+
+Проверка после загрузки: HTTP 200 через Cloudflare, верный `Content-Type`, md5 совпадает с
+локальной копией, `cf-cache-status` HIT при повторе. Загрузка — SFTP-скриптом, credentials
+читаются внутри процесса из локального secret store (вне Git).

@@ -110,6 +110,7 @@ export function ProfileHeader({
         <UserIdentity
           username={identity.username}
           role={identity.role ?? undefined}
+          mediaBadges={identity.mediaBadges}
           tag={identity.tag ?? undefined}
           prefixSize="xs"
         />

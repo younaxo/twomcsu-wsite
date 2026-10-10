@@ -6,6 +6,7 @@ export const SHARED_PACKAGE_NAME = '@twomc/shared';
 
 export * from './permissions';
 export * from './role-prefixes';
+export * from './currency-assets';
 export * from './api/common';
 export * from './api/auth';
 export * from './api/roles';

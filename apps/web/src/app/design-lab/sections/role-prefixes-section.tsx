@@ -1,7 +1,8 @@
 'use client';
 
-import { ROLE_PREFIXES } from '@twomc/shared';
+import { CURRENCY_ASSETS, DONATION_PREFIXES, MEDIA_PREFIXES, ROLE_PREFIXES } from '@twomc/shared';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
+import { CurrencyIcon } from '@/components/ui/currency-icon';
 import { RolePrefix, UserRolesInline } from '@/components/ui/role-prefix';
 import { UserIdentity } from '@/components/ui/user-identity';
 import { getRolePrefixAsset } from '@/lib/roles/primary-role';
@@ -63,6 +64,93 @@ export function RolePrefixesSection() {
             />
             <RolePrefix slug="unknown-role" name="Неизвестная роль" />
             <RolePrefix slug="player" name="Игрок" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">Медиа-префиксы</p>
+          <p className="text-sm text-muted-foreground">
+            Медиа-партнёр одной площадки — её префикс; нескольких — общий «Медиа». CDN:
+            prefixes/media.
+          </p>
+          <div className="flex flex-col gap-2" data-testid="media-prefixes">
+            {MEDIA_PREFIXES.map((prefix) => (
+              <div key={prefix.slug} className="flex min-w-0 items-center gap-3">
+                <span className="w-16 shrink-0 font-mono text-xs text-subtle-foreground">
+                  {prefix.slug}
+                </span>
+                <RolePrefix prefix={prefix} size="sm" />
+                <span className="ml-auto font-mono text-xs text-subtle-foreground">
+                  {prefix.width}×7
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">Донат-префиксы — только ассеты</p>
+          <p className="text-sm text-muted-foreground">
+            Зарегистрированы в реестре (prefixes/donations), но донат-привилегий ещё нет — выдать
+            префикс некому. Не путать с артами магазина.
+          </p>
+          <div className="flex flex-col gap-2" data-testid="donation-prefixes">
+            {DONATION_PREFIXES.map((prefix) => (
+              <div key={prefix.slug} className="flex min-w-0 items-center gap-3">
+                <span className="w-16 shrink-0 font-mono text-xs text-subtle-foreground">
+                  {prefix.slug}
+                </span>
+                <RolePrefix prefix={prefix} size="sm" />
+                <span className="ml-auto font-mono text-xs text-subtle-foreground">
+                  {prefix.width}×7
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">Один префикс возле ника</p>
+          <p className="text-sm text-muted-foreground">
+            Приоритет слота: роль команды → медиа → донат. Остальные статусы — значками.
+          </p>
+          <div className="flex flex-col gap-3">
+            <UserIdentity
+              username="younaxo_"
+              variant="inline"
+              role={{ slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 }}
+              mediaBadges={['YOUTUBE']}
+            />
+            <UserIdentity
+              username="streamer_tv"
+              variant="inline"
+              role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
+              mediaBadges={['TWITCH']}
+            />
+            <UserIdentity
+              username="multi_media"
+              variant="inline"
+              role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
+              mediaBadges={['YOUTUBE', 'TIKTOK']}
+            />
+          </div>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm">
+          <p className="text-sm font-medium">Валюты</p>
+          <p className="text-sm text-muted-foreground">
+            Официальные PNG 16×16 (CDN: resourspack/currencies), целый масштаб и pixelated: монета —
+            баланс, рубин — рубины.
+          </p>
+          <div className="flex flex-col gap-3" data-testid="currency-assets">
+            {(['MONEY', 'RUBY'] as const).map((id) => (
+              <div key={id} className="flex items-center gap-4">
+                <span className="w-16 font-mono text-xs text-subtle-foreground">{id}</span>
+                <CurrencyIcon currency={id} decorative={false} />
+                <CurrencyIcon currency={id} scale={2} decorative={false} />
+                <CurrencyIcon currency={id} scale={3} decorative={false} />
+                <span className="text-sm">{CURRENCY_ASSETS[id].label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

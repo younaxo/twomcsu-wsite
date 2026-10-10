@@ -2,7 +2,7 @@
 
 import { ProfilePreview } from '@/components/profile/profile-preview';
 import { cn } from '@/lib/cn';
-import type { DisplayableRole } from '@/lib/roles/primary-role';
+import { identityPrefix, type DisplayableRole } from '@/lib/roles/primary-role';
 import { RolePrefix, type RolePrefixSize } from './role-prefix';
 
 /// Префикс роли + ник + (опционально) тег.
@@ -15,6 +15,7 @@ import { RolePrefix, type RolePrefixSize } from './role-prefix';
 export function UserIdentity({
   username,
   role,
+  mediaBadges,
   tag,
   prefixSize = 'xs',
   variant = 'stacked',
@@ -23,12 +24,16 @@ export function UserIdentity({
 }: {
   username: string;
   role?: DisplayableRole | null;
+  /// Площадки медиа-партнёра: без префикса роли — медиа-префикс (ADR-0098).
+  mediaBadges?: readonly string[] | null;
   tag?: string | null;
   prefixSize?: RolePrefixSize;
   variant?: 'stacked' | 'inline';
   previewable?: boolean;
   className?: string;
 }) {
+  const prefix = identityPrefix(role, mediaBadges);
+  const showPrefix = Boolean(prefix || role);
   const name = previewable ? (
     <ProfilePreview username={username}>
       <button
@@ -55,9 +60,9 @@ export function UserIdentity({
         data-context="user"
         data-context-username={username}
       >
-        {role ? (
+        {showPrefix ? (
           <span className="flex min-w-0 max-w-[45%] shrink">
-            <RolePrefix role={role} size={prefixSize} />
+            <RolePrefix role={role} prefix={prefix} size={prefixSize} />
           </span>
         ) : null}
         <span className="min-w-0 flex-1">{name}</span>
@@ -72,9 +77,9 @@ export function UserIdentity({
       data-context="user"
       data-context-username={username}
     >
-      {role ? (
+      {showPrefix ? (
         <span className="flex min-w-0 max-w-full overflow-hidden">
-          <RolePrefix role={role} size={prefixSize} />
+          <RolePrefix role={role} prefix={prefix} size={prefixSize} />
         </span>
       ) : null}
       {name}
