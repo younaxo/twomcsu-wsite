@@ -88,7 +88,7 @@ export default function AuditLogPage() {
     {
       key: 'actor',
       header: 'Кто',
-      cell: (e) => <UserIdentity username={e.actor.username} variant="inline" previewable />,
+      cell: (e) => <UserIdentity username={e.actor.username} previewable />,
     },
     {
       key: 'target',

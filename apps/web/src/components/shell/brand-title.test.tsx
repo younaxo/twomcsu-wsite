@@ -25,6 +25,7 @@ function staff(accessLevel: number, priority: number): MeResponse {
     id: 'u2',
     shortId: 2,
     tag: 'younaxo_#0002',
+    discriminator: '0002',
     email: 'younaxo@icloud.com',
     username: 'younaxo_',
     accessLevel,

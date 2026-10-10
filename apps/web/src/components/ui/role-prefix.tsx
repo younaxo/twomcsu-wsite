@@ -8,17 +8,21 @@ import {
 } from '@twomc/shared';
 import { useState, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { crispScale, useDevicePixelRatio } from '@/lib/use-device-pixel-ratio';
 import { getPrefixAsset, getRolePrefixAsset, type DisplayableRole } from '@/lib/roles/primary-role';
 import { Badge } from './badge';
 import { Tooltip } from './tooltip';
 
-/// Масштаб pixel-art строго целочисленный — иначе PNG размывается.
-/// Исходник 7px высотой; xs=14px (data grid, чат, списки), sm=21px
-/// (комментарии, строки пользователей), md=28px (hover card, карточка
-/// профиля), lg=42px (шапка профиля, admin-превью роли).
-export type RolePrefixSize = 'xs' | 'sm' | 'md' | 'lg';
+/// Масштаб pixel-art: исходник 7px высотой; xs=14px (data grid, списки,
+/// строка identity), sm=21px (комментарии, строки пользователей), md=28px
+/// (hover card, карточка профиля), lg=42px (admin-превью роли) — целые.
+/// `compact` — около ×1.5 (~10 px, mini profile): масштаб подбирается под DPR
+/// экрана так, чтобы пиксель исходника был целым числом физических пикселей
+/// (`crispScale`), всегда с `image-rendering: pixelated`.
+export type RolePrefixSize = 'compact' | 'xs' | 'sm' | 'md' | 'lg';
 
-const SCALE: Record<RolePrefixSize, number> = { xs: 2, sm: 3, md: 4, lg: 6 };
+const SCALE: Record<Exclude<RolePrefixSize, 'compact'>, number> = { xs: 2, sm: 3, md: 4, lg: 6 };
+const COMPACT_TARGET = 1.5;
 
 /// Вторая строка тултипа — что это за префикс.
 export const PREFIX_KIND_LABEL: Record<PrefixCategory, string> = {
@@ -67,6 +71,7 @@ export function RolePrefix({
   const asset = prefix ? getPrefixAsset(prefix) : getRolePrefixAsset(resolvedSlug);
   const kind = PREFIX_KIND_LABEL[definition?.category ?? 'STAFF'];
   const [failed, setFailed] = useState(false);
+  const dpr = useDevicePixelRatio();
 
   if (!asset || failed) {
     if (fallback === 'none' || !label) {
@@ -79,30 +84,36 @@ export function RolePrefix({
     );
   }
 
-  const scale = SCALE[size];
+  const scale = size === 'compact' ? crispScale(COMPACT_TARGET, dpr) : SCALE[size];
+  const height = ROLE_PREFIX_HEIGHT * scale;
+  // className и props — на самом внешнем элементе: при тултипе это триггер,
+  // иначе обёртка картинки (раньше `self-start` попадал внутрь, а триггер
+  // растягивался колонкой flex — тултип центрировался по пустому месту).
+  const outer: HTMLAttributes<HTMLSpanElement> = tooltip ? {} : { className, ...props };
   const image = (
     // max-w-full: на узком экране длинный префикс ужимается в ширину контейнера
     // (object-contain, pixelated), а не вылезает за край; shrink-0 — рядом с
     // ником префикс не сжимается раньше времени.
     <span
-      className={cn('inline-flex max-w-full shrink-0 items-center align-middle', className)}
+      {...outer}
+      className={cn('inline-flex max-w-full shrink-0 items-center align-middle', outer.className)}
       data-prefix-category={definition?.category ?? 'STAFF'}
       data-prefix-slug={asset.slug}
-      {...props}
+      data-prefix-scale={scale}
     >
       {/* Обычный <img>, не next/image: pixel-art 7px нельзя ресемплить. */}
       {/* eslint-disable-next-line @next/next/no-img-element -- pixel-art с CDN, фиксированные width/height, lazy */}
       <img
         src={asset.url}
         alt={label}
-        width={asset.width * scale}
-        height={ROLE_PREFIX_HEIGHT * scale}
+        width={Math.round(asset.width * scale)}
+        height={Math.round(height)}
         loading={loading}
         decoding="async"
         draggable={false}
         onError={() => setFailed(true)}
         className="max-w-full select-none object-contain object-left [image-rendering:pixelated]"
-        style={{ height: ROLE_PREFIX_HEIGHT * scale, width: 'auto' }}
+        style={{ height, width: 'auto' }}
       />
     </span>
   );
@@ -119,7 +130,14 @@ export function RolePrefix({
         </span>
       }
     >
-      <span tabIndex={0} className="inline-flex min-w-0 max-w-full rounded-sm">
+      {/* w-fit: триггер всегда по размеру префикса (в колонке flex не
+          растягивается), поэтому тултип привязан к самой картинке. */}
+      <span
+        tabIndex={0}
+        {...props}
+        className={cn('inline-flex w-fit min-w-0 max-w-full rounded-sm', className)}
+        data-testid="role-prefix-trigger"
+      >
         {image}
       </span>
     </Tooltip>

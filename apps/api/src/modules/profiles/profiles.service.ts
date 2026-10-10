@@ -14,11 +14,13 @@ import { SelectDecorationDto } from './dto/select-decoration.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpsertSocialLinkDto } from './dto/upsert-social-link.dto';
 import { connectedProfileUrl } from '../auth/connected-providers';
+import { formatDiscriminator } from '../users/public-tag';
 
 const OWN_PROFILE_SELECT = {
   id: true,
   shortId: true,
   tag: true,
+  discriminator: true,
   username: true,
   email: true,
   avatar: true,
@@ -96,6 +98,9 @@ export function normalizeSocialValue(
 }
 
 type OwnProfile = Prisma.UserGetPayload<{ select: typeof OWN_PROFILE_SELECT }>;
+type OwnProfileView = Omit<OwnProfile, 'discriminator'> & {
+  discriminator: string;
+};
 
 @Injectable()
 export class ProfilesService {
@@ -127,8 +132,16 @@ export class ProfilesService {
     };
   }
 
-  async getOwnProfile(userId: string): Promise<OwnProfile> {
-    return this.withMedia(
+  /// Свой профиль для клиента: готовые URL и discriminator четырьмя цифрами.
+  private ownView(user: OwnProfile): OwnProfileView {
+    return {
+      ...this.withMedia(user),
+      discriminator: formatDiscriminator(user.discriminator),
+    };
+  }
+
+  async getOwnProfile(userId: string): Promise<OwnProfileView> {
+    return this.ownView(
       await this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
         select: OWN_PROFILE_SELECT,
@@ -139,7 +152,7 @@ export class ProfilesService {
   async updateOwnProfile(
     userId: string,
     dto: UpdateProfileDto,
-  ): Promise<OwnProfile> {
+  ): Promise<OwnProfileView> {
     const { birthDate, ...rest } = dto;
     const updated = await this.prisma.user.update({
       where: { id: userId },
@@ -152,7 +165,7 @@ export class ProfilesService {
       },
       select: OWN_PROFILE_SELECT,
     });
-    return this.withMedia(updated);
+    return this.ownView(updated);
   }
 
   /// Фильтрует профиль по приватности для чужого просмотра. FRIENDS_ONLY
@@ -333,6 +346,7 @@ export class ProfilesService {
         shortId: true,
         username: true,
         tag: true,
+        discriminator: true,
         avatar: true,
         banner: true,
         statusText: true,
@@ -407,6 +421,7 @@ export class ProfilesService {
       hidden: false as const,
       shortId: user.shortId,
       tag: user.tag,
+      discriminator: formatDiscriminator(user.discriminator),
       avatar: this.storage.publicUrl(user.avatar),
       banner: this.storage.publicUrl(user.banner),
       // Тот же статус, что в публичном профиле (один источник — User.statusText).
@@ -453,6 +468,7 @@ export class ProfilesService {
       id: user.id,
       shortId: user.shortId,
       tag: user.tag,
+      discriminator: formatDiscriminator(user.discriminator),
       username: user.username,
       avatar: user.avatar,
       banner: user.banner,

@@ -107,8 +107,8 @@ async function upsertLoginAlias(
   });
 }
 
-/// Тег вида `name#0000` для bootstrap-аккаунтов — фиксированный суффикс по
-/// номеру, чтобы ссылки на профиль не менялись между окружениями.
+/// Тег вида `name#0000` для bootstrap-аккаунтов — фиксированный discriminator
+/// по номеру (ADR-0099), чтобы identity не менялась между окружениями.
 function bootstrapTag(username: string, shortId: number): string {
   return `${username}#${String(shortId).padStart(4, '0')}`;
 }
@@ -184,6 +184,7 @@ export async function seedBootstrapAccounts(
             username,
             email,
             tag: bootstrapTag(username, account.shortId),
+            discriminator: account.shortId,
             password: passwordHash,
             accountType: account.accountType,
             mustChangePassword: account.accountType !== AccountType.SYSTEM,

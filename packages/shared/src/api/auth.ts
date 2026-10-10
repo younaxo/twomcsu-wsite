@@ -81,6 +81,8 @@ export interface MeResponse {
   id: string;
   shortId: number;
   tag: string;
+  /// Публичный discriminator — четыре цифры «0000»–«9999» (ADR-0099).
+  discriminator: string;
   email: string;
   username: string;
   /// Готовые URL аватара и баннера (ADR-0088) или null.

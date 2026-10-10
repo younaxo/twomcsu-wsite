@@ -117,19 +117,16 @@ export function RolePrefixesSection() {
           <div className="flex flex-col gap-3">
             <UserIdentity
               username="younaxo_"
-              variant="inline"
               role={{ slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 }}
               mediaBadges={['YOUTUBE']}
             />
             <UserIdentity
               username="streamer_tv"
-              variant="inline"
               role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
               mediaBadges={['TWITCH']}
             />
             <UserIdentity
               username="multi_media"
-              variant="inline"
               role={{ slug: 'player', displayName: 'Игрок', priority: 1 }}
               mediaBadges={['YOUTUBE', 'TIKTOK']}
             />
@@ -210,7 +207,6 @@ export function RolePrefixesSection() {
           <div className="w-56 max-w-full">
             <UserIdentity
               username="very_long_name16"
-              variant="inline"
               role={{ slug: 'chief-curator', displayName: 'Главный куратор', priority: 90 }}
             />
           </div>
@@ -236,6 +232,7 @@ export function RolePrefixesSection() {
                 badges: [],
                 mediaBadges: [],
                 tag: 'player#0001',
+                discriminator: '0001',
                 avatar: null,
                 createdAt: '2025-03-01T10:00:00.000Z',
                 system: false,

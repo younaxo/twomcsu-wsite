@@ -167,6 +167,8 @@ export type PublicProfileSummary =
       /// Публичный числовой ID (ADR-0003).
       shortId: number;
       tag: string;
+      /// Публичный discriminator — четыре цифры (ADR-0099): identity `ник#0000`.
+      discriminator: string;
       /// Готовые URL (ADR-0088) или null — без выдуманных картинок.
       avatar: string | null;
       banner: string | null;

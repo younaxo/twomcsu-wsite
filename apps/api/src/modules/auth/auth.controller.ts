@@ -38,6 +38,7 @@ import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 import { REFRESH_COOKIE_NAME, refreshCookieOptions } from './refresh-cookie';
 import { RegistrationService } from './registration.service';
 import { StorageService } from '../files/storage.service';
+import { formatDiscriminator } from '../users/public-tag';
 
 function requestContext(req: Request): RequestContext {
   return {
@@ -233,6 +234,7 @@ export class AuthController {
       id: fullUser.id,
       shortId: fullUser.shortId,
       tag: fullUser.tag,
+      discriminator: formatDiscriminator(fullUser.discriminator),
       email: fullUser.email,
       username: fullUser.username,
       // Готовые URL (ADR-0088) — шапка и mini-profile показывают свой аватар

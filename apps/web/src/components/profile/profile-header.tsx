@@ -2,21 +2,30 @@
 
 import type { MediaBadgeKind, UserBadgeKind } from '@twomc/shared';
 import { useState } from 'react';
+import { MinecraftHead } from '@/components/profile/minecraft-head';
+import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Avatar } from '@/components/ui/avatar';
 import { UserIdentity } from '@/components/ui/user-identity';
 import { cn } from '@/lib/cn';
+import type { SeasonalCampaign } from '@/lib/site/seasonal';
 import type { DisplayableRole } from '@/lib/roles/primary-role';
 import { formatRelative } from '@/lib/format';
 import { ProfileBadges, type ProfileDecorationView } from './profile-badges';
 
-/// Шапка профиля (ADR-0088) — общий источник вида identity: превью по нику,
-/// mini-profile в header, design-lab. Banner сверху, аватар частично
-/// накладывается, ниже — ник с префиксом роли, ID, бейджи и присутствие.
+/// Шапка профиля (ADR-0088, ADR-0099) — общий источник вида identity: превью
+/// по нику, mini-profile в header, design-lab. Banner сверху, аватар частично
+/// накладывается, ниже — ОДНА строка `[PREFIX] ник#0000` и присутствие.
+/// - `compact` (mini profile): над баннером — то же сезонное украшение, что в
+///   шапке сайта (`SeasonalHeaderDecoration`, один источник), рядом с аватаром —
+///   3D-голова; без статуса, бейджей и внутренних номеров — только identity,
+///   присутствие (дальше — кошелёк и меню).
+/// - Превью по нику: identity, статус, бейджи, присутствие.
 /// Solid, без стекла; картинки — только реальные URL из API.
 
 export interface ProfileIdentityView {
   username: string;
-  shortId?: number | null;
+  /// Публичный discriminator — четыре цифры (ADR-0099).
+  discriminator?: string | null;
   tag?: string | null;
   avatar: string | null;
   banner: string | null;
@@ -73,21 +82,39 @@ export function presenceLabel(presence: NonNullable<ProfileIdentityView['presenc
 export function ProfileHeader({
   identity,
   bleed = false,
+  compact = false,
+  decorationCampaign,
   ringClassName = 'ring-surface-overlay',
   className,
 }: {
   identity: ProfileIdentityView;
   /// Баннер во всю ширину контейнера без скругления (внутри popover).
   bleed?: boolean;
+  /// Mini profile: украшение, 3D-голова, только identity и присутствие.
+  compact?: boolean;
+  /// Явная кампания украшения (design-lab); по умолчанию — активная на сайте.
+  decorationCampaign?: SeasonalCampaign | null;
   /// Цвет «выреза» вокруг аватара — под поверхность контейнера.
   ringClassName?: string;
   className?: string;
 }) {
   const { presence } = identity;
   return (
-    <div className={cn('flex min-w-0 flex-col', className)} data-testid="profile-header">
-      <ProfileBanner src={identity.banner} className={cn('h-20', bleed ? '' : 'rounded-lg')} />
-      <div className={cn('-mt-7 flex items-end gap-3', bleed ? 'px-4' : 'px-3')}>
+    <div
+      className={cn('flex min-w-0 flex-col', className)}
+      data-testid="profile-header"
+      data-compact={compact || undefined}
+    >
+      <div className="relative">
+        <ProfileBanner src={identity.banner} className={cn('h-20', bleed ? '' : 'rounded-lg')} />
+        {compact ? (
+          <SeasonalHeaderDecoration
+            campaign={decorationCampaign}
+            className={bleed ? 'rounded-none' : 'rounded-t-lg'}
+          />
+        ) : null}
+      </div>
+      <div className={cn('-mt-7 flex items-end gap-2', bleed ? 'px-4' : 'px-3')}>
         <span className="relative shrink-0">
           <Avatar
             src={identity.avatar ?? undefined}
@@ -105,36 +132,31 @@ export function ProfileHeader({
             />
           ) : null}
         </span>
+        {compact && !identity.system ? (
+          <MinecraftHead username={identity.username} size={26} className="mb-0.5" />
+        ) : null}
       </div>
       <div className={cn('flex min-w-0 flex-col gap-1.5 pt-2', bleed ? 'px-4' : 'px-3')}>
         <UserIdentity
           username={identity.username}
           role={identity.role ?? undefined}
           mediaBadges={identity.mediaBadges}
+          discriminator={identity.discriminator}
           tag={identity.tag ?? undefined}
-          prefixSize="xs"
+          prefixSize={compact ? 'compact' : 'xs'}
         />
-        {identity.status ? (
-          <p
-            className="truncate text-xs text-muted-foreground"
-            title={identity.status}
-            data-testid="profile-status"
-          >
+        {!compact && identity.status ? (
+          <p className="line-clamp-2 text-xs text-muted-foreground" data-testid="profile-status">
             {identity.status}
           </p>
         ) : null}
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          {identity.shortId ? (
-            <span className="text-xs tabular-nums text-subtle-foreground">
-              ID {identity.shortId}
-            </span>
-          ) : null}
+        {!compact ? (
           <ProfileBadges
             badges={identity.badges}
             mediaBadges={identity.mediaBadges}
             decoration={identity.decoration}
           />
-        </div>
+        ) : null}
         {presence && !identity.system ? (
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span

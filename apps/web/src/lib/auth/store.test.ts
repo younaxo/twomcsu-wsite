@@ -8,6 +8,7 @@ const me: MeResponse = {
   id: 'u1',
   shortId: 7,
   tag: 'steve#1a2b',
+  discriminator: '0042',
   email: 'steve@example.com',
   username: 'Steve_Mainer',
   accountType: 'DEFAULT',

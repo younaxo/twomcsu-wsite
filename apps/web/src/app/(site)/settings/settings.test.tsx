@@ -31,6 +31,7 @@ const profile: OwnProfileDto = {
   selectedDecoration: null,
   username: 'player',
   tag: 'player',
+  discriminator: '0042',
   email: 'p@example.com',
   avatar: null,
   banner: null,

@@ -51,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Kbd } from '@/components/ui/kbd';
+import { useLogoutConfirm } from '@/components/auth/logout-confirm';
 import { UserIdentity } from '@/components/ui/user-identity';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
@@ -246,46 +247,49 @@ function SidebarSheet({
 /* ------------------------------------------------------------------ */
 
 function AccountMenu() {
-  const router = useRouter();
   const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
+  // Выход — только после подтверждения (та же политика, что на сайте).
+  const logoutConfirm = useLogoutConfirm('/login');
   if (!user) {
     return null;
   }
   const primary = pickPrimaryRole(user.roles);
   return (
-    <DropdownMenu>
-      <Tooltip content="Аккаунт">
-        <DropdownMenuTrigger asChild>
-          <ProfileTrigger
-            username={user.username}
-            avatar={user.avatar}
-            aria-label={`Аккаунт ${user.username}`}
-          />
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuLabel className="flex flex-col gap-1">
-          <UserIdentity username={user.username} role={primary} tag={user.tag} />
-          {user.roles.length > 0 ? (
-            <span className="text-xs font-normal text-muted-foreground">
-              {user.roles.map((role) => role.displayName).join(' · ')}
-            </span>
-          ) : null}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/">
-            <UserRound />
-            На сайт
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => logout().then(() => router.replace('/login'))}>
-          <LogOut />
-          Выйти
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <Tooltip content="Аккаунт">
+          <DropdownMenuTrigger asChild>
+            <ProfileTrigger
+              username={user.username}
+              avatar={user.avatar}
+              aria-label={`Аккаунт ${user.username}`}
+            />
+          </DropdownMenuTrigger>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="flex flex-col gap-1">
+            <UserIdentity username={user.username} role={primary} tag={user.tag} />
+            {user.roles.length > 0 ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                {user.roles.map((role) => role.displayName).join(' · ')}
+              </span>
+            ) : null}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/">
+              <UserRound />
+              На сайт
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => logoutConfirm.request()}>
+            <LogOut />
+            Выйти
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {logoutConfirm.dialog}
+    </>
   );
 }
 

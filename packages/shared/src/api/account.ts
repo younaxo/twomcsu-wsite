@@ -39,6 +39,8 @@ export interface OwnProfileDto {
   shortId: number;
   username: string;
   tag: string;
+  /// Публичный discriminator — четыре цифры (ADR-0099).
+  discriminator: string;
   email: string;
   /// Готовые URL (ADR-0088) или null; в БД хранится ключ хранилища.
   avatar: string | null;

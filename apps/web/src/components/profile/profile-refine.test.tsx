@@ -69,13 +69,24 @@ describe('Шапка профиля', () => {
       { wrapper: Providers },
     );
 
-  it('длинный статус — одна строка с многоточием, полный текст в подсказке', () => {
+  it('длинный статус — под ником, до двух строк, без нативного title', () => {
     const long = 'Очень длинный статус '.repeat(8).trim();
     hero({ statusText: long });
     const status = screen.getByTestId('profile-status');
     expect(status).toHaveTextContent(long);
-    expect(status).toHaveAttribute('title', long);
-    expect(status.className).toMatch(/truncate/);
+    expect(status).not.toHaveAttribute('title');
+    expect(status.className).toMatch(/line-clamp-2/);
+  });
+
+  it('[префикс] ник — одна строка; тултип префикса привязан к самому префиксу', () => {
+    hero({ role: { slug: 'chief-curator', displayName: 'Chief Curator', priority: 90 } });
+    const line = screen.getByTestId('profile-identity-line');
+    expect(line.className).toMatch(/flex-nowrap/);
+    expect(within(line).getByRole('heading', { name: 'Steve' })).toBeInTheDocument();
+    const trigger = within(line).getByTestId('role-prefix-trigger');
+    // Триггер по размеру префикса (w-fit) — колонка flex его не растягивает.
+    expect(trigger.className).toMatch(/w-fit/);
+    expect(within(trigger).getByRole('img', { name: 'Chief Curator' })).toBeInTheDocument();
   });
 
   it('слот наград пуст, пока наград нет — никаких заглушек', () => {
