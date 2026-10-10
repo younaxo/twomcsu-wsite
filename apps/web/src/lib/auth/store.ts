@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { api, refreshAccessToken, setSessionExpiredHandler } from '../api/client';
 import { ApiError } from '../api/errors';
 import { tokenStore } from '../api/token-store';
+import { unsubscribeThisDevice } from '@/lib/notifications/push';
 
 export type AuthStatus = 'idle' | 'loading' | 'authenticated' | 'anonymous';
 
@@ -103,6 +104,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
+      // Сначала отписать push этого браузера (пока токен ещё действует), чтобы
+      // после выхода сюда не приходили уведомления этого аккаунта (ADR-0097).
+      await unsubscribeThisDevice().catch(() => undefined);
       await api.post('/auth/logout', undefined, { retryOn401: false, parse: 'none' });
     } catch {
       // Сессия могла уже истечь — локальная очистка всё равно обязательна.

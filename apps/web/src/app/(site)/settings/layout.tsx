@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn';
 const SECTIONS = [
   { href: '/settings', label: 'Профиль' },
   { href: '/settings/privacy', label: 'Приватность' },
+  { href: '/settings/notifications', label: 'Уведомления' },
   { href: '/settings/security', label: 'Безопасность' },
   { href: '/settings/punishments', label: 'Наказания' },
   { href: '/settings/media', label: 'Медиа' },

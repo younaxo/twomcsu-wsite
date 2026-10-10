@@ -8,13 +8,18 @@ import {
   type InfiniteData,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { api } from '@/lib/api/client';
 import { tokenStore } from '@/lib/api/token-store';
 import { useAuthStore } from '@/lib/auth/store';
 import { API_URL } from '@/lib/env';
 import { siteKeys } from '@/lib/site/hooks';
+import { toast } from '@/components/ui/toast';
+import { inAppDecision, inAppLink, useActiveConversation } from './in-app';
+import { messagesEnabled, useNotificationSettings } from './settings';
+import { notificationSound, usePrimeNotificationSound } from './sound';
 
 /// Уведомления (ADR-0074). Единый источник числа непрочитанных —
 /// `siteKeys.unread` (бейдж, превью, страница, title, favicon); все списки —
@@ -142,9 +147,20 @@ export function useNotificationActions() {
 
 /// Мгновенные обновления: WS `/notifications` (событие `notification:changed`
 /// несёт актуальное число непрочитанных). Без сокета работает опрос счётчика.
+/// Плюс (ADR-0097): сообщает серверу, видна ли вкладка (`presence:visibility` —
+/// при видимой вкладке системный push не отправляется), и показывает
+/// уведомление о сообщении в интерфейсе по `inAppDecision` (тост + звук, без
+/// дублей одного id).
 export function useNotificationsRealtime() {
   const client = useQueryClient();
+  const router = useRouter();
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
+  const meId = useAuthStore((state) => state.user?.id ?? null);
+  const settings = useNotificationSettings();
+  const settingsRef = useRef(settings.data);
+  settingsRef.current = settings.data;
+  usePrimeNotificationSound(authenticated && settings.data?.soundEnabled !== false);
+
   useEffect(() => {
     const token = tokenStore.get();
     if (!authenticated || !token) return;
@@ -153,6 +169,11 @@ export function useNotificationsRealtime() {
       transports: ['websocket'],
       reconnectionAttempts: 5,
     });
+    const sendVisibility = () =>
+      socket.emit('presence:visibility', { visible: document.visibilityState === 'visible' });
+    socket.on('connect', sendVisibility);
+    document.addEventListener('visibilitychange', sendVisibility);
+
     socket.on('notification:changed', (payload: { unreadCount?: number }) => {
       if (typeof payload?.unreadCount === 'number') {
         client.setQueryData<UnreadCountResponse>(siteKeys.unread, {
@@ -164,8 +185,35 @@ export function useNotificationsRealtime() {
         predicate: (query) => query.queryKey[2] !== 'unread',
       });
     });
+
+    const seen = new Set<string>();
+    socket.on('notification:new', (notification: NotificationDto) => {
+      const current = settingsRef.current;
+      const decision = inAppDecision(notification, {
+        visible: document.visibilityState === 'visible',
+        meId,
+        foregroundEnabled: current?.foregroundEnabled ?? true,
+        soundEnabled: current?.soundEnabled ?? true,
+        messagesEnabled: messagesEnabled(current),
+        activeConversationId: useActiveConversation.getState().id,
+        seen: (id) => seen.has(id),
+      });
+      seen.add(notification.id);
+      if (decision.toast) {
+        toast.message(notification.title, {
+          id: `notification:${notification.id}`,
+          description: notification.message ?? undefined,
+          action: { label: 'Открыть', onClick: () => router.push(inAppLink(notification)) },
+        });
+      }
+      if (decision.sound) {
+        notificationSound.play(notification.id, { quiet: decision.sound === 'quiet' });
+      }
+    });
+
     return () => {
+      document.removeEventListener('visibilitychange', sendVisibility);
       socket.disconnect();
     };
-  }, [authenticated, client]);
+  }, [authenticated, client, meId, router]);
 }

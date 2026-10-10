@@ -211,6 +211,16 @@ Halloween-декор шапки перенесён на собственный C
 снова увидите `Cannot find module 'next/dist/pages/_app'` — `rm -rf node_modules
 apps/web/.next && pnpm install --frozen-lockfile --offline`.
 
+## R27 — Web Push: production-ключи VAPID и учёт вкладок — OPEN
+
+Код готов (ADR-0097). **Нужно от владельца при деплое:** сгенерировать
+production-пару VAPID и задать `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` /
+`VAPID_SUBJECT` в серверном env (приватный ключ — только там). Без них push
+выключен честно (`configured: false`), остальное работает. Учёт видимых
+вкладок (`presence:visibility`) — в памяти одного процесса API: при
+нескольких инстансах нужен общий стор (Redis), иначе возможен лишний push.
+Переход из push прямо в диалог — вместе с разделом «Сообщения».
+
 ## R26 — Скриншоты TwoMC на CDN — CLOSED (2026-10-10)
 
 Все 8 кадров (88 файлов: AVIF/WebP 640–1920 + `original.png`) загружены в

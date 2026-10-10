@@ -1494,6 +1494,10 @@ model NotificationSettings {
   discordEnabled    Boolean    @default(false)
   discordWebhookUrl String?    @db.Text
   soundEnabled      Boolean    @default(true)
+  /// Имя отправителя и текст в системных push (ADR-0097).
+  pushPreview       Boolean    @default(true)
+  /// Тост и звук в интерфейсе, когда сайт открыт.
+  foregroundEnabled Boolean    @default(true)
   digestMode        DigestMode @default(INSTANT)
   digestTime        String?    @default("09:00")
   quietHoursEnabled Boolean    @default(false)
