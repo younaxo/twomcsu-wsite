@@ -5,14 +5,40 @@ import {
 } from '@nestjs/common';
 import { ProfileComment, User } from '@prisma/client';
 import { escapeToHtml, extractMentions } from '../../common/html.util';
+import { StorageService } from '../files/storage.service';
 import { FriendsService } from '../friends/friends.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveUserIdByHandle } from '../profiles/handle';
+import { canViewProfile, isBlockedBetween } from '../profiles/visibility';
 import { CreateCommentDto } from './dto/create-comment.dto';
-import { ReactCommentDto } from './dto/react-comment.dto';
+import { COMMENT_REACTIONS, ReactCommentDto } from './dto/react-comment.dto';
 import { ReportCommentDto } from './dto/report-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
-import { PUBLIC_USER_SELECT } from '../users/public-user';
+import { PUBLIC_USER_SELECT, PublicUser } from '../users/public-user';
+
+/// Комментарий в ответе (ADR-0111): автор — только публичные поля, реакции —
+/// счётчики по набору реакций и своя реакция зрителя (без списка, кто
+/// реагировал), права зрителя на правку и удаление.
+export interface CommentView {
+  id: string;
+  parentId: string | null;
+  content: string;
+  createdAt: string;
+  isEdited: boolean;
+  /// Упомянутые ники (@ник) — для подсветки.
+  mentions: string[];
+  author: { id: string; username: string; tag: string; avatar: string | null };
+  reactions: Array<{ key: string; count: number }>;
+  myReaction: string | null;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+type CommentRow = ProfileComment & {
+  author: PublicUser;
+  reactions: Array<{ userId: string; emoji: string }>;
+};
 
 @Injectable()
 export class CommentsService {
@@ -20,21 +46,41 @@ export class CommentsService {
     private readonly prisma: PrismaService,
     private readonly friends: FriendsService,
     private readonly notifications: NotificationsService,
+    private readonly storage: StorageService,
   ) {}
 
-  private async getProfileOwner(username: string): Promise<User> {
-    const user = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
-    });
+  private async getProfileOwner(handle: string): Promise<User> {
+    const id = await resolveUserIdByHandle(this.prisma, handle);
+    const user = id
+      ? await this.prisma.user.findUnique({ where: { id } })
+      : null;
     if (!user) {
       throw new NotFoundException('Профиль не найден');
     }
     return user;
   }
 
+  /// Комментарии видны тем же, кому виден профиль; скрытый — 404.
+  private async visibleOwner(handle: string, viewerId: string | null) {
+    const owner = await this.getProfileOwner(handle);
+    if (!(await canViewProfile(this.prisma, owner, viewerId))) {
+      throw new NotFoundException('Профиль не найден');
+    }
+    return owner;
+  }
+
+  /// Комментарии на профиле включены владельцем и не отключены модерацией.
+  private enabled(owner: User): boolean {
+    return owner.commentsEnabled && !owner.commentsForcedDisabledBy;
+  }
+
   private async canComment(viewerId: string, owner: User): Promise<boolean> {
     if (viewerId === owner.id) {
       return true;
+    }
+    // Блокировка в любую сторону — писать нельзя при любой политике.
+    if (await isBlockedBetween(this.prisma, viewerId, owner.id)) {
+      return false;
     }
     switch (owner.commentPolicy) {
       case 'EVERYONE':
@@ -50,26 +96,86 @@ export class CommentsService {
     }
   }
 
-  async list(username: string, page: number, limit: number) {
-    const owner = await this.getProfileOwner(username);
-    const [items, total] = await Promise.all([
+  private view(
+    row: CommentRow,
+    viewerId: string | null,
+    ownerId: string,
+  ): CommentView {
+    const counts = new Map<string, number>();
+    for (const reaction of row.reactions) {
+      if (!COMMENT_REACTIONS.includes(reaction.emoji as never)) continue;
+      counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+    }
+    const mine = viewerId
+      ? (row.reactions.find((reaction) => reaction.userId === viewerId)
+          ?.emoji ?? null)
+      : null;
+    return {
+      id: row.id,
+      parentId: row.parentId,
+      content: row.content,
+      createdAt: row.createdAt.toISOString(),
+      isEdited: row.isEdited,
+      mentions: row.mentions,
+      author: {
+        id: row.author.id,
+        username: row.author.username,
+        tag: row.author.tag,
+        avatar: this.storage.publicUrl(row.author.avatar),
+      },
+      reactions: COMMENT_REACTIONS.filter((key) => counts.has(key)).map(
+        (key) => ({
+          key,
+          count: counts.get(key)!,
+        }),
+      ),
+      myReaction:
+        mine && COMMENT_REACTIONS.includes(mine as never) ? mine : null,
+      canEdit: viewerId === row.authorId,
+      canDelete: viewerId === row.authorId || viewerId === ownerId,
+    };
+  }
+
+  private readonly include = {
+    author: { select: PUBLIC_USER_SELECT },
+    reactions: { select: { userId: true, emoji: true } },
+  } as const;
+
+  async list(
+    handle: string,
+    viewerId: string | null,
+    page: number,
+    limit: number,
+  ) {
+    const owner = await this.visibleOwner(handle, viewerId);
+    const where = { profileId: owner.id, isDeleted: false };
+    const [rows, total] = await Promise.all([
       this.prisma.profileComment.findMany({
-        where: { profileId: owner.id, isDeleted: false },
-        include: { author: { select: PUBLIC_USER_SELECT }, reactions: true },
+        where,
+        include: this.include,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.profileComment.count({
-        where: { profileId: owner.id, isDeleted: false },
-      }),
+      this.prisma.profileComment.count({ where }),
     ]);
-    return { items, total, page, limit };
+    const enabled = this.enabled(owner);
+    return {
+      items: rows.map((row) => this.view(row, viewerId, owner.id)),
+      total,
+      page,
+      limit,
+      commentsEnabled: enabled,
+      canComment:
+        viewerId !== null &&
+        enabled &&
+        (await this.canComment(viewerId, owner)),
+    };
   }
 
-  async create(authorId: string, username: string, dto: CreateCommentDto) {
-    const owner = await this.getProfileOwner(username);
-    if (!owner.commentsEnabled) {
+  async create(authorId: string, handle: string, dto: CreateCommentDto) {
+    const owner = await this.visibleOwner(handle, authorId);
+    if (!this.enabled(owner)) {
       throw new ForbiddenException('Комментарии на этом профиле отключены');
     }
     if (!(await this.canComment(authorId, owner))) {
@@ -98,12 +204,12 @@ export class CommentsService {
         parentId: dto.parentId,
         mentions,
       },
-      include: { author: { select: PUBLIC_USER_SELECT } },
+      include: this.include,
     });
 
     await this.notifyParticipants(created, owner, parent, mentions);
 
-    return created;
+    return this.view(created, authorId, owner.id);
   }
 
   private async notifyParticipants(
@@ -118,7 +224,7 @@ export class CommentsService {
     if (!author) {
       return;
     }
-    const link = `/users/${owner.username}#comment-${comment.id}`;
+    const link = `/u/${encodeURIComponent(owner.username)}#comment-${comment.id}`;
 
     if (owner.id !== comment.authorId && owner.notifyOnComment) {
       await this.notifications.create({
@@ -156,7 +262,12 @@ export class CommentsService {
       const mentioned = await this.prisma.user.findFirst({
         where: { username: { equals: username, mode: 'insensitive' } },
       });
-      if (mentioned && mentioned.notifyOnMention) {
+      // Упоминание не раскрывает комментарии тому, кому профиль не виден.
+      if (
+        mentioned &&
+        mentioned.notifyOnMention &&
+        (await canViewProfile(this.prisma, owner, mentioned.id))
+      ) {
         await this.notifications.create({
           userId: mentioned.id,
           type: 'COMMENT_MENTION',
@@ -168,20 +279,31 @@ export class CommentsService {
     }
   }
 
-  async update(authorId: string, commentId: string, dto: UpdateCommentDto) {
+  /// Комментарий и его профиль, видимый этому пользователю.
+  private async visibleComment(userId: string, commentId: string) {
     const comment = await this.prisma.profileComment.findUnique({
       where: { id: commentId },
+      include: { profile: true },
     });
-    if (!comment || comment.isDeleted) {
+    if (
+      !comment ||
+      comment.isDeleted ||
+      !(await canViewProfile(this.prisma, comment.profile, userId))
+    ) {
       throw new NotFoundException('Комментарий не найден');
     }
+    return comment;
+  }
+
+  async update(authorId: string, commentId: string, dto: UpdateCommentDto) {
+    const comment = await this.visibleComment(authorId, commentId);
     if (comment.authorId !== authorId) {
       throw new ForbiddenException(
         'Редактировать можно только свои комментарии',
       );
     }
 
-    return this.prisma.profileComment.update({
+    const updated = await this.prisma.profileComment.update({
       where: { id: commentId },
       data: {
         content: dto.content,
@@ -190,31 +312,27 @@ export class CommentsService {
         isEdited: true,
         editedAt: new Date(),
       },
+      include: this.include,
     });
+    return this.view(updated, authorId, comment.profileId);
   }
 
-  async remove(authorId: string, commentId: string): Promise<void> {
-    const comment = await this.prisma.profileComment.findUnique({
-      where: { id: commentId },
-    });
-    if (!comment || comment.isDeleted) {
-      throw new NotFoundException('Комментарий не найден');
-    }
-    if (comment.authorId !== authorId) {
+  /// Удалить может автор и владелец профиля (порядок на своей стене).
+  async remove(userId: string, commentId: string): Promise<void> {
+    const comment = await this.visibleComment(userId, commentId);
+    if (comment.authorId !== userId && comment.profileId !== userId) {
       throw new ForbiddenException('Удалить можно только свои комментарии');
     }
     await this.prisma.profileComment.update({
       where: { id: commentId },
-      data: { isDeleted: true, deletedAt: new Date(), deletedBy: authorId },
+      data: { isDeleted: true, deletedAt: new Date(), deletedBy: userId },
     });
   }
 
   async react(userId: string, commentId: string, dto: ReactCommentDto) {
-    const comment = await this.prisma.profileComment.findUnique({
-      where: { id: commentId },
-    });
-    if (!comment || comment.isDeleted) {
-      throw new NotFoundException('Комментарий не найден');
+    const comment = await this.visibleComment(userId, commentId);
+    if (await isBlockedBetween(this.prisma, userId, comment.authorId)) {
+      throw new ForbiddenException('Нельзя отреагировать на этот комментарий');
     }
 
     const existing = await this.prisma.commentReaction.findUnique({
@@ -241,13 +359,11 @@ export class CommentsService {
   }
 
   async report(reporterId: string, commentId: string, dto: ReportCommentDto) {
-    const comment = await this.prisma.profileComment.findUnique({
-      where: { id: commentId },
-    });
-    if (!comment || comment.isDeleted) {
-      throw new NotFoundException('Комментарий не найден');
+    const comment = await this.visibleComment(reporterId, commentId);
+    if (comment.authorId === reporterId) {
+      throw new ForbiddenException('Нельзя пожаловаться на свой комментарий');
     }
-    return this.prisma.commentReport.upsert({
+    await this.prisma.commentReport.upsert({
       where: { commentId_reporterId: { commentId, reporterId } },
       create: {
         commentId,
@@ -257,6 +373,7 @@ export class CommentsService {
       },
       update: { reason: dto.reason, description: dto.description },
     });
+    return { success: true };
   }
 
   /// Безвозвратное удаление (в отличие от remove() — soft-delete автором).

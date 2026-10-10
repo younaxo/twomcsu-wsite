@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { FriendButton } from '@/components/friends/friend-button';
 import { ProfileInfoSection } from '@/components/profile/profile-info';
 import { ProfilePreviewCard } from '@/components/profile/profile-preview';
+import { ProfileComments } from '@/components/profile/profile-comments';
 import { ProfileHero } from '@/components/profile/profile-hero';
 import { ConnectedAccountsSection, SocialLinksSection } from '@/components/profile/profile-links';
 import { ProfileShowcase } from '@/components/profile/profile-showcase';
@@ -125,6 +126,9 @@ export default function PublicProfilePage() {
           />
           <ConnectedAccountsSection accounts={data.connectedAccounts ?? []} />
           <SocialLinksSection links={data.socialLinks ?? []} />
+          {site.data?.modules?.comments === false ? null : (
+            <ProfileComments username={data.username} signedIn={!!me} />
+          )}
         </div>
         <aside className="flex flex-col gap-5 lg:self-start">
           <div className="rounded-xl bg-surface p-5 shadow-sm">
