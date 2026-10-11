@@ -421,6 +421,16 @@ describe('News (e2e)', () => {
     expect(
       filtered.body.items.some((n: { id: string }) => n.id === newsId),
     ).toBe(true);
+    // ADR-0133: автор в админ-списке — только публичные поля.
+    const listed = filtered.body.items.find(
+      (n: { id: string }) => n.id === newsId,
+    );
+    expect(Object.keys(listed.author).sort()).toEqual([
+      'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
 
     const stats = await request(app.getHttpServer())
       .get('/admin/news/stats')
