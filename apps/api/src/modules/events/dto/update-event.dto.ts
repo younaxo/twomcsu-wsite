@@ -7,8 +7,10 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Min,
 } from 'class-validator';
+import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from '../../../common/site-image';
 
 export class UpdateEventDto {
   @IsOptional()
@@ -21,9 +23,13 @@ export class UpdateEventDto {
   @Length(1, 10_000)
   description?: string;
 
+  /// Только CDN проекта или путь сайта (ADR-0148): обложку выводит next/image.
+  /// null убирает обложку.
   @IsOptional()
   @IsString()
-  coverImage?: string;
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
+  coverImage?: string | null;
 
   @IsOptional()
   @IsEnum(CalendarEventCategory)

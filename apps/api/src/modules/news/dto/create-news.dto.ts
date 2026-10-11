@@ -12,7 +12,7 @@ import {
   Matches,
   ValidateIf,
 } from 'class-validator';
-import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from './site-image';
+import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from '../../../common/site-image';
 
 export class CreateNewsDto {
   @IsString()

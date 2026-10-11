@@ -166,6 +166,27 @@ describe('Events (e2e)', () => {
       .expect(201);
     eventId = res.body.id;
     expect(res.body.status).toBe('DRAFT');
+
+    // ADR-0148: обложка — только CDN проекта или путь сайта; null убирает.
+    await request(app.getHttpServer())
+      .patch(`/admin/events/${eventId}`)
+      .set('Authorization', auth(organizer))
+      .send({ coverImage: 'https://evil.example.com/cover.png' })
+      .expect(400);
+    const covered = await request(app.getHttpServer())
+      .patch(`/admin/events/${eventId}`)
+      .set('Authorization', auth(organizer))
+      .send({ coverImage: 'https://cdn-files.twomc.su/events/cover.png' })
+      .expect(200);
+    expect(covered.body.coverImage).toBe(
+      'https://cdn-files.twomc.su/events/cover.png',
+    );
+    const uncovered = await request(app.getHttpServer())
+      .patch(`/admin/events/${eventId}`)
+      .set('Authorization', auth(organizer))
+      .send({ coverImage: null })
+      .expect(200);
+    expect(uncovered.body.coverImage).toBeNull();
   });
 
   it('DRAFT недоступен публично (404)', async () => {
