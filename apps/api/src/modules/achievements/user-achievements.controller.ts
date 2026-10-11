@@ -32,9 +32,10 @@ export class UserAchievementsController {
   @Get(':username/achievements')
   async byUsername(@Param('username') username: string, @Req() req: Request) {
     const viewer = (req as Request & { user?: AuthenticatedUser }).user;
-    const isOwner =
-      !!viewer && viewer.username.toLowerCase() === username.toLowerCase();
-    return this.achievements.getUserAchievementsByUsername(username, isOwner);
+    return this.achievements.getUserAchievementsByUsername(
+      username,
+      viewer?.id ?? null,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
