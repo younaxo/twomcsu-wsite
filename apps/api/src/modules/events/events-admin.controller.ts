@@ -57,6 +57,14 @@ export class EventsAdminController {
     return this.admin.setStatus(id, 'CANCELLED');
   }
 
+  /// Участники события для админки (ADR-0151): только публичные поля
+  /// пользователя и статус участия.
+  @Get(':id/participants')
+  @RequirePermissions('events.view')
+  async participants(@Param('id') id: string) {
+    return this.admin.listParticipants(id);
+  }
+
   @Delete(':id')
   @RequirePermissions('events.delete')
   async remove(@Param('id') id: string) {

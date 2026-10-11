@@ -147,6 +147,25 @@ export class EventsAdminService {
     return updated;
   }
 
+  async listParticipants(id: string) {
+    const event = await this.prisma.calendarEvent.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!event) {
+      throw new NotFoundException('Событие не найдено');
+    }
+    return this.prisma.eventParticipant.findMany({
+      where: { eventId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        status: true,
+        createdAt: true,
+        user: { select: PUBLIC_USER_SELECT },
+      },
+    });
+  }
+
   async remove(id: string): Promise<void> {
     const event = await this.prisma.calendarEvent.findUnique({ where: { id } });
     if (!event) {

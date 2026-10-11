@@ -234,6 +234,32 @@ describe('Events (e2e)', () => {
       .set('Authorization', auth(bob))
       .send({ status: 'GOING' })
       .expect(201);
+
+    // ADR-0151: участники в админке — только с правом и только публичные поля.
+    await request(app.getHttpServer())
+      .get(`/admin/events/${eventId}/participants`)
+      .set('Authorization', auth(alice))
+      .expect(403);
+    const participants = await request(app.getHttpServer())
+      .get(`/admin/events/${eventId}/participants`)
+      .set('Authorization', auth(organizer))
+      .expect(200);
+    expect(participants.body).toEqual([
+      expect.objectContaining({
+        status: 'GOING',
+        user: expect.objectContaining({ id: bob.id }),
+      }),
+    ]);
+    expect(Object.keys(participants.body[0].user).sort()).toEqual([
+      'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
+    await request(app.getHttpServer())
+      .get('/admin/events/missing-event/participants')
+      .set('Authorization', auth(organizer))
+      .expect(404);
   });
 
   it('ADR-0118: на прошедшее событие записаться нельзя', async () => {
