@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -12,6 +12,16 @@ export interface LeaderboardEntry {
 }
 
 const LIMIT = 10;
+
+/// Кто может быть в публичном рейтинге (ADR-0127): профиль открыт всем,
+/// статистика не скрыта владельцем (`hideStatistics`), не забанен, не
+/// системный аккаунт. Места считаются после фильтра — без «дыр».
+const RANKED_USER: Prisma.UserWhereInput = {
+  isBanned: false,
+  accountType: { not: 'SYSTEM' },
+  profileVisibility: 'EVERYONE',
+  hideStatistics: false,
+};
 
 /// Реальные рейтинги по уже существующим данным (PlayerStatistics —
 /// пушится игровым сервером, coins начисляются через Voting, PHASE 14;
@@ -27,7 +37,7 @@ export class LeaderboardsService {
     field: 'playTime' | 'kills' | 'coins',
   ): Promise<LeaderboardEntry[]> {
     const rows = await this.prisma.playerStatistics.findMany({
-      where: { [field]: { gt: 0 } },
+      where: { [field]: { gt: 0 }, user: RANKED_USER },
       orderBy: { [field]: 'desc' },
       take: LIMIT,
       include: { user: { select: { id: true, username: true, avatar: true } } },
@@ -44,7 +54,7 @@ export class LeaderboardsService {
   private async topByAchievements(): Promise<LeaderboardEntry[]> {
     const grouped = await this.prisma.userAchievement.groupBy({
       by: ['userId'],
-      where: { isCompleted: true },
+      where: { isCompleted: true, user: RANKED_USER },
       _count: { _all: true },
       orderBy: { _count: { userId: 'desc' } },
       take: LIMIT,
@@ -55,11 +65,11 @@ export class LeaderboardsService {
     });
     const byId = new Map(users.map((u) => [u.id, u]));
     const entries: LeaderboardEntry[] = [];
-    grouped.forEach((g, index) => {
+    grouped.forEach((g) => {
       const user = byId.get(g.userId);
       if (!user) return;
       entries.push({
-        rank: index + 1,
+        rank: entries.length + 1,
         userId: user.id,
         username: user.username,
         avatar: this.storage.publicUrl(user.avatar),
@@ -72,7 +82,11 @@ export class LeaderboardsService {
   private async topByPurchases(): Promise<LeaderboardEntry[]> {
     const grouped = await this.prisma.order.groupBy({
       by: ['userId'],
-      where: { status: OrderStatus.COMPLETED, userId: { not: null } },
+      where: {
+        status: OrderStatus.COMPLETED,
+        userId: { not: null },
+        user: { is: RANKED_USER },
+      },
       _count: { _all: true },
       orderBy: { _count: { userId: 'desc' } },
       take: LIMIT,
@@ -86,12 +100,12 @@ export class LeaderboardsService {
     });
     const byId = new Map(users.map((u) => [u.id, u]));
     const entries: LeaderboardEntry[] = [];
-    grouped.forEach((g, index) => {
+    grouped.forEach((g) => {
       if (!g.userId) return;
       const user = byId.get(g.userId);
       if (!user) return;
       entries.push({
-        rank: index + 1,
+        rank: entries.length + 1,
         userId: user.id,
         username: user.username,
         avatar: this.storage.publicUrl(user.avatar),
