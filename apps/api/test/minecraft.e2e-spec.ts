@@ -6,6 +6,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -381,6 +382,51 @@ describe('Minecraft servers (e2e)', () => {
       .expect(200);
     expect(widget.text).toContain('E2E Survival');
     expect(widget.text).toContain('online');
+  });
+
+  it('статус (ADR-0130): кэш 30 с — повтор без нового лога; правка сервера сбрасывает кэш', async () => {
+    const redis = app.get(RedisService);
+    await redis.client.del(`mc:status:${serverId}`);
+    const count = () => prisma.serverStatusLog.count({ where: { serverId } });
+    const before = await count();
+    for (let index = 0; index < 3; index += 1) {
+      await request(app.getHttpServer())
+        .get(`/servers/${serverSlug}/status`)
+        .expect(200);
+    }
+    expect(await count()).toBe(before + 1);
+
+    await request(app.getHttpServer())
+      .patch(`/admin/servers/${serverId}`)
+      .set('Authorization', auth(admin))
+      .send({ maxPlayers: 120 })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get(`/servers/${serverSlug}/status`)
+      .expect(200);
+    expect(await count()).toBe(before + 2);
+  });
+
+  it('widget (ADR-0130): название сервера экранируется', async () => {
+    await request(app.getHttpServer())
+      .patch(`/admin/servers/${serverId}`)
+      .set('Authorization', auth(admin))
+      .send({ name: 'E2E <img src=x onerror=alert(1)>' })
+      .expect(200);
+    try {
+      const widget = await request(app.getHttpServer())
+        .get('/servers/widget')
+        .query({ slug: serverSlug })
+        .expect(200);
+      expect(widget.text).toContain('E2E &lt;img src=x onerror=alert(1)&gt;');
+      expect(widget.text).not.toContain('<img');
+    } finally {
+      await request(app.getHttpServer())
+        .patch(`/admin/servers/${serverId}`)
+        .set('Authorization', auth(admin))
+        .send({ name: 'E2E Survival' })
+        .expect(200);
+    }
   });
 
   it('admin: история статуса пагинирована, обновление и удаление сервера', async () => {
