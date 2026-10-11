@@ -121,8 +121,12 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/content',
         label: 'Контент',
         icon: 'newspaper',
-        requirement: 'content.view',
-        keywords: ['новости', 'формы', 'жалобы'],
+        requirement: ['content.view', 'news.view'],
+        keywords: ['новости', 'формы', 'жалобы', 'статьи', 'патч-ноуты'],
+        sections: [
+          { href: '/admin/content', label: 'Обзор', requirement: 'content.view' },
+          { href: '/admin/news', label: 'Новости', requirement: 'news.view' },
+        ],
       },
       {
         href: '/admin/reports',

@@ -79,4 +79,12 @@ describe('admin navigation', () => {
     expect(resolved.href).toBe('/admin/departments');
     expect(resolved.sections?.map((s) => s.label)).toEqual(['Отделы']);
   });
+
+  it('новости — подраздел «Контента» (ADR-0143)', () => {
+    expect(findNavItem('/admin/news/abc')?.label).toBe('Контент');
+    const content = findNavItem('/admin/content')!;
+    const newsOnly = effective(['news.view']);
+    expect(checkPermissions(newsOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    expect(resolveNavItem(content, (r) => checkPermissions(newsOnly, r)).href).toBe('/admin/news');
+  });
 });
