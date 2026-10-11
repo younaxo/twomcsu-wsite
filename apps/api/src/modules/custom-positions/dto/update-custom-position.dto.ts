@@ -15,16 +15,18 @@ export class UpdateCustomPositionDto {
   @IsOptional()
   @IsString()
   @Matches(/^#[0-9a-fA-F]{6}$/)
-  color?: string;
+  color?: string | null;
 
   @IsOptional()
   @IsString()
-  icon?: string;
+  @Length(0, 100)
+  icon?: string | null;
 
+  /// null очищает (ADR-0140).
   @IsOptional()
   @IsString()
   @Length(0, 500)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsBoolean()

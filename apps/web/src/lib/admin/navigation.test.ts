@@ -67,4 +67,16 @@ describe('admin navigation', () => {
     expect(full.href).toBe('/admin/achievements');
     expect(full.sections).toHaveLength(2);
   });
+
+  it('«Команда» и «Роли и права» — пункты с подразделами (ADR-0140)', () => {
+    expect(findNavItem('/admin/departments')?.label).toBe('Команда');
+    expect(findNavItem('/admin/custom-positions')?.label).toBe('Команда');
+    expect(findNavItem('/admin/permissions')?.label).toBe('Роли и права');
+    const team = findNavItem('/admin/positions')!;
+    const deptOnly = effective(['departments.view']);
+    expect(checkPermissions(deptOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    const resolved = resolveNavItem(team, (r) => checkPermissions(deptOnly, r));
+    expect(resolved.href).toBe('/admin/departments');
+    expect(resolved.sections?.map((s) => s.label)).toEqual(['Отделы']);
+  });
 });

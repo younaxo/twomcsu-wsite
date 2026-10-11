@@ -35,16 +35,38 @@ export class PositionsController {
     });
   }
 
+  /// Для админки — со счётчиками (ADR-0140): удалить можно только
+  /// должность без пользователей и без товаров магазина, это видно заранее.
   @Get('positions/manage')
   @RequirePermissions('positions.view')
   async listAll() {
-    return this.prisma.position.findMany({ orderBy: { priority: 'desc' } });
+    const positions = await this.prisma.position.findMany({
+      orderBy: { priority: 'desc' },
+      include: { _count: { select: { users: true, products: true } } },
+    });
+    return positions.map(({ _count, ...position }) => ({
+      ...position,
+      usersCount: _count.users,
+      productsCount: _count.products,
+    }));
   }
 
   @Post('positions')
   @RequirePermissions('positions.create')
   async create(@Body() dto: CreatePositionDto) {
-    return this.prisma.position.create({ data: dto });
+    try {
+      return await this.prisma.position.create({ data: dto });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'Должность с таким названием или slug уже есть',
+        );
+      }
+      throw error;
+    }
   }
 
   @Patch('positions/:id')
@@ -66,6 +88,20 @@ export class PositionsController {
     }
     if (position.isDefault) {
       throw new ForbiddenException('Позицию по умолчанию нельзя удалить');
+    }
+    const [users, products] = await Promise.all([
+      this.prisma.user.count({ where: { positionId: id } }),
+      this.prisma.product.count({ where: { positionId: id } }),
+    ]);
+    if (users > 0) {
+      throw new ConflictException(
+        `Позицию нельзя удалить — она назначена пользователям (${users})`,
+      );
+    }
+    if (products > 0) {
+      throw new ConflictException(
+        'Позицию нельзя удалить — её выдают товары магазина',
+      );
     }
     try {
       await this.prisma.position.delete({ where: { id } });

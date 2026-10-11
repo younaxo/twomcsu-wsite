@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -9,6 +10,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -25,8 +27,17 @@ export class DepartmentsController {
 
   @Get()
   @RequirePermissions('departments.view')
+  /// Со счётчиком участников (ADR-0140): удаление отдела снимает его со
+  /// всех участников, это видно в подтверждении.
   async list() {
-    return this.prisma.department.findMany({ orderBy: { order: 'asc' } });
+    const departments = await this.prisma.department.findMany({
+      orderBy: { order: 'asc' },
+      include: { _count: { select: { members: true } } },
+    });
+    return departments.map(({ _count, ...department }) => ({
+      ...department,
+      membersCount: _count.members,
+    }));
   }
 
   @Post()
@@ -35,9 +46,19 @@ export class DepartmentsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Body() dto: CreateDepartmentDto,
   ) {
-    return this.prisma.department.create({
-      data: { ...dto, createdBy: actor.id },
-    });
+    try {
+      return await this.prisma.department.create({
+        data: { ...dto, createdBy: actor.id },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Отдел с таким slug уже есть');
+      }
+      throw error;
+    }
   }
 
   @Patch(':id')

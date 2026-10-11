@@ -13,19 +13,21 @@ export class UpdateDepartmentDto {
   @Length(2, 64)
   name?: string;
 
+  /// null очищает (ADR-0140).
   @IsOptional()
   @IsString()
   @Length(0, 500)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsString()
   @Matches(/^#[0-9a-fA-F]{6}$/)
-  color?: string;
+  color?: string | null;
 
   @IsOptional()
   @IsString()
-  icon?: string;
+  @Length(0, 100)
+  icon?: string | null;
 
   @IsOptional()
   @IsBoolean()
