@@ -165,6 +165,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     title: 'Система',
     items: [
       {
+        href: '/admin/servers',
+        label: 'Серверы',
+        icon: 'database',
+        requirement: 'servers.view',
+        keywords: ['minecraft', 'статус', 'адрес', 'порт', 'игровые'],
+      },
+      {
         href: '/admin/system',
         label: 'Техработы и модули',
         icon: 'power',
