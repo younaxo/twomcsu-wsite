@@ -167,6 +167,27 @@ describe('News (e2e)', () => {
     newsId = res.body.id;
     expect(res.body.status).toBe('DRAFT');
     expect(res.body.tags).toHaveLength(2);
+
+    // ADR-0143: обложка — только CDN проекта или путь сайта; null убирает.
+    await request(app.getHttpServer())
+      .patch(`/admin/news/${newsId}`)
+      .set('Authorization', auth(editor))
+      .send({ coverImage: 'https://evil.example.com/cover.png' })
+      .expect(400);
+    const covered = await request(app.getHttpServer())
+      .patch(`/admin/news/${newsId}`)
+      .set('Authorization', auth(editor))
+      .send({ coverImage: 'https://cdn-files.twomc.su/news/cover.png' })
+      .expect(200);
+    expect(covered.body.coverImage).toBe(
+      'https://cdn-files.twomc.su/news/cover.png',
+    );
+    const uncovered = await request(app.getHttpServer())
+      .patch(`/admin/news/${newsId}`)
+      .set('Authorization', auth(editor))
+      .send({ coverImage: null })
+      .expect(200);
+    expect(uncovered.body.coverImage).toBeNull();
   });
 
   it('черновик недоступен публично (404), виден админу по id', async () => {
@@ -431,6 +452,9 @@ describe('News (e2e)', () => {
       'tag',
       'username',
     ]);
+    // ADR-0143: текста новости в списке нет — только в карточке.
+    expect(listed).not.toHaveProperty('content');
+    expect(listed).not.toHaveProperty('contentHtml');
 
     const stats = await request(app.getHttpServer())
       .get('/admin/news/stats')

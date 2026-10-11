@@ -12,6 +12,7 @@ import {
   Matches,
   ValidateIf,
 } from 'class-validator';
+import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from './site-image';
 
 export class CreateNewsDto {
   @IsString()
@@ -37,6 +38,8 @@ export class CreateNewsDto {
 
   @IsOptional()
   @IsString()
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
   coverImage?: string;
 
   @IsEnum(NewsCategory)
@@ -68,6 +71,8 @@ export class CreateNewsDto {
 
   @IsOptional()
   @IsString()
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
   ogImage?: string;
 
   @IsOptional()
