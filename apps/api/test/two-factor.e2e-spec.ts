@@ -155,11 +155,18 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .send({ code: code() })
       .expect(401)
       .expect((res) => expect(res.body.code).toBe('two_factor_expired'));
-    // Код, уже принятый при включении (тот же шаг), второй раз не подходит.
+    // Код, уже принятый при включении, второй раз не подходит. Берётся именно
+    // принятый шаг из БД: код «по текущему времени» после смены 30-секундного
+    // шага — уже новый законный код, а не повтор.
+    const { twoFactorLastStep } = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { twoFactorLastStep: true },
+    });
+    expect(twoFactorLastStep).not.toBeNull();
     const replay = await http()
       .post('/auth/login/2fa')
       .set('Cookie', cookie)
-      .send({ code: code() });
+      .send({ code: hotp(base32Decode(secret), twoFactorLastStep!) });
     expect(replay.status).toBe(401);
     await resetBruteForce();
 
