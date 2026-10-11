@@ -147,6 +147,41 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
     });
     expect(updatedUser.positionId).toBe(created.body.id);
 
+    // ADR-0140: дубль — 409, в списке для админки — счётчики, null очищает.
+    await request(app.getHttpServer())
+      .post('/positions')
+      .set('Authorization', auth)
+      .send({
+        name: `VIP-${unique}`,
+        slug: `vip-${unique}`,
+        displayName: 'VIP',
+        group: 'donor',
+        color: '#ff00ff',
+      })
+      .expect(409);
+    const manage = await request(app.getHttpServer())
+      .get('/positions/manage')
+      .set('Authorization', auth)
+      .expect(200);
+    const listed = manage.body.find(
+      (p: { id: string }) => p.id === created.body.id,
+    );
+    expect(listed.usersCount).toBe(1);
+    expect(listed.productsCount).toBe(0);
+    expect(listed).not.toHaveProperty('_count');
+    await request(app.getHttpServer())
+      .patch(`/positions/${created.body.id}`)
+      .set('Authorization', auth)
+      .send({ description: 'Тест', backgroundColor: '#ff00ff33' })
+      .expect(200);
+    const cleared = await request(app.getHttpServer())
+      .patch(`/positions/${created.body.id}`)
+      .set('Authorization', auth)
+      .send({ description: null, backgroundColor: null })
+      .expect(200);
+    expect(cleared.body.description).toBeNull();
+    expect(cleared.body.backgroundColor).toBeNull();
+
     const defaultPosition = await prisma.position.findUniqueOrThrow({
       where: { slug: 'default' },
     });
@@ -158,7 +193,7 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
     await request(app.getHttpServer())
       .delete(`/positions/${created.body.id}`)
       .set('Authorization', auth)
-      .expect(409); // назначена пользователю — FK violation перехвачен как 409
+      .expect(409); // назначена пользователю — проверка до удаления (ADR-0140)
 
     // Вернуть пользователя на default перед финальным удалением тестовой позиции.
     await request(app.getHttpServer())
