@@ -76,10 +76,13 @@ export const CUSTOM_POSITIONS: TeamCatalogKind = {
 
 const key = (kind: TeamCatalogKind) => ['admin', kind.endpoint] as const;
 
-export function useTeamCatalog(kind: TeamCatalogKind) {
+/// `enabled` — в карточке пользователя каталог запрашивается только с
+/// правом на его просмотр (ADR-0142).
+export function useTeamCatalog(kind: TeamCatalogKind, enabled = true) {
   return useQuery({
     queryKey: key(kind),
     queryFn: () => api.get<TeamCatalogItem[]>(kind.endpoint),
+    enabled,
   });
 }
 

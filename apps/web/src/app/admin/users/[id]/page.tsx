@@ -71,6 +71,7 @@ import { formatDate, formatDateTime, formatNumber, formatRelative } from '@/lib/
 import { pickPrimaryRole } from '@/lib/roles/primary-role';
 import { AssignRoleDialog } from '../_components/assign-role-dialog';
 import { BanDialog } from '../_components/ban-dialog';
+import { TEAM_TAB_REQUIREMENT, TeamTab } from '../_components/team-tab';
 
 const BADGE_LABEL: Record<UserBadgeType, string> = {
   LEADERSHIP: 'Руководство',
@@ -683,6 +684,9 @@ function UserDetails({ user }: { user: AdminUserFull }) {
           <TabsTrigger value="roles" count={user.roles.length}>
             Роли
           </TabsTrigger>
+          {can(TEAM_TAB_REQUIREMENT) ? (
+            <TabsTrigger value="team">Команда и награды</TabsTrigger>
+          ) : null}
           {can('users.badges') ? <TabsTrigger value="badges">Бейджи</TabsTrigger> : null}
           {can('users.punishments') ? (
             <TabsTrigger value="punishments">Наказания</TabsTrigger>
@@ -696,6 +700,9 @@ function UserDetails({ user }: { user: AdminUserFull }) {
         </TabsContent>
         <TabsContent value="roles">
           <RolesTab user={user} />
+        </TabsContent>
+        <TabsContent value="team">
+          <TeamTab user={user} />
         </TabsContent>
         <TabsContent value="badges">
           <BadgesTab user={user} />

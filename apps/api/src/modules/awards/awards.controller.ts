@@ -57,6 +57,15 @@ export class AwardsController {
     return { success: true };
   }
 
+  /// Награды игрока для карточки в админке (ADR-0142) — то же право, что у
+  /// выдачи и отзыва.
+  @Get('admin/users/:userId/awards')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('users.awards')
+  async listForUser(@Param('userId') userId: string) {
+    return this.awards.listForUser(userId);
+  }
+
   @Post('admin/users/:userId/awards/:awardId')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('users.awards')
