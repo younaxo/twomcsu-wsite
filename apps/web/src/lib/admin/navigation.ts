@@ -27,6 +27,14 @@ export type AdminIconName =
   | 'wrench'
   | 'award';
 
+/// Подраздел пункта (ADR-0139): связанные страницы под одним пунктом, чтобы
+/// навигация не разрасталась; в оболочке переключаются вкладками.
+export interface AdminNavSection {
+  href: string;
+  label: string;
+  requirement: PermissionRequirement;
+}
+
 export interface AdminNavItem {
   /// Абсолютный путь внутри /admin.
   href: string;
@@ -37,6 +45,9 @@ export interface AdminNavItem {
   exact?: boolean;
   /// Ключевые слова для командной палитры.
   keywords?: string[];
+  /// Подразделы: пункт активен на любой их странице и ведёт на первый
+  /// доступный пользователю (см. resolveNavItem).
+  sections?: AdminNavSection[];
 }
 
 export interface AdminNavGroup {
@@ -114,10 +125,14 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       {
         href: '/admin/achievements',
-        label: 'Достижения',
+        label: 'Достижения и награды',
         icon: 'award',
-        requirement: 'achievements.view',
+        requirement: ['achievements.view', 'awards.view'],
         keywords: ['ачивки', 'награды', 'пересчёт', 'прогресс'],
+        sections: [
+          { href: '/admin/achievements', label: 'Достижения', requirement: 'achievements.view' },
+          { href: '/admin/awards', label: 'Награды', requirement: 'awards.view' },
+        ],
       },
     ],
   },
@@ -284,11 +299,35 @@ export const ADMIN_ENTRY_REQUIREMENT: readonly PermissionKey[] = ADMIN_NAV.flatM
   }),
 );
 
+function matchesPath(href: string, pathname: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function isNavItemActive(item: AdminNavItem, pathname: string): boolean {
   if (item.exact) {
     return pathname === item.href;
   }
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  return (
+    matchesPath(item.href, pathname) ||
+    (item.sections?.some((section) => matchesPath(section.href, pathname)) ?? false)
+  );
+}
+
+export function isNavSectionActive(section: AdminNavSection, pathname: string): boolean {
+  return matchesPath(section.href, pathname);
+}
+
+/// Пункт под права пользователя: остаются только доступные подразделы, а
+/// ссылка ведёт на первый из них — без права на первый игрок попадёт на свой.
+export function resolveNavItem(
+  item: AdminNavItem,
+  can: (requirement: PermissionRequirement) => boolean,
+): AdminNavItem {
+  if (!item.sections) {
+    return item;
+  }
+  const sections = item.sections.filter((section) => can(section.requirement));
+  return { ...item, href: sections[0]?.href ?? item.href, sections };
 }
 
 /// Пункт навигации для текущего пути — для заголовка/крошек.
