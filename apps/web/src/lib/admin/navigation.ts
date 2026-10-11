@@ -24,7 +24,8 @@ export type AdminIconName =
   | 'newspaper'
   | 'receipt'
   | 'download'
-  | 'wrench';
+  | 'wrench'
+  | 'award';
 
 export interface AdminNavItem {
   /// Абсолютный путь внутри /admin.
@@ -104,6 +105,19 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         icon: 'scroll',
         requirement: 'reports.view',
         keywords: ['жалобы', 'тикеты', 'обжалования', 'поддержка'],
+      },
+    ],
+  },
+  {
+    id: 'gamification',
+    title: 'Геймификация',
+    items: [
+      {
+        href: '/admin/achievements',
+        label: 'Достижения',
+        icon: 'award',
+        requirement: 'achievements.view',
+        keywords: ['ачивки', 'награды', 'пересчёт', 'прогресс'],
       },
     ],
   },
