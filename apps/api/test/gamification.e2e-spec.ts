@@ -463,6 +463,26 @@ describe('Gamification (e2e)', () => {
     });
     expect(userAward?.grantedBy).toBe(admin.id);
 
+    // ADR-0142: награды игрока для карточки в админке — только с правом.
+    await request(app.getHttpServer())
+      .get(`/admin/users/${bob.id}/awards`)
+      .set('Authorization', auth(alice))
+      .expect(403);
+    const bobAwards = await request(app.getHttpServer())
+      .get(`/admin/users/${bob.id}/awards`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+    expect(bobAwards.body).toEqual([
+      expect.objectContaining({
+        awardId,
+        award: expect.objectContaining({ id: awardId, name: 'E2E Награда' }),
+      }),
+    ]);
+    await request(app.getHttpServer())
+      .get(`/admin/users/missing-user-id/awards`)
+      .set('Authorization', auth(admin))
+      .expect(404);
+
     await request(app.getHttpServer())
       .post(`/admin/users/${bob.id}/awards/${awardId}`)
       .set('Authorization', auth(admin))
