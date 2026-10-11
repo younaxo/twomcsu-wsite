@@ -26,8 +26,11 @@ export class NewsAdminService {
         : {}),
     };
     const [items, total] = await Promise.all([
+      // Текст новости (до 100 000 символов) в списке не нужен — только в
+      // карточке редактирования (ADR-0143).
       this.prisma.news.findMany({
         where,
+        omit: { content: true, contentHtml: true },
         include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -87,18 +90,31 @@ export class NewsAdminService {
     }
     const status = dto.status ?? NewsStatus.DRAFT;
     const { tags, ...rest } = dto;
-    return this.prisma.news.create({
-      data: {
-        ...rest,
-        status,
-        authorId,
-        contentHtml: escapeToHtml(dto.content),
-        scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : undefined,
-        publishedAt: status === NewsStatus.PUBLISHED ? new Date() : undefined,
-        tags: tags ? { create: tags.map((tag) => ({ tag })) } : undefined,
-      },
-      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
-    });
+    return this.prisma.news
+      .create({
+        data: {
+          ...rest,
+          status,
+          authorId,
+          contentHtml: escapeToHtml(dto.content),
+          scheduledFor: dto.scheduledFor
+            ? new Date(dto.scheduledFor)
+            : undefined,
+          publishedAt: status === NewsStatus.PUBLISHED ? new Date() : undefined,
+          tags: tags ? { create: tags.map((tag) => ({ tag })) } : undefined,
+        },
+        include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
+      })
+      .catch((error: unknown) => {
+        // Гонка двух создателей с одним slug — проверка выше прошла у обоих.
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException('Новость с таким slug уже существует');
+        }
+        throw error;
+      });
   }
 
   async update(id: string, dto: UpdateNewsDto) {

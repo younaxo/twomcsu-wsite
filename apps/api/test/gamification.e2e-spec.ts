@@ -570,6 +570,25 @@ describe('Gamification (e2e)', () => {
       .expect(201);
     const requestId = created.body.id;
 
+    // ADR-0141: ссылка без протокола получает https://, вторая ожидающая
+    // заявка на ту же платформу — 409.
+    const twitch = await request(app.getHttpServer())
+      .post('/users/me/media-request')
+      .set('Authorization', auth(alice))
+      .send({ mediaGroup: 'TWITCH', channelUrl: 'twitch.tv/e2e-test' })
+      .expect(201);
+    expect(twitch.body.channelUrl).toBe('https://twitch.tv/e2e-test');
+    await request(app.getHttpServer())
+      .post('/users/me/media-request')
+      .set('Authorization', auth(alice))
+      .send({ mediaGroup: 'TWITCH', channelUrl: 'https://twitch.tv/e2e-other' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .post('/users/me/media-request')
+      .set('Authorization', auth(alice))
+      .send({ mediaGroup: 'TIKTOK', channelUrl: 'ftp://example.com/e2e' })
+      .expect(400);
+
     const pending = await request(app.getHttpServer())
       .get('/admin/media-requests')
       .set('Authorization', auth(admin))
@@ -583,6 +602,12 @@ describe('Gamification (e2e)', () => {
       .set('Authorization', auth(admin))
       .send({ status: 'APPROVED' })
       .expect(200);
+    // Повторное решение по рассмотренной заявке — 409 (ADR-0141).
+    await request(app.getHttpServer())
+      .patch(`/admin/media-requests/${requestId}`)
+      .set('Authorization', auth(admin))
+      .send({ status: 'REJECTED' })
+      .expect(409);
 
     const mine = await request(app.getHttpServer())
       .get('/users/me/media-requests')

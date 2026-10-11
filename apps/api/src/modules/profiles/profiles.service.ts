@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -694,7 +695,23 @@ export class ProfilesService {
     if (existing?.isApproved) {
       throw new ForbiddenException('Бейдж для этой платформы уже подтверждён');
     }
-    return this.prisma.mediaBadgeRequest.create({ data: { userId, ...dto } });
+    const channelUrl = normalizeChannelUrl(dto.channelUrl);
+    // Одна ожидающая заявка на платформу (ADR-0141): под замком, чтобы два
+    // одновременных запроса не создали дубль.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`media-request:${userId}`}))`;
+      const pending = await tx.mediaBadgeRequest.count({
+        where: { userId, mediaGroup: dto.mediaGroup, status: 'PENDING' },
+      });
+      if (pending > 0) {
+        throw new ConflictException(
+          'Заявка для этой платформы уже на рассмотрении',
+        );
+      }
+      return tx.mediaBadgeRequest.create({
+        data: { userId, ...dto, channelUrl },
+      });
+    });
   }
 
   async listMyMediaRequests(userId: string) {
@@ -703,4 +720,11 @@ export class ProfilesService {
       orderBy: { createdAt: 'desc' },
     });
   }
+}
+
+/// Ссылка на канал без протокола («youtube.com/@name») сохраняется с https://
+/// — так её безопасно открыть из админки и профиля (ADR-0141).
+export function normalizeChannelUrl(raw: string): string {
+  const url = raw.trim();
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
 }

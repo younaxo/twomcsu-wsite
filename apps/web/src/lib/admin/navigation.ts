@@ -81,8 +81,16 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/users',
         label: 'Пользователи',
         icon: 'users',
-        requirement: 'users.view',
-        keywords: ['игроки', 'аккаунты', 'бан'],
+        requirement: ['users.view', 'media_requests.view'],
+        keywords: ['игроки', 'аккаунты', 'бан', 'медиа', 'ютуб', 'стример'],
+        sections: [
+          { href: '/admin/users', label: 'Пользователи', requirement: 'users.view' },
+          {
+            href: '/admin/media-requests',
+            label: 'Медиа-заявки',
+            requirement: 'media_requests.view',
+          },
+        ],
       },
       {
         href: '/admin/roles',
@@ -121,8 +129,12 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/content',
         label: 'Контент',
         icon: 'newspaper',
-        requirement: 'content.view',
-        keywords: ['новости', 'формы', 'жалобы'],
+        requirement: ['content.view', 'news.view'],
+        keywords: ['новости', 'формы', 'жалобы', 'статьи', 'патч-ноуты'],
+        sections: [
+          { href: '/admin/content', label: 'Обзор', requirement: 'content.view' },
+          { href: '/admin/news', label: 'Новости', requirement: 'news.view' },
+        ],
       },
       {
         href: '/admin/reports',
