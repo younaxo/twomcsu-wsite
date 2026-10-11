@@ -19,10 +19,13 @@ export class CreateAwardDto {
   description?: string;
 
   @IsString()
+  @Length(1, 500)
   iconUrl!: string;
 
+  /// Цвет рамки — только #RRGGBB (ADR-0139).
   @IsOptional()
   @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Цвет — в формате #RRGGBB' })
   color?: string;
 
   @IsOptional()

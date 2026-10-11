@@ -60,6 +60,8 @@ import { Tooltip } from '@/components/ui/tooltip';
 import {
   ADMIN_NAV,
   isNavItemActive,
+  isNavSectionActive,
+  resolveNavItem,
   type AdminIconName,
   type AdminNavGroup,
   type AdminNavItem,
@@ -98,7 +100,9 @@ function useVisibleNav(): AdminNavGroup[] {
     () =>
       ADMIN_NAV.map((group) => ({
         ...group,
-        items: group.items.filter((item) => can(item.requirement)),
+        items: group.items
+          .filter((item) => can(item.requirement))
+          .map((item) => resolveNavItem(item, can)),
       })).filter((group) => group.items.length > 0),
     // `effective` — реальная зависимость (can пересоздаётся вместе с ним).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,6 +348,19 @@ function Topbar({
 /* Командная палитра: только разделы, доступные пользователю           */
 /* ------------------------------------------------------------------ */
 
+/// В палитре подразделы — отдельными командами: «Награды» ищется по имени.
+function paletteEntries(item: AdminNavItem): AdminNavItem[] {
+  if (!item.sections?.length) {
+    return [item];
+  }
+  return item.sections.map((section) => ({
+    ...item,
+    href: section.href,
+    label: section.label,
+    keywords: [item.label, ...(item.keywords ?? [])],
+  }));
+}
+
 function AdminCommandPalette({
   groups,
   open,
@@ -365,7 +382,7 @@ function AdminCommandPalette({
         <CommandEmpty>Ничего не найдено</CommandEmpty>
         {groups.map((group) => (
           <CommandGroup key={group.id} heading={group.title}>
-            {group.items.map((item) => {
+            {group.items.flatMap(paletteEntries).map((item) => {
               const Icon = ICONS[item.icon];
               return (
                 <CommandItem
@@ -383,6 +400,43 @@ function AdminCommandPalette({
         ))}
       </CommandList>
     </CommandDialog>
+  );
+}
+
+/// Вкладки подразделов активного пункта (ADR-0139) — только если доступно
+/// больше одного.
+export function SectionTabs({ groups }: { groups: AdminNavGroup[] }) {
+  const pathname = usePathname();
+  const item = groups
+    .flatMap((group) => group.items)
+    .find((candidate) => isNavItemActive(candidate, pathname));
+  if (!item?.sections || item.sections.length < 2) {
+    return null;
+  }
+  return (
+    <nav
+      aria-label={item.label}
+      className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-border scrollbar-thin"
+    >
+      {item.sections.map((section) => {
+        const active = isNavSectionActive(section, pathname);
+        return (
+          <Link
+            key={section.href}
+            href={section.href}
+            aria-current={active ? 'page' : undefined}
+            className={cn(
+              'inline-flex h-control shrink-0 items-center border-b-2 px-3 text-sm font-medium transition-colors duration-fast',
+              active
+                ? 'border-primary text-foreground'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {section.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -414,6 +468,7 @@ export function AdminShell({ children, topbar }: AdminShellProps) {
           {topbar}
         </Topbar>
         <main id="admin-main" className="flex flex-1 flex-col gap-6 px-3 pb-8 pt-5 md:gap-8">
+          <SectionTabs groups={groups} />
           {children}
         </main>
       </div>
