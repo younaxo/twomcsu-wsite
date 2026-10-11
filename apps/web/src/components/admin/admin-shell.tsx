@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Award,
   Database,
   Download,
   Key,
@@ -86,6 +87,7 @@ const ICONS: Record<AdminIconName, LucideIcon> = {
   receipt: Receipt,
   download: Download,
   wrench: Wrench,
+  award: Award,
 };
 
 /// Навигация, отфильтрованная по правам текущего пользователя. Группы без

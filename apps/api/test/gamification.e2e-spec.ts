@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -229,6 +230,42 @@ describe('Gamification (e2e)', () => {
       })
       .expect(201);
     manualAchievementId = manualCreated.body.id;
+  });
+
+  it('admin: значок-награда — только существующий тип, null снимает (ADR-0138)', async () => {
+    const url = `/admin/achievements/${manualAchievementId}`;
+    await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: 'NOT_A_BADGE' })
+      .expect(400);
+    const set = await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: 'VERIFIED', rewardTitle: 'Заслуга' })
+      .expect(200);
+    expect(set.body.rewardBadgeType).toBe('VERIFIED');
+    const cleared = await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: null, rewardTitle: null })
+      .expect(200);
+    expect(cleared.body.rewardBadgeType).toBeNull();
+    expect(cleared.body.rewardTitle).toBeNull();
+  });
+
+  it('check-all-users: параллельный второй запуск получает 409 (ADR-0138)', async () => {
+    const redis = app.get(RedisService);
+    const lockKey = 'achievements:check-all:lock';
+    await redis.client.set(lockKey, `other-run-${unique}`, 'EX', 60);
+    try {
+      await request(app.getHttpServer())
+        .post('/admin/achievements/check-all-users')
+        .set('Authorization', auth(admin))
+        .expect(409);
+    } finally {
+      await redis.client.del(lockKey);
+    }
   });
 
   it('публичный список: секретное достижение скрыто, пока не разблокировано', async () => {
