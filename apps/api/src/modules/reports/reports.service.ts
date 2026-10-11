@@ -8,6 +8,7 @@ import { Report, ReportStatus, ReportType } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { CreateDonationProblemDto } from './dto/create-donation-problem.dto';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -110,7 +111,14 @@ export class ReportsService {
           include: { attachments: true },
           orderBy: { createdAt: 'asc' },
         },
-        ...(isStaff ? { moderatorNotes: true } : {}),
+        // Персоналу — автор и исполнитель (публичные поля, ADR-0128) и заметки.
+        ...(isStaff
+          ? {
+              moderatorNotes: true,
+              author: { select: PUBLIC_USER_SELECT },
+              assignedTo: { select: PUBLIC_USER_SELECT },
+            }
+          : {}),
       },
     });
     if (!report) {

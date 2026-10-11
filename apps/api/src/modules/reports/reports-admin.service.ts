@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ReportType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { ArchiveReportDto } from './dto/archive-report.dto';
 import { BanReportsDto } from './dto/ban-reports.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
@@ -33,7 +34,7 @@ export class ReportsAdminService {
     const [items, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-        include: { author: true, targets: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, targets: true },
         orderBy: { archivedAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -134,7 +135,7 @@ export class ReportsAdminService {
     const [items, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
-        include: { author: true },
+        include: { author: { select: PUBLIC_USER_SELECT } },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
