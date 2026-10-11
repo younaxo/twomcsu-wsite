@@ -362,6 +362,23 @@ describe('Forms (e2e)', () => {
       .set('Authorization', auth(admin))
       .expect(200);
     expect(detail.body.responsesCount).toBe(1);
+
+    // ADR-0152: с ответами поля заменить нельзя — ответы удалились бы каскадом;
+    // остальные настройки править можно.
+    await request(app.getHttpServer())
+      .patch(`/admin/forms/${formId}`)
+      .set('Authorization', auth(admin))
+      .send({ fields: [{ type: 'TEXT', label: 'Новое поле' }] })
+      .expect(409);
+    await request(app.getHttpServer())
+      .patch(`/admin/forms/${formId}`)
+      .set('Authorization', auth(admin))
+      .send({ thankYouMessage: 'Спасибо!' })
+      .expect(200);
+    const answers = await prisma.formFieldAnswer.count({
+      where: { response: { formId } },
+    });
+    expect(answers).toBeGreaterThan(0);
   });
 
   it('submit: onePerUser блокирует повторную отправку тем же пользователем', async () => {

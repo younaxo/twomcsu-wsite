@@ -27,7 +27,7 @@ import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDate } from '@/lib/format';
 
 /// Формы в админке (срез 7.4, ADR-0149): список с фильтром по статусу и
-/// поиском; публикация, закрытие, копия и удаление — по своим правам
+/// поиском; публикация, закрытие, копия и архивация — по своим правам
 /// `forms.*`. Ответы и статистика — на странице формы.
 
 function FormsList() {
@@ -110,7 +110,7 @@ function FormsList() {
                   </span>
                 </div>
                 <span className="flex flex-wrap gap-1">
-                  {can('forms.publish') && form.status !== 'PUBLISHED' ? (
+                  {can('forms.publish') && (form.status === 'DRAFT' || form.status === 'CLOSED') ? (
                     <Button
                       size="sm"
                       onClick={() =>
@@ -151,9 +151,9 @@ function FormsList() {
                       Копия
                     </Button>
                   ) : null}
-                  {can('forms.delete') ? (
+                  {can('forms.delete') && form.status !== 'ARCHIVED' ? (
                     <Button size="sm" variant="ghost" onClick={() => setDeleting(form)}>
-                      Удалить
+                      В архив
                     </Button>
                   ) : null}
                 </span>
@@ -168,15 +168,15 @@ function FormsList() {
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
-        title={`Удалить форму «${deleting?.title ?? ''}»?`}
-        description={`Вместе с ней удалятся все ответы (${deleting?._count.responses ?? 0}). Действие необратимо.`}
-        confirmLabel="Удалить"
+        title={`Убрать форму «${deleting?.title ?? ''}» в архив?`}
+        description={`Форма перестанет принимать ответы и пропадёт с сайта. Ответы (${deleting?._count.responses ?? 0}) сохранятся.`}
+        confirmLabel="В архив"
         destructive
         loading={remove.isPending}
         onConfirm={() =>
           remove.mutate(deleting!.id, {
             onSuccess: () => {
-              toast.success('Форма удалена');
+              toast.success('Форма в архиве');
               setDeleting(null);
             },
             onError,
