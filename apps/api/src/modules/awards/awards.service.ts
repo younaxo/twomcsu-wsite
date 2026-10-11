@@ -93,6 +93,27 @@ export class AwardsService {
     }
   }
 
+  async listForUser(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    return this.prisma.userAward.findMany({
+      where: { userId },
+      orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
+      select: {
+        awardId: true,
+        grantedAt: true,
+        award: {
+          select: { id: true, name: true, iconUrl: true, rarity: true },
+        },
+      },
+    });
+  }
+
   async revoke(userId: string, awardId: string): Promise<void> {
     const existing = await this.prisma.userAward.findUnique({
       where: { userId_awardId: { userId, awardId } },
