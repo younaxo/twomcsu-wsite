@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { canViewProfile } from '../profiles/visibility';
 import { AchievementProgressService } from './achievement-progress.service';
 import { CreateAchievementDto } from './dto/create-achievement.dto';
 import { ListAchievementsQueryDto } from './dto/list-achievements-query.dto';
@@ -173,31 +174,26 @@ export class AchievementsService {
 
   async getUserAchievementsByUsername(
     username: string,
-    viewerIsOwner: boolean,
+    viewerId: string | null,
   ) {
     const user = await this.prisma.user.findFirst({
       where: { username: { equals: username, mode: 'insensitive' } },
     });
-    if (!user) {
+    // Видимость — как у профиля (ADR-0129, ADR-0111): друзья видят профиль
+    // «для друзей», блокировка в любую сторону скрывает.
+    if (!user || !(await canViewProfile(this.prisma, user, viewerId))) {
       throw new NotFoundException('Пользователь не найден');
     }
-    // Закрытый профиль не раскрывает и достижения (как GET /users/:u/public).
-    if (
-      !viewerIsOwner &&
-      (user.profileVisibility === 'NOBODY' ||
-        user.profileVisibility === 'FRIENDS_ONLY')
-    ) {
-      throw new NotFoundException('Пользователь не найден');
-    }
-    return this.buildUserAchievementsResponse(user.id, viewerIsOwner);
+    return this.buildUserAchievementsResponse(user.id, viewerId === user.id);
   }
 
   private async buildUserAchievementsResponse(
     userId: string,
     includeSecretProgress: boolean,
   ) {
+    // Выключенные администрацией достижения не показываются (ADR-0129).
     const userAchievements = await this.prisma.userAchievement.findMany({
-      where: { userId },
+      where: { userId, achievement: { isActive: true } },
       include: { achievement: true },
       orderBy: [{ isCompleted: 'desc' }, { updatedAt: 'desc' }],
     });

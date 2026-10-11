@@ -303,6 +303,31 @@ describe('Gamification (e2e)', () => {
       .expect(200);
   });
 
+  it('достижения игрока (ADR-0129): профиль «для друзей» — другу видно, постороннему и гостю — 404', async () => {
+    await prisma.user.update({
+      where: { id: alice.id },
+      data: { profileVisibility: 'FRIENDS_ONLY' },
+    });
+    try {
+      const path = `/users/${alice.username}/achievements`;
+      const forFriend = await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', auth(bob))
+        .expect(200);
+      expect(forFriend.body.completedCount).toBeGreaterThanOrEqual(1);
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', auth(admin))
+        .expect(404);
+      await request(app.getHttpServer()).get(path).expect(404);
+    } finally {
+      await prisma.user.update({
+        where: { id: alice.id },
+        data: { profileVisibility: 'EVERYONE' },
+      });
+    }
+  });
+
   it('модератор: ручная выдача секретного достижения делает его видимым', async () => {
     await request(app.getHttpServer())
       .post(
