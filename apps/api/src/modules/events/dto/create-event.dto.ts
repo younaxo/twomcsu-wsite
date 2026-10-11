@@ -10,6 +10,7 @@ import {
   Matches,
   Min,
 } from 'class-validator';
+import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from '../../../common/site-image';
 
 export class CreateEventDto {
   @IsString()
@@ -28,8 +29,11 @@ export class CreateEventDto {
   @Length(1, 10_000)
   description!: string;
 
+  /// Только CDN проекта или путь сайта (ADR-0148): обложку выводит next/image.
   @IsOptional()
   @IsString()
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
   coverImage?: string;
 
   @IsEnum(CalendarEventCategory)

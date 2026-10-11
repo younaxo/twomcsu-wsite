@@ -49,19 +49,30 @@ export class EventsAdminService {
     if (existing) {
       throw new ConflictException('Событие с таким slug уже существует');
     }
-    return this.prisma.calendarEvent.create({
-      data: {
-        ...dto,
-        createdById,
-        descriptionHtml: escapeToHtml(dto.description),
-        startsAt: new Date(dto.startsAt),
-        endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
-        registrationDeadline: dto.registrationDeadline
-          ? new Date(dto.registrationDeadline)
-          : undefined,
-      },
-      include: { createdBy: { select: PUBLIC_USER_SELECT } },
-    });
+    return this.prisma.calendarEvent
+      .create({
+        data: {
+          ...dto,
+          createdById,
+          descriptionHtml: escapeToHtml(dto.description),
+          startsAt: new Date(dto.startsAt),
+          endsAt: dto.endsAt ? new Date(dto.endsAt) : undefined,
+          registrationDeadline: dto.registrationDeadline
+            ? new Date(dto.registrationDeadline)
+            : undefined,
+        },
+        include: { createdBy: { select: PUBLIC_USER_SELECT } },
+      })
+      .catch((error: unknown) => {
+        // Гонка двух создателей с одним slug (ADR-0148).
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException('Событие с таким slug уже существует');
+        }
+        throw error;
+      });
   }
 
   async update(id: string, dto: UpdateEventDto) {
