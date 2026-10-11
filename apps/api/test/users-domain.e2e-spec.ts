@@ -244,6 +244,34 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
       deptA.body.id,
     ]);
 
+    // ADR-0140: дубль slug — 409, счётчик участников, null очищает.
+    await request(app.getHttpServer())
+      .post('/admin/departments')
+      .set('Authorization', auth)
+      .send({ name: `Dept A2 ${unique}`, slug: `dept-a-${unique}` })
+      .expect(409);
+    const departments = await request(app.getHttpServer())
+      .get('/admin/departments')
+      .set('Authorization', auth)
+      .expect(200);
+    const listedA = departments.body.find(
+      (d: { id: string }) => d.id === deptA.body.id,
+    );
+    expect(listedA.membersCount).toBe(1);
+    expect(listedA).not.toHaveProperty('_count');
+    await request(app.getHttpServer())
+      .patch(`/admin/departments/${deptA.body.id}`)
+      .set('Authorization', auth)
+      .send({ color: '#22c55e', description: 'Тест' })
+      .expect(200);
+    const clearedDept = await request(app.getHttpServer())
+      .patch(`/admin/departments/${deptA.body.id}`)
+      .set('Authorization', auth)
+      .send({ color: null, description: null })
+      .expect(200);
+    expect(clearedDept.body.color).toBeNull();
+    expect(clearedDept.body.description).toBeNull();
+
     await request(app.getHttpServer())
       .delete(`/admin/users/${targetUserId}/departments/${deptA.body.id}`)
       .set('Authorization', auth)
@@ -288,6 +316,22 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
     });
     expect(assignments).toHaveLength(1);
     expect(assignments[0].customPositionId).toBe(posB.body.id);
+
+    // ADR-0140: дубль slug — 409, счётчик обладателей.
+    await request(app.getHttpServer())
+      .post('/admin/custom-positions')
+      .set('Authorization', auth)
+      .send({ name: `Custom B2 ${unique}`, slug: `custom-b-${unique}` })
+      .expect(409);
+    const customList = await request(app.getHttpServer())
+      .get('/admin/custom-positions')
+      .set('Authorization', auth)
+      .expect(200);
+    const listedB = customList.body.find(
+      (p: { id: string }) => p.id === posB.body.id,
+    );
+    expect(listedB.usersCount).toBe(1);
+    expect(listedB).not.toHaveProperty('_count');
 
     await request(app.getHttpServer())
       .delete(`/admin/users/${targetUserId}/custom-position`)

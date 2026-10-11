@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -9,6 +10,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -25,10 +27,16 @@ export class CustomPositionsController {
 
   @Get()
   @RequirePermissions('custom_positions.view')
+  /// Со счётчиком обладателей (ADR-0140).
   async list() {
-    return this.prisma.customPosition.findMany({
+    const positions = await this.prisma.customPosition.findMany({
       orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { users: true } } },
     });
+    return positions.map(({ _count, ...position }) => ({
+      ...position,
+      usersCount: _count.users,
+    }));
   }
 
   @Post()
@@ -37,9 +45,19 @@ export class CustomPositionsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Body() dto: CreateCustomPositionDto,
   ) {
-    return this.prisma.customPosition.create({
-      data: { ...dto, createdBy: actor.id },
-    });
+    try {
+      return await this.prisma.customPosition.create({
+        data: { ...dto, createdBy: actor.id },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Должность с таким slug уже есть');
+      }
+      throw error;
+    }
   }
 
   @Patch(':id')
