@@ -134,6 +134,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'news.view',
           'events.view',
           'topics.view',
+          'forms.view',
           'voting.sites.view',
         ],
         keywords: [
@@ -151,6 +152,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           { href: '/admin/news', label: 'Новости', requirement: 'news.view' },
           { href: '/admin/events', label: 'События', requirement: 'events.view' },
           { href: '/admin/topics', label: 'Темы', requirement: 'topics.view' },
+          { href: '/admin/forms', label: 'Формы', requirement: 'forms.view' },
           { href: '/admin/voting', label: 'Голосование', requirement: 'voting.sites.view' },
         ],
       },
