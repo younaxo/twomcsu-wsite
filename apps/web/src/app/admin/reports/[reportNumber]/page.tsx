@@ -77,6 +77,7 @@ function Actions({ report }: { report: StaffReportDetails }) {
   const actions = useStaffReportActions(report.reportNumber);
   const [verdict, setVerdict] = useState(report.verdict ?? '');
   const [lockReason, setLockReason] = useState('');
+  const [banReason, setBanReason] = useState('');
   return (
     <aside
       className="flex flex-col gap-4 rounded-xl bg-surface p-4 shadow-sm"
@@ -180,6 +181,52 @@ function Actions({ report }: { report: StaffReportDetails }) {
           </div>
         )
       ) : null}
+      {can(report.isArchived ? 'reports.unarchive' : 'reports.archive') ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={actions.archive.isPending}
+          onClick={() =>
+            actions.archive.mutate(!report.isArchived, {
+              onSuccess: () =>
+                toast.success(report.isArchived ? 'Возвращено из архива' : 'Перенесено в архив'),
+              onError,
+            })
+          }
+        >
+          {report.isArchived ? 'Вернуть из архива' : 'В архив'}
+        </Button>
+      ) : null}
+      {can('reports.ban') ? (
+        <div className="flex flex-col gap-1.5">
+          <Input
+            aria-label="Причина запрета обращений"
+            placeholder="Причина запрета (обязательно)"
+            value={banReason}
+            onChange={(event) => setBanReason(event.target.value)}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!banReason.trim()}
+            loading={actions.banAuthor.isPending}
+            onClick={() =>
+              actions.banAuthor.mutate(
+                { userId: report.authorId, reason: banReason.trim() },
+                {
+                  onSuccess: () => {
+                    setBanReason('');
+                    toast.success('Автору запрещены новые обращения');
+                  },
+                  onError,
+                },
+              )
+            }
+          >
+            Запретить автору обращения
+          </Button>
+        </div>
+      ) : null}
     </aside>
   );
 }
@@ -270,6 +317,33 @@ function Card({ number }: { number: string }) {
                   >
                     {message.isDeleted ? `Удалено: ${message.content}` : message.content}
                   </p>
+                  {!message.isDeleted && !message.isSystem ? (
+                    <div className="mt-1 flex gap-1">
+                      {can(message.isPinned ? 'reports.messages.unpin' : 'reports.messages.pin') ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            actions.pinMessage.mutate(
+                              { messageId: message.id, pinned: !message.isPinned },
+                              { onError },
+                            )
+                          }
+                        >
+                          {message.isPinned ? 'Открепить' : 'Закрепить'}
+                        </Button>
+                      ) : null}
+                      {can('reports.messages') ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => actions.hideMessage.mutate(message.id, { onError })}
+                        >
+                          Скрыть
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>

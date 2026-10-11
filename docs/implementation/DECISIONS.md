@@ -2993,3 +2993,16 @@ GA/Метрика — в 8.5, meta — в 8.4.
 
 **Consequences.** Витрина в `/settings/appearance`, витрина на профиле и тост
 `ACHIEVEMENT_UNLOCKED` — частью 2. Ссылка «Достижения» — в футере и в sitemap.
+
+## ADR-0135 — Обращения в админке, часть 2: архив, закрепы, скрытие, запрет обращений
+
+**Context.** Продолжение ADR-0128: архив, report-ban, закреп и удаление сообщений были только в
+API (`/admin/reports/*`, `/moderation/reports/:n/messages/*`).
+
+**Decision.** Очередь — вкладки «Очередь / Архив» (`reports.archived.view`). Карточка: «В архив /
+Вернуть из архива» (`reports.archive` / `reports.unarchive`), «Запретить автору обращения» с
+обязательной причиной (`reports.ban`), у сообщений — «Закрепить / Открепить»
+(`reports.messages.pin/unpin`) и «Скрыть» (мягкое удаление, `reports.messages`).
+
+**Consequences.** Срок запрета обращений, снятие запрета и удаление обращения целиком
+(`reports.delete`) — по запросу; «Проблемы с донатом» — после hard gate доната.

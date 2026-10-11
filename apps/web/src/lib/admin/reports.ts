@@ -58,6 +58,8 @@ export interface StaffReportNote {
 }
 
 export interface StaffReportDetails extends StaffReportSummary {
+  authorId: string;
+  isArchived: boolean;
   verdict: string | null;
   lockedReason: string | null;
   contactEmail: string | null;
@@ -92,6 +94,19 @@ export function useStaffReports(filter: StaffReportsFilter) {
           },
         },
       ),
+  });
+}
+
+/// Архив (срез 7.3, часть 2): `reports.archived.view`.
+export function useArchivedReports(page: number, enabled: boolean) {
+  return useQuery({
+    queryKey: [...staffReportKeys.all, 'archived', page] as const,
+    queryFn: () =>
+      api.get<{ items: StaffReportSummary[]; total: number; page: number; limit: number }>(
+        '/admin/reports/archived',
+        { query: { page, limit: 30 } },
+      ),
+    enabled,
   });
 }
 
@@ -132,5 +147,41 @@ export function useStaffReportActions(number: string) {
     mutationFn: (body: { locked: boolean; reason?: string }) => api.post(`${base}/lock`, body),
     onSuccess,
   });
-  return { assign, status, verdict, message, note, lock };
+  // Часть 2: скрытие и закреп сообщений, архив, запрет обращений автору.
+  const hideMessage = useMutation({
+    mutationFn: (messageId: string) =>
+      api.delete(`${base}/messages/${encodeURIComponent(messageId)}`),
+    onSuccess,
+  });
+  const pinMessage = useMutation({
+    mutationFn: ({ messageId, pinned }: { messageId: string; pinned: boolean }) =>
+      api.patch(
+        `${base}/messages/${encodeURIComponent(messageId)}/${pinned ? 'pin' : 'unpin'}`,
+        {},
+      ),
+    onSuccess,
+  });
+  const admin = `/admin/reports/${encodeURIComponent(number)}`;
+  const archive = useMutation({
+    mutationFn: (archived: boolean) =>
+      api.post(`${admin}/${archived ? 'archive' : 'unarchive'}`, {}),
+    onSuccess,
+  });
+  const banAuthor = useMutation({
+    mutationFn: ({ userId, reason }: { userId: string; reason: string }) =>
+      api.post(`/admin/reports/ban/${encodeURIComponent(userId)}`, { reason }),
+    onSuccess,
+  });
+  return {
+    assign,
+    status,
+    verdict,
+    message,
+    note,
+    lock,
+    hideMessage,
+    pinMessage,
+    archive,
+    banAuthor,
+  };
 }
