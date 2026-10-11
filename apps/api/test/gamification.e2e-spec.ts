@@ -343,6 +343,12 @@ describe('Gamification (e2e)', () => {
     expect(
       list.body.some((a: { slug: string }) => a.slug === secretAchievementSlug),
     ).toBe(true);
+    // ADR-0137: игрок получает уведомление со ссылкой на карточку.
+    const notification = await prisma.notification.findFirst({
+      where: { userId: bob.id, type: 'ACHIEVEMENT_UNLOCKED' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification?.link).toBe(`/achievements/${secretAchievementSlug}`);
 
     await request(app.getHttpServer())
       .delete(`/moderation/users/${bob.id}/achievements/${secretAchievementId}`)
