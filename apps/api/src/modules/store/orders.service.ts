@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { maskNickname } from '../../common/privacy.util';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
@@ -393,7 +394,11 @@ export class OrdersService {
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
-        include: { ...ORDER_INCLUDE, user: true },
+        // Финансам — публичные поля покупателя и email (ADR-0133), без IP и прочего.
+        include: {
+          ...ORDER_INCLUDE,
+          user: { select: { ...PUBLIC_USER_SELECT, email: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,

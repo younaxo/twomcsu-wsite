@@ -7,6 +7,7 @@ import { CalendarEventStatus, Prisma } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CreateEventDto } from './dto/create-event.dto';
 import { ListAdminEventsQueryDto } from './dto/list-admin-events-query.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -29,7 +30,7 @@ export class EventsAdminService {
       this.prisma.calendarEvent.findMany({
         where,
         include: {
-          createdBy: true,
+          createdBy: { select: PUBLIC_USER_SELECT },
           _count: { select: { participants: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -59,7 +60,7 @@ export class EventsAdminService {
           ? new Date(dto.registrationDeadline)
           : undefined,
       },
-      include: { createdBy: true },
+      include: { createdBy: { select: PUBLIC_USER_SELECT } },
     });
   }
 
@@ -84,7 +85,7 @@ export class EventsAdminService {
           ? { registrationDeadline: new Date(registrationDeadline) }
           : {}),
       },
-      include: { createdBy: true },
+      include: { createdBy: { select: PUBLIC_USER_SELECT } },
     });
 
     const scheduleChanged =
