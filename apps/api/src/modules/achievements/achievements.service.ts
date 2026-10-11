@@ -6,7 +6,9 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { notifyAchievementUnlocked } from './achievement-notify';
 import { canViewProfile } from '../profiles/visibility';
 import { RedisService } from '../redis/redis.service';
 import { AchievementProgressService } from './achievement-progress.service';
@@ -30,6 +32,7 @@ export class AchievementsService {
     private readonly prisma: PrismaService,
     private readonly progress: AchievementProgressService,
     private readonly redis: RedisService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /// Публичный список — не-секретные достижения всегда, секретные
@@ -324,6 +327,7 @@ export class AchievementsService {
       where: { id: achievementId },
       data: { unlockedCount: { increment: existing?.isCompleted ? 0 : 1 } },
     });
+    await notifyAchievementUnlocked(this.notifications, userId, achievement);
   }
 
   async revokeAchievement(
