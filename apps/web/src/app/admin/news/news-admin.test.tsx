@@ -115,13 +115,13 @@ describe('Новости в админке (срез 7.4)', () => {
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/admin/news/n1'));
   });
 
-  it('создание: проверка slug и обложки, без «Запланирована», переход в редактор', async () => {
+  it('создание: проверка slug и обложки, переход в редактор', async () => {
     const user = userEvent.setup();
     render(<NewsEditor article={null} />, { wrapper: Providers });
     const statuses = within(screen.getByLabelText('Статус'))
       .getAllByRole('option')
       .map((option) => option.textContent);
-    expect(statuses).toEqual(['Черновик', 'Опубликована', 'В архиве']);
+    expect(statuses).toEqual(['Черновик', 'Запланирована', 'Опубликована', 'В архиве']);
     await user.type(screen.getByLabelText(/Заголовок/), 'Ивент');
     await user.type(screen.getByLabelText(/Slug/), 'Big Event');
     await user.type(screen.getByLabelText(/Текст \(Markdown\)/), 'Приходите');
@@ -170,5 +170,18 @@ describe('Новости в админке (срез 7.4)', () => {
         expect.objectContaining({ coverImage: null, tags: ['patch'], excerpt: 'Коротко' }),
       ),
     );
+  });
+
+  it('«Запланирована» без даты в будущем не сохраняется (ADR-0146)', async () => {
+    const user = userEvent.setup();
+    render(<NewsEditor article={null} />, { wrapper: Providers });
+    await user.type(screen.getByLabelText(/Заголовок/), 'Анонс');
+    await user.type(screen.getByLabelText(/Slug/), 'anons');
+    await user.type(screen.getByLabelText(/Текст \(Markdown\)/), 'Скоро');
+    await user.selectOptions(screen.getByLabelText('Статус'), 'SCHEDULED');
+    expect(screen.getByText(/Новость выйдет сама в это время/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Создать' }));
+    expect(screen.getByText('Укажите дату и время публикации в будущем')).toBeInTheDocument();
+    expect(mocks.post).not.toHaveBeenCalled();
   });
 });
