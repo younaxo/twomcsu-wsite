@@ -529,6 +529,14 @@ describe('Chat (e2e)', () => {
         (m: { userId: string }) => m.userId === alice.id,
       );
       expect(muteRecord).toBeDefined();
+      // ADR-0132: модератору — только публичные поля пользователя.
+      expect(Object.keys(muteRecord.user).sort()).toEqual([
+        'avatar',
+        'id',
+        'tag',
+        'username',
+      ]);
+      expect(JSON.stringify(listRes.body)).not.toContain(alice.email);
 
       await request(app.getHttpServer())
         .delete(`/admin/chat/mutes/${muteRecord.id}`)
@@ -572,6 +580,7 @@ describe('Chat (e2e)', () => {
         (b: { userId: string }) => b.userId === carol.id,
       );
       expect(banRecord).toBeDefined();
+      expect(banRecord.user.email).toBeUndefined();
 
       await expect(connectSocket(carol)).rejects.toBeDefined();
 
