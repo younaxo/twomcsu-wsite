@@ -125,6 +125,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     title: 'Коммуникации',
     items: [
       {
+        href: '/admin/chat',
+        label: 'Чат',
+        icon: 'scroll',
+        requirement: ['chat.mutes.view', 'chat.bans.view', 'chat.messages.search.view'],
+        keywords: ['муты', 'баны', 'модерация', 'сообщения', 'поиск'],
+      },
+      {
         href: '/admin/communications',
         label: 'Сообщения',
         icon: 'mail',
