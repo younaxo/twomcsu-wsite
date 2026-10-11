@@ -129,7 +129,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/content',
         label: 'Контент',
         icon: 'newspaper',
-        requirement: ['content.view', 'news.view', 'topics.view', 'voting.sites.view'],
+        requirement: [
+          'content.view',
+          'news.view',
+          'events.view',
+          'topics.view',
+          'voting.sites.view',
+        ],
         keywords: [
           'новости',
           'формы',
@@ -143,6 +149,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         sections: [
           { href: '/admin/content', label: 'Обзор', requirement: 'content.view' },
           { href: '/admin/news', label: 'Новости', requirement: 'news.view' },
+          { href: '/admin/events', label: 'События', requirement: 'events.view' },
           { href: '/admin/topics', label: 'Темы', requirement: 'topics.view' },
           { href: '/admin/voting', label: 'Голосование', requirement: 'voting.sites.view' },
         ],
