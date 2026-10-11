@@ -9,7 +9,9 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
 } from 'class-validator';
+import { SITE_IMAGE_MESSAGE, SITE_IMAGE_URL } from './site-image';
 
 export class UpdateNewsDto {
   @IsOptional()
@@ -27,9 +29,12 @@ export class UpdateNewsDto {
   @Length(1, 100_000)
   content?: string;
 
+  /// null убирает обложку.
   @IsOptional()
   @IsString()
-  coverImage?: string;
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
+  coverImage?: string | null;
 
   @IsOptional()
   @IsEnum(NewsCategory)
@@ -61,7 +66,9 @@ export class UpdateNewsDto {
 
   @IsOptional()
   @IsString()
-  ogImage?: string;
+  @Length(1, 500)
+  @Matches(SITE_IMAGE_URL, { message: SITE_IMAGE_MESSAGE })
+  ogImage?: string | null;
 
   @IsOptional()
   @IsBoolean()
