@@ -7,7 +7,9 @@ import {
   Prisma,
   UserBadgeType,
 } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { notifyAchievementUnlocked } from './achievement-notify';
 
 /// Типы условий, у которых нет и не будет авторасчёта — выдаются только
 /// вручную модератором (MANUAL) или через внешний/ручной код (CUSTOM).
@@ -40,7 +42,10 @@ export interface AchievementUnlockResult {
 /// автоматически, только вручную.
 @Injectable()
 export class AchievementProgressService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   private async computeMetric(
     userId: string,
@@ -231,6 +236,7 @@ export class AchievementProgressService {
         where: { id: userAchievement.id },
         data: { rewardsGranted: true },
       });
+      await notifyAchievementUnlocked(this.notifications, userId, achievement);
     }
 
     return {
