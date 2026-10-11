@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateServerDto } from './dto/create-server.dto';
 import { ListServerLogsQueryDto } from './dto/list-server-logs-query.dto';
@@ -119,7 +120,8 @@ export class ServersService {
         const statusLabel = snap.online
           ? `online (${snap.playerCount}/${snap.maxPlayers})`
           : 'offline';
-        return `<div class="twomc-server-widget-row"><strong>${server.name}</strong>: ${statusLabel}</div>`;
+        // Название задаёт администрация — в HTML только экранированным (ADR-0130).
+        return `<div class="twomc-server-widget-row"><strong>${escapeToHtml(server.name)}</strong>: ${statusLabel}</div>`;
       }),
     );
     return `<div class="twomc-server-widget">${rows.join('')}</div>`;
@@ -163,16 +165,19 @@ export class ServersService {
     if (dto.categoryId) {
       await this.requireCategory(dto.categoryId);
     }
-    return this.prisma.server.update({
+    const updated = await this.prisma.server.update({
       where: { id },
       data: dto,
       include: { category: true },
     });
+    await this.status.invalidate(id);
+    return updated;
   }
 
   async remove(id: string): Promise<void> {
     await this.requireServer(id);
     await this.prisma.server.delete({ where: { id } });
+    await this.status.invalidate(id);
   }
 
   async logs(id: string, query: ListServerLogsQueryDto) {
