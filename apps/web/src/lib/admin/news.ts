@@ -16,10 +16,9 @@ export const NEWS_STATUS_LABEL: Record<NewsStatus, string> = {
   ARCHIVED: 'В архиве',
 };
 
-/// Статусы, которые можно выбрать в редакторе. «Запланирована» не
-/// предлагается: автопубликации по расписанию пока нет (срез 8.6), такая
-/// новость не вышла бы сама.
-export const EDITABLE_STATUSES: NewsStatus[] = ['DRAFT', 'PUBLISHED', 'ARCHIVED'];
+/// Статусы, которые можно выбрать в редакторе. «Запланирована» выходит сама
+/// в указанное время — автопубликация раз в минуту (ADR-0146).
+export const EDITABLE_STATUSES: NewsStatus[] = ['DRAFT', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED'];
 
 export interface AdminNewsListItem {
   id: string;
@@ -40,6 +39,7 @@ export interface AdminNewsArticle extends AdminNewsListItem {
   excerpt: string | null;
   content: string;
   coverImage: string | null;
+  scheduledFor: string | null;
   metaTitle: string | null;
   metaDescription: string | null;
   allowComments: boolean;
@@ -59,6 +59,8 @@ export interface NewsInput {
   category: NewsCategory;
   status: NewsStatus;
   coverImage?: string | null;
+  /// ISO, только для статуса SCHEDULED.
+  scheduledFor?: string;
   metaTitle: string;
   metaDescription: string;
   allowComments: boolean;
