@@ -12,12 +12,13 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  delete: vi.fn(),
   granted: new Set<string>(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
-  api: { get: mocks.get, post: mocks.post, patch: mocks.patch },
+  api: { get: mocks.get, post: mocks.post, patch: mocks.patch, delete: mocks.delete },
 }));
 vi.mock('@/lib/auth/use-permissions', () => ({
   usePermissions: () => ({
@@ -44,6 +45,8 @@ const REPORT = {
   server: 'Выживание',
   createdAt: '2026-10-10T10:00:00.000Z',
   isLocked: false,
+  isArchived: false,
+  authorId: 'a1',
   lockedReason: null,
   contactEmail: null,
   verdict: null,
@@ -85,12 +88,21 @@ function Providers({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   mocks.granted.clear();
-  for (const fn of [mocks.get, mocks.post, mocks.patch]) fn.mockReset();
+  for (const fn of [mocks.get, mocks.post, mocks.patch, mocks.delete]) fn.mockReset();
+  mocks.delete.mockResolvedValue({});
   mocks.post.mockResolvedValue({});
   mocks.patch.mockResolvedValue({});
   mocks.get.mockImplementation(async (path: string) => {
     if (path === '/moderation/reports') return { items: [REPORT], total: 1, page: 1, limit: 30 };
     if (path === '/reports/R-1') return REPORT;
+    if (path === '/admin/reports/archived') {
+      return {
+        items: [{ ...REPORT, id: 'r2', reportNumber: 'R-2' }],
+        total: 1,
+        page: 1,
+        limit: 30,
+      };
+    }
     return null;
   });
   useAuthStore.setState({ status: 'authenticated', user: { id: 'me' } as never });
@@ -159,6 +171,42 @@ describe('Обращения в админке (срез 7.3)', () => {
         verdict: 'Нарушитель наказан',
       }),
     );
+  });
+
+  it('часть 2: закреп и скрытие сообщения, архив, запрет обращений автору; вкладка «Архив»', async () => {
+    const actor = userEvent.setup();
+    for (const key of [
+      'reports.view',
+      'reports.messages',
+      'reports.messages.pin',
+      'reports.archive',
+      'reports.ban',
+    ]) {
+      mocks.granted.add(key);
+    }
+    const view = render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    await actor.click(screen.getByRole('button', { name: 'Закрепить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/messages/m1/pin', {}),
+    );
+    await actor.click(screen.getByRole('button', { name: 'Скрыть' }));
+    await waitFor(() =>
+      expect(mocks.delete).toHaveBeenCalledWith('/moderation/reports/R-1/messages/m1'),
+    );
+    await actor.click(screen.getByRole('button', { name: 'В архив' }));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/admin/reports/R-1/archive', {}));
+    await actor.type(screen.getByLabelText('Причина запрета обращений'), 'Спам жалобами');
+    await actor.click(screen.getByRole('button', { name: 'Запретить автору обращения' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('/admin/reports/ban/a1', { reason: 'Спам жалобами' }),
+    );
+    view.unmount();
+
+    mocks.granted.add('reports.archived.view');
+    render(<AdminReportsPage />, { wrapper: Providers });
+    await actor.click(await screen.findByRole('tab', { name: 'Архив' }));
+    expect(await screen.findByTestId('archived-reports')).toHaveTextContent('#R-2');
   });
 
   it('без reports.view — экран 403', async () => {
