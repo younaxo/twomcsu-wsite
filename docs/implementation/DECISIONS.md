@@ -2975,4 +2975,4 @@ GA/Метрика — в 8.5, meta — в 8.4.
 только http(s) или путь сайта.
 
 **Consequences.** Витрина в `/settings/appearance`, витрина на профиле и тост
-`ACHIEVEMENT_UNLOCKED` — частью 2; ссылка в футере — после merge #111.
+`ACHIEVEMENT_UNLOCKED` — частью 2. Ссылка «Достижения» — в футере и в sitemap.
