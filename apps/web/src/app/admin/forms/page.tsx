@@ -42,7 +42,7 @@ function FormsList() {
     ? Math.max(1, Math.ceil(forms.data.total / ADMIN_FORMS_PAGE_SIZE))
     : 1;
   const onError = (error: unknown) => toast.error(getErrorMessage(error));
-  const canOpen = can(['forms.responses', 'forms.stats']);
+  const canOpen = can(['forms.responses', 'forms.stats', 'forms.invites']);
 
   return (
     <>
