@@ -130,6 +130,17 @@ export class FormsAdminService {
     }
     if (dto.fields) {
       this.validateFields(dto.fields);
+      // Замена полей пересоздаёт их, а ответы на старые поля удаляются
+      // каскадом (FormFieldAnswer.field onDelete: Cascade) — с ответами поля
+      // менять нельзя (ADR-0152), правится копия формы.
+      const answered = await this.prisma.formResponse.count({
+        where: { formId: id },
+      });
+      if (answered > 0) {
+        throw new ConflictException(
+          'У формы уже есть ответы — поля менять нельзя, иначе ответы потеряются. Сделайте копию формы и правьте её.',
+        );
+      }
     }
 
     const { fields, description, opensAt, closesAt, ...rest } = dto;

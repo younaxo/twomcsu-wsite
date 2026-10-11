@@ -152,19 +152,27 @@ describe('Формы в админке (срез 7.4)', () => {
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/admin/forms/f2/publish'));
     await user.click(within(rows[1]!).getByRole('button', { name: 'Копия' }));
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/admin/forms/f2/duplicate'));
-    expect(screen.queryByRole('button', { name: 'Удалить' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'В архив' })).toBeNull();
   });
 
-  it('удаление формы называет число ответов', async () => {
+  it('«В архив»: ответы сохраняются, архивную форму не публиковать (ADR-0152)', async () => {
     const user = userEvent.setup();
     mocks.granted.add('forms.view');
     mocks.granted.add('forms.delete');
+    mocks.granted.add('forms.publish');
+    const base = mocks.get.getMockImplementation()!;
+    const archived = { ...FORM, id: 'f9', title: 'Старая анкета', status: 'ARCHIVED' };
+    mocks.get.mockImplementation(async (path: string, options?: unknown) =>
+      path === '/admin/forms' ? { items: [FORM, archived], total: 2 } : base(path, options),
+    );
     render(<AdminFormsPage />, { wrapper: Providers });
     const rows = within(await screen.findByTestId('admin-forms')).getAllByRole('listitem');
-    await user.click(within(rows[0]!).getByRole('button', { name: 'Удалить' }));
+    expect(within(rows[1]!).queryByRole('button', { name: 'Опубликовать' })).toBeNull();
+    expect(within(rows[1]!).queryByRole('button', { name: 'В архив' })).toBeNull();
+    await user.click(within(rows[0]!).getByRole('button', { name: 'В архив' }));
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent('удалятся все ответы (5)');
-    await user.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    expect(dialog).toHaveTextContent('Ответы (5) сохранятся');
+    await user.click(within(dialog).getByRole('button', { name: 'В архив' }));
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/admin/forms/f1'));
   });
 
