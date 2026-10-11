@@ -295,10 +295,16 @@ describe('Reports (e2e)', () => {
       .set('Authorization', auth(alice))
       .expect(200);
 
-    await request(app.getHttpServer())
+    const staffView = await request(app.getHttpServer())
       .get(`/reports/${reportNumber}`)
       .set('Authorization', auth(moderator))
       .expect(200);
+    // ADR-0128: персоналу — автор с публичными полями, без email.
+    expect(staffView.body.author).toMatchObject({
+      id: alice.id,
+      username: alice.username,
+    });
+    expect(staffView.body.author.email).toBeUndefined();
 
     const mine = await request(app.getHttpServer())
       .get('/reports')
@@ -353,6 +359,17 @@ describe('Reports (e2e)', () => {
         (r: { reportNumber: string }) => r.reportNumber === reportNumber,
       ),
     ).toBe(true);
+    // ADR-0128: автор — только публичные поля, без email и IP входа.
+    const listed = list.body.items.find(
+      (r: { reportNumber: string }) => r.reportNumber === reportNumber,
+    );
+    expect(Object.keys(listed.author).sort()).toEqual([
+      'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
+    expect(JSON.stringify(list.body)).not.toContain(alice.email);
 
     const assigned = await request(app.getHttpServer())
       .patch(`/moderation/reports/${reportNumber}/assign`)
