@@ -47,10 +47,13 @@ export const adminAwardKeys = {
   all: ['admin', 'awards'] as const,
 };
 
-export function useAdminAwards() {
+/// `enabled` — каталог нужен и в карточке пользователя, но только с правом
+/// `awards.view` (ADR-0142).
+export function useAdminAwards(enabled = true) {
   return useQuery({
     queryKey: adminAwardKeys.all,
     queryFn: () => api.get<AdminAward[]>('/admin/awards'),
+    enabled,
   });
 }
 

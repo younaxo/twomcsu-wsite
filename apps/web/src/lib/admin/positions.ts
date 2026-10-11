@@ -46,10 +46,13 @@ export const adminPositionKeys = {
   all: ['admin', 'positions'] as const,
 };
 
-export function useAdminPositions() {
+/// `enabled` — каталог нужен и в карточке пользователя, но только с правом
+/// `positions.view` (ADR-0142).
+export function useAdminPositions(enabled = true) {
   return useQuery({
     queryKey: adminPositionKeys.all,
     queryFn: () => api.get<AdminPosition[]>('/positions/manage'),
+    enabled,
   });
 }
 
