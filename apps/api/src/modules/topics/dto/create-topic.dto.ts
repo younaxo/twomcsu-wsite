@@ -23,10 +23,12 @@ export class CreateTopicDto {
 
   @IsOptional()
   @IsString()
+  @Length(0, 100)
   icon?: string;
 
   @IsOptional()
   @IsString()
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Цвет — в формате #RRGGBB' })
   color?: string;
 
   @IsOptional()

@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
 } from 'class-validator';
 
 export class UpdateTopicDto {
@@ -21,18 +22,21 @@ export class UpdateTopicDto {
   @IsEnum(TopicVisibility)
   visibility?: TopicVisibility;
 
+  /// null очищает иконку, цвет и описание (ADR-0145).
   @IsOptional()
   @IsString()
-  icon?: string;
+  @Length(0, 100)
+  icon?: string | null;
 
   @IsOptional()
   @IsString()
-  color?: string;
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Цвет — в формате #RRGGBB' })
+  color?: string | null;
 
   @IsOptional()
   @IsString()
   @Length(0, 500)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsString()

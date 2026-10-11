@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVoteSiteDto } from './dto/create-vote-site.dto';
 import { UpdateVoteSiteDto } from './dto/update-vote-site.dto';
@@ -58,9 +59,18 @@ export class VotingAdminService {
     }
     const secret = this.generateSecret();
     const webhookSecretHash = await bcrypt.hash(secret, this.bcryptRounds);
-    const site = await this.prisma.voteSite.create({
-      data: { ...dto, webhookSecretHash },
-    });
+    const site = await this.prisma.voteSite
+      .create({ data: { ...dto, webhookSecretHash } })
+      .catch((error: unknown) => {
+        // Гонка двух создателей с одним slug (ADR-0144).
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException('Vote-сайт с таким slug уже существует');
+        }
+        throw error;
+      });
     const { webhookSecretHash: _hash, ...rest } = site;
     return { site: rest, secret };
   }

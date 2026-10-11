@@ -26,12 +26,16 @@ export class CreateVoteSiteDto {
   @Length(0, 500)
   description?: string;
 
+  /// Только http/https (ADR-0144): ссылка «Голосовать» на сайте.
   @IsString()
-  @IsUrl({ require_protocol: true })
+  @Length(1, 500)
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   url!: string;
 
   @IsOptional()
   @IsString()
+  @Length(0, 500)
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
   logoUrl?: string;
 
   @IsOptional()
