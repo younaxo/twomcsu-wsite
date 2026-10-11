@@ -38,6 +38,7 @@ export class CreatePositionDto {
 
   @IsOptional()
   @IsString()
+  @Length(0, 100)
   icon?: string;
 
   @IsOptional()

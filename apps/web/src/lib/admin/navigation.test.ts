@@ -1,7 +1,13 @@
 import type { EffectivePermissions } from '@twomc/shared';
 import { describe, expect, it } from 'vitest';
 import { checkPermissions } from '../auth/permissions';
-import { ADMIN_ENTRY_REQUIREMENT, ADMIN_NAV, findNavItem, isNavItemActive } from './navigation';
+import {
+  ADMIN_ENTRY_REQUIREMENT,
+  ADMIN_NAV,
+  findNavItem,
+  isNavItemActive,
+  resolveNavItem,
+} from './navigation';
 
 const effective = (permissions: string[]): EffectivePermissions => ({
   superuser: false,
@@ -41,5 +47,36 @@ describe('admin navigation', () => {
     expect(dashboard?.href).toBe('/admin');
     expect(findNavItem('/admin/users/abc')?.href).toBe('/admin/users');
     expect(isNavItemActive(dashboard!, '/admin/users')).toBe(false);
+  });
+
+  it('подразделы (ADR-0139): пункт активен на любой странице, ведёт на первый доступный', () => {
+    expect(findNavItem('/admin/awards')?.href).toBe('/admin/achievements');
+    expect(findNavItem('/admin/achievements')?.label).toBe('Достижения и награды');
+    const item = findNavItem('/admin/awards')!;
+
+    const awardsOnly = effective(['awards.view']);
+    expect(checkPermissions(awardsOnly, item.requirement)).toBe(true);
+    expect(checkPermissions(awardsOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    const resolved = resolveNavItem(item, (r) => checkPermissions(awardsOnly, r));
+    expect(resolved.href).toBe('/admin/awards');
+    expect(resolved.sections?.map((s) => s.label)).toEqual(['Награды']);
+    expect(isNavItemActive(resolved, '/admin/awards')).toBe(true);
+
+    const both = effective(['achievements.view', 'awards.view']);
+    const full = resolveNavItem(item, (r) => checkPermissions(both, r));
+    expect(full.href).toBe('/admin/achievements');
+    expect(full.sections).toHaveLength(2);
+  });
+
+  it('«Команда» и «Роли и права» — пункты с подразделами (ADR-0140)', () => {
+    expect(findNavItem('/admin/departments')?.label).toBe('Команда');
+    expect(findNavItem('/admin/custom-positions')?.label).toBe('Команда');
+    expect(findNavItem('/admin/permissions')?.label).toBe('Роли и права');
+    const team = findNavItem('/admin/positions')!;
+    const deptOnly = effective(['departments.view']);
+    expect(checkPermissions(deptOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    const resolved = resolveNavItem(team, (r) => checkPermissions(deptOnly, r));
+    expect(resolved.href).toBe('/admin/departments');
+    expect(resolved.sections?.map((s) => s.label)).toEqual(['Отделы']);
   });
 });

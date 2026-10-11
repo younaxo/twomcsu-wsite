@@ -12,23 +12,27 @@ export class UpdateAwardDto {
   @Length(1, 100)
   name?: string;
 
+  /// null очищает описание.
   @IsOptional()
   @IsString()
   @Length(0, 500)
-  description?: string;
+  description?: string | null;
 
   @IsOptional()
   @IsString()
+  @Length(1, 500)
   iconUrl?: string;
 
+  /// Цвет рамки — только #RRGGBB (ADR-0139); null очищает.
   @IsOptional()
   @IsString()
-  color?: string;
+  @Matches(/^#[0-9a-fA-F]{6}$/, { message: 'Цвет — в формате #RRGGBB' })
+  color?: string | null;
 
   @IsOptional()
   @IsString()
   @Matches(/^(common|rare|epic|legendary)$/)
-  rarity?: string;
+  rarity?: string | null;
 
   @IsOptional()
   @IsBoolean()
