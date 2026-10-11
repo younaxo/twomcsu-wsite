@@ -70,6 +70,15 @@ export interface FormStatsDto {
   }[];
 }
 
+export interface FormInviteDto {
+  id: string;
+  code: string;
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 export const adminFormKeys = {
   all: ['admin', 'forms'] as const,
   list: (status: FormStatus | '', search: string, page: number) =>
@@ -77,6 +86,7 @@ export const adminFormKeys = {
   detail: (id: string) => ['admin', 'forms', 'detail', id] as const,
   responses: (id: string, page: number) => ['admin', 'forms', 'responses', id, page] as const,
   stats: (id: string) => ['admin', 'forms', 'stats', id] as const,
+  invites: (id: string) => ['admin', 'forms', 'invites', id] as const,
 };
 
 export const ADMIN_FORMS_PAGE_SIZE = 20;
@@ -162,4 +172,27 @@ export function answerText(answer: FormAnswerDto, formatDate: (iso: string) => s
   }
   if (answer.fileUrls.length > 0) return `Файлов: ${answer.fileUrls.length}`;
   return '—';
+}
+
+/// Приглашения по ссылке (ADR-0150): код открывает форму по адресу
+/// /forms/invite/:code, лимит использований и срок — по желанию.
+export function useFormInvites(id: string, enabled: boolean) {
+  const client = useQueryClient();
+  const key = adminFormKeys.invites(id);
+  const invites = useQuery({
+    queryKey: key,
+    queryFn: () => api.get<FormInviteDto[]>(`/admin/forms/${enc(id)}/invites`),
+    enabled,
+  });
+  const onSuccess = () => client.invalidateQueries({ queryKey: key });
+  const create = useMutation({
+    mutationFn: (body: { maxUses?: number; expiresAt?: string }) =>
+      api.post<FormInviteDto>(`/admin/forms/${enc(id)}/invites`, body),
+    onSuccess,
+  });
+  const remove = useMutation({
+    mutationFn: (code: string) => api.delete(`/admin/forms/${enc(id)}/invites/${enc(code)}`),
+    onSuccess,
+  });
+  return { invites, create, remove };
 }

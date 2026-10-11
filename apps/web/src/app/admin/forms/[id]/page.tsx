@@ -36,6 +36,7 @@ import {
 import { getErrorMessage } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime } from '@/lib/format';
+import { FormInvites } from '../_components/form-invites';
 
 /// Форма в админке (срез 7.4, ADR-0149): ответы (кто ответил — только если
 /// ответ не анонимный, решает API) и статистика по полям.
@@ -207,6 +208,7 @@ function FormDetails({ id }: { id: string }) {
   if (form.isError) return <ErrorState error={form.error} onRetry={() => form.refetch()} />;
   const canResponses = can('forms.responses');
   const canStats = can('forms.stats');
+  const canInvites = can('forms.invites');
   return (
     <>
       <PageHeader
@@ -214,10 +216,14 @@ function FormDetails({ id }: { id: string }) {
         description={`${FORM_STATUS_LABEL[form.data.status]} · /forms/${form.data.slug}`}
       />
       <PageSection title="Ответы и статистика">
-        <Tabs defaultValue={canResponses ? 'responses' : 'stats'} variant="line">
+        <Tabs
+          defaultValue={canResponses ? 'responses' : canStats ? 'stats' : 'invites'}
+          variant="line"
+        >
           <TabsList aria-label="Данные формы">
             {canResponses ? <TabsTrigger value="responses">Ответы</TabsTrigger> : null}
             {canStats ? <TabsTrigger value="stats">Статистика</TabsTrigger> : null}
+            {canInvites ? <TabsTrigger value="invites">Приглашения</TabsTrigger> : null}
           </TabsList>
           {canResponses ? (
             <TabsContent value="responses" className="pt-3">
@@ -229,6 +235,11 @@ function FormDetails({ id }: { id: string }) {
               <Stats formId={id} />
             </TabsContent>
           ) : null}
+          {canInvites ? (
+            <TabsContent value="invites" className="pt-3">
+              <FormInvites formId={id} inviteOnly={form.data.visibility === 'INVITE_ONLY'} />
+            </TabsContent>
+          ) : null}
         </Tabs>
       </PageSection>
     </>
@@ -238,7 +249,7 @@ function FormDetails({ id }: { id: string }) {
 export default function AdminFormPage() {
   const params = useParams<{ id: string }>();
   return (
-    <PermissionGate requirement={['forms.responses', 'forms.stats']}>
+    <PermissionGate requirement={['forms.responses', 'forms.stats', 'forms.invites']}>
       <div className="flex flex-col gap-4">
         <FormDetails id={params.id} />
       </div>

@@ -102,6 +102,18 @@ beforeEach(() => {
     if (path === '/admin/forms') return { items: [FORM, DRAFT], total: 2 };
     if (path === '/admin/forms/f1') return { ...FORM, fields: FIELDS };
     if (path === '/admin/forms/f1/responses') return { items: [RESPONSE, ANONYMOUS], total: 2 };
+    if (path === '/admin/forms/f1/invites') {
+      return [
+        {
+          id: 'i1',
+          code: 'abc123',
+          maxUses: 10,
+          usedCount: 3,
+          expiresAt: null,
+          createdAt: '2026-10-01T10:00:00.000Z',
+        },
+      ];
+    }
     if (path === '/admin/forms/f1/stats') {
       return {
         totalResponses: 5,
@@ -183,5 +195,29 @@ describe('Формы в админке (срез 7.4)', () => {
     expect(stats).toHaveTextContent('Ответов: 5 · завершено: 4 (80%)');
     expect(stats).toHaveTextContent('Больше года');
     expect(stats).toHaveTextContent('Новичок');
+  });
+
+  it('приглашения (ADR-0150): ссылка и использования, создание с лимитом, удаление', async () => {
+    const user = userEvent.setup();
+    mocks.granted.add('forms.invites');
+    render(<AdminFormPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('form-invites');
+    expect(list).toHaveTextContent('/forms/invite/abc123');
+    expect(list).toHaveTextContent('использовано 3 из 10');
+    expect(screen.getByText(/лимит и счётчик ответов действуют только/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Новое приглашение' }));
+    await user.type(screen.getByLabelText(/Сколько раз можно ответить/), '25');
+    await user.click(screen.getByRole('button', { name: 'Создать' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('/admin/forms/f1/invites', { maxUses: 25 }),
+    );
+
+    await user.click(within(list).getByRole('button', { name: 'Удалить' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() =>
+      expect(mocks.delete).toHaveBeenCalledWith('/admin/forms/f1/invites/abc123'),
+    );
   });
 });
