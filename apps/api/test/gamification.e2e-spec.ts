@@ -437,6 +437,50 @@ describe('Gamification (e2e)', () => {
       .expect(200);
   });
 
+  it('awards (ADR-0139): цвет только #RRGGBB, счётчик обладателей, параллельная выдача — 409', async () => {
+    await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: 'red; background: url(x)' })
+      .expect(400);
+    const colored = await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: '#F97316', description: 'За вклад' })
+      .expect(200);
+    expect(colored.body.color).toBe('#F97316');
+    const cleared = await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: null, description: null })
+      .expect(200);
+    expect(cleared.body.color).toBeNull();
+    expect(cleared.body.description).toBeNull();
+
+    const statuses = await Promise.all(
+      [0, 1].map(() =>
+        request(app.getHttpServer())
+          .post(`/admin/users/${alice.id}/awards/${awardId}`)
+          .set('Authorization', auth(admin))
+          .then((res) => res.status),
+      ),
+    );
+    expect(statuses.sort()).toEqual([201, 409]);
+
+    const list = await request(app.getHttpServer())
+      .get('/admin/awards')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const mine = list.body.find((a: { id: string }) => a.id === awardId);
+    expect(mine.holdersCount).toBe(1);
+    expect(mine).not.toHaveProperty('_count');
+
+    await request(app.getHttpServer())
+      .delete(`/admin/users/${alice.id}/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+  });
+
   it('badges: выдача/список/отзыв бейджа администратором', async () => {
     await request(app.getHttpServer())
       .post(`/admin/users/${alice.id}/badges`)

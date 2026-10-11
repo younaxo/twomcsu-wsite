@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAwardDto } from './dto/create-award.dto';
 import { UpdateAwardDto } from './dto/update-award.dto';
@@ -18,8 +19,17 @@ export class AwardsService {
     });
   }
 
+  /// Для админки — со счётчиком обладателей (ADR-0139): удаление награды
+  /// снимает её у всех, это видно в подтверждении.
   async listAdmin() {
-    return this.prisma.award.findMany({ orderBy: { name: 'asc' } });
+    const awards = await this.prisma.award.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { userAwards: true } } },
+    });
+    return awards.map(({ _count, ...award }) => ({
+      ...award,
+      holdersCount: _count.userAwards,
+    }));
   }
 
   async create(dto: CreateAwardDto) {
@@ -66,9 +76,21 @@ export class AwardsService {
     if (existing) {
       throw new ConflictException('Награда уже выдана этому пользователю');
     }
-    await this.prisma.userAward.create({
-      data: { userId, awardId, grantedBy },
-    });
+    try {
+      await this.prisma.userAward.create({
+        data: { userId, awardId, grantedBy },
+      });
+    } catch (error) {
+      // Параллельная выдача той же награды: проверка выше прошла у обоих
+      // запросов, уникальный индекс пропустил только один (ADR-0139).
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Награда уже выдана этому пользователю');
+      }
+      throw error;
+    }
   }
 
   async revoke(userId: string, awardId: string): Promise<void> {
