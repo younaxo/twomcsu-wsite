@@ -2,6 +2,7 @@ import {
   AchievementCategory,
   AchievementConditionType,
   AchievementRarity,
+  UserBadgeType,
 } from '@prisma/client';
 import {
   IsBoolean,
@@ -33,6 +34,7 @@ export class CreateAchievementDto {
   description!: string;
 
   @IsString()
+  @Length(1, 500)
   iconUrl!: string;
 
   @IsEnum(AchievementCategory)
@@ -71,9 +73,11 @@ export class CreateAchievementDto {
   @Min(0)
   rewardRubies?: number;
 
+  /// Значок-награда — только существующий тип (ADR-0138): опечатка раньше
+  /// молча терялась при выдаче. null снимает награду.
   @IsOptional()
-  @IsString()
-  rewardBadgeType?: string;
+  @IsEnum(UserBadgeType)
+  rewardBadgeType?: UserBadgeType | null;
 
   @IsOptional()
   @IsString()

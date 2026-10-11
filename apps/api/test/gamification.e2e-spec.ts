@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -231,6 +232,42 @@ describe('Gamification (e2e)', () => {
     manualAchievementId = manualCreated.body.id;
   });
 
+  it('admin: значок-награда — только существующий тип, null снимает (ADR-0138)', async () => {
+    const url = `/admin/achievements/${manualAchievementId}`;
+    await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: 'NOT_A_BADGE' })
+      .expect(400);
+    const set = await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: 'VERIFIED', rewardTitle: 'Заслуга' })
+      .expect(200);
+    expect(set.body.rewardBadgeType).toBe('VERIFIED');
+    const cleared = await request(app.getHttpServer())
+      .patch(url)
+      .set('Authorization', auth(admin))
+      .send({ rewardBadgeType: null, rewardTitle: null })
+      .expect(200);
+    expect(cleared.body.rewardBadgeType).toBeNull();
+    expect(cleared.body.rewardTitle).toBeNull();
+  });
+
+  it('check-all-users: параллельный второй запуск получает 409 (ADR-0138)', async () => {
+    const redis = app.get(RedisService);
+    const lockKey = 'achievements:check-all:lock';
+    await redis.client.set(lockKey, `other-run-${unique}`, 'EX', 60);
+    try {
+      await request(app.getHttpServer())
+        .post('/admin/achievements/check-all-users')
+        .set('Authorization', auth(admin))
+        .expect(409);
+    } finally {
+      await redis.client.del(lockKey);
+    }
+  });
+
   it('публичный список: секретное достижение скрыто, пока не разблокировано', async () => {
     const list = await request(app.getHttpServer())
       .get('/achievements')
@@ -433,6 +470,50 @@ describe('Gamification (e2e)', () => {
 
     await request(app.getHttpServer())
       .delete(`/admin/users/${bob.id}/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+  });
+
+  it('awards (ADR-0139): цвет только #RRGGBB, счётчик обладателей, параллельная выдача — 409', async () => {
+    await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: 'red; background: url(x)' })
+      .expect(400);
+    const colored = await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: '#F97316', description: 'За вклад' })
+      .expect(200);
+    expect(colored.body.color).toBe('#F97316');
+    const cleared = await request(app.getHttpServer())
+      .patch(`/admin/awards/${awardId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: null, description: null })
+      .expect(200);
+    expect(cleared.body.color).toBeNull();
+    expect(cleared.body.description).toBeNull();
+
+    const statuses = await Promise.all(
+      [0, 1].map(() =>
+        request(app.getHttpServer())
+          .post(`/admin/users/${alice.id}/awards/${awardId}`)
+          .set('Authorization', auth(admin))
+          .then((res) => res.status),
+      ),
+    );
+    expect(statuses.sort()).toEqual([201, 409]);
+
+    const list = await request(app.getHttpServer())
+      .get('/admin/awards')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const mine = list.body.find((a: { id: string }) => a.id === awardId);
+    expect(mine.holdersCount).toBe(1);
+    expect(mine).not.toHaveProperty('_count');
+
+    await request(app.getHttpServer())
+      .delete(`/admin/users/${alice.id}/awards/${awardId}`)
       .set('Authorization', auth(admin))
       .expect(200);
   });
