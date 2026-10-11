@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -78,7 +79,33 @@ export class NewsAdminService {
     return news;
   }
 
+  /// Автопубликация запланированных новостей (ADR-0146): вызывается
+  /// NewsScheduler раз в минуту. updateMany атомарен — повтор в нескольких
+  /// инстансах API не публикует новость дважды.
+  async publishDue(now = new Date()): Promise<number> {
+    const { count } = await this.prisma.news.updateMany({
+      where: { status: NewsStatus.SCHEDULED, scheduledFor: { lte: now } },
+      data: { status: NewsStatus.PUBLISHED, publishedAt: now },
+    });
+    return count;
+  }
+
+  /// Запланировать можно только на будущее — иначе новость не вышла бы
+  /// (или вышла бы мгновенно, хотя её «планировали»).
+  private assertScheduleInFuture(scheduledFor: Date | null | undefined) {
+    if (!scheduledFor || scheduledFor.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'Для запланированной новости укажите дату публикации в будущем',
+      );
+    }
+  }
+
   async create(authorId: string, dto: CreateNewsDto) {
+    if (dto.status === NewsStatus.SCHEDULED) {
+      this.assertScheduleInFuture(
+        dto.scheduledFor ? new Date(dto.scheduledFor) : null,
+      );
+    }
     const existing = await this.prisma.news.findUnique({
       where: { slug: dto.slug },
     });
@@ -108,6 +135,13 @@ export class NewsAdminService {
     }
 
     const { tags, content, status, scheduledFor, ...rest } = dto;
+    const schedulingChanged =
+      status === NewsStatus.SCHEDULED || scheduledFor !== undefined;
+    if (schedulingChanged && (status ?? news.status) === NewsStatus.SCHEDULED) {
+      this.assertScheduleInFuture(
+        scheduledFor ? new Date(scheduledFor) : news.scheduledFor,
+      );
+    }
     const becomingPublished =
       status === NewsStatus.PUBLISHED && news.status !== NewsStatus.PUBLISHED;
 
