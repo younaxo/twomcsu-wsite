@@ -79,4 +79,14 @@ describe('admin navigation', () => {
     expect(resolved.href).toBe('/admin/departments');
     expect(resolved.sections?.map((s) => s.label)).toEqual(['Отделы']);
   });
+
+  it('медиа-заявки — подраздел «Пользователей» (ADR-0141)', () => {
+    expect(findNavItem('/admin/media-requests')?.label).toBe('Пользователи');
+    const users = findNavItem('/admin/users')!;
+    const mediaOnly = effective(['media_requests.view']);
+    expect(checkPermissions(mediaOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    expect(resolveNavItem(users, (r) => checkPermissions(mediaOnly, r)).href).toBe(
+      '/admin/media-requests',
+    );
+  });
 });

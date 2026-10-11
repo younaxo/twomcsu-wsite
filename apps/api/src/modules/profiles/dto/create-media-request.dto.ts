@@ -5,8 +5,10 @@ export class CreateMediaRequestDto {
   @IsEnum(MediaGroup)
   mediaGroup!: MediaGroup;
 
+  /// Только http/https (ADR-0141); без протокола — допишется https://.
   @IsString()
-  @IsUrl({ require_protocol: false })
+  @Length(1, 500)
+  @IsUrl({ require_protocol: false, protocols: ['http', 'https'] })
   channelUrl!: string;
 
   @IsOptional()
