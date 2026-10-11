@@ -5,21 +5,33 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { notifyAchievementUnlocked } from './achievement-notify';
 import { canViewProfile } from '../profiles/visibility';
+import { RedisService } from '../redis/redis.service';
 import { AchievementProgressService } from './achievement-progress.service';
 import { CreateAchievementDto } from './dto/create-achievement.dto';
 import { ListAchievementsQueryDto } from './dto/list-achievements-query.dto';
 import { SetShowcaseDto } from './dto/set-showcase.dto';
 import { UpdateAchievementDto } from './dto/update-achievement.dto';
 
+/// Замок пересчёта всех игроков (ADR-0138): пересчёт идёт синхронно в
+/// запросе, второй параллельный запуск только удвоил бы нагрузку на БД.
+const CHECK_ALL_LOCK = 'achievements:check-all:lock';
+const CHECK_ALL_LOCK_TTL_SEC = 15 * 60;
+/// Снять замок, только если он всё ещё наш (а не следующего запуска после
+/// истечения TTL).
+const RELEASE_LOCK_LUA =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
 @Injectable()
 export class AchievementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly progress: AchievementProgressService,
+    private readonly redis: RedisService,
     private readonly notifications: NotificationsService,
   ) {}
 
@@ -168,7 +180,24 @@ export class AchievementsService {
   }
 
   async checkAllUsers() {
-    return this.progress.checkAllUsers();
+    const token = randomUUID();
+    const acquired = await this.redis.client.set(
+      CHECK_ALL_LOCK,
+      token,
+      'EX',
+      CHECK_ALL_LOCK_TTL_SEC,
+      'NX',
+    );
+    if (acquired !== 'OK') {
+      throw new ConflictException(
+        'Пересчёт уже идёт — дождитесь его завершения',
+      );
+    }
+    try {
+      return await this.progress.checkAllUsers();
+    } finally {
+      await this.redis.client.eval(RELEASE_LOCK_LUA, 1, CHECK_ALL_LOCK, token);
+    }
   }
 
   async getUserAchievements(userId: string) {
