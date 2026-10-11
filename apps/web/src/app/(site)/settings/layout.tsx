@@ -12,6 +12,7 @@ const SECTIONS = [
   { href: '/settings/security', label: 'Безопасность' },
   { href: '/settings/punishments', label: 'Наказания' },
   { href: '/settings/media', label: 'Медиа' },
+  { href: '/settings/showcase', label: 'Витрина' },
   { href: '/settings/linked-accounts', label: 'Привязки' },
 ] as const;
 
