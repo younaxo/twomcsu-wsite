@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
@@ -14,8 +15,11 @@ export class TopicsAdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listAdmin() {
+    // Текст темы (до 100 000 символов) в списке не нужен — только в карточке
+    // редактирования (ADR-0145).
     return this.prisma.topic.findMany({
       orderBy: [{ isPinned: 'desc' }, { order: 'asc' }],
+      omit: { content: true, contentHtml: true },
     });
   }
 
@@ -34,9 +38,20 @@ export class TopicsAdminService {
     if (existing) {
       throw new ConflictException('Тема с таким slug уже существует');
     }
-    return this.prisma.topic.create({
-      data: { ...dto, createdBy, contentHtml: escapeToHtml(dto.content) },
-    });
+    return this.prisma.topic
+      .create({
+        data: { ...dto, createdBy, contentHtml: escapeToHtml(dto.content) },
+      })
+      .catch((error: unknown) => {
+        // Гонка двух создателей с одним slug (ADR-0145).
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException('Тема с таким slug уже существует');
+        }
+        throw error;
+      });
   }
 
   async update(id: string, updatedBy: string, dto: UpdateTopicDto) {
