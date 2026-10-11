@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { NewsAdminService } from '../src/modules/news/news-admin.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -188,6 +189,54 @@ describe('News (e2e)', () => {
       .send({ coverImage: null })
       .expect(200);
     expect(uncovered.body.coverImage).toBeNull();
+  });
+
+  it('запланированная новость (ADR-0146): дата только в будущем, выходит по publishDue', async () => {
+    const scheduledSlug = `${slug}-scheduled`;
+    await request(app.getHttpServer())
+      .post('/admin/news')
+      .set('Authorization', auth(editor))
+      .send({
+        slug: scheduledSlug,
+        title: 'Анонс',
+        content: 'Скоро',
+        category: 'ANNOUNCEMENT',
+        status: 'SCHEDULED',
+        scheduledFor: new Date(Date.now() - 60_000).toISOString(),
+      })
+      .expect(400);
+    const created = await request(app.getHttpServer())
+      .post('/admin/news')
+      .set('Authorization', auth(editor))
+      .send({
+        slug: scheduledSlug,
+        title: 'Анонс',
+        content: 'Скоро',
+        category: 'ANNOUNCEMENT',
+        status: 'SCHEDULED',
+        scheduledFor: new Date(Date.now() + 3_600_000).toISOString(),
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/news/${scheduledSlug}`)
+      .expect(404);
+
+    const service = app.get(NewsAdminService);
+    // До срока — не публикуется.
+    await service.publishDue();
+    await request(app.getHttpServer())
+      .get(`/news/${scheduledSlug}`)
+      .expect(404);
+    // Срок наступил.
+    await service.publishDue(new Date(Date.now() + 2 * 3_600_000));
+    await request(app.getHttpServer())
+      .get(`/news/${scheduledSlug}`)
+      .expect(200);
+    const published = await prisma.news.findUniqueOrThrow({
+      where: { id: created.body.id },
+    });
+    expect(published.status).toBe('PUBLISHED');
+    await prisma.news.delete({ where: { id: created.body.id } });
   });
 
   it('черновик недоступен публично (404), виден админу по id', async () => {
