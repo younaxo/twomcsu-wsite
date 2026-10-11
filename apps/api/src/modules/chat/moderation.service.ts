@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { BanUserDto } from './dto/ban-user.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { MuteUserDto } from './dto/mute-user.dto';
@@ -59,7 +60,8 @@ export class ModerationService {
       : {};
     return this.prisma.chatMute.findMany({
       where,
-      include: { user: true },
+      // Персоналу — только публичные поля пользователя (ADR-0132, ADR-0107).
+      include: { user: { select: PUBLIC_USER_SELECT } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -92,7 +94,8 @@ export class ModerationService {
       : {};
     return this.prisma.chatBan.findMany({
       where,
-      include: { user: true },
+      // Персоналу — только публичные поля пользователя (ADR-0132, ADR-0107).
+      include: { user: { select: PUBLIC_USER_SELECT } },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -112,7 +115,7 @@ export class ModerationService {
     const [items, total] = await Promise.all([
       this.prisma.chatMessage.findMany({
         where: { content: { contains: query, mode: 'insensitive' } },
-        include: { author: true, channel: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, channel: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -127,7 +130,7 @@ export class ModerationService {
   async getMessageById(id: string) {
     const message = await this.prisma.chatMessage.findUnique({
       where: { id },
-      include: { author: true, channel: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, channel: true },
     });
     if (!message) {
       throw new NotFoundException('Сообщение не найдено');
