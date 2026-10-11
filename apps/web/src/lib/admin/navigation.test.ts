@@ -102,6 +102,7 @@ describe('admin navigation', () => {
     expect(findNavItem('/admin/topics/abc')?.label).toBe('Контент');
     expect(findNavItem('/admin/voting')?.label).toBe('Контент');
     expect(findNavItem('/admin/events')?.label).toBe('Контент');
+    expect(findNavItem('/admin/forms/abc')?.label).toBe('Контент');
     const content = findNavItem('/admin/content')!;
     const topicsOnly = effective(['topics.view']);
     expect(checkPermissions(topicsOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
