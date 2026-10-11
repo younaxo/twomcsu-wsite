@@ -4,6 +4,7 @@ import type { NewsCategory } from '@twomc/shared';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { CATEGORY_LABEL } from '@/app/(site)/_components/news-section';
+import { DateTimeField } from '@/components/admin/date-time-field';
 import { PageSection } from '@/components/admin/page-header';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
@@ -50,6 +51,7 @@ export function NewsEditor({ article }: { article: AdminNewsArticle | null }) {
     content: article?.content ?? '',
     category: article?.category ?? ('ANNOUNCEMENT' as NewsCategory),
     status: article?.status ?? ('DRAFT' as NewsStatus),
+    scheduledFor: article?.scheduledFor ?? null,
     coverImage: article?.coverImage ?? '',
     metaTitle: article?.metaTitle ?? '',
     metaDescription: article?.metaDescription ?? '',
@@ -58,11 +60,6 @@ export function NewsEditor({ article }: { article: AdminNewsArticle | null }) {
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
-  // Существующая запланированная новость сохраняет статус, пока его не сменят.
-  const statuses =
-    form.status === 'SCHEDULED'
-      ? (['SCHEDULED', ...EDITABLE_STATUSES] as NewsStatus[])
-      : EDITABLE_STATUSES;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -72,6 +69,12 @@ export function NewsEditor({ article }: { article: AdminNewsArticle | null }) {
       next.slug = 'Только строчные латинские буквы, цифры и дефис';
     }
     if (!form.content.trim()) next.content = 'Напишите текст новости';
+    if (
+      form.status === 'SCHEDULED' &&
+      (!form.scheduledFor || new Date(form.scheduledFor).getTime() <= Date.now())
+    ) {
+      next.scheduledFor = 'Укажите дату и время публикации в будущем';
+    }
     if (form.coverImage.trim() && !SITE_IMAGE.test(form.coverImage.trim())) {
       next.coverImage = 'Ссылка на cdn-files.twomc.su или путь сайта (/…)';
     }
@@ -86,6 +89,9 @@ export function NewsEditor({ article }: { article: AdminNewsArticle | null }) {
       status: form.status,
       allowComments: form.allowComments,
       tags: parseTags(form.tags),
+      ...(form.status === 'SCHEDULED' && form.scheduledFor
+        ? { scheduledFor: form.scheduledFor }
+        : {}),
       // Пустая строка очищает поле при правке (API принимает длину 0).
       excerpt: form.excerpt.trim(),
       metaTitle: form.metaTitle.trim(),
@@ -152,26 +158,35 @@ export function NewsEditor({ article }: { article: AdminNewsArticle | null }) {
               ))}
             </select>
           </Field>
-          <Field
-            label="Статус"
-            hint={
-              form.status === 'SCHEDULED'
-                ? 'Автопубликации по расписанию пока нет — опубликуйте вручную'
-                : undefined
-            }
-          >
+          <Field label="Статус">
             <select
               className={inputClassName}
               value={form.status}
               onChange={(e) => set({ status: e.target.value as NewsStatus })}
             >
-              {statuses.map((status) => (
+              {EDITABLE_STATUSES.map((status) => (
                 <option key={status} value={status}>
                   {NEWS_STATUS_LABEL[status]}
                 </option>
               ))}
             </select>
           </Field>
+          {form.status === 'SCHEDULED' ? (
+            <Field
+              label="Публикация"
+              required
+              error={errors.scheduledFor}
+              hint="Новость выйдет сама в это время (проверка раз в минуту)"
+              className="sm:col-span-2"
+            >
+              <DateTimeField
+                label="Публикация"
+                value={form.scheduledFor}
+                fallbackTime="12:00"
+                onChange={(value) => set({ scheduledFor: value })}
+              />
+            </Field>
+          ) : null}
           <Field label="Анонс" hint="Короткий текст для списка новостей" className="sm:col-span-2">
             <Textarea
               value={form.excerpt}
