@@ -81,8 +81,16 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/users',
         label: 'Пользователи',
         icon: 'users',
-        requirement: 'users.view',
-        keywords: ['игроки', 'аккаунты', 'бан'],
+        requirement: ['users.view', 'media_requests.view'],
+        keywords: ['игроки', 'аккаунты', 'бан', 'медиа', 'ютуб', 'стример'],
+        sections: [
+          { href: '/admin/users', label: 'Пользователи', requirement: 'users.view' },
+          {
+            href: '/admin/media-requests',
+            label: 'Медиа-заявки',
+            requirement: 'media_requests.view',
+          },
+        ],
       },
       {
         href: '/admin/roles',
