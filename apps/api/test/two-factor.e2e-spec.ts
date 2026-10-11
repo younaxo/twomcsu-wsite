@@ -240,6 +240,10 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     await resetBruteForce();
   });
 
+  // requireAdmin2fa — глобальный флаг SiteSettings (guard кэширует его 15 с):
+  // пока он включён, любое действие персонала без 2FA в других наборах тоже
+  // получает 403. Поэтому `test:e2e` гоняет этот набор отдельно, после
+  // остальных (apps/api/package.json), — параллельно он ронял чужие тесты.
   it('requireAdmin2fa: персонал без 2FA получает 403 admin_2fa_required, с 2FA — доступ', async () => {
     const role = await prisma.role.create({
       data: {
