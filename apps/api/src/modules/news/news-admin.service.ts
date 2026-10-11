@@ -6,6 +6,7 @@ import {
 import { NewsStatus, Prisma } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { ListAdminNewsQueryDto } from './dto/list-admin-news-query.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
@@ -27,7 +28,7 @@ export class NewsAdminService {
     const [items, total] = await Promise.all([
       this.prisma.news.findMany({
         where,
-        include: { author: true, tags: true },
+        include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -69,7 +70,7 @@ export class NewsAdminService {
   async getAdminById(id: string) {
     const news = await this.prisma.news.findUnique({
       where: { id },
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
     });
     if (!news) {
       throw new NotFoundException('Новость не найдена');
@@ -96,7 +97,7 @@ export class NewsAdminService {
         publishedAt: status === NewsStatus.PUBLISHED ? new Date() : undefined,
         tags: tags ? { create: tags.map((tag) => ({ tag })) } : undefined,
       },
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
     });
   }
 
@@ -122,7 +123,7 @@ export class NewsAdminService {
           ? { tags: { deleteMany: {}, create: tags.map((tag) => ({ tag })) } }
           : {}),
       },
-      include: { author: true, tags: true },
+      include: { author: { select: PUBLIC_USER_SELECT }, tags: true },
     });
   }
 
