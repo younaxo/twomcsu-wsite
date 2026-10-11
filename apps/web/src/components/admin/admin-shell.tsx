@@ -2,6 +2,7 @@
 
 import {
   Award,
+  BriefcaseBusiness,
   Database,
   Download,
   Key,
@@ -90,6 +91,7 @@ const ICONS: Record<AdminIconName, LucideIcon> = {
   download: Download,
   wrench: Wrench,
   award: Award,
+  briefcase: BriefcaseBusiness,
 };
 
 /// Навигация, отфильтрованная по правам текущего пользователя. Группы без

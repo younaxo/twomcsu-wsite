@@ -25,7 +25,8 @@ export type AdminIconName =
   | 'receipt'
   | 'download'
   | 'wrench'
-  | 'award';
+  | 'award'
+  | 'briefcase';
 
 /// Подраздел пункта (ADR-0139): связанные страницы под одним пунктом, чтобы
 /// навигация не разрасталась; в оболочке переключаются вкладками.
@@ -85,17 +86,30 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       },
       {
         href: '/admin/roles',
-        label: 'Роли',
+        label: 'Роли и права',
         icon: 'shield',
-        requirement: 'roles.view',
-        keywords: ['права', 'иерархия'],
+        requirement: ['roles.view', 'permissions.manage'],
+        keywords: ['права', 'иерархия', 'матрица', 'ключи', 'permissions'],
+        sections: [
+          { href: '/admin/roles', label: 'Роли', requirement: 'roles.view' },
+          { href: '/admin/permissions', label: 'Permissions', requirement: 'permissions.manage' },
+        ],
       },
       {
-        href: '/admin/permissions',
-        label: 'Permissions',
-        icon: 'key',
-        requirement: 'permissions.manage',
-        keywords: ['матрица', 'ключи', 'права'],
+        href: '/admin/positions',
+        label: 'Команда',
+        icon: 'briefcase',
+        requirement: ['positions.view', 'departments.view', 'custom_positions.view'],
+        keywords: ['должности', 'отделы', 'свои должности', 'стафф'],
+        sections: [
+          { href: '/admin/positions', label: 'Должности', requirement: 'positions.view' },
+          { href: '/admin/departments', label: 'Отделы', requirement: 'departments.view' },
+          {
+            href: '/admin/custom-positions',
+            label: 'Свои должности',
+            requirement: 'custom_positions.view',
+          },
+        ],
       },
     ],
   },
