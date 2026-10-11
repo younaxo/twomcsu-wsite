@@ -16,6 +16,7 @@ const STATIC_PATHS = [
   '/news',
   '/events',
   '/vote',
+  '/leaderboards',
   '/forms',
   '/legal/privacy',
   '/legal/terms',
