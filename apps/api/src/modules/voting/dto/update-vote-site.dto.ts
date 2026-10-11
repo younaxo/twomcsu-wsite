@@ -21,12 +21,16 @@ export class UpdateVoteSiteDto {
 
   @IsOptional()
   @IsString()
-  @IsUrl({ require_protocol: true })
+  @Length(1, 500)
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   url?: string;
 
+  /// null убирает логотип (ADR-0144).
   @IsOptional()
   @IsString()
-  logoUrl?: string;
+  @Length(0, 500)
+  @IsUrl({ require_protocol: true, protocols: ['https'] })
+  logoUrl?: string | null;
 
   @IsOptional()
   @IsInt()

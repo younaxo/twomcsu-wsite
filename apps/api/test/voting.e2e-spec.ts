@@ -165,6 +165,31 @@ describe('Voting (e2e)', () => {
     secret = res.body.secret;
     expect(typeof secret).toBe('string');
     expect(res.body.site.webhookSecretHash).toBeUndefined();
+
+    // ADR-0144: ссылка только http/https, логотип только https; null убирает.
+    await request(app.getHttpServer())
+      .patch(`/admin/voting/sites/${siteId}`)
+      .set('Authorization', auth(admin))
+      .send({ url: 'ftp://example.com/vote' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/admin/voting/sites/${siteId}`)
+      .set('Authorization', auth(admin))
+      .send({ logoUrl: 'http://example.com/logo.png' })
+      .expect(400);
+    const withLogo = await request(app.getHttpServer())
+      .patch(`/admin/voting/sites/${siteId}`)
+      .set('Authorization', auth(admin))
+      .send({ logoUrl: 'https://example.com/logo.png' })
+      .expect(200);
+    expect(withLogo.body.logoUrl).toBe('https://example.com/logo.png');
+    expect(withLogo.body.webhookSecretHash).toBeUndefined();
+    const noLogo = await request(app.getHttpServer())
+      .patch(`/admin/voting/sites/${siteId}`)
+      .set('Authorization', auth(admin))
+      .send({ logoUrl: null })
+      .expect(200);
+    expect(noLogo.body.logoUrl).toBeNull();
   });
 
   it('overview: публично виден сайт без секрета', async () => {

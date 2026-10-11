@@ -97,4 +97,15 @@ describe('admin navigation', () => {
     expect(checkPermissions(newsOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
     expect(resolveNavItem(content, (r) => checkPermissions(newsOnly, r)).href).toBe('/admin/news');
   });
+
+  it('темы и голосование — подразделы «Контента» (ADR-0144, ADR-0145)', () => {
+    expect(findNavItem('/admin/topics/abc')?.label).toBe('Контент');
+    expect(findNavItem('/admin/voting')?.label).toBe('Контент');
+    const content = findNavItem('/admin/content')!;
+    const topicsOnly = effective(['topics.view']);
+    expect(checkPermissions(topicsOnly, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    expect(resolveNavItem(content, (r) => checkPermissions(topicsOnly, r)).href).toBe(
+      '/admin/topics',
+    );
+  });
 });

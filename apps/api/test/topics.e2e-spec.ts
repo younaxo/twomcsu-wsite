@@ -238,6 +238,29 @@ describe('Topics (e2e)', () => {
       .expect(200);
     expect(updated.body.title).toBe('Правила сервера (обновлено)');
 
+    // ADR-0145: цвет — только #RRGGBB, null очищает; в списке нет текста.
+    await request(app.getHttpServer())
+      .patch(`/admin/topics/${publicTopicId}`)
+      .set('Authorization', auth(admin))
+      .send({ color: 'red' })
+      .expect(400);
+    const cleared = await request(app.getHttpServer())
+      .patch(`/admin/topics/${publicTopicId}`)
+      .set('Authorization', auth(admin))
+      .send({ description: null, color: null })
+      .expect(200);
+    expect(cleared.body.description).toBeNull();
+    const adminList = await request(app.getHttpServer())
+      .get('/admin/topics')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const listed = adminList.body.find(
+      (t: { id: string }) => t.id === publicTopicId,
+    );
+    expect(listed).toBeDefined();
+    expect(listed).not.toHaveProperty('content');
+    expect(listed).not.toHaveProperty('contentHtml');
+
     await request(app.getHttpServer())
       .get('/admin/topics/non-existent-id')
       .set('Authorization', auth(admin))
