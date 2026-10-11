@@ -7,6 +7,7 @@ import {
 import { FormFieldType, FormStatus, Prisma } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CreateFormDto } from './dto/create-form.dto';
 import { FormFieldDto } from './dto/form-field.dto';
 import { ListAdminFormsQueryDto } from './dto/list-admin-forms-query.dto';
@@ -45,7 +46,7 @@ export class FormsAdminService {
       this.prisma.form.findMany({
         where,
         include: {
-          createdBy: true,
+          createdBy: { select: PUBLIC_USER_SELECT },
           _count: { select: { fields: true, responses: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -60,7 +61,10 @@ export class FormsAdminService {
   async getFormById(id: string) {
     const form = await this.prisma.form.findUnique({
       where: { id },
-      include: { createdBy: true, fields: { orderBy: { order: 'asc' } } },
+      include: {
+        createdBy: { select: PUBLIC_USER_SELECT },
+        fields: { orderBy: { order: 'asc' } },
+      },
     });
     if (!form) {
       throw new NotFoundException('Форма не найдена');
