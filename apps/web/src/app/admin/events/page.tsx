@@ -1,6 +1,7 @@
 'use client';
 
 import { CalendarDays, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { DateTimeField } from '@/components/admin/date-time-field';
 import { PageHeader } from '@/components/admin/page-header';
@@ -28,6 +29,8 @@ import {
   EVENT_CATEGORY_LABEL,
   EVENT_STATUS_LABEL,
   EVENT_VISIBILITY_LABEL,
+  ATTENDANCE_LABEL,
+  useEventParticipants,
   useAdminEventActions,
   useAdminEvents,
   type AdminEvent,
@@ -248,6 +251,44 @@ function EventDialog({ event, onClose }: { event: AdminEvent | null; onClose: ()
   );
 }
 
+function ParticipantsDialog({ event, onClose }: { event: AdminEvent; onClose: () => void }) {
+  const participants = useEventParticipants(event.id);
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Участники: {event.title}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          {participants.isPending ? (
+            <SkeletonRows rows={3} />
+          ) : participants.isError ? (
+            <ErrorState error={participants.error} onRetry={() => participants.refetch()} />
+          ) : participants.data.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Пока никто не записался.</p>
+          ) : (
+            <ul className="flex flex-col gap-2" data-testid="event-participants">
+              {participants.data.map((entry) => (
+                <li key={entry.user.id} className="flex items-center gap-2 text-sm">
+                  <Link
+                    href={`/admin/users/${encodeURIComponent(entry.user.id)}`}
+                    className="min-w-0 flex-1 truncate hover:underline"
+                  >
+                    {entry.user.tag}
+                  </Link>
+                  <Badge tone={entry.status === 'GOING' ? 'success' : 'neutral'}>
+                    {ATTENDANCE_LABEL[entry.status]}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EventsList() {
   const { can } = usePermissions();
   const [status, setStatus] = useState<EventStatus | ''>('');
@@ -256,6 +297,7 @@ function EventsList() {
   const { setStatus: changeStatus, remove } = useAdminEventActions();
   const [editing, setEditing] = useState<AdminEvent | null | undefined>(undefined);
   const [cancelling, setCancelling] = useState<AdminEvent | null>(null);
+  const [viewing, setViewing] = useState<AdminEvent | null>(null);
   const [deleting, setDeleting] = useState<AdminEvent | null>(null);
   const totalPages = events.data
     ? Math.max(1, Math.ceil(events.data.total / ADMIN_EVENTS_PAGE_SIZE))
@@ -329,6 +371,9 @@ function EventsList() {
                       Опубликовать
                     </Button>
                   ) : null}
+                  <Button size="sm" variant="ghost" onClick={() => setViewing(item)}>
+                    Участники
+                  </Button>
                   {can('events.edit') ? (
                     <Button size="sm" variant="secondary" onClick={() => setEditing(item)}>
                       Изменить
@@ -360,6 +405,7 @@ function EventsList() {
           onClose={() => setEditing(undefined)}
         />
       ) : null}
+      {viewing ? <ParticipantsDialog event={viewing} onClose={() => setViewing(null)} /> : null}
       <ConfirmDialog
         open={cancelling !== null}
         onOpenChange={(open) => !open && setCancelling(null)}

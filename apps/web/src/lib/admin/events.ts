@@ -109,3 +109,27 @@ export function useAdminEventActions() {
   });
   return { create, update, setStatus, remove };
 }
+
+export type AttendanceStatus = 'GOING' | 'INTERESTED' | 'DECLINED';
+
+export const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = {
+  GOING: 'Идёт',
+  INTERESTED: 'Интересуется',
+  DECLINED: 'Отказался',
+};
+
+export interface EventParticipantDto {
+  status: AttendanceStatus;
+  createdAt: string;
+  user: { id: string; username: string; tag: string; avatar: string | null };
+}
+
+/// Участники события (ADR-0151) — публичные поля пользователя и статус.
+export function useEventParticipants(id: string | null) {
+  return useQuery({
+    queryKey: ['admin', 'events', 'participants', id ?? ''] as const,
+    queryFn: () =>
+      api.get<EventParticipantDto[]>(`/admin/events/${encodeURIComponent(id!)}/participants`),
+    enabled: !!id,
+  });
+}

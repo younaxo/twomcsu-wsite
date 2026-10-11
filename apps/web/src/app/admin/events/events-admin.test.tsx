@@ -67,9 +67,24 @@ beforeEach(() => {
   mocks.post.mockResolvedValue({ success: true });
   mocks.patch.mockResolvedValue(DRAFT);
   mocks.delete.mockResolvedValue(undefined);
-  mocks.get.mockImplementation(async (path: string) =>
-    path === '/admin/events' ? { items: [DRAFT, PUBLISHED], total: 2 } : [],
-  );
+  mocks.get.mockImplementation(async (path: string) => {
+    if (path === '/admin/events') return { items: [DRAFT, PUBLISHED], total: 2 };
+    if (path === '/admin/events/e1/participants') {
+      return [
+        {
+          status: 'GOING',
+          createdAt: '2026-10-11T10:00:00.000Z',
+          user: { id: 'u1', username: 'pvp', tag: 'pvp#0007', avatar: null },
+        },
+        {
+          status: 'INTERESTED',
+          createdAt: '2026-10-11T11:00:00.000Z',
+          user: { id: 'u2', username: 'fan', tag: 'fan#0008', avatar: null },
+        },
+      ];
+    }
+    return [];
+  });
 });
 
 describe('События в админке (срез 7.4)', () => {
@@ -141,5 +156,20 @@ describe('События в админке (срез 7.4)', () => {
         coverImage: null,
       }),
     );
+  });
+
+  it('участники (ADR-0151): тег со ссылкой на карточку и статус участия', async () => {
+    const user = userEvent.setup();
+    mocks.granted.add('events.view');
+    render(<AdminEventsPage />, { wrapper: Providers });
+    const rows = within(await screen.findByTestId('admin-events')).getAllByRole('listitem');
+    await user.click(within(rows[0]!).getByRole('button', { name: 'Участники' }));
+    const list = await screen.findByTestId('event-participants');
+    expect(within(list).getByRole('link', { name: 'pvp#0007' })).toHaveAttribute(
+      'href',
+      '/admin/users/u1',
+    );
+    expect(list).toHaveTextContent('Идёт');
+    expect(list).toHaveTextContent('Интересуется');
   });
 });
