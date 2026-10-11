@@ -11,11 +11,14 @@ import { ErrorState } from '@/components/ui/error-state';
 import { inputClassName } from '@/components/ui/input';
 import { Pagination } from '@/components/ui/pagination';
 import { SkeletonRows } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   STAFF_REPORT_TYPE_LABEL,
+  useArchivedReports,
   useStaffReports,
   type StaffReportsFilter,
 } from '@/lib/admin/reports';
+import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime } from '@/lib/format';
 import { REPORT_STATUS_LABEL, type ReportStatus } from '@/lib/support/hooks';
 
@@ -118,11 +121,75 @@ function Queue() {
   );
 }
 
+/// Архив (часть 2): закрытые и убранные из очереди обращения.
+function Archive() {
+  const [page, setPage] = useState(1);
+  const archived = useArchivedReports(page, true);
+  if (archived.isPending) return <SkeletonRows rows={4} />;
+  if (archived.isError) {
+    return <ErrorState error={archived.error} onRetry={() => archived.refetch()} />;
+  }
+  if (archived.data.items.length === 0) {
+    return <EmptyState icon={<LifeBuoy />} title="Архив пуст" />;
+  }
+  const totalPages = Math.max(1, Math.ceil(archived.data.total / archived.data.limit));
+  return (
+    <div className="flex flex-col gap-4">
+      <ul
+        className="flex flex-col divide-y divide-border-subtle rounded-xl bg-surface shadow-sm"
+        data-testid="archived-reports"
+      >
+        {archived.data.items.map((report) => (
+          <li key={report.id}>
+            <Link
+              href={`/admin/reports/${encodeURIComponent(report.reportNumber)}`}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 hover:bg-muted/40"
+            >
+              <span className="font-mono text-xs text-muted-foreground">
+                #{report.reportNumber}
+              </span>
+              <span className="text-sm font-medium">
+                {STAFF_REPORT_TYPE_LABEL[report.type] ?? report.type}
+              </span>
+              <Badge tone="neutral">{REPORT_STATUS_LABEL[report.status]}</Badge>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {report.author?.username ?? '—'}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {totalPages > 1 ? (
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      ) : null}
+    </div>
+  );
+}
+
+function Sections() {
+  const { can } = usePermissions();
+  if (!can('reports.archived.view')) return <Queue />;
+  return (
+    <Tabs defaultValue="queue">
+      <TabsList>
+        <TabsTrigger value="queue">Очередь</TabsTrigger>
+        <TabsTrigger value="archive">Архив</TabsTrigger>
+      </TabsList>
+      <TabsContent value="queue" className="pt-4">
+        <Queue />
+      </TabsContent>
+      <TabsContent value="archive" className="pt-4">
+        <Archive />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
 export default function AdminReportsPage() {
   return (
     <PermissionGate requirement="reports.view">
       <PageHeader title="Обращения" description="Жалобы, обжалования и вопросы игроков." />
-      <Queue />
+      <Sections />
     </PermissionGate>
   );
 }
