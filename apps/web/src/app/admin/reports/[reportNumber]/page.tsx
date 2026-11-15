@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, LifeBuoy, Lock, Pin } from 'lucide-react';
+import { ArrowLeft, History, LifeBuoy, Lock, Pin } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
@@ -11,26 +11,34 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input, Textarea, inputClassName } from '@/components/ui/input';
+import { Pagination } from '@/components/ui/pagination';
 import { SkeletonRows } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Timeline, TimelineItem } from '@/components/ui/timeline';
 import { toast } from '@/components/ui/toast';
 import {
+  REPORT_PRIORITY_LABEL,
+  REPORT_PRIORITY_TONE,
   STAFF_REPORT_TYPE_LABEL,
+  formatHistoryChanges,
+  useReportHistory,
   useStaffReport,
   useStaffReportActions,
   type StaffReportDetails,
 } from '@/lib/admin/reports';
-import { ApiError, getErrorMessage } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
-import { REPORT_STATUS_LABEL, type ReportStatus } from '@/lib/support/hooks';
+import { describeSupportError } from '@/lib/support/errors';
+import { PUNISHMENT_TYPE_LABEL, REPORT_STATUS_LABEL, type ReportStatus } from '@/lib/support/hooks';
 
 /// Карточка обращения для персонала (срез 7.3, ADR-0128): описание, цели,
 /// переписка с ответом, заметки персонала, назначение, статус, вердикт,
 /// блокировка. Каждое действие — по своему праву `reports.*`.
 
-const onError = (error: unknown) => toast.error(getErrorMessage(error));
+const onError = (error: unknown) => toast.error(describeSupportError(error));
 
 function Composer({
   label,
@@ -78,13 +86,14 @@ function Actions({ report }: { report: StaffReportDetails }) {
   const [verdict, setVerdict] = useState(report.verdict ?? '');
   const [lockReason, setLockReason] = useState('');
   const [banReason, setBanReason] = useState('');
+  const [transferId, setTransferId] = useState('');
   return (
     <aside
       className="flex flex-col gap-4 rounded-xl bg-surface p-4 shadow-sm"
       data-testid="report-actions"
     >
       {can('reports.assign') ? (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5" data-testid="assign-block">
           <p className="text-xs text-muted-foreground">
             Исполнитель: {report.assignedTo?.username ?? 'не назначен'}
           </p>
@@ -98,6 +107,48 @@ function Actions({ report }: { report: StaffReportDetails }) {
           >
             {report.assignedToId === meId ? 'Снять с себя' : 'Взять себе'}
           </Button>
+          {report.assignedToId && report.assignedToId !== meId ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={actions.assign.isPending}
+              onClick={() => actions.assign.mutate(null, { onError })}
+            >
+              Снять исполнителя
+            </Button>
+          ) : null}
+          <form
+            className="flex flex-col gap-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const id = transferId.trim();
+              if (!id) return;
+              actions.assign.mutate(id, {
+                onSuccess: () => {
+                  setTransferId('');
+                  toast.success('Обращение передано');
+                },
+                onError,
+              });
+            }}
+          >
+            <Input
+              aria-label="ID исполнителя для передачи"
+              placeholder="ID сотрудника"
+              maxLength={64}
+              value={transferId}
+              onChange={(event) => setTransferId(event.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              type="submit"
+              disabled={!transferId.trim()}
+              loading={actions.assign.isPending}
+            >
+              Передать
+            </Button>
+          </form>
         </div>
       ) : null}
       {can('reports.status') ? (
@@ -105,6 +156,7 @@ function Actions({ report }: { report: StaffReportDetails }) {
           Статус
           <select
             className={inputClassName}
+            disabled={actions.status.isPending}
             value={report.status}
             onChange={(event) =>
               actions.status.mutate(event.target.value as ReportStatus, { onError })
@@ -231,6 +283,60 @@ function Actions({ report }: { report: StaffReportDetails }) {
   );
 }
 
+const SEVERITY_TONE = { info: 'info', warning: 'warning', critical: 'destructive' } as const;
+
+/// История действий (`GET /moderation/reports/:n/history`): `changes` выводится
+/// только текстом (без HTML).
+function HistoryTab({ number }: { number: string }) {
+  const [page, setPage] = useState(1);
+  const history = useReportHistory(number, page, true);
+  if (history.isPending) return <SkeletonRows rows={4} />;
+  if (history.isError)
+    return <ErrorState error={history.error} onRetry={() => history.refetch()} />;
+  if (history.data.items.length === 0) {
+    return <EmptyState icon={<History />} title="Действий пока нет" />;
+  }
+  const totalPages = Math.max(1, Math.ceil(history.data.total / history.data.limit));
+  return (
+    <section
+      className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-sm"
+      aria-label="История действий"
+      data-testid="report-history"
+    >
+      <Timeline>
+        {history.data.items.map((item) => {
+          const changes = formatHistoryChanges(item.changes);
+          return (
+            <TimelineItem
+              key={item.id}
+              tone={SEVERITY_TONE[item.severity] ?? 'neutral'}
+              title={
+                <>
+                  <span className="font-mono text-xs">{item.action}</span> · {item.actor.username}
+                </>
+              }
+              meta={formatDateTime(item.createdAt)}
+            >
+              {item.targetType ? (
+                <p className="text-xs">
+                  {item.targetType}
+                  {item.targetId ? `: ${item.targetId}` : ''}
+                </p>
+              ) : null}
+              {changes ? (
+                <p className="whitespace-pre-wrap break-words font-mono text-xs">{changes}</p>
+              ) : null}
+            </TimelineItem>
+          );
+        })}
+      </Timeline>
+      {totalPages > 1 ? (
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+      ) : null}
+    </section>
+  );
+}
+
 function Card({ number }: { number: string }) {
   const { can } = usePermissions();
   const report = useStaffReport(number);
@@ -246,145 +352,177 @@ function Card({ number }: { number: string }) {
   const data = report.data;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-      <div className="flex flex-col gap-4">
-        <section
-          className="flex flex-col gap-2 rounded-xl bg-surface p-5 shadow-sm"
-          data-testid="staff-report"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">#{data.reportNumber}</span>
-            <span className="text-sm font-medium">
-              {STAFF_REPORT_TYPE_LABEL[data.type] ?? data.type}
-            </span>
-            <Badge tone="neutral">{REPORT_STATUS_LABEL[data.status]}</Badge>
-            {data.isLocked ? (
-              <Badge tone="warning" icon={<Lock aria-hidden />}>
-                Ответы закрыты
-              </Badge>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Автор:{' '}
-            {data.author ? (
-              <Link
-                href={`/u/${encodeURIComponent(data.author.username)}`}
-                className="font-medium hover:underline"
-              >
-                {data.author.username}
-              </Link>
-            ) : (
-              '—'
-            )}{' '}
-            · {formatDateTime(data.createdAt)}
-            {data.server ? ` · сервер: ${data.server}` : ''}
-          </p>
-          {data.targets.length > 0 ? (
+      <Tabs defaultValue="conversation" className="flex min-w-0 flex-col gap-4">
+        <TabsList>
+          <TabsTrigger value="conversation">Переписка</TabsTrigger>
+          <TabsTrigger value="history">
+            <History aria-hidden />
+            История действий
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="history">
+          <HistoryTab number={number} />
+        </TabsContent>
+        <TabsContent value="conversation" className="flex flex-col gap-4">
+          <section
+            className="flex flex-col gap-2 rounded-xl bg-surface p-5 shadow-sm"
+            data-testid="staff-report"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs text-muted-foreground">#{data.reportNumber}</span>
+              <span className="text-sm font-medium">
+                {STAFF_REPORT_TYPE_LABEL[data.type] ?? data.type}
+              </span>
+              <Badge tone="neutral">{REPORT_STATUS_LABEL[data.status]}</Badge>
+              {data.priority ? (
+                <Badge tone={REPORT_PRIORITY_TONE[data.priority]} data-testid="report-priority">
+                  Приоритет: {REPORT_PRIORITY_LABEL[data.priority]}
+                </Badge>
+              ) : null}
+              {data.isLocked ? (
+                <Badge tone="warning" icon={<Lock aria-hidden />}>
+                  Ответы закрыты
+                </Badge>
+              ) : null}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Нарушители: {data.targets.map((target) => target.username ?? '—').join(', ')}
-            </p>
-          ) : null}
-          <p className="whitespace-pre-wrap break-words text-sm">{data.description}</p>
-        </section>
-        <section
-          className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
-          aria-label="Переписка"
-        >
-          <h2 className="text-sm font-semibold">Переписка</h2>
-          {data.messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Сообщений пока нет.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {data.messages.map((message) => (
-                <li
-                  key={message.id}
-                  className={cn(
-                    'rounded-lg px-3 py-2 text-sm',
-                    message.isStaff ? 'bg-primary-soft' : 'bg-surface-sunken',
-                  )}
+              Автор:{' '}
+              {data.author ? (
+                <Link
+                  href={`/u/${encodeURIComponent(data.author.username)}`}
+                  className="font-medium hover:underline"
                 >
-                  <p className="text-xs text-muted-foreground">
-                    {message.isSystem ? 'Система' : message.isStaff ? 'Персонал' : 'Автор'} ·{' '}
-                    {formatDateTime(message.createdAt)}
-                    {message.isPinned ? (
-                      <Pin aria-label="Закреплено" className="ml-1 inline size-3" />
-                    ) : null}
-                  </p>
-                  <p
-                    className={cn(
-                      'whitespace-pre-wrap break-words',
-                      message.isDeleted && 'italic text-muted-foreground',
-                    )}
-                  >
-                    {message.isDeleted ? `Удалено: ${message.content}` : message.content}
-                  </p>
-                  {!message.isDeleted && !message.isSystem ? (
-                    <div className="mt-1 flex gap-1">
-                      {can(message.isPinned ? 'reports.messages.unpin' : 'reports.messages.pin') ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            actions.pinMessage.mutate(
-                              { messageId: message.id, pinned: !message.isPinned },
-                              { onError },
-                            )
-                          }
-                        >
-                          {message.isPinned ? 'Открепить' : 'Закрепить'}
-                        </Button>
-                      ) : null}
-                      {can('reports.messages') ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => actions.hideMessage.mutate(message.id, { onError })}
-                        >
-                          Скрыть
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          {can('reports.messages') ? (
-            <Composer
-              label="Ответ автору"
-              submitLabel="Ответить"
-              pending={actions.message.isPending}
-              onSubmit={(text, done) => actions.message.mutate(text, { onSuccess: done, onError })}
-            />
-          ) : null}
-        </section>
-        {can('reports.notes') ? (
+                  {data.author.username}
+                </Link>
+              ) : (
+                '—'
+              )}{' '}
+              · {formatDateTime(data.createdAt)}
+              {data.server ? ` · сервер: ${data.server}` : ''}
+            </p>
+            {(data.targets ?? []).length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Нарушители: {(data.targets ?? []).map((target) => target.username).join(', ')}
+              </p>
+            ) : null}
+            {data.appealedPunishment ? (
+              <p className="text-xs text-muted-foreground" data-testid="appealed-punishment">
+                Обжалуется: {PUNISHMENT_TYPE_LABEL[data.appealedPunishment.punishmentType]} ·{' '}
+                {data.appealedPunishment.reason}
+              </p>
+            ) : null}
+            {data.internalNote ? (
+              <p className="rounded-lg bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">
+                Внутренняя пометка: {data.internalNote}
+              </p>
+            ) : null}
+            <p className="whitespace-pre-wrap break-words text-sm">{data.description}</p>
+          </section>
           <section
             className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
-            aria-label="Заметки персонала"
+            aria-label="Переписка"
           >
-            <h2 className="text-sm font-semibold">Заметки персонала</h2>
-            <p className="text-xs text-muted-foreground">Автор обращения их не видит.</p>
-            {data.moderatorNotes.length > 0 ? (
+            <h2 className="text-sm font-semibold">Переписка</h2>
+            {data.messages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Сообщений пока нет.</p>
+            ) : (
               <ul className="flex flex-col gap-2">
-                {data.moderatorNotes.map((note) => (
-                  <li key={note.id} className="rounded-lg bg-surface-sunken px-3 py-2 text-sm">
+                {data.messages.map((message) => (
+                  <li
+                    key={message.id}
+                    className={cn(
+                      'rounded-lg px-3 py-2 text-sm',
+                      message.isStaff ? 'bg-primary-soft' : 'bg-surface-sunken',
+                    )}
+                  >
                     <p className="text-xs text-muted-foreground">
-                      {formatDateTime(note.createdAt)}
+                      {message.isSystem ? 'Система' : message.isStaff ? 'Персонал' : 'Автор'} ·{' '}
+                      {formatDateTime(message.createdAt)}
+                      {message.isPinned ? (
+                        <Pin aria-label="Закреплено" className="ml-1 inline size-3" />
+                      ) : null}
                     </p>
-                    <p className="whitespace-pre-wrap break-words">{note.content}</p>
+                    <p
+                      className={cn(
+                        'whitespace-pre-wrap break-words',
+                        message.isDeleted && 'italic text-muted-foreground',
+                      )}
+                    >
+                      {message.isDeleted ? `Удалено: ${message.content}` : message.content}
+                    </p>
+                    {!message.isDeleted && !message.isSystem ? (
+                      <div className="mt-1 flex gap-1">
+                        {can(
+                          message.isPinned ? 'reports.messages.unpin' : 'reports.messages.pin',
+                        ) ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              actions.pinMessage.mutate(
+                                { messageId: message.id, pinned: !message.isPinned },
+                                { onError },
+                              )
+                            }
+                          >
+                            {message.isPinned ? 'Открепить' : 'Закрепить'}
+                          </Button>
+                        ) : null}
+                        {can('reports.messages') ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => actions.hideMessage.mutate(message.id, { onError })}
+                          >
+                            Скрыть
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
+            )}
+            {can('reports.messages') ? (
+              <Composer
+                label="Ответ автору"
+                submitLabel="Ответить"
+                pending={actions.message.isPending}
+                onSubmit={(text, done) =>
+                  actions.message.mutate(text, { onSuccess: done, onError })
+                }
+              />
             ) : null}
-            <Composer
-              label="Новая заметка"
-              submitLabel="Добавить заметку"
-              pending={actions.note.isPending}
-              onSubmit={(text, done) => actions.note.mutate(text, { onSuccess: done, onError })}
-            />
           </section>
-        ) : null}
-      </div>
+          {can('reports.notes') ? (
+            <section
+              className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
+              aria-label="Заметки персонала"
+            >
+              <h2 className="text-sm font-semibold">Заметки персонала</h2>
+              <p className="text-xs text-muted-foreground">Автор обращения их не видит.</p>
+              {data.moderatorNotes.length > 0 ? (
+                <ul className="flex flex-col gap-2">
+                  {data.moderatorNotes.map((note) => (
+                    <li key={note.id} className="rounded-lg bg-surface-sunken px-3 py-2 text-sm">
+                      <p className="text-xs text-muted-foreground">
+                        {formatDateTime(note.createdAt)}
+                      </p>
+                      <p className="whitespace-pre-wrap break-words">{note.content}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <Composer
+                label="Новая заметка"
+                submitLabel="Добавить заметку"
+                pending={actions.note.isPending}
+                onSubmit={(text, done) => actions.note.mutate(text, { onSuccess: done, onError })}
+              />
+            </section>
+          ) : null}
+        </TabsContent>
+      </Tabs>
       <Actions report={data} />
     </div>
   );

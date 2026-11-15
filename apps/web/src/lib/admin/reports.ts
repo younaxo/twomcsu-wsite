@@ -1,13 +1,23 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type {
+  Paginated,
+  ReportHistoryItemDto,
+  ReportPriority,
+  ReportStatus,
+  ReportType,
+  StaffListReportsQuery,
+  StaffReportDetailDto,
+  StaffReportListItemDto,
+} from '@twomc/shared';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
-import type { ReportStatus } from '@/lib/support/hooks';
 
-/// Обращения для персонала (срез 7.3, ADR-0128): очередь с фильтрами и
-/// карточка — переписка, заметки, назначение, статус, вердикт, блокировка.
+/// Обращения для персонала (Этап 01, шаг C): очередь с фильтрами (статус, тип,
+/// приоритет, ответственный, поиск), карточка — переписка, заметки, назначение,
+/// статус, вердикт, блокировка, история действий. Права проверяет сервер.
 
-export const STAFF_REPORT_TYPE_LABEL: Record<string, string> = {
+export const STAFF_REPORT_TYPE_LABEL: Record<ReportType, string> = {
   PLAYER_COMPLAINT: 'Жалоба на игрока',
   ADMIN_COMPLAINT: 'Жалоба на администрацию',
   PUNISHMENT_APPEAL: 'Обжалование наказания',
@@ -16,97 +26,97 @@ export const STAFF_REPORT_TYPE_LABEL: Record<string, string> = {
   OTHER: 'Другое',
 };
 
-export interface StaffUser {
-  id: string;
-  username: string;
-  tag: string | null;
-  avatar: string | null;
-}
+export const REPORT_PRIORITY_LABEL: Record<ReportPriority, string> = {
+  LOW: 'Низкий',
+  NORMAL: 'Обычный',
+  HIGH: 'Высокий',
+  URGENT: 'Срочный',
+};
 
-export interface StaffReportSummary {
-  id: string;
-  reportNumber: string;
-  type: string;
-  status: ReportStatus;
-  description: string;
-  server: string | null;
-  createdAt: string;
-  isLocked: boolean;
-  author: StaffUser | null;
-  assignedTo: StaffUser | null;
-  assignedToId: string | null;
-  targets: Array<{ id: string; username: string | null; userId: string | null }>;
-}
+export const REPORT_PRIORITY_TONE: Record<
+  ReportPriority,
+  'neutral' | 'info' | 'warning' | 'destructive'
+> = {
+  LOW: 'neutral',
+  NORMAL: 'info',
+  HIGH: 'warning',
+  URGENT: 'destructive',
+};
 
-export interface StaffReportMessage {
-  id: string;
-  authorId: string | null;
-  content: string;
-  isStaff: boolean;
-  isSystem: boolean;
-  isDeleted: boolean;
-  isPinned?: boolean;
-  createdAt: string;
-}
+export type StaffReportSummary = StaffReportListItemDto;
+export type StaffReportDetails = StaffReportDetailDto;
+export type StaffReportMessage = StaffReportDetailDto['messages'][number];
+export type StaffReportNote = StaffReportDetailDto['moderatorNotes'][number];
 
-export interface StaffReportNote {
-  id: string;
-  authorId: string;
-  content: string;
-  isPinned: boolean;
-  createdAt: string;
-}
+/// Поиск `q` на сервере — до 100 символов.
+export const REPORT_SEARCH_MAX = 100;
 
-export interface StaffReportDetails extends StaffReportSummary {
-  authorId: string;
-  isArchived: boolean;
-  verdict: string | null;
-  lockedReason: string | null;
-  contactEmail: string | null;
-  messages: StaffReportMessage[];
-  moderatorNotes: StaffReportNote[];
-}
-
+/// Ответственный: `''` — любой, `me`, `unassigned` или id пользователя.
 export interface StaffReportsFilter {
   status: ReportStatus | '';
-  type: string;
+  type: ReportType | '';
+  priority: ReportPriority | '';
+  assignedToId: string;
+  q: string;
   page: number;
+}
+
+export const EMPTY_STAFF_FILTER: StaffReportsFilter = {
+  status: '',
+  type: '',
+  priority: '',
+  assignedToId: '',
+  q: '',
+  page: 1,
+};
+
+export const STAFF_REPORTS_LIMIT = 30;
+
+/// Query-параметры без пустых значений; `q` обрезается и ограничивается 100 символами.
+export function buildStaffReportsQuery(filter: StaffReportsFilter): StaffListReportsQuery {
+  const q = filter.q.trim().slice(0, REPORT_SEARCH_MAX);
+  const assignedToId = filter.assignedToId.trim();
+  return {
+    page: filter.page,
+    limit: STAFF_REPORTS_LIMIT,
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.type ? { type: filter.type } : {}),
+    ...(filter.priority ? { priority: filter.priority } : {}),
+    ...(assignedToId ? { assignedToId } : {}),
+    ...(q ? { q } : {}),
+  };
 }
 
 export const staffReportKeys = {
   all: ['admin', 'reports'] as const,
   list: (filter: StaffReportsFilter) => ['admin', 'reports', 'list', filter] as const,
+  archived: (filter: StaffReportsFilter) => ['admin', 'reports', 'archived', filter] as const,
   one: (number: string) => ['admin', 'reports', 'one', number] as const,
+  history: (number: string, page: number) => ['admin', 'reports', 'history', number, page] as const,
 };
 
-export function useStaffReports(filter: StaffReportsFilter) {
+export function useStaffReports(filter: StaffReportsFilter, enabled = true) {
   return useQuery({
     queryKey: staffReportKeys.list(filter),
     queryFn: () =>
-      api.get<{ items: StaffReportSummary[]; total: number; page: number; limit: number }>(
-        '/moderation/reports',
-        {
-          query: {
-            page: filter.page,
-            limit: 30,
-            ...(filter.status ? { status: filter.status } : {}),
-            ...(filter.type ? { type: filter.type } : {}),
-          },
-        },
-      ),
+      api.get<Paginated<StaffReportSummary>>('/moderation/reports', {
+        query: { ...buildStaffReportsQuery(filter) },
+      }),
+    enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
-/// Архив (срез 7.3, часть 2): `reports.archived.view`.
-export function useArchivedReports(page: number, enabled: boolean) {
+/// Архив: `reports.archived.view`.
+export function useArchivedReports(filter: StaffReportsFilter, enabled: boolean) {
   return useQuery({
-    queryKey: [...staffReportKeys.all, 'archived', page] as const,
+    queryKey: staffReportKeys.archived(filter),
     queryFn: () =>
-      api.get<{ items: StaffReportSummary[]; total: number; page: number; limit: number }>(
-        '/admin/reports/archived',
-        { query: { page, limit: 30 } },
-      ),
+      api.get<Paginated<StaffReportSummary>>('/admin/reports/archived', {
+        query: { ...buildStaffReportsQuery(filter) },
+      }),
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -118,10 +128,39 @@ export function useStaffReport(number: string) {
   });
 }
 
+export const REPORT_HISTORY_LIMIT = 20;
+
+/// История действий по обращению (`reports.view`).
+export function useReportHistory(number: string, page: number, enabled: boolean) {
+  return useQuery({
+    queryKey: staffReportKeys.history(number, page),
+    queryFn: () =>
+      api.get<Paginated<ReportHistoryItemDto>>(
+        `/moderation/reports/${encodeURIComponent(number)}/history`,
+        { query: { page, limit: REPORT_HISTORY_LIMIT } },
+      ),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/// Безопасное текстовое представление `changes`: только текст (React сам
+/// экранирует), без HTML; длинные значения усекаются.
+export function formatHistoryChanges(changes: Record<string, unknown> | null): string {
+  if (!changes || Object.keys(changes).length === 0) return '';
+  return Object.entries(changes)
+    .map(([key, value]) => {
+      const text = typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value));
+      return `${key}: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`;
+    })
+    .join('\n');
+}
+
 export function useStaffReportActions(number: string) {
   const client = useQueryClient();
   const base = `/moderation/reports/${encodeURIComponent(number)}`;
   const onSuccess = () => client.invalidateQueries({ queryKey: staffReportKeys.all });
+  /// `null` — снять исполнителя. Ошибки: 404 нет исполнителя, 400 забанен/без reports.view.
   const assign = useMutation({
     mutationFn: (assignedToId: string | null) => api.patch(`${base}/assign`, { assignedToId }),
     onSuccess,
@@ -147,7 +186,7 @@ export function useStaffReportActions(number: string) {
     mutationFn: (body: { locked: boolean; reason?: string }) => api.post(`${base}/lock`, body),
     onSuccess,
   });
-  // Часть 2: скрытие и закреп сообщений, архив, запрет обращений автору.
+  // Скрытие и закреп сообщений, архив, запрет обращений автору.
   const hideMessage = useMutation({
     mutationFn: (messageId: string) =>
       api.delete(`${base}/messages/${encodeURIComponent(messageId)}`),
