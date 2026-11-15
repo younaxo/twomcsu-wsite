@@ -24,10 +24,10 @@
 
 | Волна | Направление | Модель | Статус |
 |---|---|---|---|
-| A | Quality & Security: тесты, сборка, security §7 | sonnet | в работе |
-| A | Engineering: архитектура, backend/frontend матрицы, админка, Prisma | sonnet | в работе |
-| B | Platform & Integrations: CI/CD, Docker, зависимости, инфраструктура и data residency §10 | sonnet | ожидает |
-| B | Product & Design: roadmap 8 волн, требования, UI/UX и «Полдень» | sonnet | ожидает |
+| A | Quality & Security: тесты, сборка, security §7 | sonnet | готово (локально PASS: lint, format, typecheck, prisma validate, api unit 132/132, web 545/545, build api+web; e2e BLOCKED; SEC-01..22; spot-check SEC-01 подтверждён) |
+| A | Engineering: архитектура, backend/frontend матрицы, админка, Prisma | sonnet + 2 лида sonnet | готово (ARCH-01..17; spot-check Chief: 4/4 подтверждено) |
+| B | Platform & Integrations: CI/CD, Docker, зависимости, инфраструктура и data residency §10 | sonnet | готово (CICD, DOCK, OPS, DEP, GIT, PERF; spot-check DOCK-01 и GIT-01 подтверждены; предложение Git-workflow переписано v2) |
+| B | Product & Design: roadmap 8 волн, требования, UI/UX и «Полдень» | sonnet | в работе |
 
 ## Следующий шаг при прерывании
 
