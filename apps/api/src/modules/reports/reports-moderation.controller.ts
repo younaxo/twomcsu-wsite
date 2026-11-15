@@ -18,7 +18,8 @@ import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
 import { CreateModeratorNoteDto } from './dto/create-moderator-note.dto';
-import { ListReportsQueryDto } from './dto/list-reports-query.dto';
+import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
+import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
 import { LockReportDto } from './dto/lock-report.dto';
 import { SetVerdictDto } from './dto/set-verdict.dto';
 import { SoftDeleteMessageDto } from './dto/soft-delete-message.dto';
@@ -32,8 +33,20 @@ export class ReportsModerationController {
 
   @Get()
   @RequirePermissions('reports.view')
-  async list(@Query() query: ListReportsQueryDto) {
-    return this.moderation.listModeration(query);
+  async list(
+    @Query() query: StaffListReportsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.moderation.listModeration(query, user.id);
+  }
+
+  @Get(':reportNumber/history')
+  @RequirePermissions('reports.view')
+  async history(
+    @Param('reportNumber') reportNumber: string,
+    @Query() query: ReportHistoryQueryDto,
+  ) {
+    return this.moderation.history(reportNumber, query);
   }
 
   @Patch(':reportNumber/assign')
@@ -41,8 +54,9 @@ export class ReportsModerationController {
   async assign(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: AssignReportDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.assign(reportNumber, dto);
+    return this.moderation.assign(reportNumber, dto, user.id);
   }
 
   @Patch(':reportNumber/status')
@@ -50,8 +64,9 @@ export class ReportsModerationController {
   async changeStatus(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: ChangeReportStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.changeStatus(reportNumber, dto);
+    return this.moderation.changeStatus(reportNumber, dto, user.id);
   }
 
   @Patch(':reportNumber/verdict')
@@ -59,8 +74,9 @@ export class ReportsModerationController {
   async setVerdict(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: SetVerdictDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.setVerdict(reportNumber, dto);
+    return this.moderation.setVerdict(reportNumber, dto, user.id);
   }
 
   @Post(':reportNumber/messages')

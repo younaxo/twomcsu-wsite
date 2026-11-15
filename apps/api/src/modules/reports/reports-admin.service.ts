@@ -1,14 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ReportType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { ArchiveReportDto } from './dto/archive-report.dto';
 import { BanReportsDto } from './dto/ban-reports.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
+import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
+import {
+  REPORT_PRIORITY_PROVIDER,
+  ReportPriorityProvider,
+} from './report-priority.provider';
+import { buildStaffReportWhere } from './report-staff-filters';
 
 @Injectable()
 export class ReportsAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(REPORT_PRIORITY_PROVIDER)
+    private readonly priority: ReportPriorityProvider,
+  ) {}
 
   async stats() {
     const [total, byStatus, byType] = await Promise.all([
@@ -23,15 +33,14 @@ export class ReportsAdminService {
     };
   }
 
-  async listArchived(query: ListReportsQueryDto) {
+  async listArchived(query: StaffListReportsQueryDto, actorId: string) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;
     const where: Prisma.ReportWhereInput = {
       isArchived: true,
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.type ? { type: query.type } : {}),
+      ...buildStaffReportWhere(query, actorId, this.priority),
     };
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
         include: { author: { select: PUBLIC_USER_SELECT }, targets: true },
@@ -41,6 +50,12 @@ export class ReportsAdminService {
       }),
       this.prisma.report.count({ where }),
     ]);
+    const items = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        priority: await this.priority.resolve(row),
+      })),
+    );
     return { items, total, page, limit };
   }
 
