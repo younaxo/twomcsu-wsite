@@ -2,7 +2,7 @@
 name: twomc-lead-integrations
 description: Integrations Lead TwoMC для MOS/account linking, launcher, plugins и inventory contracts.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 55
 ---
 

@@ -2,7 +2,7 @@
 name: twomc-director-platform-integrations
 description: Platform & Integrations Director TwoMC. Координирует CI/DevOps и интеграции экосистемы без production-действий.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 65
 ---
 

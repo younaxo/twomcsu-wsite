@@ -2,7 +2,7 @@
 name: twomc-director-product-design
 description: Product & Design Director TwoMC. Координирует требования, UX и visual direction в границах утверждённого roadmap.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 65
 ---
 

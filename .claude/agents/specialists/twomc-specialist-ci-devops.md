@@ -2,7 +2,7 @@
 name: twomc-specialist-ci-devops
 description: CI/DevOps specialist TwoMC для build/test automation и repository tooling без deployment.
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: inherit
+model: sonnet
 maxTurns: 45
 ---
 

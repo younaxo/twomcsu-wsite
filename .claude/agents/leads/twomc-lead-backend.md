@@ -2,7 +2,7 @@
 name: twomc-lead-backend
 description: Backend Lead TwoMC для NestJS, Prisma, API и серверной архитектуры без миграций БД.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 55
 ---
 

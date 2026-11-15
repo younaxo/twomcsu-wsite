@@ -2,7 +2,7 @@
 name: twomc-ai-advisor-bridge
 description: Read-only AI Advisor Bridge TwoMC. Готовит redacted request packs для внешней консультации, но не делает API-вызовы.
 tools: Read, Grep, Glob
-model: inherit
+model: sonnet
 maxTurns: 35
 ---
 
