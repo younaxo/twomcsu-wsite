@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DefaultReportPriorityProvider } from './report-priority.provider';
 import { ReportsModerationService } from './reports-moderation.service';
 
@@ -12,7 +16,11 @@ function setup() {
         .fn()
         .mockImplementation(({ data }) => ({ id: 'r1', ...data })),
     },
-    user: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+    reportModeratorNote: {
+      findUnique: jest.fn(),
+      update: jest.fn().mockResolvedValue({}),
+    },
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
@@ -259,5 +267,114 @@ describe('ReportsModerationService.history', () => {
     await expect(service.history('X', {})).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('ReportsModerationService.assignableStaff', () => {
+  it('фильтр: не забанен, не SYSTEM, reports.view через роль или superuser, публичные поля', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.user.findMany.mockResolvedValue([{ id: 'u1', username: 'Mod' }]);
+    const res = await service.assignableStaff({});
+    const arg = prisma.user.findMany.mock.calls[0][0];
+    expect(arg.where.isBanned).toBe(false);
+    expect(arg.where.accountType).toEqual({ not: 'SYSTEM' });
+    expect(arg.where.username).toBeUndefined();
+    expect(arg.where.roles.some.role.OR).toEqual([
+      { isSuperuser: true },
+      {
+        permissions: {
+          some: { effect: 'ALLOW', permission: { key: 'reports.view' } },
+        },
+      },
+    ]);
+    expect(Object.keys(arg.select).sort()).toEqual([
+      'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
+    expect(arg.take).toBe(20);
+    expect(res.items).toHaveLength(1);
+    // Выборка одним запросом, без поштучных проверок прав.
+    expect(permissions.hasPermission).not.toHaveBeenCalled();
+  });
+
+  it('q — поиск по нику без регистра, limit передаётся', async () => {
+    const { prisma, service } = setup();
+    await service.assignableStaff({ q: '  Ste ', limit: 5 });
+    const arg = prisma.user.findMany.mock.calls[0][0];
+    expect(arg.where.username).toEqual({
+      contains: 'Ste',
+      mode: 'insensitive',
+    });
+    expect(arg.take).toBe(5);
+  });
+});
+
+describe('ReportsModerationService.updateModeratorNote: права', () => {
+  const note = { id: 'n1', reportId: 'r1', authorId: 'author-mod' };
+
+  it('автор заметки правит без дополнительной проверки права', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    await service.updateModeratorNote(
+      'R-1',
+      'n1',
+      { content: 'x' },
+      'author-mod',
+    );
+    expect(permissions.hasPermission).not.toHaveBeenCalled();
+    expect(prisma.reportModeratorNote.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('чужая заметка без reports.delete — 403, без записи', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    permissions.hasPermission.mockResolvedValue(false);
+    await expect(
+      service.updateModeratorNote('R-1', 'n1', { content: 'x' }, 'other'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(permissions.hasPermission).toHaveBeenCalledWith(
+      'other',
+      'reports.delete',
+    );
+    expect(prisma.reportModeratorNote.update).not.toHaveBeenCalled();
+  });
+
+  it('чужая заметка с reports.delete — правится', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    await service.updateModeratorNote('R-1', 'n1', { content: 'x' }, 'senior');
+    expect(prisma.reportModeratorNote.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('заметка другого обращения — 404', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue({
+      ...note,
+      reportId: 'r2',
+    });
+    await expect(
+      service.updateModeratorNote('R-1', 'n1', { content: 'x' }, 'author-mod'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('unpin и ответы с заметками: закреплённые первыми, затем по времени', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    await service.pinModeratorNote('R-1', 'n1', false);
+    expect(prisma.reportModeratorNote.update.mock.calls[0][0].data).toEqual({
+      isPinned: false,
+    });
+    const include = prisma.report.findUnique.mock.calls.at(-1)?.[0].include;
+    expect(include.moderatorNotes.orderBy).toEqual([
+      { isPinned: 'desc' },
+      { createdAt: 'asc' },
+    ]);
   });
 });

@@ -36,6 +36,10 @@ function setup() {
         .fn()
         .mockImplementation(({ data }) => ({ id: 'r1', ...data })),
     },
+    auditLog: {
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+    },
     reportMessage: {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({}),
@@ -313,7 +317,9 @@ describe('ReportsService: приватность служебных полей',
     expect(arg.include.messages.omit).toBeUndefined();
     expect(arg.include.messages.include.attachments).toBe(true);
     expect(arg.include.targets).toBe(true);
-    expect(arg.include.moderatorNotes).toBe(true);
+    expect(arg.include.moderatorNotes).toEqual({
+      orderBy: [{ isPinned: 'desc' }, { createdAt: 'asc' }],
+    });
     expect(arg.include.assignedTo).toBeDefined();
   });
 
@@ -574,5 +580,146 @@ describe('ReportsService: лимиты по пользователю (SEC-01)', 
     await service.updateOwnMessage('R-1', 'author', 'm2', { content: 'y' });
     expect(prisma.reportMessage.update).toHaveBeenCalledTimes(1);
     expect(prisma.reportMessage.count).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ReportsService: приватность сообщений персонала', () => {
+  const messages = [
+    { id: 'm1', authorId: 'author', isStaff: false, content: 'я' },
+    { id: 'm2', authorId: 'staff-7', isStaff: true, content: 'ответ' },
+  ];
+
+  it('игрок: у сообщений персонала authorId = null, свои сохраняют', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow({ messages }));
+    const res = await service.getByNumber('R-1', 'author', false);
+    expect(
+      (res.messages as Array<{ id: string; authorId: string | null }>).map(
+        (m) => [m.id, m.authorId],
+      ),
+    ).toEqual([
+      ['m1', 'author'],
+      ['m2', null],
+    ]);
+  });
+
+  it('персонал видит authorId сообщений', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow({ messages }));
+    const res = await service.getByNumber('R-1', 'staff', true);
+    expect(
+      (res.messages as Array<{ authorId: string }>).map((m) => m.authorId),
+    ).toEqual(['author', 'staff-7']);
+  });
+
+  it('addMessage и updateOwnMessage отдают тот же скрытый вид', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow({ messages }));
+    const added = await service.addMessage('R-1', 'author', { content: 'x' });
+    expect(added.messages[1].authorId).toBeNull();
+    prisma.reportMessage.findUnique.mockResolvedValue({
+      id: 'm1',
+      reportId: 'r1',
+      authorId: 'author',
+      isStaff: false,
+      isDeleted: false,
+    });
+    const edited = await service.updateOwnMessage('R-1', 'author', 'm1', {
+      content: 'y',
+    });
+    expect(edited.messages[1].authorId).toBeNull();
+  });
+});
+
+describe('ReportsService.historyForAuthor', () => {
+  const created = new Date('2026-01-01T00:00:00Z');
+  const audit = (extra: Record<string, unknown>) => ({
+    id: 'a1',
+    action: 'reports.status',
+    changes: { status: 'RESOLVED', internalNote: 'секрет' },
+    createdAt: new Date('2026-01-02T00:00:00Z'),
+    actorId: 'staff-1',
+    ipAddress: '1.2.3.4',
+    ...extra,
+  });
+
+  it('чужой игрок — 403, без запроса в AuditLog', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow());
+    await expect(
+      service.historyForAuthor('R-1', 'stranger', {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.auditLog.findMany).not.toHaveBeenCalled();
+  });
+
+  it('несуществующее обращение — 404', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(null);
+    await expect(
+      service.historyForAuthor('X', 'author', {}),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('белый список действий, поля только id/kind/status/createdAt, создание в конце', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(
+      reportRow({ createdAt: created }),
+    );
+    prisma.auditLog.findMany.mockResolvedValue([
+      audit({}),
+      audit({ id: 'a2', action: 'reports.verdict', changes: { verdict: 'т' } }),
+    ]);
+    prisma.auditLog.count.mockResolvedValue(2);
+    const res = await service.historyForAuthor('R-1', 'author', {});
+    const arg = prisma.auditLog.findMany.mock.calls[0][0];
+    expect([...arg.where.action.in].sort()).toEqual([
+      'reports.status',
+      'reports.verdict',
+    ]);
+    expect(Object.keys(arg.select).sort()).toEqual([
+      'action',
+      'changes',
+      'createdAt',
+      'id',
+    ]);
+    expect(res.total).toBe(3);
+    expect(res.items.map((i) => i.kind)).toEqual([
+      'STATUS_CHANGED',
+      'VERDICT',
+      'CREATED',
+    ]);
+    expect(res.items[0].status).toBe('RESOLVED');
+    expect(res.items[1].status).toBeNull();
+    for (const item of res.items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'createdAt',
+        'id',
+        'kind',
+        'status',
+      ]);
+    }
+    expect(JSON.stringify(res)).not.toMatch(/staff-1|1\.2\.3\.4|секрет/);
+  });
+
+  it('невалидный status игнорируется; не последняя страница без CREATED', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(
+      reportRow({ createdAt: created }),
+    );
+    prisma.auditLog.findMany.mockResolvedValue([
+      audit({ changes: { status: 'HACKED' } }),
+    ]);
+    prisma.auditLog.count.mockResolvedValue(5);
+    const res = await service.historyForAuthor('R-1', 'author', {
+      page: 1,
+      limit: 1,
+    });
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0].status).toBeNull();
+    expect(res.total).toBe(6);
+    expect(prisma.auditLog.findMany.mock.calls[0][0]).toMatchObject({
+      skip: 0,
+      take: 1,
+    });
   });
 });

@@ -16,6 +16,7 @@ import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { CreateDonationProblemDto } from './dto/create-donation-problem.dto';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
+import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { ReportRulesQueryDto } from './dto/report-rules-query.dto';
 import { UpdateOwnReportMessageDto } from './dto/update-own-report-message.dto';
 import { ReportsService } from './reports.service';
@@ -53,6 +54,15 @@ export class ReportsController {
       'reports.view',
     );
     return this.reports.getByNumber(reportNumber, user.id, isStaff);
+  }
+
+  @Get('reports/:reportNumber/history')
+  async history(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportNumber') reportNumber: string,
+    @Query() query: ReportHistoryQueryDto,
+  ) {
+    return this.reports.historyForAuthor(reportNumber, user.id, query);
   }
 
   @Post('reports')

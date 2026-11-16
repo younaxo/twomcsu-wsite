@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
+import { AssignableStaffQueryDto } from './dto/assignable-staff-query.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
 import { CreateModeratorNoteDto } from './dto/create-moderator-note.dto';
@@ -22,7 +23,10 @@ import { SetVerdictDto } from './dto/set-verdict.dto';
 import { SoftDeleteMessageDto } from './dto/soft-delete-message.dto';
 import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
 import { UpdateModeratorNoteDto } from './dto/update-moderator-note.dto';
-import { REPORT_STATUS_LABEL_RU } from './report-constants';
+import {
+  MODERATOR_NOTES_ORDER,
+  REPORT_STATUS_LABEL_RU,
+} from './report-constants';
 import {
   REPORT_PRIORITY_PROVIDER,
   ReportPriorityProvider,
@@ -33,6 +37,10 @@ import { buildStaffReportWhere } from './report-staff-filters';
 /// targetType = префикс permission (`reports`) и targetId = id обращения
 /// (из результата хендлера); `report` — для явных вызовов AuditService.log.
 const REPORT_AUDIT_TARGET_TYPES = ['reports', 'report'];
+
+/// Право, дающее править чужие заметки (допущение: существующее «старшее»
+/// право обращений; отдельного права на это в каталоге нет).
+const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.delete';
 
 @Injectable()
 export class ReportsModerationService {
@@ -114,6 +122,43 @@ export class ReportsModerationService {
       })),
     );
     return { items, total, page, limit };
+  }
+
+  /// Кандидаты для назначения: не заблокированные пользователи (кроме
+  /// системных аккаунтов) с эффективным `reports.view` — суперпользователь
+  /// или роль с ALLOW-правом (то же правило, что PermissionService). Выборка
+  /// одним запросом по ролям, без поштучных hasPermission. Только публичные
+  /// поля (ADR-0107).
+  async assignableStaff(query: AssignableStaffQueryDto) {
+    const q = query.q?.trim();
+    const items = await this.prisma.user.findMany({
+      where: {
+        isBanned: false,
+        accountType: { not: 'SYSTEM' },
+        ...(q ? { username: { contains: q, mode: 'insensitive' } } : {}),
+        roles: {
+          some: {
+            role: {
+              OR: [
+                { isSuperuser: true },
+                {
+                  permissions: {
+                    some: {
+                      effect: 'ALLOW',
+                      permission: { key: 'reports.view' },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+      select: PUBLIC_USER_SELECT,
+      orderBy: { username: 'asc' },
+      take: query.limit ?? 20,
+    });
+    return { items };
   }
 
   /// Назначение/передача: исполнитель должен существовать, не быть
@@ -333,7 +378,7 @@ export class ReportsModerationService {
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -351,16 +396,27 @@ export class ReportsModerationService {
     reportNumber: string,
     noteId: string,
     dto: UpdateModeratorNoteDto,
+    actorId: string,
   ) {
     const report = await this.requireReport(reportNumber);
-    await this.requireNote(report.id, noteId);
+    const note = await this.requireNote(report.id, noteId);
+    // Править может автор заметки или актёр с reports.delete.
+    if (
+      note.authorId !== actorId &&
+      !(await this.permissions.hasPermission(
+        actorId,
+        FOREIGN_NOTE_EDIT_PERMISSION,
+      ))
+    ) {
+      throw new ForbiddenException('Править можно только свои заметки');
+    }
     await this.prisma.reportModeratorNote.update({
       where: { id: noteId },
       data: { content: dto.content, contentHtml: escapeToHtml(dto.content) },
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -370,7 +426,7 @@ export class ReportsModerationService {
     await this.prisma.reportModeratorNote.delete({ where: { id: noteId } });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -387,7 +443,7 @@ export class ReportsModerationService {
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 

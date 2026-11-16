@@ -35,3 +35,24 @@ describe('RBAC: история обращения', () => {
     expect(keys).toEqual(['reports.view']);
   });
 });
+
+describe('RBAC: срез 2', () => {
+  const keysOf = (name: keyof ReportsModerationController) =>
+    Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      ReportsModerationController.prototype[name],
+    ) as string[];
+
+  it('assignable-staff требует reports.assign', () => {
+    expect(keysOf('assignableStaff')).toEqual(['reports.assign']);
+  });
+
+  it('правка заметки — reports.notes (автор/reports.delete проверяет сервис)', () => {
+    expect(keysOf('updateNote')).toEqual(['reports.notes']);
+  });
+
+  it('pin и unpin заметки — reports.notes.pin', () => {
+    expect(keysOf('pinNote')).toEqual(['reports.notes.pin']);
+    expect(keysOf('unpinNote')).toEqual(['reports.notes.pin']);
+  });
+});
