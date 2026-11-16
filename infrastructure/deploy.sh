@@ -18,7 +18,7 @@
 #   HEALTH_TRIES, HEALTH_INTERVAL  число попыток и пауза в секундах (20 / 3)
 #   PREFLIGHT_TRIES       число попыток pre-flight проверки текущего релиза (3)
 #   SKIP_PREFLIGHT=1      пропустить pre-flight (hotfix при уже неработающем релизе), с предупреждением
-#   ALLOW_DESTRUCTIVE_MIGRATION=1  разрешить DROP TABLE/COLUMN, RENAME, ALTER COLUMN TYPE, TRUNCATE в новых
+#   ALLOW_DESTRUCTIVE_MIGRATION=1  разрешить DROP TABLE/COLUMN/CONSTRAINT/INDEX, RENAME, SET NOT NULL, ALTER COLUMN TYPE, TRUNCATE в новых
 #                         миграциях (только с одобрением владельца и проверенным свежим снимком)
 set -euo pipefail
 
@@ -170,7 +170,7 @@ check_destructive_migrations() {
     [[ "$f" == */migration.sql ]] || continue
     # Комментарии убираем, строки склеиваем, делим по «;» — проверка по операторам, а не по строкам.
     hits=$(git show "HEAD:$f" | sed 's/--.*$//' | tr '\n' ' ' | tr ';' '\n' \
-      | grep -Eiw -e 'DROP[[:space:]]+(TABLE|COLUMN)' -e 'RENAME' -e 'TRUNCATE' \
+      | grep -Eiw -e 'DROP[[:space:]]+(TABLE|COLUMN|CONSTRAINT|INDEX)' -e 'RENAME' -e 'TRUNCATE'           -e 'SET[[:space:]]+NOT[[:space:]]+NULL' \
           -e 'ALTER[[:space:]]+COLUMN[[:space:]]+[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE' || true)
     if [[ -n "$hits" ]]; then
       echo "Деструктивная миграция: $f"
