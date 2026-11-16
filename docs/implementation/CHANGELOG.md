@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Формы: транзакция отправки ответа получила `maxWait`/`timeout` 10 с (ADR-0162, ветка fix/forms-submit-tx-wait, не смержено): параллельные отправки больше не падают 500 на ожидании advisory lock. e2e отложен: диск.
+
 - Fail-fast production env (ADR-0161, ветка fix/p3-env-prod-startup-check, не смержено): API в production не стартует без TRUST_PROXY и TURNSTILE_SECRET_KEY, TURNSTILE_DISABLED=true запрещён (раньше captcha отключалась); compose требует TRUST_PROXY; добавлен чек-лист `docs/runbooks/production-env-checklist.md`.
 
 - Исправления по ревью P3-03a/b, P3-02b: runbook Cloudflare — скрипт файрвола прерывается до изменения правил при сбое `curl`, пустом списке или неверном формате; Authenticated Origin Pulls помечен как рекомендуемый; добавлено предупреждение не включать `real_ip` без файрвола origin.

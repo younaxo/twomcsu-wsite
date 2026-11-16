@@ -267,76 +267,89 @@ export class FormsService {
       ? createHash('sha256').update(ip).digest('hex')
       : undefined;
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      // Отправки в одну форму идут по очереди: иначе параллельные запросы
-      // обходят onePerUser, maxResponses и лимит приглашения (ADR-0122).
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`form:${form.id}`}))`;
-      const fresh = await tx.form.findUniqueOrThrow({
-        where: { id: form.id },
-        select: { responsesCount: true, maxResponses: true },
-      });
-      if (
-        fresh.maxResponses !== null &&
-        fresh.responsesCount >= fresh.maxResponses
-      ) {
-        throw new ForbiddenException('Достигнут лимит ответов на форму');
-      }
-      if (form.onePerUser && viewerId) {
-        const already = await tx.formResponse.findFirst({
-          where: { formId: form.id, respondentId: viewerId, isComplete: true },
-          select: { id: true },
+    const created = await this.prisma.$transaction(
+      async (tx) => {
+        // Отправки в одну форму идут по очереди: иначе параллельные запросы
+        // обходят onePerUser, maxResponses и лимит приглашения (ADR-0122).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`form:${form.id}`}))`;
+        const fresh = await tx.form.findUniqueOrThrow({
+          where: { id: form.id },
+          select: { responsesCount: true, maxResponses: true },
         });
-        if (already) {
-          throw new ForbiddenException('Вы уже отправили ответ на эту форму');
+        if (
+          fresh.maxResponses !== null &&
+          fresh.responsesCount >= fresh.maxResponses
+        ) {
+          throw new ForbiddenException('Достигнут лимит ответов на форму');
         }
-      }
-      if (dto.inviteCode && form.visibility === FormVisibility.INVITE_ONLY) {
-        const invite = await tx.formInvite.findUniqueOrThrow({
-          where: { code: dto.inviteCode },
-          select: { usedCount: true, maxUses: true },
-        });
-        if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) {
-          throw new ForbiddenException('Приглашение исчерпано');
+        if (form.onePerUser && viewerId) {
+          const already = await tx.formResponse.findFirst({
+            where: {
+              formId: form.id,
+              respondentId: viewerId,
+              isComplete: true,
+            },
+            select: { id: true },
+          });
+          if (already) {
+            throw new ForbiddenException('Вы уже отправили ответ на эту форму');
+          }
         }
-      }
-      // Черновик этой формы после отправки больше не нужен.
-      if (viewerId) {
-        await tx.formResponse.deleteMany({
-          where: { formId: form.id, respondentId: viewerId, isComplete: false },
-        });
-      }
-      const response = await tx.formResponse.create({
-        data: {
-          formId: form.id,
-          respondentId: viewerId,
-          isAnonymous: form.isAnonymous || !viewerId,
-          ipHash,
-          userAgent,
-          isComplete: true,
-          completedAt: new Date(),
-          answers: {
-            create: prepared.map((p) => ({ fieldId: p.fieldId, ...p.data })),
+        if (dto.inviteCode && form.visibility === FormVisibility.INVITE_ONLY) {
+          const invite = await tx.formInvite.findUniqueOrThrow({
+            where: { code: dto.inviteCode },
+            select: { usedCount: true, maxUses: true },
+          });
+          if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) {
+            throw new ForbiddenException('Приглашение исчерпано');
+          }
+        }
+        // Черновик этой формы после отправки больше не нужен.
+        if (viewerId) {
+          await tx.formResponse.deleteMany({
+            where: {
+              formId: form.id,
+              respondentId: viewerId,
+              isComplete: false,
+            },
+          });
+        }
+        const response = await tx.formResponse.create({
+          data: {
+            formId: form.id,
+            respondentId: viewerId,
+            isAnonymous: form.isAnonymous || !viewerId,
+            ipHash,
+            userAgent,
+            isComplete: true,
+            completedAt: new Date(),
+            answers: {
+              create: prepared.map((p) => ({ fieldId: p.fieldId, ...p.data })),
+            },
           },
-        },
-        select: {
-          id: true,
-          isComplete: true,
-          isAnonymous: true,
-          completedAt: true,
-        },
-      });
-      await tx.form.update({
-        where: { id: form.id },
-        data: { responsesCount: { increment: 1 } },
-      });
-      if (dto.inviteCode && form.visibility === FormVisibility.INVITE_ONLY) {
-        await tx.formInvite.update({
-          where: { code: dto.inviteCode },
-          data: { usedCount: { increment: 1 } },
+          select: {
+            id: true,
+            isComplete: true,
+            isAnonymous: true,
+            completedAt: true,
+          },
         });
-      }
-      return response;
-    });
+        await tx.form.update({
+          where: { id: form.id },
+          data: { responsesCount: { increment: 1 } },
+        });
+        if (dto.inviteCode && form.visibility === FormVisibility.INVITE_ONLY) {
+          await tx.formInvite.update({
+            where: { code: dto.inviteCode },
+            data: { usedCount: { increment: 1 } },
+          });
+        }
+        return response;
+      },
+      // Параллельные отправки ждут advisory lock формы, удерживая соединения
+      // пула: дефолтные 2 с на старт транзакции не хватает (500).
+      { maxWait: 10_000, timeout: 10_000 },
+    );
 
     return created;
   }
