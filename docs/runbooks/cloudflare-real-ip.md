@@ -7,6 +7,10 @@
 Связанные документы: ADR-0155 (TRUST_PROXY), ADR-0160, `infrastructure/nginx.twomc.su.conf.example`,
 `docs/runbooks/deploy.md`.
 
+> **ВНИМАНИЕ: не включать `real_ip` (раздел 4), пока origin не закрыт файрволом (раздел 6).** Без файрвола любой
+> клиент обращается к origin напрямую и подделывает `CF-Connecting-IP`, обходя лимиты, brute-force защиту и audit.
+> Порядок: сначала файрвол и проверка п. 4 раздела 7, затем `real_ip`.
+
 ## 1. Зачем
 
 Если домен проксируется Cloudflare, nginx видит как `$remote_addr` адрес узла Cloudflare, а не клиента.
@@ -133,17 +137,43 @@ diff -u /etc/nginx/snippets/cloudflare-real-ip.conf "$d/cloudflare-real-ip.conf"
 
 ### ufw
 
+Правила применяются только после того, как список получен целиком и проверен: скрипт прерывается (`set -euo pipefail`,
+ненулевой код выхода) при сбое `curl`, HTTP-коде не 200, пустом списке или строке не в формате CIDR. До этой
+проверки ни одно правило файрвола не меняется.
+
 ```bash
-for ip in $(curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6); do
-  [ -n "$ip" ] && sudo ufw allow proto tcp from "$ip" to any port 80,443 comment 'cloudflare'
+set -euo pipefail
+d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+for v in 4 6; do
+  code=$(curl -sS --max-time 20 -o "$d/raw$v" -w '%{http_code}' "https://www.cloudflare.com/ips-v$v")
+  [ "$code" = 200 ] || { echo "ips-v$v: HTTP $code, правила не тронуты" >&2; exit 1; }
+  tr -d '\r' < "$d/raw$v" | sed '/^[[:space:]]*$/d' > "$d/v$v"
+  [ -s "$d/v$v" ] || { echo "ips-v$v: список пуст, правила не тронуты" >&2; exit 1; }
 done
-# Только после проверки, что путь через Cloudflare работает:
+if grep -Evq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' "$d/v4" \
+  || grep -Evq '^[0-9a-fA-F:]+/[0-9]{1,3}$' "$d/v6"; then
+  echo "неожиданный формат списка, правила не тронуты" >&2; exit 1
+fi
+# Дальше изменение файрвола; любая ошибка прерывает цикл (set -e)
+while read -r ip; do
+  sudo ufw allow proto tcp from "$ip" to any port 80,443 comment 'cloudflare'
+done < <(cat "$d/v4" "$d/v6")
+sudo ufw status numbered
+```
+
+Только после проверки, что путь через Cloudflare работает (раздел 7), отдельным шагом убрать общие правила:
+
+```bash
 sudo ufw delete allow 80/tcp 2>/dev/null || true
 sudo ufw delete allow 443/tcp 2>/dev/null || true
 sudo ufw status numbered
 ```
 
 ### nftables (фрагмент)
+
+Множества `cf4`/`cf6` ниже - статичный снимок; обновлять их из списка, проверенного скриптом раздела ufw (непустой, формат
+CIDR, HTTP 200). Перед применением: `sudo nft -c -f <файл>` (проверка без применения), правило `drop` добавлять
+последним и только при рабочих SSH-правилах выше.
 
 ```nft
 table inet filter {
@@ -171,9 +201,10 @@ Docker не подчиняется INPUT для опубликованных п�
 - Вход только по ключам (`PasswordAuthentication no`, `PermitRootLogin no`), fail2ban по желанию.
 - Адреса администраторов в репозиторий не записывать.
 
-### Authenticated Origin Pulls (опционально)
+### Authenticated Origin Pulls (рекомендуется)
 
-Файрвол по IP защищает от прямого обращения, а Authenticated Origin Pulls проверяет, что TLS-клиент - именно
+Рекомендуется включить после файрвола: он закрывает случай, когда трафик идёт с чужой зоны Cloudflare, адреса
+которой входят в разрешённые диапазоны. Файрвол по IP защищает от прямого обращения, а Authenticated Origin Pulls проверяет, что TLS-клиент - именно
 ваша зона Cloudflare. Включается в панели Cloudflare (SSL/TLS, Origin Server); на nginx добавляется
 `ssl_client_certificate /etc/nginx/cloudflare-origin-pull-ca.pem; ssl_verify_client on;`. Сертификат CA брать только
 из документации Cloudflare; режим SSL в Cloudflare - Full (strict). Включать после файрвола отдельным шагом;
