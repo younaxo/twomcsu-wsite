@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -31,6 +32,8 @@ const ORDER_INCLUDE = {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
@@ -314,20 +317,32 @@ export class OrdersService {
       return { accepted: false, reason: 'order_not_found' };
     }
     if (order.paymentProvider !== provider.name) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=provider_mismatch`,
+      );
       return { accepted: false, reason: 'provider_mismatch' };
     }
     if (order.status !== OrderStatus.PENDING) {
       return { accepted: true, reason: 'already_processed' };
     }
     if (order.paymentId && order.paymentId !== event.paymentId) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=payment_id_mismatch`,
+      );
       return { accepted: false, reason: 'payment_id_mismatch' };
     }
 
     if (event.status === 'succeeded') {
       if (event.currency !== provider.currency) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=currency_mismatch`,
+        );
         return { accepted: false, reason: 'currency_mismatch' };
       }
       if (!event.amount.equals(order.total)) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=amount_mismatch`,
+        );
         return { accepted: false, reason: 'amount_mismatch' };
       }
       const transitioned = await this.prisma.$transaction(

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { OrdersService } from './orders.service';
 import {
@@ -145,6 +146,84 @@ describe('OrdersService.handleWebhook (ADR-0157)', () => {
     expect(prisma.order.updateMany).toHaveBeenCalledWith({
       where: { id: 'o1', status: OrderStatus.PENDING },
       data: { status: OrderStatus.FAILED },
+    });
+  });
+
+  it('failed -> failed идемпотентно: updateMany не вызван', async () => {
+    const { service, prisma } = setup(
+      baseOrder({ status: OrderStatus.FAILED }),
+    );
+    await expect(
+      service.handleWebhook(provider, ev({ status: 'failed' })),
+    ).resolves.toEqual({ accepted: true, reason: 'already_processed' });
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('поздний succeeded после FAILED: already_processed, статус не меняется (R29)', async () => {
+    // Текущее поведение зафиксировано намеренно, см. RISKS R29.
+    const { service, prisma, tx } = setup(
+      baseOrder({ status: OrderStatus.FAILED }),
+    );
+    await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+      accepted: true,
+      reason: 'already_processed',
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.order.updateMany).not.toHaveBeenCalled();
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('конкурентные failed: count 1 -> accepted, count 0 -> already_processed', async () => {
+    const winner = setup(baseOrder(), 1);
+    await expect(
+      winner.service.handleWebhook(provider, ev({ status: 'failed' })),
+    ).resolves.toEqual({ accepted: true });
+    const loser = setup(baseOrder(), 0);
+    await expect(
+      loser.service.handleWebhook(provider, ev({ status: 'failed' })),
+    ).resolves.toEqual({ accepted: true, reason: 'already_processed' });
+  });
+
+  describe('warn-логи отказов сверки (P3-01b)', () => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    });
+    afterEach(() => warn.mockRestore());
+
+    it.each([
+      ['provider', { paymentProvider: 'other' }, {}, 'provider_mismatch'],
+      ['paymentId', {}, { paymentId: 'evil-pay-id' }, 'payment_id_mismatch'],
+      ['currency', {}, { currency: 'USD' }, 'currency_mismatch'],
+      [
+        'amount',
+        {},
+        { amount: new Prisma.Decimal('270.01') },
+        'amount_mismatch',
+      ],
+    ])(
+      '%s: один warn без ПД, статус не меняется',
+      async (_n, ord, over, reason) => {
+        const { service, prisma, tx } = setup(baseOrder(ord));
+        await service.handleWebhook(provider, ev(over));
+        expect(warn).toHaveBeenCalledTimes(1);
+        const msg = String(warn.mock.calls[0][0]);
+        expect(msg).toContain('o1');
+        expect(msg).toContain('test');
+        expect(msg).toContain(reason);
+        expect(msg).not.toContain('evil-pay-id');
+        expect(msg).not.toContain('pay-1');
+        expect(msg).not.toContain('270');
+        expect(prisma.order.updateMany).not.toHaveBeenCalled();
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('успешная ветка: warn не вызван', async () => {
+      const { service } = setup(baseOrder());
+      await service.handleWebhook(provider, ev());
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 });

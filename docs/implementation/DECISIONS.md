@@ -3400,6 +3400,7 @@ https, оба до 500 символов, `null` убирает логотип; P
 как hard gate; ответ игроку содержал служебные поля персонала.
 
 **Decision.**
+
 - Приоритет вычисляется сервером через `ReportPriorityProvider` (DI-токен
   `REPORT_PRIORITY_PROVIDER`): «Проблема с донатом», обжалование и жалоба на администрацию — HIGH,
   остальное — NORMAL. В БД не хранится; будущие Donation Entitlements (приоритетная поддержка
@@ -3448,6 +3449,7 @@ https, оба до 500 символов, `null` убирает логотип; P
 заголовком `X-Forwarded-For`.
 
 **Decision.**
+
 - `TRUST_PROXY` (env, валидируется при старте, `config/trust-proxy.ts`): пусто — выключено (по
   умолчанию); целое число hop-ов 1..10; `loopback`/`linklocal`/`uniquelocal`; список IP/CIDR через
   запятую. `true`, `*`, `-1`, `0` и мусор отвергаются — API не стартует с понятной ошибкой.
@@ -3467,6 +3469,7 @@ https, оба до 500 символов, `null` убирает логотип; P
   web-контейнера (допустимо, т. к. это не пользовательский IP).
 
 **Consequences.**
+
 - `infrastructure/docker-compose.prod.yml` задаёт `TRUST_PROXY: ${TRUST_PROXY:-1}`: незаданное или
   пустое значение в compose трактуется как `1`. nginx-пример перезаписывает заголовок
   (`proxy_set_header X-Forwarded-For $remote_addr`), а не дописывает; порт API публикуется только на
@@ -3489,6 +3492,7 @@ https, оба до 500 символов, `null` убирает логотип; P
 коммуникаций не проходили admin-2FA проверку.
 
 **Decision.**
+
 - Валидация env (Joi, `NODE_ENV=production`): `COOKIE_SECURE=true` обязателен; `COOKIE_DOMAIN`
   обязателен и не `localhost`/`127.0.0.1`/пустой; `TWO_FACTOR_ENCRYPTION_KEY` обязателен, ≥ 32.
   `COOKIE_SAMESITE=none` допустим только при `COOKIE_SECURE=true` во всех окружениях.
@@ -3500,6 +3504,7 @@ https, оба до 500 символов, `null` убирает логотип; P
   читается из БД на действии.
 
 **Consequences.**
+
 - WS: admin-2FA также на `delete_message` в модераторской ветке (не автор, право
   `chat.messages.delete`): `ChatService.deleteMessage(..., beforeModerate)` вызывает проверку
   gateway после проверки права; автор, удаляющий своё сообщение, 2FA не проходит.
@@ -3525,6 +3530,7 @@ https, оба до 500 символов, `null` убирает логотип; P
 `paymentId` перезаписывался, `:provider` игнорировался, `quick-buy` без throttle.
 
 **Decision.**
+
 - `PaymentProvider.verifyWebhook(rawBody, headers)` возвращает проверенное событие
   `{orderNumber, paymentId, status, amount, currency}` или `null`. Тестовый провайдер: HMAC-SHA256 hex над
   `timestamp.rawBody`, заголовки `x-twomc-signature`/`x-twomc-timestamp` (секунды), окно ±5 минут,
@@ -3541,7 +3547,12 @@ https, оба до 500 символов, `null` убирает логотип; P
   (пусто = все вебхуки 401); e2e задают секрет сами. `@Throttle` 10/мин на `quick-buy`.
 
 **Consequences.**
+
 - Обязательность секрета в production — вместе с реальным провайдером (RISKS R2).
 - `rawBody` увеличивает память на JSON-запросах (буфер тела хранится рядом с распарсенным).
 - Throttle quick-buy считается по `req.ip` (корректен после P3-02).
+- Риск порядка событий (`failed` раньше `succeeded` оставляет оплаченный заказ в `FAILED`) и требования к
+  реальному провайдеру — RISKS R29; текущее поведение зафиксировано тестом.
+- Отказы сверки (`provider_mismatch`, `payment_id_mismatch`, `currency_mismatch`, `amount_mismatch`)
+  пишутся в `Logger.warn` только с id заказа, именем провайдера и причиной, без подписей, тела и сумм (P3-01b).
 - Вне scope: реальный провайдер, доставка товаров, миграции.
