@@ -1,4 +1,5 @@
 import * as Joi from 'joi';
+import { resolveTrustProxy } from './trust-proxy';
 
 /// Валидируются только переменные, которые реально читает существующий код
 /// (ADR-0015) — расширяется вместе с кодом, использующим новую переменную,
@@ -8,6 +9,23 @@ export const envValidationSchema = Joi.object({
     .valid('development', 'test', 'production')
     .default('development'),
   API_PORT: Joi.number().port().default(4000),
+  /// Политика доверия к прокси (ADR-0155): пусто — выключено; число hop-ов
+  /// (1 для nginx → api); loopback/linklocal/uniquelocal; список CIDR.
+  /// `true`, `*`, `-1` и мусор не запускают API.
+  TRUST_PROXY: Joi.string()
+    .allow('')
+    .default('')
+    .custom((value: string, helpers) => {
+      try {
+        resolveTrustProxy(value);
+        return value;
+      } catch (error) {
+        return helpers.error('any.invalid', {
+          message: (error as Error).message,
+        });
+      }
+    })
+    .messages({ 'any.invalid': '{{#message}}' }),
 
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })

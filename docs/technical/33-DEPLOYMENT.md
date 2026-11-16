@@ -24,7 +24,7 @@ Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (�
 `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (публичный site key) передаётся как build-arg образа web (`web.Dockerfile`, `docker-compose.prod.yml`) и вшивается в сборку Next.js; без него сборка падает (fail-fast). `TURNSTILE_SECRET_KEY` используется только API и в образ web не передаётся.
 
 ## Сеть и прокси
-Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); в API включить `trust proxy` (S6). Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
+Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); `TRUST_PROXY` в API (S6, ADR-0155) — число доверенных хопов, по умолчанию `1` (nginx). `true`, `*`, `0`, `-1` API отвергает при старте. nginx должен ставить `X-Forwarded-For $remote_addr` (см. `infrastructure/nginx.twomc.su.conf.example`); порты API/web слушают только `127.0.0.1`. Если перед nginx стоит Cloudflare — включить закомментированный блок `real_ip` в примере и ограничить origin диапазонами Cloudflare. Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
 ## Backup
 PostgreSQL (обязательно), каталог `UPLOADS_DIR`/CDN-бакет (обязательно), Redis — по сути кеш (AOF включён, но критичного состояния нет: brute-force-счётчики и presence временные), secrets/`.env` — в менеджере секретов.
 

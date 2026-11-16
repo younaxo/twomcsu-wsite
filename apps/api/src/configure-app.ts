@@ -1,10 +1,12 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
+import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { resolve } from 'path';
 import { allowedOrigins, corsOrigin } from './config/cors';
+import { normalizeIp, resolveTrustProxy } from './config/trust-proxy';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
@@ -13,6 +15,24 @@ import { ConfigurableIoAdapter } from './websocket-adapter';
 /// другое приложение (без cookie-parser/ValidationPipe/helmet/WS-адаптера).
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
+
+  // Политика доверия к прокси (ADR-0155) — до любых middleware, читающих req.ip.
+  const express = app as NestExpressApplication;
+  express.set(
+    'trust proxy',
+    resolveTrustProxy(config.get<string>('TRUST_PROXY')),
+  );
+  // Единый клиентский IP для throttler, brute-force, audit, сессий и форм:
+  // `::ffff:1.2.3.4` → `1.2.3.4`.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    Object.defineProperty(req, 'ip', {
+      value: normalizeIp(req.ip),
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    next();
+  });
 
   app.use(helmet());
   app.use(cookieParser());
@@ -33,7 +53,6 @@ export function configureApp(app: INestApplication): void {
   // Локальный драйвер хранилища (dev/тесты): файлы отдаются самим API по
   // /uploads; в production за cdn-files.twomc.su стоит S3/отдельный слой.
   if ((config.get<string>('STORAGE_DRIVER') ?? 'local') === 'local') {
-    const express = app as NestExpressApplication;
     if (typeof express.useStaticAssets === 'function') {
       express.useStaticAssets(
         resolve(

@@ -42,4 +42,6 @@
 - **test**: тестового окружения и тестов в репозитории нет (46-TESTING.md).
 - **staging/production**: окружения в репозитории не описаны; обязательны secrets (`JWT_*`, `DATABASE_URL`, `REDIS_PASSWORD`, `TURNSTILE_SECRET_KEY`, SMTP), `COOKIE_DOMAIN/SECURE`, `WEB_ORIGIN`, `FRONTEND_URL`; не запускать seed без новых `BOOTSTRAP_*` (S1).
 ## Новые переменные (PROPOSED)
-`CDN_BASE_URL`, `STORAGE_DRIVER`, `STORAGE_BUCKET/ENDPOINT/ACCESS_KEY/SECRET_KEY`, `BOOTSTRAP_SYSTEM_PASSWORD`, `BOOTSTRAP_OWNER_PASSWORD`, `BOOTSTRAP_CHIEF_CURATOR_PASSWORD`, `PAYMENTS_MOCK_ENABLED`, `TRUST_PROXY`.
+`CDN_BASE_URL`, `STORAGE_DRIVER`, `STORAGE_BUCKET/ENDPOINT/ACCESS_KEY/SECRET_KEY`, `BOOTSTRAP_SYSTEM_PASSWORD`, `BOOTSTRAP_OWNER_PASSWORD`, `BOOTSTRAP_CHIEF_CURATOR_PASSWORD`, `PAYMENTS_MOCK_ENABLED`.
+
+`TRUST_PROXY` — реализована (P3-02, ADR-0155), валидируется при старте. Допустимо: пусто (прокси не доверяем; в `docker-compose.prod.yml` пусто = `1`), число hop-ов 1..10 (`1` для nginx → api), `loopback`/`linklocal`/`uniquelocal` (`uniquelocal` = `fc00::/7`), список IP/CIDR (не шире IPv4 /8, IPv6 /16). `true`, `*`, `0`, `-1`, мусор отвергаются — API не стартует.

@@ -10,7 +10,7 @@
 | S3 | HIGH | Бан не блокирует `refresh` и не отзывает сессии |
 | S4 | HIGH | Сброс пароля не доставляется в production |
 | S5 | HIGH | Массовый бан без проверки иерархии |
-| S6 | MEDIUM | `trust proxy` не включён: brute-force/throttler за reverse proxy считают всех одним IP |
+| S6 | MEDIUM | ~~`trust proxy` не включён: brute-force/throttler за reverse proxy считают всех одним IP~~ — исправлено в P3-02 (ADR-0155): строгая валидация `TRUST_PROXY`, compose по умолчанию `1`, nginx перезаписывает `X-Forwarded-For`. Топология (Q4) не подтверждена |
 | S7 | MEDIUM | Роль берётся из JWT (устаревание ≤ TTL access-токена) |
 | S8 | MEDIUM | Аудит покрывает 21 вызов из 186 staff-мутаций; ошибки записи аудита глотаются |
 | S9 | MEDIUM | Тип файла определяется по клиентскому `mimetype` (кроме проверки декодирования `sharp` и PDF magic) |

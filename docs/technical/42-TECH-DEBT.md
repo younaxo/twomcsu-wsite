@@ -16,7 +16,7 @@
 - Страницы-заглушки: `/wiki`, `/support/faq`, `/reports` (TODO в исходнике).
 - `apps/web/src/lib/todos.ts` (`FUTURE_FEATURE_TODOS`): Marketplace/Аукцион, верификация Minecraft-ника, streaming по слову «twomc.su», главный стрим; форум «не делаем».
 - Файлы-планы без реализации: `apps/api/src/modules/BATTLEPASS_TODO.md` (Battle Pass: модели и страницы не созданы), `apps/api/src/modules/admin/BAN_SYSTEM_TODO.md` (не разбирался).
-- Throttler in-memory; cron без distributed lock; `trust proxy`.
+- Throttler in-memory; cron без distributed lock; `trust proxy` (исправлено в P3-02, ADR-0155).
 - Конфиг: нет валидации env.
 ## LOW
 - `@deprecated`: `SkinHead.tsx` (online ring), `packages/shared/src/report.ts:215` (поле заменено `targets`).

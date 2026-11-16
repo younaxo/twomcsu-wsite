@@ -30,7 +30,7 @@ twomc.su на уже предоставленный хостинг сразу п
    `DATABASE_URL=postgresql://…@postgres:5432/twomc`, `REDIS_HOST=redis`,
    `COOKIE_SECURE=true`, `COOKIE_DOMAIN=.twomc.su`, `WEB_ORIGIN`/
    `FRONTEND_URL`/`PUBLIC_SITE_URL=https://twomc.su`,
-   `NEXT_PUBLIC_API_URL=https://api.twomc.su`, `TRUST_PROXY=true`,
+   `NEXT_PUBLIC_API_URL=https://api.twomc.su`, `TRUST_PROXY=1` (значение `true` API отвергает при старте, ADR-0155),
    JWT-секреты, `TURNSTILE_*`, `BOOTSTRAP_*` (PHASE 32).
 3. `infrastructure/deploy.sh`.
 4. Reverse proxy по примеру nginx (или адаптация существующего).
