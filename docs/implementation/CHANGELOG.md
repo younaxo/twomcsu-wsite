@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Обращения, срез 2 (ADR-0165, ветка feature/support-slice-2 от fix/q11-staff-hierarchy-node-env, не смержено): выбор исполнителя списком (`GET /moderation/reports/assignable-staff`), правка и закрепление заметок (`PATCH` заметки, `PATCH`/`DELETE .../pin`), игроку у сообщений персонала `authorId=null` и `isStaff=true` (бейдж «Сотрудник»), `GET /reports/:reportNumber/history` для автора, в web `?punishment=ID`, фильтры status/type и блок «История». Не сделано: тип уведомления `REPORT_STATUS_CHANGED` (нужна миграция, решение владельца), вложения (R3, заглушка). e2e написаны, не запускались (ОЗУ).
+
 - Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный NODE_ENV = production, схема env принимает только development/test/production или пусто (staging и прочее роняют старт); хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; `start:dev` и `start:debug` api через `scripts/with-node-env.mjs development`; `start` NODE_ENV не задаёт. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
 
 - Исправления по ревью C: лимит отправки форм (ADR-0162: `maxWait`/`timeout` транзакции отправки 5 с вместо 10 с; `@Throttle` отвергнут — e2e форм шлёт 22 отправки/мин с одного IP), тесты `rateLimitIp` для brute-force входа и 2FA (ADR-0163).

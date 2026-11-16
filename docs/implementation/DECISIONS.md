@@ -3723,3 +3723,28 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 - Локальный запуск без обёртки (например, `nest start` напрямую или `node dist/main` без `.env` с NODE_ENV) теперь требует production-переменные; для dev в `.env` или через скрипты нужен явный `NODE_ENV=development`.
 - Jest сам выставляет `NODE_ENV=test`, CI (`pnpm test`, `test:e2e`, `build`) не затронут; шаг CI «Prisma seed» запускает seed вне Nest, и `prisma/seed/bootstrap.ts` по-прежнему сравнивает `=== 'production'` (вне scope, отдельная находка).
 - Значение `staging` и прочие неизвестные значения NODE_ENV не принимаются схемой env (старт падает); промежуточные окружения запускать с `NODE_ENV=production`, им нужны все production-переменные.
+
+## ADR-0165 — Обращения: исполнитель списком, заметки, история игрока, фильтры (этап 01, срез 2)
+
+**Status:** Accepted частично (2026-11-17). Дополняет ADR-0153 (срез 1), не отменяет его. Отдельный тип уведомления `REPORT_STATUS_CHANGED` не реализован: требует схемы, ждёт решения владельца. Вложения не делались (R3).
+
+**Context.** По ADR-0153 и разделу 3 `docs/agent-prompts/04-STAGE-00-01-02-AUTONOMOUS.md` в срезе 2 нужны: выбор исполнителя списком, правка и закрепление заметок, признак «сотрудник» вместо id, подстановка наказания через `?punishment=ID`, фильтры статуса и типа у игрока, история действий, отдельный тип уведомления о смене статуса. Ветка `feature/support-slice-2` создана от `fix/q11-staff-hierarchy-node-env` @ ba36944 (допущение: `main` не содержит среза 1).
+
+**Decision.**
+
+- Выбор исполнителя: `GET /moderation/reports/assignable-staff?q&limit`, право `reports.assign`, ответ `{items:[{id,username,tag,avatar}]}`; в web combobox. Список читает роли и баны из БД напрямую, не из кеша прав (TTL 300 с); `assign` перепроверяет `reports.view`.
+- Заметки: `PATCH /moderation/reports/:n/notes/:noteId {content}` (право `reports.notes` и либо автор, либо `reports.delete`); `PATCH .../pin {pinned?}` и `DELETE .../pin` (право `reports.notes.pin`); закреплённые идут первыми. Право правки чужих заметок = существующее `reports.delete`, потому что новые permission требуют seed. Снятие закрепления по `reports.notes.pin` (`reports.notes.unpin` в каталоге нет). В web закрепление идёт через PATCH с `pinned`.
+- Игроку у сообщений персонала `authorId=null`, `isStaff=true`; в web бейдж «Сотрудник».
+- История для игрока: `GET /reports/:reportNumber/history?page&limit` -> `{items:[{id,kind,status|null,createdAt}],total,page,limit}`, `kind` = `STATUS_CHANGED` | `VERDICT` | `CREATED`. Доступ только автору (чужому 403, несуществующее 404). Без актора, ip, заметок и id сотрудников. `CREATED` синтетическое, по `createdAt` обращения. История персонала не менялась (события заметок уже попадают в аудит, тест `report-audit-target.spec.ts`). В web блок «История» с «Показать ещё»; тип истории локальный в `apps/web` `lib/support/hooks.ts`; неизвестные `kind`/`status` показываются как «Событие».
+- Web игрока: `?punishment=ID` подставляет наказание (невалидный ID игнорируется с подсказкой); фильтры status/type (backend был в срезе 1) в URL query со сбросом и пустым состоянием, нативные `select`.
+- Вложения не делаются: заглушка «Вложения скоро будут доступны» без моков; нужно российское S3 (риск R3).
+
+**Не принято (ждёт решения владельца).** Тип уведомления `REPORT_STATUS_CHANGED`. Проект: миграция `ALTER TYPE "NotificationType" ADD VALUE 'REPORT_STATUS_CHANGED';` (`schema.prisma` ~:1424); в `changeStatus` (`reports-moderation.service.ts` ~:195) заменить `REPORT_VERDICT` на новое значение, `setVerdict` без изменений; в web/notifications добавить иконку, подпись и маршрут (и список типов в shared, если есть). До решения смена статуса шлёт `REPORT_VERDICT` с заголовком «Статус обращения … изменён».
+
+**Consequences.**
+
+- DELETE заметки требует только `reports.notes` без проверки автора (асимметрия с PATCH).
+- e2e `apps/api/test/reports-support.e2e-spec.ts` написаны, но не запускались (прогон отложен: ОЗУ, нужна команда владельца).
+- Независимое ревью backend не проводилось; ревью web (twomc-reviewer) блокеров не нашло, 4 minor учтены в 2528d5b.
+- Suspense вокруг `useSearchParams` проверен только чтением, `next build` не запускался.
+- Если решение по `reports.delete` изменится на отдельное право, понадобится seed.
