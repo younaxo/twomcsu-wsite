@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Исправления по ревью C: лимит отправки форм (ADR-0162: `maxWait`/`timeout` транзакции отправки 5 с вместо 10 с; `@Throttle` отвергнут — e2e форм шлёт 22 отправки/мин с одного IP), тесты `rateLimitIp` для brute-force входа и 2FA (ADR-0163).
+
 - Безопасность: лимиты brute-force входа и 2FA для IPv6 считаются по подсети /64 (ADR-0163, ветка fix/q9-ipv6-64-rate-limit, не смержено): `rateLimitKey` в `config/trust-proxy.ts`, применён в `BruteForceService`; журналы/аудит/captcha по-прежнему с полным адресом; глобальный throttler не менялся. e2e отложен: диск. Доработка по ревью: ключ brute-force строится от сырого `req.ip` (`RequestContext.rateLimitIp`), мусор больше не делит `unknown`; полная форма mapped IPv4 распознаётся.
 
 - Формы: транзакция отправки ответа получила `maxWait`/`timeout` 10 с (ADR-0162, ветка fix/forms-submit-tx-wait, не смержено): параллельные отправки больше не падают 500 на ожидании advisory lock. e2e отложен: диск.
