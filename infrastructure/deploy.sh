@@ -100,6 +100,7 @@ snapshot_db() {
   local dir=$PREDEPLOY_BACKUP_DIR repo_root file tmp
   repo_root=$(pwd -P)
   ( umask 077; mkdir -p "$dir" ) || { echo "Не удалось создать каталог снимков"; return 1; }
+  chmod 700 "$dir" || { echo "Не удалось выставить права 700 на каталог снимков"; return 1; }
   case "$(cd "$dir" && pwd -P)/" in
     "$repo_root"/*) echo "PREDEPLOY_BACKUP_DIR внутри репозитория — запрещено (снимок содержит ПДн)"; return 1 ;;
   esac
