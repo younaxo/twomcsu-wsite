@@ -17,7 +17,10 @@
 #   RESTORE_MIN_FREE_MB   минимум свободного места, МБ (2048)
 #   RESTORE_SINGLE_TRANSACTION  1 (по умолчанию) — pg_restore --single-transaction; 0 — выключить (runbook)
 #   RESTORE_CONFIRM       OVERWRITE-PRODUCTION — только вместе с --non-interactive (без TTY)
-#   RESTORE_SNAPSHOT_DIR  каталог снимков перед prod-восстановлением (по умолчанию $HOME/twomc-backups/pre-restore)
+#   RESTORE_SNAPSHOT_DIR  каталог снимков перед prod-восстановлением (по умолчанию $HOME/twomc-backups/pre-restore); внутри репозитория — отказ
+#   RESTORE_SNAPSHOT_KEEP  сколько снимков pre-restore хранить (3); ротация отдельно от плановых бэкапов
+#   AGE_RECIPIENT         публичный ключ age: если задан, снимок pre-restore шифруется; иначе открытый + предупреждение
+#   RESTORE_SNAPSHOT_PLAIN_DAYS  срок в предупреждении об открытом снимке (7 дней; скрипт сам не удаляет раньше ротации)
 #   DRILL_POSTGRES_PASSWORD  нужен compose restore-drill для интерполяции
 set -euo pipefail
 
@@ -112,13 +115,44 @@ if [[ "$TARGET" == "prod" ]]; then
   if grep -qx 'api' <<<"$running"; then
     fail "сервис api запущен, перезапускается или на паузе: остановите его (docker compose ... stop api web) — восстановление не начато"
   fi
+  # Снимок текущей БД = открытый дамп с ПДн: каталог вне репозитория (как в deploy.sh), шифрование age или громкое предупреждение, ротация.
+  repo_root=$(pwd -P)
   SNAP_DIR=${RESTORE_SNAPSHOT_DIR:-$HOME/twomc-backups/pre-restore}
+  RESTORE_SNAPSHOT_KEEP=${RESTORE_SNAPSHOT_KEEP:-3}
+  RESTORE_SNAPSHOT_PLAIN_DAYS=${RESTORE_SNAPSHOT_PLAIN_DAYS:-7}
+  [[ "$RESTORE_SNAPSHOT_KEEP" =~ ^[1-9][0-9]*$ ]] || fail "RESTORE_SNAPSHOT_KEEP должен быть целым числом >= 1"
+  [[ "$SNAP_DIR" == /* || "$SNAP_DIR" =~ ^[A-Za-z]:[\/] ]] || SNAP_DIR="$repo_root/$SNAP_DIR"
+  case "$SNAP_DIR/" in
+    "$repo_root"/*) fail "RESTORE_SNAPSHOT_DIR внутри репозитория — запрещено (снимок содержит ПДн); восстановление не начато" ;;
+  esac
   mkdir -p "$SNAP_DIR" && chmod 700 "$SNAP_DIR" 2>/dev/null || true
+  case "$(cd "$SNAP_DIR" && pwd -P)/" in
+    "$repo_root"/*) rmdir -- "$SNAP_DIR" 2>/dev/null || true; fail "RESTORE_SNAPSHOT_DIR (после разрешения ссылок) внутри репозитория — запрещено; восстановление не начато" ;;
+  esac
   snap="$SNAP_DIR/twomc-pre-restore-$(date -u +%Y%m%dT%H%M%SZ).dump"
-  echo "→ снимок текущей БД перед восстановлением: $snap (открытый дамп с ПДн; зашифровать или удалить после проверки)"
+  echo "→ снимок текущей БД перед восстановлением"
+  # Сначала во временный каталог (700, удаляется по выходу): в SNAP_DIR попадает только готовый и проверенный файл.
   # shellcheck disable=SC2016
-  "${COMPOSE[@]}" exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$snap" || { rm -f -- "$snap"; fail "снимок текущей БД не удался — восстановление не начато"; }
-  [[ -s "$snap" ]] || { rm -f -- "$snap"; fail "снимок текущей БД пуст — восстановление не начато"; }
+  "${COMPOSE[@]}" exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$tmp/pre-restore.dump" || fail "снимок текущей БД не удался — восстановление не начато"
+  [[ -s "$tmp/pre-restore.dump" ]] || fail "снимок текущей БД пуст — восстановление не начато"
+  "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$tmp/pre-restore.dump" >/dev/null || fail "снимок не читается (pg_restore --list) — восстановление не начато"
+  if [[ -n "${AGE_RECIPIENT:-}" ]]; then
+    snap="$snap.age"
+    age -r "$AGE_RECIPIENT" -o "$snap" "$tmp/pre-restore.dump" || { rm -f -- "$snap"; fail "шифрование снимка age не удалось — восстановление не начато"; }
+    [[ -s "$snap" ]] || { rm -f -- "$snap"; fail "зашифрованный снимок пуст — восстановление не начато"; }
+    echo "Снимок зашифрован (age): $snap"
+  else
+    cp -- "$tmp/pre-restore.dump" "$snap" || { rm -f -- "$snap"; fail "не удалось сохранить снимок — восстановление не начато"; }
+    echo "ВНИМАНИЕ: AGE_RECIPIENT не задан — снимок $snap сохранён ОТКРЫТЫМ (содержит ПДн)." >&2
+    echo "ВНИМАНИЕ: зашифруйте его (age -r <ключ>) или удалите не позднее чем через ${RESTORE_SNAPSHOT_PLAIN_DAYS} дн. после проверки восстановления." >&2
+  fi
+  # Ротация снимков pre-restore отдельно от плановых бэкапов: RESTORE_SNAPSHOT_KEEP последних (3). Сбой удаления — предупреждение.
+  mapfile -t snaps < <(find "$SNAP_DIR" -maxdepth 1 -type f \( -name 'twomc-pre-restore-*.dump' -o -name 'twomc-pre-restore-*.dump.age' \) 2>/dev/null | sed 's|.*/||' | sort -r || true)
+  if (( ${#snaps[@]} > RESTORE_SNAPSHOT_KEEP )); then
+    for old in "${snaps[@]:RESTORE_SNAPSHOT_KEEP}"; do
+      if rm -f -- "${SNAP_DIR:?}/$old"; then echo "Ротация pre-restore: удалён $old"; else echo "ПРЕДУПРЕЖДЕНИЕ: не удалось удалить старый снимок $old" >&2; fi
+    done
+  fi
   "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$snap" >/dev/null || fail "снимок не читается (pg_restore --list) — восстановление не начато"
 fi
 
