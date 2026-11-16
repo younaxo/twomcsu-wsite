@@ -2,7 +2,7 @@
 name: twomc-specialist-minecraft-mos
 description: Minecraft MOS/account-linking specialist TwoMC для contracts, identity flows и privacy-aware integration.
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 45
 ---
 

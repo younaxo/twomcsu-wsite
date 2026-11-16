@@ -2,7 +2,7 @@
 name: twomc-lead-product
 description: Product Lead TwoMC для требований, сценариев, acceptance criteria и traceability без изменения roadmap.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 50
 ---
 

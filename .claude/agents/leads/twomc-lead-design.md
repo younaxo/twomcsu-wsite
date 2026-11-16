@@ -2,7 +2,7 @@
 name: twomc-lead-design
 description: Design Lead TwoMC для UX/UI, design tokens, visual direction и accessibility.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 50
 ---
 

@@ -2,7 +2,7 @@
 name: twomc-specialist-ux-ui
 description: UX/UI specialist TwoMC для flows, states, design tokens и направления «Полдень».
 tools: Read, Grep, Glob, Edit, Write
-model: inherit
+model: sonnet
 maxTurns: 40
 ---
 

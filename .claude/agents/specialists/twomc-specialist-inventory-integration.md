@@ -2,7 +2,7 @@
 name: twomc-specialist-inventory-integration
 description: Inventory integration specialist TwoMC для plugin/API contracts, idempotency и reconciliation.
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 45
 ---
 

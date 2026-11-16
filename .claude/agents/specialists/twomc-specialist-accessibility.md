@@ -2,7 +2,7 @@
 name: twomc-specialist-accessibility
 description: Accessibility specialist TwoMC для WCAG-oriented review и ограниченных доступных исправлений.
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 40
 ---
 

@@ -2,7 +2,7 @@
 name: twomc-lead-devops
 description: DevOps Lead TwoMC для CI, build, monorepo tooling и developer experience без deploy.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 50
 ---
 

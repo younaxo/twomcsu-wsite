@@ -2,7 +2,7 @@
 name: twomc-specialist-qa
 description: Read-only QA specialist TwoMC для targeted tests, regression и defect reproduction.
 tools: Read, Grep, Glob, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 40
 ---
 

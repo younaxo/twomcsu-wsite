@@ -2,7 +2,7 @@
 name: twomc-owner-liaison
 description: Read-only Owner Liaison TwoMC. Формулирует минимальные вопросы и owner gates без принятия решений за владельца.
 tools: Read, Grep, Glob
-model: inherit
+model: haiku
 maxTurns: 30
 ---
 

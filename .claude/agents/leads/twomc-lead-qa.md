@@ -2,7 +2,7 @@
 name: twomc-lead-qa
 description: QA Lead TwoMC для test strategy, regression, reproducibility и независимой проверки результата.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 50
 ---
 

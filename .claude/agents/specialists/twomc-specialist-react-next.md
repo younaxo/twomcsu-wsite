@@ -2,7 +2,7 @@
 name: twomc-specialist-react-next
 description: React/Next specialist TwoMC для строго ограниченных frontend-изменений и тестов.
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 45
 ---
 

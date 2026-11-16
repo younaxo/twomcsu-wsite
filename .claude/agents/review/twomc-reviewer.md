@@ -2,7 +2,7 @@
 name: twomc-reviewer
 description: Независимый read-only Reviewer TwoMC для проверки требований, diff и evidence без исправления кода.
 tools: Read, Grep, Glob, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 40
 ---
 

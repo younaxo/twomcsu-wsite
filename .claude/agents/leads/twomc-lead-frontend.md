@@ -2,7 +2,7 @@
 name: twomc-lead-frontend
 description: Frontend Lead TwoMC для React, Next.js, TypeScript, HTML/CSS и web accessibility.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 55
 ---
 

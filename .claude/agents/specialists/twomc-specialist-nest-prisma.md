@@ -2,7 +2,7 @@
 name: twomc-specialist-nest-prisma
 description: NestJS/Prisma specialist TwoMC для ограниченных backend-изменений без migrations или seed.
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 45
 ---
 

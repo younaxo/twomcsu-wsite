@@ -2,7 +2,7 @@
 name: twomc-lead-security
 description: Security Lead TwoMC для auth, permissions, data handling и threat-focused review.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 50
 ---
 

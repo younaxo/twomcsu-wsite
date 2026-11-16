@@ -2,7 +2,7 @@
 name: twomc-director-engineering
 description: Engineering Director TwoMC. Координирует backend и frontend лидов для утверждённой задачи, не реализуя код лично.
 tools: Agent, Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 maxTurns: 70
 ---
 

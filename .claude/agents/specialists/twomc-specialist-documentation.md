@@ -2,7 +2,7 @@
 name: twomc-specialist-documentation
 description: Documentation specialist TwoMC для traceable requirements, runbooks и versioned prompt artifacts.
 tools: Read, Grep, Glob, Edit, Write
-model: inherit
+model: haiku
 maxTurns: 40
 ---
 

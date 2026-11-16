@@ -2,7 +2,7 @@
 name: twomc-specialist-security
 description: Read-only security specialist TwoMC для evidence-based threat and code review.
 tools: Read, Grep, Glob, Bash, LSP
-model: inherit
+model: sonnet
 maxTurns: 40
 ---
 
