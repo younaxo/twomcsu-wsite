@@ -9,7 +9,7 @@
 #
 # Переменные окружения (значения секретов здесь не хранятся; ключи age/S3 задаёт владелец на сервере):
 #   BACKUP_DIR            каталог локальных бэкапов вне репозитория (по умолчанию $HOME/twomc-backups/scheduled)
-#   BACKUP_KEEP           сколько последних локальных бэкапов хранить (14)
+#   BACKUP_KEEP           сколько последних локальных бэкапов хранить на каждую метку (14)
 #   BACKUP_MIN_FREE_MB    минимум свободного места на старте, МБ (2048); меньше — выход 3
 #   BACKUP_TAG            метка в имени: scheduled | predeploy | ... (scheduled)
 #   BACKUP_ENCRYPT        age (по умолчанию) | gpg | none (none только вместе с BACKUP_ALLOW_UNENCRYPTED=1)
@@ -148,9 +148,19 @@ else
   echo "S3 не настроен — локальный fallback (BACKUP_DIR, хранится $BACKUP_KEEP последних)"
 fi
 
-# Ротация локальных копий: оставить BACKUP_KEEP последних (имя содержит UTC-время, порядок лексикографический).
-find "$BACKUP_DIR" -maxdepth 1 -type d -name 'twomc-*' | sort -r | tail -n +"$((BACKUP_KEEP + 1))" | while IFS= read -r old; do
-  rm -rf -- "$old" && echo "Ротация: удалён $(basename "$old")"
-done
+# Ротация локальных копий отдельно по метке: оставить BACKUP_KEEP последних с тем же тегом (daily/predeploy/...).
+# Имя содержит UTC-время, порядок лексикографический. Копии других меток не затрагиваются.
+# Сбой удаления только предупреждает: код возврата (например, 4 при провале S3) не маскируется.
+mapfile -t same_tag < <(find "$BACKUP_DIR" -maxdepth 1 -type d -name 'twomc-*' 2>/dev/null \
+  | sed 's|.*/||' | grep -E "^twomc-[0-9]{8}T[0-9]{6}Z-${BACKUP_TAG}\$" | sort -r || true)
+if (( ${#same_tag[@]} > BACKUP_KEEP )); then
+  for old in "${same_tag[@]:BACKUP_KEEP}"; do
+    if rm -rf -- "${BACKUP_DIR:?}/$old"; then
+      echo "Ротация ($BACKUP_TAG): удалён $old"
+    else
+      echo "ПРЕДУПРЕЖДЕНИЕ: не удалось удалить $old при ротации (код возврата бэкапа не изменён)" >&2
+    fi
+  done
+fi
 
 exit "$rc"

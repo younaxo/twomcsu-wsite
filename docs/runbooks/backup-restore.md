@@ -8,6 +8,7 @@
 - RPO 24 часа (плановый бэкап раз в сутки) плюс снимок перед каждым деплоем с миграциями. RTO 4 часа.
 - Шифрование `age` публичным ключом; приватный ключ хранится офлайн у владельца и на сервере не лежит. Альтернатива — gpg (ниже).
 - Хранение: RU-S3 (провайдер не выбран) через rclone или aws cli; без S3 — локальный fallback с ротацией. Срок хранения: 14 локальных копий, срок в S3 задаётся lifecycle-правилом бакета (предложение: 30 дней).
+- Подтверждение restore в production (допущение, решение владельца не принято): интерактивно — ввод имени БД; без TTY — только при `RESTORE_CONFIRM=OVERWRITE-PRODUCTION` вместе с `--non-interactive`; api должен быть остановлен; перед `pg_restore --clean` скрипт сам снимает дамп текущей БД и при неудаче останавливается.
 - Ключи и учётные данные S3 не создаются и в репозиторий не попадают; ниже только имена переменных.
 
 ## Что копируется
@@ -24,15 +25,15 @@
 
 ## Переменные окружения
 
-`backup.sh`: `BACKUP_DIR` (`$HOME/twomc-backups/scheduled`, вне репозитория), `BACKUP_KEEP` (14), `BACKUP_MIN_FREE_MB` (2048), `BACKUP_TAG` (`scheduled`; перед деплоем — `predeploy`), `BACKUP_ENCRYPT` (`age` | `gpg` | `none` только с `BACKUP_ALLOW_UNENCRYPTED=1`), `AGE_RECIPIENT`, `GPG_RECIPIENT`, `BACKUP_S3_RCLONE_REMOTE` (вид `remote:bucket/prefix`; учётные данные в конфиге rclone) либо `BACKUP_S3_URI` и `BACKUP_S3_ENDPOINT` (aws cli; учётные данные в окружении aws), `UPLOADS_VOLUME`, `BACKUP_SKIP_UPLOADS`.
-`restore.sh`: `AGE_IDENTITY` (путь к файлу приватного ключа), `RESTORE_TMP_DIR`, `RESTORE_MIN_FREE_MB`, `RESTORE_CONFIRM`.
+`backup.sh`: `BACKUP_DIR` (`$HOME/twomc-backups/scheduled`, вне репозитория), `BACKUP_KEEP` (14 последних на каждую метку отдельно), `BACKUP_MIN_FREE_MB` (2048), `BACKUP_TAG` (`scheduled`; перед деплоем — `predeploy`), `BACKUP_ENCRYPT` (`age` | `gpg` | `none` только с `BACKUP_ALLOW_UNENCRYPTED=1`), `AGE_RECIPIENT`, `GPG_RECIPIENT`, `BACKUP_S3_RCLONE_REMOTE` (вид `remote:bucket/prefix`; учётные данные в конфиге rclone) либо `BACKUP_S3_URI` и `BACKUP_S3_ENDPOINT` (aws cli; учётные данные в окружении aws), `UPLOADS_VOLUME`, `BACKUP_SKIP_UPLOADS`.
+`restore.sh`: `AGE_IDENTITY` (путь к файлу приватного ключа), `RESTORE_TMP_DIR`, `RESTORE_MIN_FREE_MB`, `RESTORE_CONFIRM` (только с `--non-interactive`), `RESTORE_SNAPSHOT_DIR` (снимки перед prod-восстановлением, по умолчанию `$HOME/twomc-backups/pre-restore`). Параметры: `--target drill|prod`, `--non-interactive`.
 Коды выхода `backup.sh`: 0 успех; 1 ошибка; 3 нет места (до начала); 4 бэкап создан локально, но выгрузка в S3 не удалась. `restore.sh`: 2 — нарушена целостность (sha256, дешифровка, `pg_restore --list`), восстановление не начато; 3 — нет места.
 
 ## Бэкап
 
 1. Предусловия: `df -h` (нужно места больше размера БД и uploads, плюс временный открытый дамп до шифрования), `AGE_RECIPIENT` задан, каталог `BACKUP_DIR` вне репозитория.
 2. Плановый: `infrastructure/backup/backup.sh`. Снимок перед деплоем: `BACKUP_TAG=predeploy infrastructure/backup/backup.sh`. Встроенный снимок `deploy.sh` (ADR-0158) остаётся; подключение `backup.sh` вместо него — отдельный шаг после появления сервера.
-3. Без S3 скрипт печатает «S3 не настроен — локальный fallback» и хранит `BACKUP_KEEP` последних копий. При нехватке места выход 3 и бэкап не начат; нехватка посреди бэкапа даёт ненулевой выход, `.partial` удаляется.
+3. Без S3 скрипт печатает «S3 не настроен — локальный fallback» и хранит `BACKUP_KEEP` последних копий каждой метки: ротация идёт отдельно по тегу, свежие `scheduled` не вытесняют `predeploy`. Ошибка удаления при ротации даёт предупреждение и не меняет код выхода бэкапа (например, 4 при провале S3). При нехватке места выход 3 и бэкап не начат; нехватка посреди бэкапа даёт ненулевой выход, `.partial` удаляется.
 4. Расписание (cron или systemd timer) настраивается на сервере после его появления, не в репозитории. Ненулевой код должен приводить к уведомлению.
 5. Копию без S3 нужно регулярно вывозить с сервера: бэкап на том же диске не защищает от потери сервера.
 
@@ -41,12 +42,14 @@
 Выполняет владелец. Приводит к потере записей, сделанных после бэкапа (оценить с владельцем).
 
 1. Остановить api и web: `docker compose --env-file .env -f infrastructure/docker-compose.prod.yml stop api web`.
-2. Сохранить текущее состояние: `BACKUP_TAG=prerestore infrastructure/backup/backup.sh`.
+2. Сохранить текущее состояние полным бэкапом (с uploads): `BACKUP_TAG=prerestore infrastructure/backup/backup.sh`. Отдельно `restore.sh --target prod` сам делает снимок БД (только БД, открытый дамп с ПДн) в `RESTORE_SNAPSHOT_DIR`; его нужно зашифровать или удалить после проверки.
 3. Если копия в S3 — скачать каталог бэкапа целиком (`rclone copy`) во временный каталог вне репозитория.
-4. `RESTORE_CONFIRM=OVERWRITE-PRODUCTION AGE_IDENTITY=<файл ключа> infrastructure/backup/restore.sh --target prod <каталог>`. Скрипт сначала проверяет sha256 хранимых файлов; при несовпадении печатает «ОТКАЗ», выходит с кодом 2 и ничего не меняет. Затем расшифровка, сверка sha256 открытого дампа, `pg_restore --list`, `pg_restore --clean --if-exists --no-owner --no-acl`. Открытый дамп живёт во временном каталоге и удаляется при выходе.
+4. `AGE_IDENTITY=<файл ключа> infrastructure/backup/restore.sh --target prod <каталог>` из терминала: после проверок скрипт просит ввести имя БД production; иное значение отменяет восстановление. Без TTY (автоматизация) требуются оба условия: `RESTORE_CONFIRM=OVERWRITE-PRODUCTION` и `--non-interactive`, иначе отказ. Если api запущен, отказ; если снимок текущей БД не удался, стоп до `pg_restore --clean`. Скрипт сначала проверяет sha256 хранимых файлов; при несовпадении печатает «ОТКАЗ», выходит с кодом 2 и ничего не меняет. Затем расшифровка, сверка sha256 открытого дампа, `pg_restore --list`, `pg_restore --clean --if-exists --no-owner --no-acl`. Открытый дамп живёт во временном каталоге и удаляется при выходе.
 5. Роли: `globals.sql` скрипт не применяет. Нужен только при пересоздании кластера: расшифровать и выполнить `psql` вручную.
 6. uploads: расшифровать `uploads.tar.gz`, проверить `tar -tzf`, распаковать во временный контейнер с монтированием тома на запись (`docker run --rm -v <том>:/data ... tar -C /data -xzf -`).
 7. Запустить api и web, проверить `/health`, вход, загрузку изображения. При необходимости откат образов — `docs/runbooks/deploy.md`.
+
+Целостность и подмена: `SHA256SUMS`, `PLAIN.sha256` и манифест защищают от повреждения при хранении и передаче, но не от подмены: тот, кто может изменить каталог бэкапа, может пересчитать хеши. Подпись (например, `age`/`minisign`/gpg-подпись `SHA256SUMS` ключом владельца с проверкой при восстановлении) — будущее улучшение, сейчас не реализовано.
 
 Расшифровка вручную: `age -d -i <ключ> -o postgres.dump postgres.dump.age`; проверка: `sha256sum -c SHA256SUMS` в каталоге бэкапа.
 
@@ -73,4 +76,4 @@ DRILL_POSTGRES_PASSWORD=<одноразовое значение, не из prod
 
 ## Проверки скриптов без запуска контейнеров
 
-`bash -n` на трёх скриптах; shellcheck (временное окружение `pip install shellcheck-py` в venv); `docker compose -f infrastructure/docker-compose.restore-drill.yml config -q` с dummy `DRILL_POSTGRES_PASSWORD`; стаб-тесты со стабами docker/age/rclone/df (сценарии из отчёта `docs/reports/2026-11-16-00-p3-03b.md`).
+`bash -n` на трёх скриптах; shellcheck (временное окружение `pip install shellcheck-py` в venv); `docker compose -f infrastructure/docker-compose.restore-drill.yml config -q` с dummy `DRILL_POSTGRES_PASSWORD`; стаб-тесты со стабами docker/age/rclone/df/rm (сценарии из отчёта `docs/reports/2026-11-16-00-p3-03b.md`).
