@@ -1,6 +1,7 @@
 import { envValidationSchema } from './env.validation';
 
 const base = {
+  NODE_ENV: 'test',
   DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
   JWT_ACCESS_SECRET: 'a'.repeat(32),
   JWT_REFRESH_SECRET: 'b'.repeat(32),
@@ -242,4 +243,70 @@ describe('envValidationSchema production startup check (TRUST_PROXY, Turnstile)'
       expect(error).toBeUndefined();
     },
   );
+});
+
+describe('envValidationSchema NODE_ENV fail-closed (ADR-0164)', () => {
+  const minimal = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    TURNSTILE_DISABLED: 'true',
+  };
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true });
+
+  it('без NODE_ENV дефолта development нет: нужен production-набор', () => {
+    const { error, value } = validate(minimal);
+    expect(error).toBeDefined();
+    expect((value as Record<string, unknown>).NODE_ENV).toBeUndefined();
+  });
+
+  it('пустой NODE_ENV требует production-переменные', () => {
+    expect(validate({ ...minimal, NODE_ENV: '' }).error).toBeDefined();
+  });
+
+  it('без NODE_ENV полный production-набор проходит', () => {
+    expect(
+      validate({
+        DATABASE_URL: minimal.DATABASE_URL,
+        JWT_ACCESS_SECRET: minimal.JWT_ACCESS_SECRET,
+        JWT_REFRESH_SECRET: minimal.JWT_REFRESH_SECRET,
+        TRUST_PROXY: '1',
+        COOKIE_SECURE: 'true',
+        COOKIE_DOMAIN: '.twomc.su',
+        TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
+        TURNSTILE_SECRET_KEY: 'test-secret',
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it('без NODE_ENV TURNSTILE_DISABLED=true и AUTH_TEST_OTP_ENABLED=true запрещены', () => {
+    const full = {
+      DATABASE_URL: minimal.DATABASE_URL,
+      JWT_ACCESS_SECRET: minimal.JWT_ACCESS_SECRET,
+      JWT_REFRESH_SECRET: minimal.JWT_REFRESH_SECRET,
+      TRUST_PROXY: '1',
+      COOKIE_SECURE: 'true',
+      COOKIE_DOMAIN: '.twomc.su',
+      TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
+      TURNSTILE_SECRET_KEY: 'test-secret',
+    };
+    expect(
+      validate({ ...full, TURNSTILE_DISABLED: 'true' }).error?.message,
+    ).toMatch(/TURNSTILE_DISABLED запрещён/);
+    expect(
+      validate({ ...full, AUTH_TEST_OTP_ENABLED: 'true' }).error?.message,
+    ).toMatch(/AUTH_TEST_OTP_ENABLED запрещён/);
+  });
+
+  it.each(['development', 'test'])(
+    'явный %s не требует production-переменных',
+    (env) => {
+      expect(validate({ ...minimal, NODE_ENV: env }).error).toBeUndefined();
+    },
+  );
+
+  it('неизвестное значение NODE_ENV (staging) отвергается схемой', () => {
+    expect(validate({ ...minimal, NODE_ENV: 'staging' }).error).toBeDefined();
+  });
 });

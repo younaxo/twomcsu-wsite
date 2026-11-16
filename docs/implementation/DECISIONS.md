@@ -3709,3 +3709,17 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 - L1 закрыт: полная форма `0:0:0:0:0:ffff:c000:201` распознаётся как mapped IPv4 в `normalizeIp` (и значит в `rateLimitKey`).
 - Throttler по-прежнему считает полный адрес: ротация адресов внутри /64 обходит только его, но не brute-force счётчик входа.
 - e2e не выполнялся (диск), выполнить перед merge.
+
+## ADR-0164 — NODE_ENV fail-closed: пустой NODE_ENV = production
+
+**Status:** Accepted (решение владельца по аудиту Q11, 2026-11-17: «пустой/не заданный NODE_ENV = production»).
+
+**Context.** Схема env подставляла `NODE_ENV=development`, если переменная не задана; проверки `=== 'production'` (обязательные TRUST_PROXY/cookie/2FA-ключ/Turnstile, запрет тестового OTP, admin-2FA без ключа, https в CORS, отказ при ошибке почты) молча выключались на сервере с забытым NODE_ENV.
+
+**Decision.** Новый хелпер `isProductionLike(nodeEnv)` (`apps/api/src/config/node-env.ts`): false только для явных `development` и `test` (без учёта регистра и пробелов), всё остальное (undefined, пусто, production, staging, мусор) даёт true. Применён в `env.validation.ts` (условие Joi «явно development/test», `.required()`, иначе действует production-набор; `.default('development')` убран, пустая строка допустима, значения схемы прежние), `permissions.guard.ts` (admin-2FA и предупреждение), `test-otp.ts`, `cors.ts`, `email.service.ts` (коды из писем в debug-лог только вне production-like), `registration.service.ts` (отказ при ошибке отправки письма с кодом). Уже fail-closed и не менялись: `auth.service.register` (`!== 'test'`), `payment-provider.registry` (белый список development/test); проверки `=== 'test'` (планировщики, email, files) остаются: они отключают побочные эффекты только в Jest. Dev-скрипты api (`start`, `dev`, `start:dev`, `start:debug`) запускаются через `apps/api/scripts/with-node-env.mjs development ...` (кроссплатформенно, без новых зависимостей).
+
+**Consequences.**
+
+- Локальный запуск без обёртки (например, `nest start` напрямую или `node dist/main` без `.env` с NODE_ENV) теперь требует production-переменные; для dev в `.env` или через скрипты нужен явный `NODE_ENV=development`.
+- Jest сам выставляет `NODE_ENV=test`, CI (`pnpm test`, `test:e2e`, `build`) не затронут; шаг CI «Prisma seed» запускает seed вне Nest, и `prisma/seed/bootstrap.ts` по-прежнему сравнивает `=== 'production'` (вне scope, отдельная находка).
+- Промежуточные окружения (staging) считаются production: им нужны все production-переменные.
