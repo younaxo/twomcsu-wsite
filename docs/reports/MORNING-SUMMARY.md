@@ -1,6 +1,6 @@
 # Утренняя сводка — ночь 2026-11-16 → 17 (промпт 07)
 
-Обновлено: 2026-11-17 ~00:50.
+Обновлено: 2026-11-17 ~03:00.
 
 ## Что сделано (A–J)
 
@@ -14,7 +14,10 @@
   - P3-03a deploy.sh: pre-flight health, снимок БД до миграции, .release только после health, стоп на деструктивных миграциях, лимиты памяти/логов — 7feedc6, 4e1519d (Q18 — порядок шагов);
   - P3-03b бэкапы: pg_dump + age + sha256, ротация по меткам, защищённый restore в prod — dbc4263, 6485231; drill отложен: диск (Q16, Q19);
   - Cloudflare real_ip: runbook + файрвол origin, на сервер ничего — dbdd913, c643f4d (Q14);
-  - в работе: проверка .env при старте + чек-лист, forms maxWait (Q17), IPv6 /64 (Q9).
+  - проверка .env при старте (TRUST_PROXY, Turnstile fail-closed) + чек-лист docs/runbooks/production-env-checklist.md — b091e2a;
+  - forms: транзакция отправки maxWait/timeout 5 с (Q17) — 9e0eac3, c0569e6, 988bbb0.
+- C: Q9 лимиты входа и 2FA по подсети /64 + тесты — 1565a3f, 10e3289, 49823a2, 0b926d5 (Q21 — глобальный throttler и админка). Q11 — следующий.
+- Все 15 локальных веток симулированно сливаются в main по порядку без конфликтов (git merge-tree, read-only).
 - P3-06a (зависимости): отложен — нужен pnpm install, диск < 5 ГБ.
 
 ## Git и PR
@@ -23,8 +26,7 @@
 
 ## Тесты
 
-- Юнит: api 33 suites / 309 tests PASS (stage00), orders.service.spec 20/20; tsc/eslint/prettier PASS.
-- e2e отложены до освобождения диска (Docker запрещён при < 5 ГБ).
+- Юнит api на вершине стека: 37 suites / 344 tests PASS; tsc/eslint/prettier PASS. e2e (одноразовая БД): reports/reports-support PASS 3/3; forms без maxWait FAIL 3/3 (детерм.); полный e2e вершины остановлен Claude Code из-за ОЗУ — нужен прогон по команде.
 
 ## Нужно от владельца
 
