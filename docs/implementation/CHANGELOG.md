@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Бэкапы и восстановление (P3-03b)
+
+- `infrastructure/backup/backup.sh`, `restore.sh`, `restore-drill.sh`, `docker-compose.restore-drill.yml`: дамп PostgreSQL
+  и роли, архив uploads, манифест sha256, шифрование age/gpg, S3 опционально, локальный fallback с ротацией, отказ
+  восстановления при несовпадении sha256. Runbook `docs/runbooks/backup-restore.md`, ADR-0159, риск R30. Restore-drill
+  не выполнялся (диск), расписание не включено.
+
 ### Безопасность deploy.sh и лимиты production-compose (P3-03a)
 
 - `infrastructure/deploy.sh`: снимок БД перед `prisma migrate deploy` (при провале деплой останавливается), честные

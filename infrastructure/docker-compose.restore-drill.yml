@@ -1,0 +1,32 @@
+# Одноразовая БД для restore-drill (P3-03b). Только синтетические данные.
+# Не использует production env_file, тома и сеть; порт только на 127.0.0.1.
+#   DRILL_POSTGRES_PASSWORD=... docker compose -p twomc-restore-drill -f infrastructure/docker-compose.restore-drill.yml up -d --wait
+# Запуск и удаление — infrastructure/backup/restore-drill.sh (down -v затрагивает только проект twomc-restore-drill).
+name: twomc-restore-drill
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: twomc-restore-drill-postgres
+    mem_limit: ${DRILL_MEM_LIMIT:-512m}
+    environment:
+      POSTGRES_USER: drill
+      POSTGRES_DB: drill
+      POSTGRES_PASSWORD: ${DRILL_POSTGRES_PASSWORD:?задайте DRILL_POSTGRES_PASSWORD (одноразовое значение)}
+    volumes:
+      - drill-pgdata:/var/lib/postgresql/data
+    ports:
+      - '127.0.0.1:55432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U drill -d drill']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '2'
+
+volumes:
+  drill-pgdata:
