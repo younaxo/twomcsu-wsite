@@ -4,7 +4,7 @@
 #   infrastructure/backup/restore.sh --target prod <каталог-бэкапа>      # интерактивно: ввести имя БД; api остановлен
 #   RESTORE_CONFIRM=OVERWRITE-PRODUCTION infrastructure/backup/restore.sh --target prod --non-interactive <каталог>
 # Порядок: sha256 хранимых файлов (несовпадение — ОТКАЗ, код 2) → расшифровка → sha256 открытого дампа →
-# pg_restore --list → pg_restore --clean --if-exists. Роли (globals.sql) и uploads — вручную по runbook.
+# pg_restore --list → pg_restore --clean --if-exists --single-transaction (RESTORE_SINGLE_TRANSACTION=0 отключает). Роли (globals.sql) и uploads — вручную по runbook.
 # prod: подтверждение вводом имени БД (TTY); без TTY — отказ, если нет И RESTORE_CONFIRM, И --non-interactive;
 # api должен быть остановлен (running, restarting и paused считаются «не остановлен» — иначе отказ); перед pg_restore --clean обязательный снимок текущей БД (неудача — стоп).
 # Восстановление в production перезаписывает данные: только владелец/назначенный им человек (docs/runbooks/backup-restore.md).
@@ -15,6 +15,7 @@
 #   AGE_IDENTITY          путь к файлу приватного ключа age (для расшифровки; ключ не создаётся и не хранится скриптом)
 #   RESTORE_TMP_DIR       каталог для расшифрованного дампа (по умолчанию $HOME/twomc-backups/.restore-tmp)
 #   RESTORE_MIN_FREE_MB   минимум свободного места, МБ (2048)
+#   RESTORE_SINGLE_TRANSACTION  1 (по умолчанию) — pg_restore --single-transaction; 0 — выключить (runbook)
 #   RESTORE_CONFIRM       OVERWRITE-PRODUCTION — только вместе с --non-interactive (без TTY)
 #   RESTORE_SNAPSHOT_DIR  каталог снимков перед prod-восстановлением (по умолчанию $HOME/twomc-backups/pre-restore)
 #   DRILL_POSTGRES_PASSWORD  нужен compose restore-drill для интерполяции
@@ -121,7 +122,17 @@ if [[ "$TARGET" == "prod" ]]; then
   "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$snap" >/dev/null || fail "снимок не читается (pg_restore --list) — восстановление не начато"
 fi
 
-echo "→ pg_restore --clean --if-exists в цель '$TARGET'"
+# --single-transaction: всё или ничего — при любой ошибке откат, БД остаётся в прежнем состоянии (а не наполовину очищенной).
+# Совместимо с --clean --if-exists; несовместимо с -j (параллельность не используется: дамп идёт со stdin). Роли/globals не затрагиваются.
+# Цена: любая ошибка (в т.ч. безобидная при обычном режиме) откатывает всё; RESTORE_SINGLE_TRANSACTION=0 — прежний режим (runbook).
+RESTORE_SINGLE_TRANSACTION=${RESTORE_SINGLE_TRANSACTION:-1}
+case "$RESTORE_SINGLE_TRANSACTION" in
+  1) PGR_MODE=(--single-transaction) ;;
+  0) PGR_MODE=(); echo "ПРЕДУПРЕЖДЕНИЕ: RESTORE_SINGLE_TRANSACTION=0 — при ошибке БД может остаться частично восстановленной" >&2 ;;
+  *) fail "RESTORE_SINGLE_TRANSACTION: допустимо 0 или 1" ;;
+esac
+echo "→ pg_restore --clean --if-exists ${PGR_MODE[*]:-} в цель '$TARGET'"
 # shellcheck disable=SC2016  # $POSTGRES_* раскрываются внутри контейнера
-"${COMPOSE[@]}" exec -T postgres sh -c 'pg_restore --clean --if-exists --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$tmp/postgres.dump" || fail "pg_restore завершился с ошибкой"
+"${COMPOSE[@]}" exec -T postgres sh -c 'pg_restore --clean --if-exists "$@" --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' pg_restore_sh ${PGR_MODE[@]+"${PGR_MODE[@]}"} < "$tmp/postgres.dump" \
+  || fail "pg_restore завершился с ошибкой (при --single-transaction изменения откачены; см. runbook)"
 echo "Восстановление завершено: $(basename "$SRC") → $TARGET"
