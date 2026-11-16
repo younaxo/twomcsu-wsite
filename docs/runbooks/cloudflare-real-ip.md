@@ -41,10 +41,11 @@
 
 ```bash
 cf_validate_list() { # $1 = 4|6, $2 = файл со списком CIDR
-  local fam=$1 f=$2 line ip pfx o n
+  local fam=$1 f=$2 line ip pfx o n cnt=0
   [ -s "$f" ] || { echo "пустой список" >&2; return 1; }
   while IFS= read -r line; do
     [ -n "$line" ] || continue
+    cnt=$((cnt+1))
     [[ $line == */* ]] || { echo "плохая строка: $line" >&2; return 1; }
     ip=${line%/*}; pfx=${line#*/}
     [[ $pfx =~ ^[0-9]{1,3}$ ]] || { echo "плохая строка: $line" >&2; return 1; }
@@ -62,6 +63,7 @@ cf_validate_list() { # $1 = 4|6, $2 = файл со списком CIDR
       { [ "$pfx" -ge 12 ] && [ "$pfx" -le 128 ]; } || { echo "префикс вне /12../128: $line" >&2; return 1; }
     fi
   done < "$f"
+  [ "$cnt" -gt 0 ] || { echo "нет ни одной строки CIDR" >&2; return 1; }
 }
 ```
 
