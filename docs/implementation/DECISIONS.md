@@ -126,6 +126,7 @@ cleanup — cron, `TEMP` старше 24 ч.
 production-сборки (`NODE_ENV=production` отключает регистрацию тестового провайдера).
 Деньги — `Decimal`/целые minor units, никогда `float`. Итог заказа всегда
 пересчитывается сервером (цена, скидки, промокод, бандл).
+Уточнение (ADR-0157): тестовый провайдер регистрируется только при `NODE_ENV` in {development, test}, подпись вебхука — HMAC-SHA256 над сырым телом.
 
 ## ADR-0010 — Единый формат admin-панели (без дублирования /admin и /dashboard)
 
@@ -585,6 +586,8 @@ attachments`, `.../messages/:messageId/attachments`) — зависят от
 (ADR не требуется — уже задокументировано в RISKS.md R3).
 
 ## ADR-0034 — Store: платёжный вебхук — секрет в теле (как Voting), не HMAC-заголовок
+
+**Status:** Superseded by ADR-0157.
 
 **Context.** ADR-0009 требует: заказ переходит в `COMPLETED` только через
 вебхук с проверенной подписью, без client-triggered «complete»-эндпоинта.
@@ -3513,3 +3516,32 @@ https, оба до 500 символов, `null` убирает логотип; P
   `--runInBand` отдельно).
 - Деплой: без `COOKIE_SECURE`, `COOKIE_DOMAIN`, `TWO_FACTOR_ENCRYPTION_KEY` API не запустится.
 
+## ADR-0157 — Платёжный вебхук: HMAC и сверка суммы (P3-01)
+
+**Status:** Accepted (заменяет ADR-0034).
+
+**Context.** Секрет в теле вебхука имел публичный дефолт `test-webhook-secret`, пустой секрет равен пустому,
+проверка `PENDING` шла вне транзакции (двойной `usedCount`, 500 при повторе), сумма не сверялась,
+`paymentId` перезаписывался, `:provider` игнорировался, `quick-buy` без throttle.
+
+**Decision.**
+- `PaymentProvider.verifyWebhook(rawBody, headers)` возвращает проверенное событие
+  `{orderNumber, paymentId, status, amount, currency}` или `null`. Тестовый провайдер: HMAC-SHA256 hex над
+  `timestamp.rawBody`, заголовки `x-twomc-signature`/`x-twomc-timestamp` (секунды), окно ±5 минут,
+  `timingSafeEqual`; пустой секрет — всегда отказ. Секрет в теле не принимается.
+- Сырое тело: `rawBody: true` через общую константу `APP_CREATE_OPTIONS` (main.ts и e2e).
+- Провайдер выбирается по `:provider`: неизвестный — 404; неверная/отсутствующая подпись — 401. Проверенные
+  события всегда дают 200 `{accepted, reason?}` (`order_not_found`, `provider_mismatch`, `payment_id_mismatch`,
+  `currency_mismatch`, `amount_mismatch`, `already_processed`).
+- Переход статуса — `updateMany where {id, status: PENDING}` в транзакции; `usedCount +1` и `promoCodeUsage`
+  (`createMany skipDuplicates`, только для пользователей) — только если `count === 1`. Сумма — `Decimal.equals`
+  с `order.total`; валюта задаётся провайдером (в `Order` поля нет; тестовый — `RUB`); `paymentId` не
+  перезаписывается. Миграций нет.
+- `TestPaymentProvider` — только при `NODE_ENV` in {development, test}. Дефолт `PAYMENT_WEBHOOK_SECRET` удалён
+  (пусто = все вебхуки 401); e2e задают секрет сами. `@Throttle` 10/мин на `quick-buy`.
+
+**Consequences.**
+- Обязательность секрета в production — вместе с реальным провайдером (RISKS R2).
+- `rawBody` увеличивает память на JSON-запросах (буфер тела хранится рядом с распарсенным).
+- Throttle quick-buy считается по `req.ip` (корректен после P3-02).
+- Вне scope: реальный провайдер, доставка товаров, миграции.

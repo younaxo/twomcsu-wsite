@@ -9,6 +9,10 @@ import { allowedOrigins, corsOrigin } from './config/cors';
 import { normalizeIp, resolveTrustProxy } from './config/trust-proxy';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
+/// Опции создания приложения для main.ts и e2e (`createNestApplication`):
+/// `rawBody` нужен для проверки HMAC платёжного вебхука (ADR-0157).
+export const APP_CREATE_OPTIONS = { rawBody: true } as const;
+
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
 /// и в e2e-тестах (Test.createTestingModule не прогоняет main.ts). Если
 /// добавлять middleware/pipes только в main.ts, e2e-тесты будут тестировать

@@ -19,6 +19,9 @@ GitHub (Settings → SSH and GPG keys).
 позволяет завершить заказ без внутреннего вызова, отключается в production).
 **Нужно от владельца:** выбрать провайдера (ЮKassa/CloudPayments/Stripe/другой),
 получить `PAYMENT_PROVIDER`, `PAYMENT_API_KEY`, `PAYMENT_WEBHOOK_SECRET`.
+P3-01 / ADR-0157: вебхук проверяется HMAC над сырым телом, дефолта секрета нет; секрет в production
+станет обязательным вместе с подключением реального провайдера (формат подписи реального провайдера —
+своя реализация `verifyWebhook`).
 
 PHASE 17 (Store): реализовано полностью по плану выше —
 `modules/store/payment/{payment-provider.interface,payment-provider.registry,
