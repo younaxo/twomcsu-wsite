@@ -271,6 +271,9 @@ describe('Обращения в админке (срез 7.3)', () => {
       if (path === '/reports/R-1') {
         return { ...REPORT, assignedToId: 'other', assignedTo: user('other', 'Bob') };
       }
+      if (path === '/moderation/reports/assignable-staff') {
+        return { items: [user('u-9', 'Carol')] };
+      }
       if (path === '/moderation/reports/R-1/history') {
         return {
           items: [
@@ -295,7 +298,13 @@ describe('Обращения в админке (срез 7.3)', () => {
     render(<ReportCardPage />, { wrapper: Providers });
     await screen.findByTestId('staff-report');
     expect(screen.getByTestId('report-priority')).toHaveTextContent('Приоритет: Высокий');
-    await actor.type(screen.getByLabelText('ID исполнителя для передачи'), 'u-9');
+    await actor.click(screen.getByRole('combobox', { name: 'Исполнитель для передачи' }));
+    await waitFor(() =>
+      expect(mocks.get).toHaveBeenCalledWith('/moderation/reports/assignable-staff', {
+        query: { q: '', limit: 20 },
+      }),
+    );
+    await actor.click(await screen.findByRole('option', { name: /Carol/ }));
     await actor.click(screen.getByRole('button', { name: 'Передать' }));
     await waitFor(() =>
       expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/assign', {
@@ -324,12 +333,103 @@ describe('Обращения в админке (срез 7.3)', () => {
     const actor = userEvent.setup();
     for (const key of ['reports.view', 'reports.assign']) mocks.granted.add(key);
     mocks.patch.mockRejectedValue(new ApiError(404, ['Не найдено']));
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === '/reports/R-1') return REPORT;
+      if (path === '/moderation/reports/assignable-staff') {
+        return { items: [user('u-9', 'Carol')] };
+      }
+      return null;
+    });
     render(<ReportCardPage />, { wrapper: Providers });
     await screen.findByTestId('staff-report');
-    await actor.type(screen.getByLabelText('ID исполнителя для передачи'), 'nope');
+    await actor.click(screen.getByRole('combobox', { name: 'Исполнитель для передачи' }));
+    await actor.click(await screen.findByRole('option', { name: /Carol/ }));
     await actor.click(screen.getByRole('button', { name: 'Передать' }));
     await waitFor(() =>
       expect(mocks.toast.error).toHaveBeenCalledWith(expect.stringMatching(/Не найдено/)),
     );
+  });
+
+  it('карточка: список исполнителей — 403 показывается понятной ошибкой', async () => {
+    const actor = userEvent.setup();
+    for (const key of ['reports.view', 'reports.assign']) mocks.granted.add(key);
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === '/reports/R-1') return REPORT;
+      throw new ApiError(403, ['Недостаточно прав']);
+    });
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    await actor.click(screen.getByRole('combobox', { name: 'Исполнитель для передачи' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Действие недоступно/);
+  });
+
+  it('заметки: правка своей, закреп/открепление, скрытие по правам, 403 при правке', async () => {
+    const actor = userEvent.setup();
+    for (const key of ['reports.view', 'reports.notes', 'reports.notes.pin']) {
+      mocks.granted.add(key);
+    }
+    const note = (id: string, authorId: string, pinned: boolean, content: string) => ({
+      id,
+      authorId,
+      content,
+      isPinned: pinned,
+      createdAt: '2026-10-10T12:00:00.000Z',
+      updatedAt: '2026-10-10T12:00:00.000Z',
+    });
+    mocks.get.mockImplementation(async (path: string) =>
+      path === '/reports/R-1'
+        ? {
+            ...REPORT,
+            moderatorNotes: [
+              note('n1', 'me', false, 'Моя заметка'),
+              note('n2', 'other', true, 'Чужая закреплённая'),
+            ],
+          }
+        : null,
+    );
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    const own = screen.getByTestId('note-n1');
+    const foreign = screen.getByTestId('note-n2');
+    // Закреплённая — первой, с индикатором; править чужую нельзя без reports.delete.
+    expect(own.compareDocumentPosition(foreign) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    expect(within(foreign).getByLabelText('Закреплено')).toBeInTheDocument();
+    expect(within(foreign).queryByRole('button', { name: /Изменить/ })).toBeNull();
+
+    await actor.click(within(foreign).getByRole('button', { name: 'Открепить заметку' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n2/pin', {
+        pinned: false,
+      }),
+    );
+    await actor.click(within(own).getByRole('button', { name: 'Закрепить заметку' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n1/pin', {
+        pinned: true,
+      }),
+    );
+
+    mocks.patch.mockRejectedValueOnce(new ApiError(403, ['Недостаточно прав']));
+    await actor.click(within(own).getByRole('button', { name: /Изменить/ }));
+    const field = within(own).getByLabelText('Текст заметки');
+    await actor.clear(field);
+    await actor.type(field, 'Новый текст');
+    await actor.click(within(own).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n1', {
+        content: 'Новый текст',
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith(expect.stringMatching(/Действие недоступно/)),
+    );
+  });
+
+  it('заметки: без reports.notes.pin кнопок закрепа нет', async () => {
+    mocks.granted.add('reports.view');
+    mocks.granted.add('reports.notes');
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    expect(screen.queryByRole('button', { name: /Закрепить заметку/ })).toBeNull();
   });
 });
