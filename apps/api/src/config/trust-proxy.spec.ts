@@ -1,4 +1,4 @@
-import { normalizeIp, resolveTrustProxy } from './trust-proxy';
+import { normalizeIp, rateLimitKey, resolveTrustProxy } from './trust-proxy';
 
 describe('resolveTrustProxy', () => {
   it.each([undefined, null, '', '   '])('пусто (%p) — выключено', (raw) => {
@@ -83,5 +83,70 @@ describe('normalizeIp', () => {
   it('пусто → unknown', () => {
     expect(normalizeIp(undefined)).toBe('unknown');
     expect(normalizeIp('')).toBe('unknown');
+  });
+});
+
+describe('rateLimitKey', () => {
+  it('IPv4 и mapped IPv6 дают IPv4', () => {
+    expect(rateLimitKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(rateLimitKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+    expect(rateLimitKey('::ffff:cb00:7107')).toBe('203.0.113.7');
+  });
+
+  it('сжатая, полная и смешанная формы одной /64 дают один ключ', () => {
+    const key = 'v6:2001:db8:0:1';
+    expect(rateLimitKey('2001:db8:0:1::5')).toBe(key);
+    expect(rateLimitKey('2001:0db8:0000:0001:0000:0000:0000:0005')).toBe(key);
+    expect(rateLimitKey('2001:DB8:0:1:0:0:0:9')).toBe(key);
+    expect(rateLimitKey('2001:db8:0:1:ffff:ffff:ffff:ffff')).toBe(key);
+  });
+
+  it('::1, :: и сжатие внутри первых 4 хекстетов', () => {
+    expect(rateLimitKey('::1')).toBe('v6:0:0:0:0');
+    expect(rateLimitKey('::')).toBe('v6:0:0:0:0');
+    expect(rateLimitKey('2001:db8::')).toBe('v6:2001:db8:0:0');
+    expect(rateLimitKey('2001::1:2:3:4:5')).toBe('v6:2001:0:0:1');
+  });
+
+  it('zone id срезается', () => {
+    expect(rateLimitKey('fe80::1%eth0')).toBe(rateLimitKey('fe80::2'));
+    expect(rateLimitKey('fe80::1%eth0')).toBe('v6:fe80:0:0:0');
+  });
+
+  it('встроенный IPv4-хвост не ломает разбор', () => {
+    expect(rateLimitKey('64:ff9b::1.2.3.4')).toBe('v6:64:ff9b:0:0');
+  });
+
+  it('разные /64 дают разные ключи, разные IPv4 — разные', () => {
+    expect(rateLimitKey('2001:db8:0:1::1')).not.toBe(
+      rateLimitKey('2001:db8:0:2::1'),
+    );
+    expect(rateLimitKey('2001:db8:1:1::1')).not.toBe(
+      rateLimitKey('2001:db8:0:1::1'),
+    );
+    expect(rateLimitKey('1.2.3.4')).not.toBe(rateLimitKey('1.2.3.5'));
+  });
+
+  it('пусто/undefined — unknown', () => {
+    expect(rateLimitKey(undefined)).toBe('unknown');
+    expect(rateLimitKey(null)).toBe('unknown');
+    expect(rateLimitKey('  ')).toBe('unknown');
+  });
+
+  it('мусор не бросает, ключи разные и ограниченной длины', () => {
+    const junk = [
+      'abc',
+      'not-an-ip',
+      '1.2.3',
+      '2001:db8:::1',
+      'g::1',
+      'x'.repeat(500),
+    ];
+    const keys = junk.map((j) => rateLimitKey(j));
+    for (const k of keys) {
+      expect(k).toMatch(/^raw:[0-9a-f]{16}$/);
+    }
+    expect(new Set(keys).size).toBe(junk.length);
+    expect(rateLimitKey('ABC')).toBe(rateLimitKey('abc'));
   });
 });

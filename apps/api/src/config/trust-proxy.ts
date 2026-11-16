@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { isIP } from 'net';
 
 /// Политика доверия к прокси (ADR-0155, P3-02). Express использует
@@ -68,7 +69,7 @@ export function resolveTrustProxy(
 /// даёт ключ `unknown`.
 /// Известный остаточный риск (ADR-0155): все клиенты без распознанного IP
 /// делят один ключ `unknown` (общий счётчик), Logger.warn намеренно не
-/// добавлен; IPv6 не агрегируется по /64 (отдельный тикет).
+/// добавлен; IPv6 по /64 агрегирует `rateLimitKey` (ADR-0163); normalizeIp остаётся полным адресом.
 const MAX_IP_LENGTH = 64;
 
 export function normalizeIp(ip: string | undefined | null): string {
@@ -85,4 +86,63 @@ export function normalizeIp(ip: string | undefined | null): string {
     return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
   }
   return isIP(value) === 0 ? 'unknown' : value;
+}
+
+/// Разворачивает валидный IPv6 (без zone id, нижний регистр) в 8 хекстетов
+/// (числа 0..65535). Встроенный IPv4-хвост (`64:ff9b::1.2.3.4`) превращается в
+/// два хекстета. Возвращает null, если адрес не разобрался.
+function expandIpv6(value: string): number[] | null {
+  let text = value;
+  const tail = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
+  if (tail) {
+    if (isIP(tail[1]) !== 4) return null;
+    const [a, b, c, d] = tail[1].split('.').map(Number);
+    text =
+      text.slice(0, tail.index) +
+      `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parse = (part: string): number[] | null => {
+    if (part === '') return [];
+    const groups = part.split(':');
+    if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+    return groups.map((g) => parseInt(g, 16));
+  };
+  const head = parse(halves[0]);
+  const rest = halves.length === 2 ? parse(halves[1]) : [];
+  if (!head || !rest) return null;
+  if (halves.length === 1) return head.length === 8 ? head : null;
+  const fill = 8 - head.length - rest.length;
+  if (fill < 1) return null;
+  return [...head, ...new Array<number>(fill).fill(0), ...rest];
+}
+
+function rawKey(value: string): string {
+  return `raw:${createHash('sha256').update(value).digest('hex').slice(0, 16)}`;
+}
+
+/// Ключ для лимитов входа/brute-force (ADR-0163, ответ владельца на Q9).
+/// ТОЛЬКО для счётчиков и блокировок: журналы, аудит, lastLoginIp, согласия и
+/// captcha.verify продолжают использовать полный адрес (`normalizeIp`).
+///  - IPv4 и IPv4-mapped IPv6 — как `normalizeIp` (`1.2.3.4`);
+///  - IPv6 — префикс /64: первые 4 хекстета без ведущих нулей, нижний
+///    регистр, zone id срезан: `v6:2001:db8:0:1`;
+///  - пусто/undefined — `unknown` (как `normalizeIp`);
+///  - мусор (непустая не-IP строка, в т.ч. длинная) — `raw:` + первые 16 hex
+///    sha256 от строки в нижнем регистре: не бросает, у разных строк разные
+///    ключи, длина ключа ограничена, мусор не делит общий ключ `unknown`.
+export function rateLimitKey(ip: string | undefined | null): string {
+  const normalized = normalizeIp(ip);
+  if (normalized === 'unknown') {
+    const raw = (ip ?? '').trim().toLowerCase();
+    return raw === '' ? 'unknown' : rawKey(raw);
+  }
+  if (isIP(normalized) !== 6) return normalized;
+  const groups = expandIpv6(normalized);
+  if (!groups) return rawKey(normalized);
+  return `v6:${groups
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(':')}`;
 }

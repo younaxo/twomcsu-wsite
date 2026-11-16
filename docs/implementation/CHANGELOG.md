@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Безопасность: лимиты brute-force входа и 2FA для IPv6 считаются по подсети /64 (ADR-0163, ветка fix/q9-ipv6-64-rate-limit, не смержено): `rateLimitKey` в `config/trust-proxy.ts`, применён в `BruteForceService`; журналы/аудит/captcha по-прежнему с полным адресом; глобальный throttler не менялся. e2e отложен: диск.
+
 - Формы: транзакция отправки ответа получила `maxWait`/`timeout` 10 с (ADR-0162, ветка fix/forms-submit-tx-wait, не смержено): параллельные отправки больше не падают 500 на ожидании advisory lock. e2e отложен: диск.
 
 - Fail-fast production env (ADR-0161, ветка fix/p3-env-prod-startup-check, не смержено): API в production не стартует без TRUST_PROXY и TURNSTILE_SECRET_KEY, TURNSTILE_DISABLED=true запрещён (раньше captcha отключалась); compose требует TRUST_PROXY; добавлен чек-лист `docs/runbooks/production-env-checklist.md`.
