@@ -3639,8 +3639,10 @@ age или gpg и сроку хранения не приняты, сервер�
 - Допущение: production остаётся «nginx → api»; блок `set_real_ip_from` в
   `infrastructure/nginx.twomc.su.conf.example` остаётся закомментированным, в пример добавлена только ссылка на runbook.
 - Подготовлен `docs/runbooks/cloudflare-real-ip.md`: диапазоны Cloudflare (снимок 2026-11-16 из ips-v4 и ips-v6),
-  `real_ip_header CF-Connecting-IP`, процедура обновления диапазонов, файрвол origin (ufw, nftables; 80/443 только
-  с Cloudflare), ограничение SSH, опционально Authenticated Origin Pulls, проверки и откат.
+  `real_ip_header CF-Connecting-IP`, процедура обновления диапазонов, файрвол origin (ufw с `default deny incoming` и `IPV6=yes`, nftables; 80/443 только
+  с Cloudflare), ограничение SSH, Authenticated Origin Pulls, проверки и откат. Authenticated Origin Pulls с общим
+  сертификатом Cloudflare пропускает любую зону Cloudflare; привязка к своей зоне - только zone-level AOP с собственным
+  сертификатом (рекомендуется). Список диапазонов проверяется (не `0.0.0.0/0`/`::/0`, IPv4 не шире /8, IPv6 не шире /12).
 - `TRUST_PROXY=1` и `X-Forwarded-For $remote_addr` не меняются: хоп Cloudflare срезает nginx (real_ip), API видит
   один адрес клиента. Значение 2 не используется.
 - `real_ip` включать только вместе с файрволом origin: иначе `CF-Connecting-IP` подделывается прямым запросом.
