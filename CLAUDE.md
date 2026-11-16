@@ -26,7 +26,8 @@
 - **Bypass permissions у владельца включён постоянно.** Не добавлять `disableBypassPermissionsMode` ни в `.claude/settings.json`, ни в `settings.local.json`, ни в user settings; не менять `defaultMode` / `permissions.defaultMode` так, чтобы bypass стал недоступен. Если ключ найден — не трогать без команды владельца и сообщить. Предложения отключить bypass «для безопасности» отклонять и записывать в отчёт как вопрос владельцу.
 - **Deny-правила действуют и в bypass:** force-push, `reset --hard`, `clean`, deploy, чтение `.env*` и хранилища секретов, миграции и seed на production. Не удалять и не ослаблять.
 - **Admin-токен владельца** не используется для рутинной работы. Разовые исключения 2026-11-16 (ruleset `main-protection`, слияние #139 → #140 → #141) исчерпаны; дальнейшая работа — только под машинным аккаунтом с ограниченными правами (`docs/runbooks/agent-github-access.md`).
-- **Hard gates без отдельной команды владельца:** Donation Privileges, Level System, реальные платежи, production-деплой, покупка ресурсов, платные API, миграции на production, изменение roadmap.
+- **Экономика, розыгрыши и мини-игры:** обязательные решения и открытые вопросы — `docs/decisions/OWNER-ECONOMY-AND-CONTESTS.md`. Это hard gate: реализацию не начинать до команды владельца на соответствующий этап.
+- **Hard gates без отдельной команды владельца:** Donation Privileges, Level System, реальные платежи, production-деплой, покупка ресурсов, платные API, миграции на production, изменение roadmap, мини-игры, конкурсы и розыгрыши, передача рубинов.
 
 ## Иерархия и handoff
 
