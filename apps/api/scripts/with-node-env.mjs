@@ -1,18 +1,23 @@
 // Кроссплатформенный запуск команды с явным NODE_ENV (без cross-env).
-// Использование: node scripts/with-node-env.mjs <env> <команда...>
+// Использование: node scripts/with-node-env.mjs <env> <команда> [аргументы...]
 // NODE_ENV fail-closed (ADR-0164): пустой NODE_ENV = production, поэтому
-// dev-скрипты задают development явно.
+// dev-скрипты (start:dev, start:debug) задают development явно.
 import { spawn } from 'node:child_process';
 
-const [nodeEnv, ...command] = process.argv.slice(2);
-if (!nodeEnv || command.length === 0) {
-  console.error('Использование: node with-node-env.mjs <env> <команда...>');
+const [nodeEnv, cmd, ...args] = process.argv.slice(2);
+if (!nodeEnv || !cmd) {
+  console.error(
+    'Использование: node with-node-env.mjs <env> <команда> [args...]',
+  );
   process.exit(2);
 }
 
-const child = spawn(command.join(' '), {
+// На Windows nest — это .cmd-файл, без shell его не запустить. Аргументы
+// приходят из статичных скриптов package.json (не из пользовательского ввода),
+// поэтому shell на Windows допустим.
+const child = spawn(cmd, args, {
   stdio: 'inherit',
-  shell: true,
+  shell: process.platform === 'win32',
   env: { ...process.env, NODE_ENV: nodeEnv },
 });
 

@@ -5,7 +5,7 @@
 
 ## [Unreleased]
 
-- Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный/неизвестный NODE_ENV = production; хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; dev-скрипты api через `scripts/with-node-env.mjs development`. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
+- Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный NODE_ENV = production, схема env принимает только development/test/production или пусто (staging и прочее роняют старт); хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; `start:dev` и `start:debug` api через `scripts/with-node-env.mjs development`; `start` NODE_ENV не задаёт. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
 
 - Исправления по ревью C: лимит отправки форм (ADR-0162: `maxWait`/`timeout` транзакции отправки 5 с вместо 10 с; `@Throttle` отвергнут — e2e форм шлёт 22 отправки/мин с одного IP), тесты `rateLimitIp` для brute-force входа и 2FA (ADR-0163).
 

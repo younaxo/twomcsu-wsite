@@ -69,6 +69,18 @@ describe('ModerationService: иерархия mute/ban', () => {
     expect(prisma.chatBan.create).not.toHaveBeenCalled();
   });
 
+  it('несуществующая цель (canActOn=false) = отказ для mute и ban', async () => {
+    const { service, prisma } = build(() => false);
+    await expect(
+      service.muteUser('mod', dtoMute('missing-user')),
+    ).rejects.toThrow(new ForbiddenException(DENY));
+    await expect(
+      service.banUser('mod', dtoBan('missing-user')),
+    ).rejects.toThrow(new ForbiddenException(DENY));
+    expect(prisma.chatMute.create).not.toHaveBeenCalled();
+    expect(prisma.chatBan.create).not.toHaveBeenCalled();
+  });
+
   it('mute: модератор -> обычный игрок = успех', async () => {
     const { service, prisma } = build(rule);
     await service.muteUser('mod', dtoMute('player'));
