@@ -83,6 +83,9 @@ function Composer({
   );
 }
 
+/// Сервер отклоняет `q` длиннее 32 символов (400).
+const STAFF_QUERY_MAX = 32;
+
 function Actions({ report }: { report: StaffReportDetails }) {
   const { can } = usePermissions();
   const meId = useAuthStore((state) => state.user?.id ?? null);
@@ -133,7 +136,7 @@ function Actions({ report }: { report: StaffReportDetails }) {
               searchPlaceholder="Поиск по нику…"
               emptyText="Сотрудники не найдены"
               loading={staff.isFetching}
-              onSearch={setStaffQuery}
+              onSearch={(query) => setStaffQuery(query.trim().slice(0, STAFF_QUERY_MAX))}
               options={(staff.data?.items ?? []).map((member) => ({
                 value: member.id,
                 label: member.username,
@@ -360,11 +363,15 @@ function NoteItem({ note, actions }: { note: StaffReportNote; actions: ReportAct
   const meId = useAuthStore((state) => state.user?.id ?? null);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.content);
-  const canEdit = note.authorId === meId || can('reports.delete');
+  const canEdit = can('reports.notes') && (note.authorId === meId || can('reports.delete'));
+  const canPin = can('reports.notes') && can('reports.notes.pin');
+  const pinning = actions.pinNote.isPending && actions.pinNote.variables?.noteId === note.id;
   return (
     <li className="rounded-lg bg-surface-sunken px-3 py-2 text-sm" data-testid={`note-${note.id}`}>
       <p className="text-xs text-muted-foreground">
-        {note.isPinned ? <Pin aria-label="Закреплено" className="mr-1 inline size-3" /> : null}
+        {note.isPinned ? (
+          <Pin role="img" aria-label="Закреплено" className="mr-1 inline size-3" />
+        ) : null}
         {formatDateTime(note.createdAt)}
         {note.updatedAt && note.updatedAt !== note.createdAt ? ' · изменено' : ''}
       </p>
@@ -426,11 +433,11 @@ function NoteItem({ note, actions }: { note: StaffReportNote; actions: ReportAct
                 Изменить
               </Button>
             ) : null}
-            {can('reports.notes.pin') ? (
+            {canPin ? (
               <Button
                 size="sm"
                 variant="ghost"
-                loading={actions.pinNote.isPending}
+                loading={pinning}
                 onClick={() =>
                   actions.pinNote.mutate({ noteId: note.id, pinned: !note.isPinned }, { onError })
                 }
@@ -548,7 +555,7 @@ function Card({ number }: { number: string }) {
                       {message.isSystem ? 'Система' : message.isStaff ? 'Персонал' : 'Автор'} ·{' '}
                       {formatDateTime(message.createdAt)}
                       {message.isPinned ? (
-                        <Pin aria-label="Закреплено" className="ml-1 inline size-3" />
+                        <Pin role="img" aria-label="Закреплено" className="ml-1 inline size-3" />
                       ) : null}
                     </p>
                     <p
