@@ -85,7 +85,15 @@ export function normalizeIp(ip: string | undefined | null): string {
     const lo = parseInt(hex[2], 16);
     return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
   }
-  return isIP(value) === 0 ? 'unknown' : value;
+  if (isIP(value) === 0) return 'unknown';
+  if (isIP(value) === 6) {
+    // Полная форма mapped-адреса: 0:0:0:0:0:ffff:c000:201 (ADR-0163, L1).
+    const g = expandIpv6(value);
+    if (g && g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+      return `${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`;
+    }
+  }
+  return value;
 }
 
 /// Разворачивает валидный IPv6 (без zone id, нижний регистр) в 8 хекстетов
@@ -128,15 +136,18 @@ function rawKey(value: string): string {
 ///  - IPv4 и IPv4-mapped IPv6 — как `normalizeIp` (`1.2.3.4`);
 ///  - IPv6 — префикс /64: первые 4 хекстета без ведущих нулей, нижний
 ///    регистр, zone id срезан: `v6:2001:db8:0:1`;
-///  - пусто/undefined — `unknown` (как `normalizeIp`);
+///  - пусто/undefined и литерал `unknown` — общий ключ `unknown` (без IP нечем
+///    различать клиентов; осознанный остаточный риск, ADR-0163);
 ///  - мусор (непустая не-IP строка, в т.ч. длинная) — `raw:` + первые 16 hex
 ///    sha256 от строки в нижнем регистре: не бросает, у разных строк разные
 ///    ключи, длина ключа ограничена, мусор не делит общий ключ `unknown`.
+/// ВАЖНО: передавать СЫРОЕ значение `req.ip ?? req.socket.remoteAddress`, а не
+/// результат `normalizeIp` (тот уже схлопнул мусор в `unknown`).
 export function rateLimitKey(ip: string | undefined | null): string {
   const normalized = normalizeIp(ip);
   if (normalized === 'unknown') {
     const raw = (ip ?? '').trim().toLowerCase();
-    return raw === '' ? 'unknown' : rawKey(raw);
+    return raw === '' || raw === 'unknown' ? 'unknown' : rawKey(raw);
   }
   if (isIP(normalized) !== 6) return normalized;
   const groups = expandIpv6(normalized);

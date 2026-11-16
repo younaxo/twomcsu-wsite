@@ -86,7 +86,25 @@ describe('normalizeIp', () => {
   });
 });
 
+describe('normalizeIp: полная форма mapped', () => {
+  it('0:0:0:0:0:ffff:c000:201 и 0:0:0:0:0:ffff:1.2.3.4 -> IPv4', () => {
+    expect(normalizeIp('0:0:0:0:0:ffff:c000:201')).toBe('192.0.2.1');
+    expect(normalizeIp('0000:0000:0000:0000:0000:FFFF:c000:0201')).toBe(
+      '192.0.2.1',
+    );
+    expect(normalizeIp('0:0:0:0:0:ffff:1.2.3.4')).toBe('1.2.3.4');
+    expect(rateLimitKey('0:0:0:0:0:ffff:c000:201')).toBe('192.0.2.1');
+  });
+});
+
 describe('rateLimitKey', () => {
+  it('сырой мусор -> raw:, литерал unknown и пусто -> unknown', () => {
+    expect(rateLimitKey('not-an-ip')).toMatch(/^raw:[0-9a-f]{16}$/);
+    expect(rateLimitKey('not-an-ip')).not.toBe(rateLimitKey('other-junk'));
+    expect(rateLimitKey('unknown')).toBe('unknown');
+    expect(rateLimitKey('')).toBe('unknown');
+  });
+
   it('IPv4 и mapped IPv6 дают IPv4', () => {
     expect(rateLimitKey('203.0.113.7')).toBe('203.0.113.7');
     expect(rateLimitKey('::ffff:203.0.113.7')).toBe('203.0.113.7');

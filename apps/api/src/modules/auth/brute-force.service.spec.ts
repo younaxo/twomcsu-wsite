@@ -54,4 +54,26 @@ describe('BruteForceService (ключ по /64 для IPv6)', () => {
     for (let i = 0; i < 3; i++) await svc.registerFailure('::ffff:203.0.113.7');
     expect(await svc.requiresCaptcha('203.0.113.7')).toBe(true);
   });
+
+  it('сырой мусор: ключ raw:, разные строки — разные счётчики', async () => {
+    const { redis, store } = makeRedis();
+    const svc = new BruteForceService(redis);
+    for (let i = 0; i < 10; i++) await svc.registerFailure('garbage-one');
+    expect(await svc.isBlocked('garbage-one')).toBe(true);
+    expect(await svc.isBlocked('garbage-two')).toBe(false);
+    expect(await svc.requiresCaptcha('garbage-two')).toBe(false);
+    expect(await svc.isBlocked('')).toBe(false);
+    expect([...store.keys()].every((k) => /:raw:[0-9a-f]{16}$/.test(k))).toBe(
+      true,
+    );
+  });
+
+  it('пусто и литерал unknown делят общий ключ unknown (осознанно)', async () => {
+    const { redis, store } = makeRedis();
+    const svc = new BruteForceService(redis);
+    await svc.registerFailure('');
+    await svc.registerFailure('unknown');
+    expect([...store.keys()]).toEqual(['bruteforce:login:unknown']);
+    expect(store.get('bruteforce:login:unknown')).toBe('2');
+  });
 });

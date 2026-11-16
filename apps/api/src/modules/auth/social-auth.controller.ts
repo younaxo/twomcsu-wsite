@@ -65,8 +65,10 @@ export type SocialResultStatus =
   | 'error';
 
 function requestContext(req: Request): RequestContext {
+  const rawIp = req.ip ?? req.socket.remoteAddress;
   return {
-    ip: normalizeIp(req.ip ?? req.socket.remoteAddress),
+    ip: normalizeIp(rawIp),
+    rateLimitIp: rawIp ?? '',
     userAgent: req.get('user-agent'),
   };
 }
