@@ -9,7 +9,8 @@
 # api должен быть остановлен (running, restarting и paused считаются «не остановлен» — иначе отказ); перед pg_restore --clean обязательный снимок текущей БД (неудача — стоп).
 # Восстановление в production перезаписывает данные: только владелец/назначенный им человек (docs/runbooks/backup-restore.md).
 #
-# Коды выхода: 0 успех; 1 ошибка; 2 целостность (sha256 или чтение дампа) — восстановление не начато; 3 нет места.
+# Коды выхода: 0 успех; 1 ошибка; 2 целостность (sha256 или чтение дампа) — восстановление не начато; 3 нет места;
+# 5 восстановление выполнено, но ротация pre-restore не удалила старый снимок (как backup.sh; причина в stderr).
 #
 # Переменные окружения:
 #   AGE_IDENTITY          путь к файлу приватного ключа age (для расшифровки; ключ не создаётся и не хранится скриптом)
@@ -80,6 +81,7 @@ case "$enc" in
 esac
 [[ -f "$SRC/$stored" ]] || fail "нет файла $stored" 2
 
+rc=0  # 5 — восстановление выполнено, но ротация снимков pre-restore не удалила старую копию
 mkdir -p "$RESTORE_TMP_DIR"
 chmod 700 "$RESTORE_TMP_DIR" 2>/dev/null || true
 free=$(free_mb "$RESTORE_TMP_DIR")
@@ -125,7 +127,11 @@ if [[ "$TARGET" == "prod" ]]; then
   case "$SNAP_DIR/" in
     "$repo_root"/*) fail "RESTORE_SNAPSHOT_DIR внутри репозитория — запрещено (снимок содержит ПДн); восстановление не начато" ;;
   esac
-  mkdir -p "$SNAP_DIR" && chmod 700 "$SNAP_DIR" 2>/dev/null || true
+  mkdir -p "$SNAP_DIR" || fail "не удалось создать RESTORE_SNAPSHOT_DIR — восстановление не начато"
+  chmod 700 "$SNAP_DIR" 2>/dev/null || true
+  # Права должны стать именно 700 (снимок = ПДн); иначе отказ, а не молчаливое продолжение.
+  snap_mode=$(stat -c '%a' "$SNAP_DIR" 2>/dev/null || stat -f '%Lp' "$SNAP_DIR" 2>/dev/null || true)
+  [[ "$snap_mode" == "700" ]] || fail "RESTORE_SNAPSHOT_DIR: права '${snap_mode:-?}' вместо 700 — восстановление не начато"
   case "$(cd "$SNAP_DIR" && pwd -P)/" in
     "$repo_root"/*) rmdir -- "$SNAP_DIR" 2>/dev/null || true; fail "RESTORE_SNAPSHOT_DIR (после разрешения ссылок) внутри репозитория — запрещено; восстановление не начато" ;;
   esac
@@ -135,6 +141,7 @@ if [[ "$TARGET" == "prod" ]]; then
   # shellcheck disable=SC2016
   "${COMPOSE[@]}" exec -T postgres sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$tmp/pre-restore.dump" || fail "снимок текущей БД не удался — восстановление не начато"
   [[ -s "$tmp/pre-restore.dump" ]] || fail "снимок текущей БД пуст — восстановление не начато"
+  # Читаемость проверяется по открытому временному файлу ДО шифрования ($tmp удаляется trap-ом по выходу); .age pg_restore прочитать не может.
   "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$tmp/pre-restore.dump" >/dev/null || fail "снимок не читается (pg_restore --list) — восстановление не начато"
   if [[ -n "${AGE_RECIPIENT:-}" ]]; then
     snap="$snap.age"
@@ -150,10 +157,9 @@ if [[ "$TARGET" == "prod" ]]; then
   mapfile -t snaps < <(find "$SNAP_DIR" -maxdepth 1 -type f \( -name 'twomc-pre-restore-*.dump' -o -name 'twomc-pre-restore-*.dump.age' \) 2>/dev/null | sed 's|.*/||' | sort -r || true)
   if (( ${#snaps[@]} > RESTORE_SNAPSHOT_KEEP )); then
     for old in "${snaps[@]:RESTORE_SNAPSHOT_KEEP}"; do
-      if rm -f -- "${SNAP_DIR:?}/$old"; then echo "Ротация pre-restore: удалён $old"; else echo "ПРЕДУПРЕЖДЕНИЕ: не удалось удалить старый снимок $old" >&2; fi
+      if rm -f -- "${SNAP_DIR:?}/$old"; then echo "Ротация pre-restore: удалён $old"; else echo "ОШИБКА РОТАЦИИ: не удалось удалить старый снимок $old (восстановление продолжится, выход будет 5)" >&2; rc=5; fi
     done
   fi
-  "${COMPOSE[@]}" exec -T postgres pg_restore --list < "$snap" >/dev/null || fail "снимок не читается (pg_restore --list) — восстановление не начато"
 fi
 
 # --single-transaction: всё или ничего — при любой ошибке откат, БД остаётся в прежнем состоянии (а не наполовину очищенной).
@@ -170,3 +176,4 @@ echo "→ pg_restore --clean --if-exists ${PGR_MODE[*]:-} в цель '$TARGET'"
 "${COMPOSE[@]}" exec -T postgres sh -c 'pg_restore --clean --if-exists "$@" --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' pg_restore_sh ${PGR_MODE[@]+"${PGR_MODE[@]}"} < "$tmp/postgres.dump" \
   || fail "pg_restore завершился с ошибкой (при --single-transaction изменения откачены; см. runbook)"
 echo "Восстановление завершено: $(basename "$SRC") → $TARGET"
+exit "$rc"
