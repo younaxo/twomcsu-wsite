@@ -97,13 +97,20 @@ write_release_markers() {
 
 # Снимок БД перед миграцией. Любая ошибка останавливает деплой (возврат 1).
 snapshot_db() {
-  local dir=$PREDEPLOY_BACKUP_DIR repo_root file tmp
+  local dir=$PREDEPLOY_BACKUP_DIR repo_root file tmp real home_real
   repo_root=$(pwd -P)
+  # Каталог снимков (ПДн): не symlink; не общий каталог ($HOME, /, /tmp); не внутри репозитория. chmod 700 — только после всех проверок.
+  [[ ! -L "$dir" ]] || { echo "PREDEPLOY_BACKUP_DIR — символическая ссылка: запрещено (chmod пошёл бы по ссылке)"; return 1; }
   ( umask 077; mkdir -p "$dir" ) || { echo "Не удалось создать каталог снимков"; return 1; }
-  chmod 700 "$dir" || { echo "Не удалось выставить права 700 на каталог снимков"; return 1; }
-  case "$(cd "$dir" && pwd -P)/" in
+  real=$(cd "$dir" && pwd -P) || { echo "Не удалось определить путь каталога снимков"; return 1; }
+  home_real=$(cd "${HOME:-/}" 2>/dev/null && pwd -P || echo /)
+  case "$real" in
+    /|/tmp|"$home_real") echo "PREDEPLOY_BACKUP_DIR указывает на общий каталог ($real) — запрещено, нужен выделенный подкаталог"; return 1 ;;
+  esac
+  case "$real/" in
     "$repo_root"/*) echo "PREDEPLOY_BACKUP_DIR внутри репозитория — запрещено (снимок содержит ПДн)"; return 1 ;;
   esac
+  chmod 700 "$real" || { echo "Не удалось выставить права 700 на каталог снимков"; return 1; }
   file="$dir/twomc-${RELEASE}-$(date +%Y%m%dT%H%M%S).dump"
   tmp="$file.partial"
   echo "→ снимок БД → $file"
@@ -169,8 +176,10 @@ check_destructive_migrations() {
   while IFS= read -r f; do
     [[ "$f" == */migration.sql ]] || continue
     # Комментарии убираем, строки склеиваем, делим по «;» — проверка по операторам, а не по строкам.
+    # ALTER TABLE ... DROP <имя> (без слова COLUMN) тоже деструктивно; безопасные DROP DEFAULT/NOT NULL/IDENTITY/EXPRESSION вырезаются до скана.
     hits=$(git show "HEAD:$f" | sed 's/--.*$//' | tr '\n' ' ' | tr ';' '\n' \
-      | grep -Eiw -e 'DROP[[:space:]]+(TABLE|COLUMN|CONSTRAINT|INDEX)' -e 'RENAME' -e 'TRUNCATE'           -e 'SET[[:space:]]+NOT[[:space:]]+NULL' \
+      | sed -E 's/DROP[[:space:]]+(DEFAULT|NOT[[:space:]]+NULL|IDENTITY|EXPRESSION)//Ig' \
+      | grep -Eiw -e 'DROP[[:space:]]+(TABLE|COLUMN|CONSTRAINT|INDEX)' -e 'ALTER[[:space:]]+TABLE.*[[:space:]]DROP[[:space:]]+(IF[[:space:]]+EXISTS[[:space:]]+)?["A-Za-z_].*' -e 'RENAME' -e 'TRUNCATE'           -e 'SET[[:space:]]+NOT[[:space:]]+NULL' \
           -e 'ALTER[[:space:]]+COLUMN[[:space:]]+[^[:space:]]+[[:space:]]+(SET[[:space:]]+DATA[[:space:]]+)?TYPE' || true)
     if [[ -n "$hits" ]]; then
       echo "Деструктивная миграция: $f"
