@@ -161,7 +161,18 @@ done < <(cat "$d/v4" "$d/v6")
 sudo ufw status numbered
 ```
 
-Только после проверки, что путь через Cloudflare работает (раздел 7), отдельным шагом убрать общие правила:
+Политика по умолчанию и IPv6. Выполнять только после того, как правило SSH (подраздел SSH ниже) добавлено и проверено
+из второго сеанса, иначе `deny incoming` отрежет SSH:
+
+```bash
+sudo grep -E '^IPV6=' /etc/default/ufw || echo 'IPV6=yes' | sudo tee -a /etc/default/ufw
+sudo sed -i 's/^IPV6=.*/IPV6=yes/' /etc/default/ufw   # без этого правила для адресов IPv6 не действуют
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw reload && sudo ufw status verbose            # ожидается: Default: deny (incoming)
+```
+
+Только после проверки пути через Cloudflare (раздел 7, часть A, шаг 1) отдельным шагом убрать общие правила:
 
 ```bash
 sudo ufw delete allow 80/tcp 2>/dev/null || true
