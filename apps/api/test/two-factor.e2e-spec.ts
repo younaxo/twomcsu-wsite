@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
+import { AddressInfo } from 'net';
+import { io, Socket } from 'socket.io-client';
 import { randomUUID } from 'crypto';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
@@ -61,7 +63,12 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     app = moduleFixture.createNestApplication();
     configureApp(app);
     await app.init();
+    await app.listen(0);
     prisma = app.get(PrismaService);
+    // requireAdmin2fa живёт в SiteSettings: при одиночном запуске строки ещё нет.
+    if (!(await prisma.siteSettings.findFirst())) {
+      await prisma.siteSettings.create({ data: {} });
+    }
     await http()
       .post('/auth/register')
       .send({ email, username, password })
@@ -69,6 +76,13 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     const login = await passwordLogin().expect(200);
     token = login.body.accessToken;
     userId = (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
+  });
+
+  // Глобальный флаг и кэш сбрасываются при любом исходе теста — упавший expect
+  // не должен оставлять requireAdmin2fa=true для остальных наборов.
+  afterEach(async () => {
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
+    resetAdmin2faCache();
   });
 
   afterAll(async () => {
@@ -289,6 +303,89 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       where: { id: userId },
       data: { twoFactorEnabled: true },
     });
+  });
+
+  it('ADR-0156: поиск получателей и WS mute_user/ban_user требуют 2FA персонала', async () => {
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { slug: roleSlug },
+    });
+    const perms = await prisma.permission.findMany({
+      where: {
+        key: {
+          in: [
+            'communications.messages.send',
+            'chat.mutes.create',
+            'chat.bans.create',
+          ],
+        },
+      },
+    });
+    await prisma.rolePermission.createMany({
+      data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+    await app.get(PermissionService).invalidateUser(userId);
+    const auth = `Bearer ${token}`;
+    const address = app.getHttpServer().address() as AddressInfo;
+    const connect = (): Promise<Socket> =>
+      new Promise((resolve, reject) => {
+        const socket = io(`http://127.0.0.1:${address.port}/chat`, {
+          auth: { token },
+          transports: ['websocket'],
+          forceNew: true,
+        });
+        socket.once('connect', () => resolve(socket));
+        socket.once('connect_error', reject);
+      });
+    const emitAndWaitError = (socket: Socket, event: string) =>
+      new Promise<{ event: string; message: string } | null>((resolve) => {
+        const timer = setTimeout(() => resolve(null), 3000);
+        socket.once('error', (payload) => {
+          clearTimeout(timer);
+          resolve(payload);
+        });
+        socket.emit(event, { userId, reason: 'SPAM' });
+      });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false },
+    });
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
+    resetAdmin2faCache();
+
+    const denied = await http()
+      .get('/admin/communications/recipients')
+      .query({ q: username })
+      .set('Authorization', auth)
+      .expect(403);
+    expect(denied.body.code).toBe('admin_2fa_required');
+
+    const socket = await connect();
+    try {
+      for (const event of ['mute_user', 'ban_user']) {
+        const err = await emitAndWaitError(socket, event);
+        expect(err?.event).toBe(event);
+        expect(err?.message).toContain('admin_2fa_required');
+      }
+    } finally {
+      socket.disconnect();
+    }
+    expect(await prisma.chatMute.count({ where: { userId } })).toBe(0);
+
+    // С включённой 2FA поиск получателей доступен.
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+    await http()
+      .get('/admin/communications/recipients')
+      .query({ q: username })
+      .set('Authorization', auth)
+      .expect(200);
+
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
+    resetAdmin2faCache();
   });
 
   it('отключение: нужен пароль и код; после — вход без второго шага', async () => {

@@ -3477,3 +3477,39 @@ https, оба до 500 символов, `null` убирает логотип; P
   (общий счётчик), предупреждение в лог намеренно не добавлено; (2) IPv6 не агрегируется по /64 —
   атакующий с подсетью /64 может обходить per-IP brute-force (отдельный тикет).
 - Существующие записи с IP прокси в БД не переписываются.
+
+## ADR-0156 — Безопасные cookie в production и fail-closed admin-2FA (P3-A1, P3-A2)
+
+**Context.** Production мог стартовать с небезопасными cookie (`COOKIE_SECURE=false`,
+`COOKIE_DOMAIN=localhost`) и без `TWO_FACTOR_ENCRYPTION_KEY`; при ключе короче 32 символов
+`PermissionsGuard` молча отключал требование 2FA для админов. WS-модерация чата и поиск получателей
+коммуникаций не проходили admin-2FA проверку.
+
+**Decision.**
+- Валидация env (Joi, `NODE_ENV=production`): `COOKIE_SECURE=true` обязателен; `COOKIE_DOMAIN`
+  обязателен и не `localhost`/`127.0.0.1`/пустой; `TWO_FACTOR_ENCRYPTION_KEY` обязателен, ≥ 32.
+  `COOKIE_SAMESITE=none` допустим только при `COOKIE_SECURE=true` во всех окружениях.
+- `isAdmin2faDenied`/`assertAdmin2fa` (permissions.guard.ts) — единая проверка для HTTP-guard, WS
+  gateway и контроллеров без `@RequirePermissions`. Без ключа: `NODE_ENV==='production'` и
+  `requireAdmin2fa=true` — отказ всем (fail-closed); `NODE_ENV!=='production'` — требование не
+  применяется (сохраняет поведение dev/test, где ключ не задан; осознанное исключение).
+- WS: ошибка `error { event, message: 'admin_2fa_required: ...' }` (формат gateway), флаг 2FA
+  читается из БД на действии.
+
+**Consequences.**
+- WS: admin-2FA также на `delete_message` в модераторской ветке (не автор, право
+  `chat.messages.delete`): `ChatService.deleteMessage(..., beforeModerate)` вызывает проверку
+  gateway после проверки права; автор, удаляющий своё сообщение, 2FA не проходит.
+- `TWO_FACTOR_ENCRYPTION_KEY` обрезается (`trim`) в схеме и в guard; ключ из пробелов = отсутствует.
+- Риск: `NODE_ENV` не задан -> схема берёт development, ключ не обязателен, guard пропускает
+  admin-2FA без ключа. Смягчение: `NODE_ENV` НЕ делается обязательным; `docker-compose.prod.yml`
+  задаёт `NODE_ENV: production`; при старте без ключа и `NODE_ENV !== 'production'` один раз пишется
+  `Logger.warn` (admin-2FA не работает, допустимо только вне production). Допущение Chief,
+  вопрос владельцу Q11.
+- Отдельные тикеты (вне этого ADR): (1) аудит staff-хендлеров без admin-2FA (подозрение:
+  `users.controller.ts:142`, `users.access_level.edit_self`); (2) `COOKIE_DOMAIN` с приватным IP
+  (проходит валидацию); (3) кэш `requireAdmin2fa` 15 с — окно после включения/выключения флага.
+- Допущение: e2e требований admin-2FA лежат в two-factor suite (глобальный флаг SiteSettings, запуск
+  `--runInBand` отдельно).
+- Деплой: без `COOKIE_SECURE`, `COOKIE_DOMAIN`, `TWO_FACTOR_ENCRYPTION_KEY` API не запустится.
+
