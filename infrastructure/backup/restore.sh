@@ -6,7 +6,7 @@
 # Порядок: sha256 хранимых файлов (несовпадение — ОТКАЗ, код 2) → расшифровка → sha256 открытого дампа →
 # pg_restore --list → pg_restore --clean --if-exists. Роли (globals.sql) и uploads — вручную по runbook.
 # prod: подтверждение вводом имени БД (TTY); без TTY — отказ, если нет И RESTORE_CONFIRM, И --non-interactive;
-# api должен быть остановлен (иначе отказ); перед pg_restore --clean обязательный снимок текущей БД (неудача — стоп).
+# api должен быть остановлен (running, restarting и paused считаются «не остановлен» — иначе отказ); перед pg_restore --clean обязательный снимок текущей БД (неудача — стоп).
 # Восстановление в production перезаписывает данные: только владелец/назначенный им человек (docs/runbooks/backup-restore.md).
 #
 # Коды выхода: 0 успех; 1 ошибка; 2 целостность (sha256 или чтение дампа) — восстановление не начато; 3 нет места.
@@ -107,9 +107,9 @@ if [[ "$TARGET" == "prod" ]]; then
     read -r -p "Для продолжения введите имя БД ($dbname): " answer || answer=
     [[ "$answer" == "$dbname" ]] || fail "имя БД не совпало — восстановление отменено, ничего не изменено"
   fi
-  running=$("${COMPOSE[@]}" ps --status running --services) || fail "не удалось получить список запущенных сервисов"
+  running=$("${COMPOSE[@]}" ps --status running --status restarting --status paused --services) || fail "не удалось получить список запущенных сервисов"
   if grep -qx 'api' <<<"$running"; then
-    fail "сервис api запущен: остановите его (docker compose ... stop api web) — восстановление не начато"
+    fail "сервис api запущен, перезапускается или на паузе: остановите его (docker compose ... stop api web) — восстановление не начато"
   fi
   SNAP_DIR=${RESTORE_SNAPSHOT_DIR:-$HOME/twomc-backups/pre-restore}
   mkdir -p "$SNAP_DIR" && chmod 700 "$SNAP_DIR" 2>/dev/null || true
