@@ -1,5 +1,7 @@
 # Предложение: контролируемый Git-workflow для twomc-chief
 
+> **SUPERSEDED (2026-11-15):** актуальная версия — `docs/phase-03/GITHUB-RULESETS-AND-CHIEF-GIT-WORKFLOW.md` (v3). Этот файл сохранён для истории.
+
 **Версия:** 2 (учтено независимое ревью Platform & Integrations Director, PHASE 02).
 **Статус:** PROPOSED, не применено. Требует решения владельца.
 **Основание:** `docs/agent-prompts/02-FULL-PROJECT-AUDIT.md` v2.0, §3.
