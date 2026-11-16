@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Безопасность deploy.sh и лимиты production-compose (P3-03a)
+
+- `infrastructure/deploy.sh`: снимок БД перед `prisma migrate deploy` (при провале деплой останавливается), честные
+  проверки health и откат без ложного «Откат выполнен», остановка при отсутствии `.release.prev`, хранение
+  `KEEP_RELEASES` последних тегов образов вместо `docker image prune -f`. `.release*` в `.gitignore`.
+- `docker-compose.prod.yml`: лимиты памяти и ротация логов json-file (значения через env). Runbook
+  `docs/runbooks/deploy.md`, ADR-0158.
+
 ### Платёжный вебхук: HMAC и сверка суммы (P3-01)
 
 - `POST /webhooks/payments/:provider` проверяет HMAC-SHA256 подпись над сырым телом (`x-twomc-signature`,
