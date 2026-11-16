@@ -3422,3 +3422,17 @@ https, оба до 500 символов, `null` убирает логотип; P
 Вложения через RU-S3 — следующий срез (R3). История строится из `AuditLog` по `targetId`
 обращения и может не включать действия с заметками и модерацию отдельных сообщений (их цель —
 другая сущность). Правки сообщений по частоте отдельно не ограничены.
+
+## ADR-0154 — Docker web: build-arg `NEXT_PUBLIC_TURNSTILE_SITE_KEY` и fail-fast (P3-04)
+
+**Context.** `web.Dockerfile` и `docker-compose.prod.yml` передавали ключ под именем
+`NEXT_PUBLIC_HCAPTCHA_SITE_KEY`, а `apps/web/src/lib/env.ts` читает `NEXT_PUBLIC_TURNSTILE_SITE_KEY`:
+в production-образе ключ был пуст.
+
+**Decision.** Build-arg переименован. `docker-compose.prod.yml` использует
+`${NEXT_PUBLIC_TURNSTILE_SITE_KEY:?...}`, а `web.Dockerfile` перед `next build` проверяет
+`test -n` и падает с сообщением. Секретный `TURNSTILE_SECRET_KEY` во frontend/образ web не
+встраивается.
+
+**Consequences.** Сборка web без ключа невозможна; в CI/локально нужен публичный (в том числе
+тестовый) ключ. Старое имя `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` больше не поддерживается.
