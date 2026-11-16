@@ -18,6 +18,7 @@
 # TRUST_PROXY остаётся 1 (хоп Cloudflare срезается модулем real_ip, не API).
 # Актуальные диапазоны: https://www.cloudflare.com/ips/ (ips-v4 и ips-v6);
 # при изменении списка обновить set_real_ip_from и выполнить `nginx -t && nginx -s reload`.
+# Полный runbook (диапазоны, обновление, файрвол origin, проверки, откат): docs/runbooks/cloudflare-real-ip.md (ADR-0160).
 #
 # set_real_ip_from <CLOUDFLARE_IPV4_CIDR>;   # по одной строке на каждый диапазон
 # set_real_ip_from <CLOUDFLARE_IPV6_CIDR>;

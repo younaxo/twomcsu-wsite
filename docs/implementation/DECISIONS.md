@@ -3626,3 +3626,26 @@ age или gpg и сроку хранения не приняты, сервер�
   `backup.sh` — отдельная задача.
 - Бэкап на том же сервере не защищает от потери сервера: нужен вывоз копий (S3 или вручную).
 - Вне scope: P3-03c (образы в CI и registry), миграции, workflows, восстановление реальных дампов с ПДн.
+
+## ADR-0160 — Cloudflare real_ip и закрытие origin (P3-02b)
+
+**Context.** ADR-0155 оставил топологию production открытой (nginx → api либо Cloudflare → nginx → api).
+Владелец (ответ на Q4) попросил подготовить схему Cloudflare. Схема прокси владельцем не выбрана, сервера нет (R8).
+
+**Decision.**
+
+- Допущение: production остаётся «nginx → api»; блок `set_real_ip_from` в
+  `infrastructure/nginx.twomc.su.conf.example` остаётся закомментированным, в пример добавлена только ссылка на runbook.
+- Подготовлен `docs/runbooks/cloudflare-real-ip.md`: диапазоны Cloudflare (снимок 2026-11-16 из ips-v4 и ips-v6),
+  `real_ip_header CF-Connecting-IP`, процедура обновления диапазонов, файрвол origin (ufw, nftables; 80/443 только
+  с Cloudflare), ограничение SSH, опционально Authenticated Origin Pulls, проверки и откат.
+- `TRUST_PROXY=1` и `X-Forwarded-For $remote_addr` не меняются: хоп Cloudflare срезает nginx (real_ip), API видит
+  один адрес клиента. Значение 2 не используется.
+- `real_ip` включать только вместе с файрволом origin: иначе `CF-Connecting-IP` подделывается прямым запросом.
+- Список диапазонов считается снимком; перед включением и далее регулярно его получают заново.
+
+**Consequences.**
+
+- Ничего не изменено на сервере и в коде; включение требует решения владельца о топологии.
+- Устаревший список ломает либо доступ, либо определение IP: нужна регулярная проверка.
+- Вне scope: покупка и настройка Cloudflare, DNS, WAF-правила, изменение apps/** и workflows.
