@@ -9,7 +9,7 @@
 
 > **ВНИМАНИЕ: не включать `real_ip` (раздел 4), пока origin не закрыт файрволом (раздел 6).** Без файрвола любой
 > клиент обращается к origin напрямую и подделывает `CF-Connecting-IP`, обходя лимиты, brute-force защиту и audit.
-> Порядок: сначала файрвол и проверка п. 4 раздела 7, затем `real_ip`.
+> Порядок: сначала файрвол и часть A раздела 7, затем `real_ip`, затем часть B.
 
 ## 1. Зачем
 
@@ -261,9 +261,31 @@ Docker не подчиняется INPUT для опубликованных п�
 Если используется только общий сертификат, это защита лишь от не-Cloudflare клиентов, но не от чужих зон. Включать
 после файрвола отдельным шагом; откат: `ssl_verify_client off;` и reload.
 
-## 7. Проверка после включения
+## 7. Порядок включения и проверки
 
-Адреса подставляет оператор; в репозиторий и отчёты их не записывать.
+Адреса подставляет оператор; в репозиторий и отчёты их не записывать. Порядок линейный, без возвратов:
+
+1. Файрвол (раздел 6): SSH-правило, правила для диапазонов Cloudflare, `default deny incoming`, `IPV6=yes`. Общие
+   правила 80/443 пока не удалять.
+2. Часть A, шаг 1: путь через Cloudflare работает.
+3. Удалить общие правила 80/443 (раздел 6).
+4. Часть A, шаг 2: прямое обращение к origin отбрасывается.
+5. Только теперь включить `real_ip` (раздел 4): `sudo nginx -t && sudo nginx -s reload`.
+6. Часть B: проверки после включения `real_ip`.
+
+### Часть A. До включения real_ip
+
+1. Путь через Cloudflare работает (при ещё действующих общих правилах 80/443):
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' https://api.twomc.su/health   # путь health уточнить по API
+   ```
+2. После удаления общих правил: прямое обращение к origin мимо Cloudflare отбрасывается файрволом (с машины вне
+   списка Cloudflare):
+   ```bash
+   curl -sS -m 8 -o /dev/null -w '%{http_code}\n' --resolve api.twomc.su:443:<ORIGIN_IP> https://api.twomc.su/health   # ожидается таймаут или отказ
+   ```
+
+### Часть B. После включения real_ip
 
 1. Конфигурация и доверенные диапазоны:
    ```bash
@@ -274,7 +296,7 @@ Docker не подчиняется INPUT для опубликованных п�
 2. Временно добавить в лог nginx `$remote_addr` и `$http_cf_connecting_ip`, сделать запрос через Cloudflare и
    убедиться, что `$remote_addr` равен вашему внешнему IP (`curl -fsS https://api.ipify.org`), а не адресу Cloudflare:
    ```bash
-   curl -sS -o /dev/null -w '%{http_code}\n' https://api.twomc.su/health   # путь health уточнить по API
+   curl -sS -o /dev/null -w '%{http_code}\n' https://api.twomc.su/health
    sudo tail -n 5 /var/log/nginx/access.log
    ```
 3. Подделка заголовков через Cloudflare не меняет адрес (Cloudflare перезаписывает `CF-Connecting-IP`):
@@ -282,13 +304,9 @@ Docker не подчиняется INPUT для опубликованных п�
    curl -sS -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 203.0.113.9' https://api.twomc.su/health -o /dev/null
    sudo tail -n 1 /var/log/nginx/access.log   # в $remote_addr НЕ 203.0.113.9
    ```
-4. Прямое обращение к origin мимо Cloudflare отбрасывается файрволом (с машины вне списка Cloudflare):
-   ```bash
-   curl -sS -m 8 -o /dev/null -w '%{http_code}\n' --resolve api.twomc.su:443:<ORIGIN_IP> https://api.twomc.su/health   # ожидается таймаут или отказ
-   ```
-5. API: вход тестовым пользователем; `lastLoginIp` и сессия содержат внешний IP клиента, а не адрес Cloudflare
+4. API: вход тестовым пользователем; `lastLoginIp` и сессия содержат внешний IP клиента, а не адрес Cloudflare
    или nginx (проверка под оператором; ПДн не копировать).
-6. Изоляция brute-force: неудачные попытки с одного адреса не блокируют вход с другого.
+5. Изоляция brute-force: неудачные попытки с одного адреса не блокируют вход с другого.
 
 ## 8. Откат
 
