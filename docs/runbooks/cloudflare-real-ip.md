@@ -35,6 +35,36 @@
 (публичное чтение, без авторизации). Это снимок: перед включением обязательно получить актуальный список
 (раздел 5) и сверить с ним.
 
+Проверка списка (функция `cf_validate_list`, используется в разделах 5 и 6; проверена стаб-тестом). Отбрасывает всё,
+что не CIDR, `0.0.0.0/0`, `::/0`, слишком широкие префиксы (IPv4 короче /8, IPv6 короче /12) и неверные октеты
+(больше 255). При первой плохой строке возвращает 1, и вызывающий скрипт прерывается до изменения правил.
+
+```bash
+cf_validate_list() { # $1 = 4|6, $2 = файл со списком CIDR
+  local fam=$1 f=$2 line ip pfx o n
+  [ -s "$f" ] || { echo "пустой список" >&2; return 1; }
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    [[ $line == */* ]] || { echo "плохая строка: $line" >&2; return 1; }
+    ip=${line%/*}; pfx=${line#*/}
+    [[ $pfx =~ ^[0-9]{1,3}$ ]] || { echo "плохая строка: $line" >&2; return 1; }
+    pfx=$((10#$pfx))
+    if [ "$fam" = 4 ]; then
+      [[ $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "плохая строка: $line" >&2; return 1; }
+      for o in ${ip//./ }; do
+        [ $((10#$o)) -le 255 ] || { echo "октет больше 255: $line" >&2; return 1; }
+      done
+      { [ "$pfx" -ge 8 ] && [ "$pfx" -le 32 ]; } || { echo "префикс вне /8../32: $line" >&2; return 1; }
+    else
+      [[ $ip =~ ^[0-9a-fA-F:]+$ && $ip == *:* && $ip != *:::* ]] || { echo "плохая строка: $line" >&2; return 1; }
+      n=${ip//[^:]/}; [ ${#n} -le 7 ] || { echo "слишком много групп: $line" >&2; return 1; }
+      if [[ $ip =~ [0-9a-fA-F]{5} ]]; then echo "группа длиннее 4 символов: $line" >&2; return 1; fi
+      { [ "$pfx" -ge 12 ] && [ "$pfx" -le 128 ]; } || { echo "префикс вне /12../128: $line" >&2; return 1; }
+    fi
+  done < "$f"
+}
+```
+
 IPv4:
 
 ```
@@ -109,12 +139,16 @@ Cloudflare редко меняет список, но меняет. Процед
 
 ```bash
 set -euo pipefail
+# сначала определить cf_validate_list (раздел 3)
 d=$(mktemp -d)
 curl -fsS --max-time 20 https://www.cloudflare.com/ips-v4 -o "$d/v4"
 curl -fsS --max-time 20 https://www.cloudflare.com/ips-v6 -o "$d/v6"
-cat "$d/v4" <(echo) "$d/v6" | sed '/^$/d' > "$d/all"
-# Формат: каждая строка - CIDR, ничего другого; и список не пуст
-if grep -Evq '^[0-9a-fA-F:.]+/[0-9]+$' "$d/all" || [ ! -s "$d/all" ]; then echo "неожиданный формат"; exit 1; fi
+tr -d '\r' < "$d/v4" | sed '/^[[:space:]]*$/d' > "$d/v4c"
+tr -d '\r' < "$d/v6" | sed '/^[[:space:]]*$/d' > "$d/v6c"
+# cf_validate_list - функция из раздела 3; плохой список прерывает скрипт (set -e)
+cf_validate_list 4 "$d/v4c"
+cf_validate_list 6 "$d/v6c"
+cat "$d/v4c" "$d/v6c" > "$d/all"
 {
   echo "# Источник: https://www.cloudflare.com/ips-v4 и ips-v6, получено $(date +%F)"
   sed 's#^\(.*\)$#set_real_ip_from \1;#' "$d/all"
@@ -138,7 +172,8 @@ diff -u /etc/nginx/snippets/cloudflare-real-ip.conf "$d/cloudflare-real-ip.conf"
 ### ufw
 
 Правила применяются только после того, как список получен целиком и проверен: скрипт прерывается (`set -euo pipefail`,
-ненулевой код выхода) при сбое `curl`, HTTP-коде не 200, пустом списке или строке не в формате CIDR. До этой
+ненулевой код выхода) при сбое `curl`, HTTP-коде не 200, пустом списке, строке не в формате CIDR, `0.0.0.0/0`, `::/0`,
+слишком широком префиксе или октете больше 255. До этой
 проверки ни одно правило файрвола не меняется.
 
 ```bash
@@ -150,10 +185,9 @@ for v in 4 6; do
   tr -d '\r' < "$d/raw$v" | sed '/^[[:space:]]*$/d' > "$d/v$v"
   [ -s "$d/v$v" ] || { echo "ips-v$v: список пуст, правила не тронуты" >&2; exit 1; }
 done
-if grep -Evq '^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$' "$d/v4" \
-  || grep -Evq '^[0-9a-fA-F:]+/[0-9]{1,3}$' "$d/v6"; then
-  echo "неожиданный формат списка, правила не тронуты" >&2; exit 1
-fi
+# cf_validate_list - функция из раздела 3 (должна быть определена выше в этом же сеансе)
+cf_validate_list 4 "$d/v4" || { echo "список v4 не прошёл проверку, правила не тронуты" >&2; exit 1; }
+cf_validate_list 6 "$d/v6" || { echo "список v6 не прошёл проверку, правила не тронуты" >&2; exit 1; }
 # Дальше изменение файрвола; любая ошибка прерывает цикл (set -e)
 while read -r ip; do
   sudo ufw allow proto tcp from "$ip" to any port 80,443 comment 'cloudflare'
