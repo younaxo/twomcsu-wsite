@@ -10,7 +10,13 @@ import type {
   ReportSummaryDto,
   ReportType,
 } from '@twomc/shared';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 
 /// Обращения (Этап 01, шаг C): свои обращения, создание по типу, переписка.
@@ -124,8 +130,43 @@ export const PUNISHMENT_TYPE_LABEL: Record<PunishmentType, string> = {
   PERMBAN: 'Бан навсегда',
 };
 
+/// История обращения для игрока (`GET /reports/:n/history`): без актора.
+export type ReportHistoryKind = 'STATUS_CHANGED' | 'VERDICT' | 'CREATED';
+export interface PlayerHistoryItemDto {
+  id: string;
+  kind: ReportHistoryKind;
+  status: ReportStatus | null;
+  createdAt: string;
+}
+
+export const HISTORY_KIND_LABEL: Record<ReportHistoryKind, string> = {
+  CREATED: 'Обращение создано',
+  STATUS_CHANGED: 'Статус изменён',
+  VERDICT: 'Вынесено решение',
+};
+
+/// Заголовок записи истории; неизвестные kind/status не ломают список.
+export function historyItemTitle(item: Pick<PlayerHistoryItemDto, 'kind' | 'status'>): string {
+  const base = Object.hasOwn(HISTORY_KIND_LABEL, item.kind)
+    ? HISTORY_KIND_LABEL[item.kind]
+    : 'Событие';
+  return item.kind === 'STATUS_CHANGED' && item.status && item.status in REPORT_STATUS_LABEL
+    ? `${base}: ${REPORT_STATUS_LABEL[item.status]}`
+    : base;
+}
+
+/// Значение фильтра из URL → enum или undefined (мусор игнорируется).
+export function parseStatusFilter(value: string | null | undefined): ReportStatus | undefined {
+  return value && Object.hasOwn(REPORT_STATUS_LABEL, value) ? (value as ReportStatus) : undefined;
+}
+
+export function parseTypeFilter(value: string | null | undefined): ReportType | undefined {
+  return value && Object.hasOwn(REPORT_TYPES, value) ? (value as ReportType) : undefined;
+}
+
 export const supportKeys = {
   all: ['support'] as const,
+  history: (number: string) => ['support', 'history', number] as const,
   mine: (query: ReportListQuery) => ['support', 'mine', query] as const,
   one: (number: string) => ['support', 'one', number] as const,
 };
@@ -153,6 +194,21 @@ export function useReport(number: string) {
   return useQuery({
     queryKey: supportKeys.one(number),
     queryFn: () => api.get<ReportDetailDto>(`/reports/${encodeURIComponent(number)}`),
+    retry: false,
+  });
+}
+
+const HISTORY_LIMIT = 10;
+
+export function useReportHistory(number: string) {
+  return useInfiniteQuery({
+    queryKey: supportKeys.history(number),
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<PlayerHistoryItemDto>>(`/reports/${encodeURIComponent(number)}/history`, {
+        query: { page: pageParam, limit: HISTORY_LIMIT },
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.page * last.limit < last.total ? last.page + 1 : undefined),
     retry: false,
   });
 }

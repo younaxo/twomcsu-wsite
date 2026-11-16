@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleCheck, LifeBuoy, Lock, Pencil, Send } from 'lucide-react';
+import { CircleCheck, History, LifeBuoy, Lock, Paperclip, Pencil, Send } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
@@ -14,16 +14,17 @@ import { SkeletonRows } from '@/components/ui/skeleton';
 import { Timeline, TimelineItem } from '@/components/ui/timeline';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api/errors';
-import { useAuthStore } from '@/lib/auth/store';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format';
 import { describeSupportError } from '@/lib/support/errors';
 import {
   PUNISHMENT_TYPE_LABEL,
   REPORT_STATUS_LABEL,
+  historyItemTitle,
   replyBlockReason,
   reportTypeLabel,
   useReport,
+  useReportHistory,
   useSupportActions,
   type ReportMessageDto,
 } from '@/lib/support/hooks';
@@ -49,8 +50,14 @@ function Message({
   return (
     <li className={cn('flex flex-col gap-1', mine && 'items-end')} data-testid="report-message">
       <span className="text-xs text-muted-foreground">
-        {message.isSystem ? 'Система' : message.isStaff ? 'Администрация' : 'Вы'} ·{' '}
-        {formatDateTime(message.createdAt)}
+        {message.isSystem ? (
+          'Система'
+        ) : message.isStaff ? (
+          <Badge tone="info">Сотрудник</Badge>
+        ) : (
+          'Вы'
+        )}{' '}
+        · {formatDateTime(message.createdAt)}
       </span>
       {editing ? (
         <form
@@ -104,8 +111,68 @@ function Message({
   );
 }
 
+/// «История»: события обращения без указания, кто их совершил.
+function HistoryBlock({ number }: { number: string }) {
+  const history = useReportHistory(number);
+  const items = history.data?.pages.flatMap((page) => page.items ?? []) ?? [];
+  return (
+    <section
+      className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
+      aria-label="История"
+      data-testid="report-history"
+    >
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <History aria-hidden className="size-4" />
+        История
+      </h2>
+      {history.isPending ? (
+        <SkeletonRows rows={2} />
+      ) : history.isError ? (
+        <ErrorState error={history.error} onRetry={() => history.refetch()} />
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Событий пока нет.</p>
+      ) : (
+        <Timeline aria-label="История обращения">
+          {items.map((item) => (
+            <TimelineItem
+              key={item.id}
+              icon={<History aria-hidden />}
+              title={historyItemTitle(item)}
+              meta={formatDateTime(item.createdAt)}
+            />
+          ))}
+        </Timeline>
+      )}
+      {history.hasNextPage ? (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="self-start"
+          loading={history.isFetchingNextPage}
+          onClick={() => history.fetchNextPage()}
+        >
+          Показать ещё
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+/// Вложения пока недоступны: нейтральная заглушка без загрузки.
+function AttachmentsStub() {
+  return (
+    <section
+      className="flex items-center gap-2 rounded-xl bg-surface-sunken p-4 text-sm text-muted-foreground"
+      aria-label="Вложения"
+      data-testid="attachments-stub"
+    >
+      <Paperclip aria-hidden className="size-4 shrink-0" />
+      Вложения скоро будут доступны
+    </section>
+  );
+}
+
 function ReportView({ number }: { number: string }) {
-  const meId = useAuthStore((state) => state.user?.id ?? null);
   const report = useReport(number);
   const { reply } = useSupportActions();
   const [content, setContent] = useState('');
@@ -196,7 +263,7 @@ function ReportView({ number }: { number: string }) {
                 key={message.id}
                 number={number}
                 message={message}
-                mine={message.authorId === meId && !message.isStaff}
+                mine={!message.isStaff && !message.isSystem}
                 canEdit={!blocked}
               />
             ))}
@@ -232,6 +299,8 @@ function ReportView({ number }: { number: string }) {
           </form>
         )}
       </section>
+      <AttachmentsStub />
+      <HistoryBlock number={number} />
     </div>
   );
 }

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   patch: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
+  search: new URLSearchParams(),
   params: {} as Record<string, string>,
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
@@ -25,7 +27,8 @@ vi.mock('@/lib/api/client', async (importOriginal) => ({
 vi.mock('@/components/ui/toast', () => ({ toast: mocks.toast }));
 vi.mock('next/navigation', () => ({
   useParams: () => mocks.params,
-  useRouter: () => ({ push: mocks.push, replace: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+  useSearchParams: () => mocks.search,
   usePathname: () => '/support',
 }));
 
@@ -71,7 +74,8 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  for (const fn of [mocks.get, mocks.post, mocks.patch, mocks.push]) fn.mockReset();
+  for (const fn of [mocks.get, mocks.post, mocks.patch, mocks.push, mocks.replace]) fn.mockReset();
+  mocks.search = new URLSearchParams();
   mocks.post.mockResolvedValue({});
   mocks.patch.mockResolvedValue({});
   mocks.params = {};
@@ -310,5 +314,128 @@ describe('Обращения (срез 3.5)', () => {
     await screen.findByTestId('report-view');
     expect(within(screen.getByTestId('report-timeline')).getAllByRole('listitem')).toHaveLength(2);
     expect(screen.getByTestId('appealed-punishment')).toHaveTextContent('Бан навсегда');
+  });
+});
+
+describe('Обращения: срез 2 (игрок)', () => {
+  const PUNISHMENT = {
+    id: 'p1',
+    punishmentType: 'TEMPBAN',
+    reason: 'Читы',
+    duration: '7d',
+    server: null,
+    issuedAt: '2026-10-01T10:00:00.000Z',
+    expiresAt: null,
+    isActive: true,
+    isAppealable: true,
+  };
+
+  it('сообщение персонала (authorId null) — бейдж «Сотрудник», без правки', async () => {
+    mocks.params = { reportNumber: 'R-0001' };
+    const staff = { ...REPORT.messages[0]!, authorId: null };
+    mocks.get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/history')
+          ? { items: [], total: 0, page: 1, limit: 10 }
+          : { ...REPORT, messages: [staff] },
+      ),
+    );
+    render(<ReportPage />, { wrapper: Providers });
+    await screen.findByTestId('report-view');
+    const [message] = screen.getAllByTestId('report-message');
+    expect(within(message!).getByText('Сотрудник')).toBeInTheDocument();
+    expect(within(message!).queryByRole('button', { name: 'Изменить сообщение' })).toBeNull();
+  });
+
+  it('история: записи без актора, «Показать ещё» грузит следующую страницу', async () => {
+    const user = userEvent.setup();
+    mocks.params = { reportNumber: 'R-0001' };
+    mocks.get.mockImplementation((url: string, options?: { query?: { page?: number } }) => {
+      if (!url.endsWith('/history')) return Promise.resolve(REPORT);
+      return Promise.resolve(
+        options?.query?.page === 2
+          ? {
+              items: [{ id: 'h3', kind: 'CREATED', status: null, createdAt: REPORT.createdAt }],
+              total: 3,
+              page: 2,
+              limit: 2,
+            }
+          : {
+              items: [
+                { id: 'h1', kind: 'VERDICT', status: 'RESOLVED', createdAt: REPORT.createdAt },
+                {
+                  id: 'h2',
+                  kind: 'STATUS_CHANGED',
+                  status: 'IN_REVIEW',
+                  createdAt: REPORT.createdAt,
+                },
+              ],
+              total: 3,
+              page: 1,
+              limit: 2,
+            },
+      );
+    });
+    render(<ReportPage />, { wrapper: Providers });
+    const block = await screen.findByTestId('report-history');
+    expect(await within(block).findByText('Вынесено решение')).toBeInTheDocument();
+    expect(within(block).getByText('Статус изменён: На рассмотрении')).toBeInTheDocument();
+    await user.click(within(block).getByRole('button', { name: 'Показать ещё' }));
+    expect(await within(block).findByText('Обращение создано')).toBeInTheDocument();
+    expect(within(block).queryByRole('button', { name: 'Показать ещё' })).toBeNull();
+    expect(mocks.get).toHaveBeenCalledWith('/reports/R-0001/history', {
+      query: { page: 2, limit: 10 },
+    });
+  });
+
+  it('заглушка вложений: текст, без поля загрузки', async () => {
+    mocks.params = { reportNumber: 'R-0001' };
+    mocks.get.mockResolvedValue(REPORT);
+    render(<ReportPage />, { wrapper: Providers });
+    const stub = await screen.findByTestId('attachments-stub');
+    expect(stub).toHaveTextContent('Вложения скоро будут доступны');
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('?punishment=ID подставляет наказание в форму обжалования', async () => {
+    mocks.params = { type: 'punishment_appeal' };
+    mocks.search = new URLSearchParams('punishment=p1');
+    mocks.get.mockResolvedValue([PUNISHMENT]);
+    render(<NewReportPage />, { wrapper: Providers });
+    const select = (await screen.findByLabelText(/Наказание/)) as HTMLSelectElement;
+    expect(select.value).toBe('p1');
+  });
+
+  it('?punishment с неизвестным ID игнорируется с мягкой подсказкой', async () => {
+    mocks.params = { type: 'punishment_appeal' };
+    mocks.search = new URLSearchParams('punishment=nope');
+    mocks.get.mockResolvedValue([PUNISHMENT]);
+    render(<NewReportPage />, { wrapper: Providers });
+    const select = (await screen.findByLabelText(/Наказание/)) as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(screen.getByText(/не найдено или не подлежит обжалованию/)).toBeInTheDocument();
+  });
+
+  it('список: фильтры из URL уходят в GET /reports; смена фильтра пишет в URL', async () => {
+    const user = userEvent.setup();
+    mocks.search = new URLSearchParams('status=RESOLVED&type=BOGUS');
+    mocks.get.mockResolvedValue({ items: [REPORT], total: 1, page: 1, limit: 20 });
+    render(<SupportPage />, { wrapper: Providers });
+    await screen.findByTestId('my-reports');
+    expect(mocks.get).toHaveBeenCalledWith('/reports', {
+      query: { page: 1, limit: 20, status: 'RESOLVED' },
+    });
+    await user.selectOptions(screen.getByLabelText('Тип'), 'OTHER');
+    expect(mocks.replace).toHaveBeenCalledWith('/support?status=RESOLVED&type=OTHER');
+  });
+
+  it('список: пустой результат с фильтром — «Ничего не найдено» и сброс', async () => {
+    const user = userEvent.setup();
+    mocks.search = new URLSearchParams('status=CLOSED');
+    mocks.get.mockResolvedValue({ items: [], total: 0, page: 1, limit: 20 });
+    render(<SupportPage />, { wrapper: Providers });
+    expect(await screen.findByText('Ничего не найдено')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Сбросить фильтры' }));
+    expect(mocks.replace).toHaveBeenCalledWith('/support');
   });
 });
