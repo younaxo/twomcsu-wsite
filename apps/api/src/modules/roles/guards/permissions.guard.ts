@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isProductionLike } from '../../../config/node-env';
 import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../../auth/interfaces/authenticated-user.interface';
@@ -36,7 +37,7 @@ export function resetAdmin2faCache(): void {
 /// - Флаг `SiteSettings.requireAdmin2fa` выключен — не отклоняем.
 /// - Ключа 2FA (`TWO_FACTOR_ENCRYPTION_KEY` ≥ 32) нет: в production —
 ///   fail-closed (отклоняем всех: требование включено, выполнить его нельзя);
-///   вне production (`NODE_ENV !== 'production'`) требование не применяется —
+///   только при явных NODE_ENV=development/test (пустой NODE_ENV = production, ADR-0164) требование не применяется —
 ///   dev/test без ключа работают как раньше.
 /// - Иначе отклоняем пользователя без включённой 2FA.
 export async function isAdmin2faDenied(
@@ -48,7 +49,7 @@ export async function isAdmin2faDenied(
     config.get<string>('TWO_FACTOR_ENCRYPTION_KEY', '') ?? ''
   ).trim();
   const keyMissing = key.length < 32;
-  const production = config.get<string>('NODE_ENV') === 'production';
+  const production = isProductionLike(config.get<string>('NODE_ENV'));
   if (keyMissing && !production) return false;
   const now = Date.now();
   let required: boolean;
@@ -110,10 +111,10 @@ export class PermissionsGuard implements CanActivate {
       this.config.get<string>('TWO_FACTOR_ENCRYPTION_KEY', '') ?? ''
     ).trim();
     if (key.length >= 32) return;
-    if (this.config.get<string>('NODE_ENV') === 'production') return;
+    if (isProductionLike(this.config.get<string>('NODE_ENV'))) return;
     keyWarned = true;
     new Logger(PermissionsGuard.name).warn(
-      'TWO_FACTOR_ENCRYPTION_KEY не задан: admin-2FA не работает. Допустимо только вне production; в production NODE_ENV=production обязателен (ADR-0156).',
+      'TWO_FACTOR_ENCRYPTION_KEY не задан: admin-2FA не работает. Допустимо только вне production; в production NODE_ENV=production обязателен (ADR-0156, ADR-0164).',
     );
   }
 

@@ -65,6 +65,35 @@ describe('PermissionsGuard admin-2FA (ADR-0156)', () => {
     });
   });
 
+  it.each([
+    ['пустой NODE_ENV', ''],
+    ['не заданный NODE_ENV', undefined],
+    ['неизвестный NODE_ENV (staging)', 'staging'],
+  ])(
+    '%s без ключа и requireAdmin2fa=true — отказ (fail-closed, ADR-0164)',
+    async (_name, env) => {
+      const { guard, context } = setup({
+        env: env as string,
+        key: '',
+        requireFlag: true,
+        twoFactorEnabled: true,
+      });
+      await expect(guard.canActivate(context)).rejects.toMatchObject({
+        response: { code: 'admin_2fa_required' },
+      });
+    },
+  );
+
+  it('test без ключа сохраняет прежнее поведение (пропуск)', async () => {
+    const { guard, context } = setup({
+      env: 'test',
+      key: '',
+      requireFlag: true,
+      twoFactorEnabled: false,
+    });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
   it('production с коротким ключом — отказ (fail-closed)', async () => {
     const { guard, context } = setup({
       env: 'production',

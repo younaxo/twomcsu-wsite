@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isProductionLike } from '../../config/node-env';
 import * as nodemailer from 'nodemailer';
 
 export interface SendEmailInput {
@@ -38,7 +39,7 @@ export class EmailService {
   }
 
   async send(input: SendEmailInput): Promise<void> {
-    if (this.config.get<string>('NODE_ENV') !== 'production') {
+    if (!isProductionLike(this.config.get<string>('NODE_ENV'))) {
       this.logger.debug(
         `Email → ${input.to}: ${input.subject}\n${input.text ?? input.html}`,
       );

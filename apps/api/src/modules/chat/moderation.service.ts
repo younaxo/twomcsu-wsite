@@ -1,10 +1,12 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionService } from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { BanUserDto } from './dto/ban-user.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
@@ -13,7 +15,27 @@ import { UpdateChannelDto } from './dto/update-channel.dto';
 
 @Injectable()
 export class ModerationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionService,
+  ) {}
+
+  /// Иерархия: нельзя применять мут/бан к себе, SYSTEM-аккаунту и цели с
+  /// равным или более высоким приоритетом (canActOn). Текст ошибки общий —
+  /// не раскрывает роли цели.
+  private async assertCanModerate(
+    actorId: string,
+    targetUserId: string,
+  ): Promise<void> {
+    if (
+      actorId === targetUserId ||
+      !(await this.permissions.canActOn(actorId, targetUserId))
+    ) {
+      throw new ForbiddenException(
+        'Недостаточно прав для действия над этим пользователем',
+      );
+    }
+  }
 
   async createChannel(dto: CreateChannelDto) {
     const existing = await this.prisma.chatChannel.findUnique({
@@ -42,6 +64,7 @@ export class ModerationService {
   }
 
   async muteUser(mutedBy: string, dto: MuteUserDto) {
+    await this.assertCanModerate(mutedBy, dto.userId);
     return this.prisma.chatMute.create({
       data: {
         userId: dto.userId,
@@ -78,6 +101,7 @@ export class ModerationService {
   }
 
   async banUser(bannedBy: string, dto: BanUserDto) {
+    await this.assertCanModerate(bannedBy, dto.userId);
     return this.prisma.chatBan.create({
       data: {
         userId: dto.userId,

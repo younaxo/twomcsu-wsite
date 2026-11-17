@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный NODE_ENV = production, схема env принимает только development/test/production или пусто (staging и прочее роняют старт); хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; `start:dev` и `start:debug` api через `scripts/with-node-env.mjs development`; `start` NODE_ENV не задаёт. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
+
 - Исправления по ревью C: лимит отправки форм (ADR-0162: `maxWait`/`timeout` транзакции отправки 5 с вместо 10 с; `@Throttle` отвергнут — e2e форм шлёт 22 отправки/мин с одного IP), тесты `rateLimitIp` для brute-force входа и 2FA (ADR-0163).
 
 - Безопасность: лимиты brute-force входа и 2FA для IPv6 считаются по подсети /64 (ADR-0163, ветка fix/q9-ipv6-64-rate-limit, не смержено): `rateLimitKey` в `config/trust-proxy.ts`, применён в `BruteForceService`; журналы/аудит/captcha по-прежнему с полным адресом; глобальный throttler не менялся. e2e отложен: диск. Доработка по ревью: ключ brute-force строится от сырого `req.ip` (`RequestContext.rateLimitIp`), мусор больше не делит `unknown`; полная форма mapped IPv4 распознаётся.

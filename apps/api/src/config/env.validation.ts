@@ -1,13 +1,19 @@
 import * as Joi from 'joi';
+import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
 
 /// Валидируются только переменные, которые реально читает существующий код
 /// (ADR-0015) — расширяется вместе с кодом, использующим новую переменную,
 /// а не заранее по полному списку из .env.example.
+/// Условие «окружение явно development или test»; `.required()` нужен, чтобы
+/// отсутствующий NODE_ENV НЕ подпадал под ослабление (Joi по умолчанию
+/// пропускает undefined в `is`).
+const NON_PRODUCTION_ENV = Joi.valid(...RELAXED_NODE_ENVS).required();
+
 export const envValidationSchema = Joi.object({
-  NODE_ENV: Joi.string()
-    .valid('development', 'test', 'production')
-    .default('development'),
+  /// Fail-closed (ADR-0164): пустой/не заданный NODE_ENV = production, дефолта
+  /// `development` нет. Ослабление — только при явных development/test.
+  NODE_ENV: Joi.string().allow('').valid('development', 'test', 'production'),
   API_PORT: Joi.number().port().default(4000),
   /// Политика доверия к прокси (ADR-0155): пусто — выключено; число hop-ов
   /// (1 для nginx → api); loopback/linklocal/uniquelocal; список CIDR.
@@ -29,8 +35,8 @@ export const envValidationSchema = Joi.object({
     /// В production без TRUST_PROXY rate limit и audit видят IP nginx, а не
     /// клиента, поэтому значение обязательно и непустое.
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.string().invalid('').required().messages({
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.string().invalid('').required().messages({
         'any.required':
           'TRUST_PROXY обязателен в production (число доверенных прокси-хопов, например 1)',
         'any.invalid':
@@ -66,8 +72,8 @@ export const envValidationSchema = Joi.object({
     .allow('')
     .default('localhost')
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.string()
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.string()
         .invalid('')
         .required()
         .custom((value: string, helpers) => {
@@ -93,8 +99,8 @@ export const envValidationSchema = Joi.object({
   COOKIE_SECURE: Joi.boolean()
     .default(false)
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.boolean().required().valid(true).messages({
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.boolean().required().valid(true).messages({
         'any.required': 'COOKIE_SECURE=true обязателен в production',
         'any.only': 'COOKIE_SECURE=true обязателен в production',
       }),
@@ -137,8 +143,8 @@ export const envValidationSchema = Joi.object({
   AUTH_TEST_OTP_ENABLED: Joi.boolean()
     .default(false)
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.valid(false).messages({
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.valid(false).messages({
         'any.only': 'AUTH_TEST_OTP_ENABLED запрещён в production',
       }),
     }),
@@ -149,23 +155,23 @@ export const envValidationSchema = Joi.object({
   TURNSTILE_DISABLED: Joi.boolean()
     .default(false)
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.valid(false).messages({
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.valid(false).messages({
         'any.only': 'TURNSTILE_DISABLED запрещён в production',
       }),
     }),
   TURNSTILE_SECRET_KEY: Joi.string()
     .allow('')
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.string().invalid('').required().messages({
+      is: NON_PRODUCTION_ENV,
+      then: Joi.when('TURNSTILE_DISABLED', {
+        is: false,
+        then: Joi.string().required(),
+      }),
+      otherwise: Joi.string().invalid('').required().messages({
         'any.required': 'TURNSTILE_SECRET_KEY обязателен в production',
         'any.invalid': 'TURNSTILE_SECRET_KEY обязателен в production',
         'string.empty': 'TURNSTILE_SECRET_KEY обязателен в production',
-      }),
-      otherwise: Joi.when('TURNSTILE_DISABLED', {
-        is: false,
-        then: Joi.string().required(),
       }),
     }),
 
@@ -225,9 +231,9 @@ export const envValidationSchema = Joi.object({
         'TWO_FACTOR_ENCRYPTION_KEY в production — не короче 32 символов',
     })
     .when('NODE_ENV', {
-      is: 'production',
-      then: Joi.required(),
-      otherwise: Joi.string().allow('').default(''),
+      is: NON_PRODUCTION_ENV,
+      then: Joi.string().allow('').default(''),
+      otherwise: Joi.required(),
     }),
 
   /// Без credentials реальный опрос Twitch/YouTube не выполняется (CRUD

@@ -1,7 +1,9 @@
+import { isProductionLike } from '../../config/node-env';
+
 /// Детерминированный OTP для разработки и автотестов (ADR-0087).
 ///
 /// Работает ТОЛЬКО на backend и ТОЛЬКО при двух условиях одновременно:
-/// `AUTH_TEST_OTP_ENABLED=true` и `NODE_ENV !== 'production'`. Схема env
+/// `AUTH_TEST_OTP_ENABLED=true` и явный `NODE_ENV` development/test (пустой = production, ADR-0164). Схема env
 /// (`env.validation.ts`) дополнительно не даёт запустить production с
 /// включённым флагом. В клиентский bundle ничего из этого не попадает.
 ///
@@ -18,7 +20,7 @@ export function testOtpEnabled(env: {
   nodeEnv: string | undefined;
   flag: unknown;
 }): boolean {
-  if (env.nodeEnv === 'production') return false;
+  if (isProductionLike(env.nodeEnv)) return false;
   return env.flag === true || env.flag === 'true';
 }
 
