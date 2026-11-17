@@ -284,6 +284,12 @@ export const PERMISSIONS = [
     module: 'users',
     description: 'Просмотр и управление историей наказаний пользователя',
   },
+  {
+    key: 'punishments.issuer.hide',
+    module: 'punishments',
+    description:
+      'Принудительное скрытие и показ выдавшего у наказания сервера (публично и игроку); назначается ролям уровня куратора и выше',
+  },
   { key: 'users.delete', module: 'users', description: 'Удаление аккаунта пользователя' },
   {
     key: 'messages.hard_delete',
