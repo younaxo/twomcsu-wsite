@@ -56,6 +56,10 @@ export class ReportsModerationService {
 
   /// Уведомление автору — побочный эффект: его сбой не должен ломать
   /// действие персонала. Себе (автор == исполнитель действия) не шлём.
+  /// Приватность (Q51, ADR-0175): отправитель — система. fromUserId и любые
+  /// данные сотрудника в уведомление автору не передаются (ни в payload, ни
+  /// в push/WS/email: текст — только статус/номер); actorId нужен лишь для
+  /// проверки «себе».
   private async notifyAuthor(
     report: Pick<Report, 'authorId' | 'reportNumber'>,
     actorId: string,
@@ -73,7 +77,6 @@ export class ReportsModerationService {
         title,
         message,
         link: `/support/${report.reportNumber}`,
-        fromUserId: actorId,
         metadata: { reportNumber: report.reportNumber },
       });
     } catch (error) {
