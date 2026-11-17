@@ -1,12 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  APPLY_TX_MAX_WAIT_MS,
+  APPLY_TX_TIMEOUT_MS,
+  chunk,
   EMPTY_SYNC_STATE,
   MirrorChange,
   PunishmentMirrorStore,
   SyncStatePatch,
+  SQL_ID_CHUNK,
   SyncStateSnapshot,
 } from './punishment-mirror.store';
 import {
@@ -42,6 +46,20 @@ function actorColumns(actor: PunishmentActor | null): {
   return { uuid: actor.uuid, name: actor.name, isConsole: false };
 }
 
+function validDate(date: Date | null | undefined): boolean {
+  return date === null || date === undefined || !Number.isNaN(date.getTime());
+}
+
+/// Строка пригодна к записи: все даты корректны (`toISOString` на Invalid
+/// Date бросает RangeError, и это не должно случиться внутри транзакции).
+function hasValidDates(row: NormalizedPunishment): boolean {
+  return (
+    validDate(row.startedAt) &&
+    validDate(row.until) &&
+    validDate(row.removal?.at ?? null)
+  );
+}
+
 interface ChangeRow {
   kind: PunishmentKind;
   sourceId: bigint;
@@ -55,6 +73,8 @@ interface ChangeRow {
 /// от обновления. Все значения передаются параметрами; динамического SQL нет.
 @Injectable()
 export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
+  private readonly logger = new Logger(PrismaPunishmentMirrorStore.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getState(
@@ -96,30 +116,55 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     cursorId: bigint | null,
     now: Date,
   ): Promise<MirrorChange[]> {
-    return this.prisma.$transaction(async (tx) => {
-      const changes: MirrorChange[] = [];
-      for (const row of rows) {
-        const result = await tx.$queryRaw<
-          Array<{ inserted: boolean; rev: number }>
-        >(this.upsertSql(source, row, now));
-        if (result.length > 0) {
-          changes.push({
-            kind: row.kind,
-            sourceId: row.sourceId,
-            inserted: result[0].inserted,
-            rev: result[0].rev,
-            status: row.status,
-          });
+    // Проверки ДО транзакции: Invalid Date не должен ронять её посередине.
+    if (!validDate(now) || now === null) {
+      throw new RangeError('Некорректное время записи зеркала');
+    }
+    const valid = rows.filter(hasValidDates);
+    if (valid.length !== rows.length) {
+      this.logger.warn(
+        `Пропущено строк с некорректной датой: ${rows.length - valid.length}`,
+      );
+    }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const changes: MirrorChange[] = [];
+        for (const row of valid) {
+          const result = await tx.$queryRaw<
+            Array<{ inserted: boolean; rev: number }>
+          >(this.upsertSql(source, row, now));
+          if (result.length > 0) {
+            changes.push({
+              kind: row.kind,
+              sourceId: row.sourceId,
+              inserted: result[0].inserted,
+              rev: result[0].rev,
+              status: row.status,
+            });
+          }
         }
-      }
-      if (cursorId !== null) {
-        await tx.$executeRaw`
+        if (cursorId !== null) {
+          await tx.$executeRaw`
           INSERT INTO "punishment_sync_state" ("id", "source", "kind", "cursorId")
           VALUES (${randomUUID()}, ${source}, ${kind}::"MinecraftPunishmentKind", ${cursorId})
           ON CONFLICT ("source", "kind") DO UPDATE
           SET "cursorId" = GREATEST("punishment_sync_state"."cursorId", EXCLUDED."cursorId")`;
-      }
-      return changes;
+        }
+        return changes;
+      },
+      { maxWait: APPLY_TX_MAX_WAIT_MS, timeout: APPLY_TX_TIMEOUT_MS },
+    );
+  }
+
+  async setCursor(
+    source: string,
+    kind: PunishmentKind,
+    cursorId: bigint,
+  ): Promise<void> {
+    await this.prisma.punishmentSyncState.upsert({
+      where: { source_kind: { source, kind } },
+      create: { source, kind, cursorId },
+      update: { cursorId },
     });
   }
 
@@ -223,6 +268,50 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     return rows.map((r) => r.sourceId);
   }
 
+  async listExpiredWithFutureUntil(
+    source: string,
+    kind: PunishmentKind,
+    now: Date,
+    limit: number,
+  ): Promise<bigint[]> {
+    const rows = await this.prisma.minecraftPunishment.findMany({
+      where: {
+        source,
+        sourceScope: SOURCE_SCOPE,
+        kind,
+        status: 'EXPIRED',
+        until: { gt: now },
+      },
+      orderBy: { sourceId: 'asc' },
+      take: limit,
+      select: { sourceId: true },
+    });
+    return rows.map((r) => r.sourceId);
+  }
+
+  async reactivate(
+    source: string,
+    kind: PunishmentKind,
+    ids: bigint[],
+    now: Date,
+  ): Promise<MirrorChange[]> {
+    if (ids.length === 0) return [];
+    const out: MirrorChange[] = [];
+    // Группы по SQL_ID_CHUNK id: лимит параметров запроса PostgreSQL.
+    for (const part of chunk(ids, SQL_ID_CHUNK)) {
+      const rows = await this.prisma.$queryRaw<ChangeRow[]>(Prisma.sql`
+        UPDATE "minecraft_punishments"
+        SET "status" = 'ACTIVE', "rev" = "rev" + 1, "lastChangedAt" = ${ts(now)}
+        WHERE "source" = ${source} AND "sourceScope" = ${SOURCE_SCOPE}
+          AND "kind" = ${kind}::"MinecraftPunishmentKind"
+          AND "sourceId" IN (${Prisma.join(part)})
+          AND "status" = 'EXPIRED'
+        RETURNING "kind", "sourceId", "rev", "status"`);
+      out.push(...rows.map(toChange));
+    }
+    return out;
+  }
+
   async markDeletedAtSource(
     source: string,
     kind: PunishmentKind,
@@ -230,16 +319,22 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     now: Date,
   ): Promise<MirrorChange[]> {
     if (ids.length === 0) return [];
-    const rows = await this.prisma.$queryRaw<ChangeRow[]>(Prisma.sql`
-      UPDATE "minecraft_punishments"
-      SET "status" = 'DELETED_AT_SOURCE', "deletedAtSource" = ${ts(now)},
-          "rev" = "rev" + 1, "lastChangedAt" = ${ts(now)}
-      WHERE "source" = ${source} AND "sourceScope" = ${SOURCE_SCOPE}
-        AND "kind" = ${kind}::"MinecraftPunishmentKind"
-        AND "sourceId" IN (${Prisma.join(ids)})
-        AND "status" <> 'DELETED_AT_SOURCE'
-      RETURNING "kind", "sourceId", "rev", "status"`);
-    return rows.map(toChange);
+    const out: MirrorChange[] = [];
+    // Группы по SQL_ID_CHUNK id: при частичном откате источника пропавших
+    // строк может быть десятки тысяч, а лимит параметров PostgreSQL — 32767.
+    for (const part of chunk(ids, SQL_ID_CHUNK)) {
+      const rows = await this.prisma.$queryRaw<ChangeRow[]>(Prisma.sql`
+        UPDATE "minecraft_punishments"
+        SET "status" = 'DELETED_AT_SOURCE', "deletedAtSource" = ${ts(now)},
+            "rev" = "rev" + 1, "lastChangedAt" = ${ts(now)}
+        WHERE "source" = ${source} AND "sourceScope" = ${SOURCE_SCOPE}
+          AND "kind" = ${kind}::"MinecraftPunishmentKind"
+          AND "sourceId" IN (${Prisma.join(part)})
+          AND "status" <> 'DELETED_AT_SOURCE'
+        RETURNING "kind", "sourceId", "rev", "status"`);
+      out.push(...rows.map(toChange));
+    }
+    return out;
   }
 
   async expireDue(source: string, now: Date): Promise<MirrorChange[]> {

@@ -85,8 +85,9 @@ export interface PunishmentSource {
   /// (SourceDataInvalid); возвращает и очищает список. Нужен полной сверке:
   /// такие строки есть в источнике и не должны получать DELETED_AT_SOURCE.
   /// Адаптер ОБЯЗАН также не включать невалидные строки в `missing`
-  /// у `fetchByIds` (требование к срезу 2).
-  drainSkippedIds?(kind: PunishmentKind): bigint[];
+  /// у `fetchByIds` (требование к срезу 2). Метод обязателен: без него сверка
+  /// принимала бы невалидные строки за удалённые.
+  drainSkippedIds(kind: PunishmentKind): bigint[];
   /// До 500 id за вызов.
   fetchByIds(
     kind: PunishmentKind,

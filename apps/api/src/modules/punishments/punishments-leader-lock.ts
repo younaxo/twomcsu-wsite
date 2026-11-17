@@ -30,11 +30,16 @@ export const LEADER_LOCK_TTL_MS = 10_000;
 /// Лидерство опрашивающего экземпляра API (раздел 4.3): `SET key token NX PX`,
 /// продление и освобождение — только compare-and-set по случайному токену
 /// (Lua), чужой токен не трогается. Потеря токена означает остановку работы
-/// до повторного захвата. Токен не гарантирует отсутствие паузы процесса между
-/// проверкой и записью: запись зеркала идемпотентна (upsert по `rowHash`), а
-/// двойной лидер на одном шаге не портит данные (см. RISKS.md).
+/// до повторного захвата. Сервис синхронизации вызывает `acquireOrRenew`
+/// непосредственно перед каждой записью зеркала, а транзакция записи ограничена
+/// по времени (APPLY_TX_*), так что запись укладывается в TTL (10 с). Токен не
+/// гарантирует отсутствие паузы процесса между проверкой и записью дольше TTL:
+/// запись зеркала идемпотентна (upsert по `rowHash`), а двойной лидер на одном
+/// шаге не портит данные (см. RISKS.md).
 export class LeaderLock {
   private heldFlag = false;
+  /// После `release()` блокировка больше не захватывается (остановка модуля).
+  private closed = false;
 
   constructor(
     private readonly client: LeaderLockClient,
@@ -48,20 +53,25 @@ export class LeaderLock {
   }
 
   /// Продлевает удерживаемую блокировку или пробует захватить новую.
-  /// Ошибка Redis трактуется как потеря лидерства (fail closed).
+  /// Продление пробуется всегда: после сбоя Redis своя блокировка могла
+  /// остаться в нём (тот же токен) и не должна блокировать нас до TTL.
+  /// Ошибка Redis трактуется как потеря лидерства (fail closed); после
+  /// `release()` всегда `false`.
   async acquireOrRenew(): Promise<boolean> {
+    if (this.closed) return false;
     try {
-      if (this.heldFlag) {
-        const renewed = await this.client.eval(
-          RENEW_SCRIPT,
-          1,
-          this.key,
-          this.token,
-          String(this.ttlMs),
-        );
-        this.heldFlag = Number(renewed) === 1;
-        if (this.heldFlag) return true;
+      const renewed = await this.client.eval(
+        RENEW_SCRIPT,
+        1,
+        this.key,
+        this.token,
+        String(this.ttlMs),
+      );
+      if (Number(renewed) === 1) {
+        this.heldFlag = !this.closed;
+        return this.heldFlag;
       }
+      this.heldFlag = false;
       const result = await this.client.set(
         this.key,
         this.token,
@@ -69,6 +79,11 @@ export class LeaderLock {
         this.ttlMs,
         'NX',
       );
+      if (result === 'OK' && this.closed) {
+        // Остановка пришла во время захвата: сразу отдаём блокировку.
+        await this.client.eval(RELEASE_SCRIPT, 1, this.key, this.token);
+        return false;
+      }
       this.heldFlag = result === 'OK';
     } catch {
       this.heldFlag = false;
@@ -77,6 +92,7 @@ export class LeaderLock {
   }
 
   async release(): Promise<void> {
+    this.closed = true;
     const wasHeld = this.heldFlag;
     this.heldFlag = false;
     if (!wasHeld) return;

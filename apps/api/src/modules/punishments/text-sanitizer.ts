@@ -11,11 +11,13 @@ import { isIPv6 } from 'net';
 ///
 /// ОЧИСТКА ЭВРИСТИЧЕСКАЯ, не гарантия. Принятые остаточные риски (RISKS.md):
 /// контакты словами (`user at example dot com`, «собака», «точка» без
-/// скобок), платформы без разделителя (`foo #1234`, `ds user` без цифр),
-/// IPv4 в десятичной/шестнадцатеричной записи (`0x7f.0.0.1`, `2130706433`),
-/// телефоны из 7–9 цифр без «+», гомоглифы (кириллица вместо латиницы) и
-/// контакты вне списка платформ не распознаются. Heartbeat лидерства
-/// выдаётся между пачками синхронизации, а не внутри одной.
+/// скобок), полные названия платформ без разделителя и признаков
+/// идентификатора (`discord user`), IPv4 в десятичной/шестнадцатеричной
+/// записи (`0x7f.0.0.1`, `2130706433`), телефоны из 7–9 цифр без «+»,
+/// гомоглифы (кириллица вместо латиницы), домены с редкой зоной после точки
+/// без пробела и контакты вне списка платформ не распознаются.
+/// Публичный вывод причины с маскировкой — через `publicReason` (до ответа
+/// на Q59 причина с любой маскировкой скрывается целиком).
 
 export const MAX_REASON_LENGTH = 2048;
 export const MAX_LABEL_LENGTH = 128;
@@ -38,7 +40,12 @@ const INVISIBLE =
 const MARKS_AFTER_NON_LETTER = /(?<!\p{L})\p{M}+/gu;
 
 /// Юникод-«точки», которых нет в NFKC-свёртке.
-const DOT_LOOKALIKES = /[。｡·∙⋅・۔܁]/g;
+const DOT_LOOKALIKES = /[。｡·∙⋅・۔܁‧։⸱⸳･ꓸ᛫᛬።᙮﹒․]/g;
+
+/// Символы-«точки», которые бывают и маркерами списков: заменяются на точку
+/// только между буквой/цифрой с обеих сторон (пробелы допускаются).
+const BULLET_DOTS =
+  /(?<=[\p{L}\p{N}][^\S\n]{0,3})[•●◦∘⚫⦁▪‣⁃∙·](?=[^\S\n]{0,3}[\p{L}\p{N}])/gu;
 
 const COLOR_PATTERNS: RegExp[] = [
   /[&§]x(?:[&§][0-9a-f]){6}/gi,
@@ -170,7 +177,7 @@ const TLDS = [
 
 /// Зоны, которые распознаются только БЕЗ пробелов вокруг точки (со
 /// словами-зонами «hacking. Today» дало бы ложные срабатывания).
-const EXTRA_TLDS = [
+const EXTRA_BASE = [
   'moe',
   'lol',
   'page',
@@ -252,11 +259,256 @@ const EXTRA_TLDS = [
   'ovh',
   'dog',
   'cat',
-].join('|');
+];
+
+/// Кириллические зоны и длинные gTLD: только без пробелов вокруг точки.
+const LONG_TLDS = [
+  'москва',
+  'онлайн',
+  'сайт',
+  'орг',
+  'ком',
+  'дети',
+  'рус',
+  'бел',
+  'укр',
+  'срб',
+  'католик',
+  'мкд',
+  'бг',
+  'мон',
+  'татар',
+  'museum',
+  'tokyo',
+  'london',
+  'berlin',
+  'paris',
+  'moscow',
+  'nyc',
+  'amsterdam',
+  'vegas',
+  'miami',
+  'africa',
+  'asia',
+  'academy',
+  'accountant',
+  'accountants',
+  'actor',
+  'adult',
+  'aero',
+  'airforce',
+  'apartments',
+  'associates',
+  'auction',
+  'audio',
+  'auto',
+  'band',
+  'bank',
+  'bargains',
+  'beer',
+  'best',
+  'bike',
+  'bio',
+  'black',
+  'blue',
+  'boutique',
+  'build',
+  'business',
+  'cab',
+  'cafe',
+  'camera',
+  'camp',
+  'capital',
+  'cards',
+  'care',
+  'career',
+  'careers',
+  'cash',
+  'catering',
+  'charity',
+  'cheap',
+  'christmas',
+  'church',
+  'claims',
+  'cleaning',
+  'clinic',
+  'clothing',
+  'coach',
+  'coffee',
+  'college',
+  'construction',
+  'consulting',
+  'contractors',
+  'cool',
+  'coupons',
+  'credit',
+  'cruises',
+  'dance',
+  'dating',
+  'deals',
+  'degree',
+  'delivery',
+  'democrat',
+  'dental',
+  'diamonds',
+  'directory',
+  'discount',
+  'doctor',
+  'domains',
+  'earth',
+  'education',
+  'energy',
+  'engineer',
+  'engineering',
+  'enterprises',
+  'equipment',
+  'estate',
+  'events',
+  'exchange',
+  'exposed',
+  'express',
+  'fail',
+  'farm',
+  'fashion',
+  'film',
+  'finance',
+  'financial',
+  'fish',
+  'fishing',
+  'fit',
+  'fitness',
+  'flights',
+  'florist',
+  'football',
+  'forsale',
+  'foundation',
+  'fund',
+  'furniture',
+  'futbol',
+  'garden',
+  'gifts',
+  'glass',
+  'global',
+  'gold',
+  'golf',
+  'graphics',
+  'gratis',
+  'green',
+  'gripe',
+  'guide',
+  'guitars',
+  'haus',
+  'health',
+  'healthcare',
+  'help',
+  'hockey',
+  'holdings',
+  'holiday',
+  'horse',
+  'hospital',
+  'hosting',
+  'immo',
+  'industries',
+  'institute',
+  'insure',
+  'international',
+  'investments',
+  'jewelry',
+  'kim',
+  'kitchen',
+  'kiwi',
+  'legal',
+  'lighting',
+  'limited',
+  'limo',
+  'loans',
+  'luxury',
+  'maison',
+  'management',
+  'market',
+  'marketing',
+  'mba',
+  'memorial',
+  'moda',
+  'mortgage',
+  'movie',
+  'navy',
+  'onl',
+  'organic',
+  'partners',
+  'parts',
+  'photo',
+  'photography',
+  'photos',
+  'pics',
+  'pictures',
+  'pink',
+  'pizza',
+  'place',
+  'plumbing',
+  'productions',
+  'properties',
+  'pub',
+  'recipes',
+  'red',
+  'rentals',
+  'repair',
+  'report',
+  'republican',
+  'restaurant',
+  'rip',
+  'run',
+  'sale',
+  'school',
+  'schule',
+  'services',
+  'shoes',
+  'show',
+  'singles',
+  'soccer',
+  'social',
+  'software',
+  'solar',
+  'solutions',
+  'support',
+  'surf',
+  'surgery',
+  'taxi',
+  'technology',
+  'tennis',
+  'theater',
+  'tips',
+  'tires',
+  'tours',
+  'town',
+  'toys',
+  'training',
+  'university',
+  'uno',
+  'vacations',
+  'ventures',
+  'vet',
+  'viajes',
+  'villas',
+  'vision',
+  'vodka',
+  'vote',
+  'voyage',
+  'watch',
+  'webcam',
+  'wedding',
+  'wien',
+  'wine',
+  'yoga',
+];
+const EXTRA_TLDS = Array.from(new Set([...EXTRA_BASE, ...LONG_TLDS])).join('|');
 
 const URL_RE = /(?:[a-z][a-z0-9+.-]{1,15}:\/\/|www\.|mailto:)\S*/giu;
 const EMAIL_RE =
   /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+\s?@\s?[\p{L}\p{N}-]+(?:\s?\.\s?[\p{L}\p{N}-]+)+/giu;
+/// E-mail без доменной зоны (`user@gmail`): только без пробелов.
+const EMAIL_NODOT_RE =
+  /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]{2,}/giu;
 const IPV6_CANDIDATE_RE =
   /(?<![\p{L}\p{N}_])\[?(?:[0-9a-f]{0,4}:){2,7}(?:(?:\d{1,3}\.){3}\d{1,3}(?!\d)|[0-9a-f]{1,4}(?![0-9a-f])|(?<=::))(?:%[0-9a-z]+)?\]?(?::\d{1,5})?/giu;
 const OCTET = '(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)';
@@ -265,7 +517,9 @@ const IPV4_RE = new RegExp(
   'g',
 );
 const OCT_D = '\\d(?: ?\\d){0,2}';
-const IP_SEP = '(?:\\s*(?:[.\\-_/]|dot|точка)\\s*|\\s+)';
+/// Дефисы и похожие чёрточки (en/em dash, minus и др.) в записях разделителей.
+const DASHES = '\\-‐‑‒–—―−';
+const IP_SEP = `(?:\\s*(?:[.${DASHES}_/]|dot|точка)\\s*|\\s+)`;
 /// IPv4 с разделителями пробел, `-`, `_`, `/`, `dot`: `192 168 1 1`,
 /// `192-168-0-1`, `192 dot 168 dot 0 dot 1`.
 const IPV4_SEP_RE = new RegExp(
@@ -274,7 +528,7 @@ const IPV4_SEP_RE = new RegExp(
 );
 /// То же, но цифры внутри октета разделены пробелами: `1 9 2 . 1 6 8 . 0 . 1`.
 const IPV4_SPACED_DIGITS_RE = new RegExp(
-  `(?<!\\d)${OCT_D}(?:\\s*[.\\-_/]\\s*${OCT_D}){3}(?!\\d)`,
+  `(?<!\\d)${OCT_D}(?:\\s*[.${DASHES}_/]\\s*${OCT_D}){3}(?!\\d)`,
   'gu',
 );
 
@@ -283,10 +537,10 @@ const IPV4_SPACED_DIGITS_RE = new RegExp(
 function redactSeparatedIpv4(m: string): string {
   const valid = (p: string[]) =>
     p.length === 4 && p.every((x) => /^\d{1,3}$/.test(x) && Number(x) <= 255);
-  let parts = m.split(/\s*(?:[.\-_/]|dot|точка)\s*|\s+/iu);
+  let parts = m.split(/\s*(?:[.\-‐‑‒–—―−_/]|dot|точка)\s*|\s+/iu);
   if (!valid(parts)) {
     // Цифры внутри октета разделены пробелами: `1 9 2 . 1 6 8 . 0 . 1`.
-    parts = m.split(/\s*[.\-_/]\s*/u).map((p) => p.replace(/\s+/g, ''));
+    parts = m.split(/\s*[.\-‐‑‒–—―−_/]\s*/u).map((p) => p.replace(/\s+/g, ''));
   }
   if (!valid(parts)) return m;
   const hasDot = /\./.test(m) || /dot|точка/iu.test(m);
@@ -296,32 +550,59 @@ function redactSeparatedIpv4(m: string): string {
 /// Шаблоны LiteBans вида `127.0.0.%` и маски `10.0.*`.
 const IPV4_WILDCARD_RE = /(?<!\d)(?:\d{1,3}\s*\.\s*){1,3}[%*]/g;
 const CONTACT_LABELS =
-  'discord|disc|ds|дискорд|дс|telegram|tg|телеграм|телеграмм|тг|телега|vk|вк|вконтакте|skype|скайп|whatsapp|wa|ватсап|вацап|viber|вайбер|instagram|inst|инст|инстаграм|snapchat|tiktok|тикток|icq|phone|телефон|тел|email|e-mail|почта|contacts?|контакты?';
+  'discord|disc|ds|дискорд|дс|telegram|tg|телеграм|телеграмм|тг|телега|vk|вк|вконтакте|skype|скайп|whatsapp|wa|ватсап|вацап|viber|вайбер|instagram|inst|инст|инстаграм|snapchat|snap|ig|insta|tiktok|тикток|icq|phone|телефон|тел|email|e-mail|почта|contacts?|контакты?';
+/// Слова-пояснения между меткой и идентификатором: `vk id 12345`.
+const CONTACT_FILLERS =
+  'id|ид|айди|nick|nickname|ник|никнейм|name|user|username|юзер|acc|account|акк|аккаунт';
+/// Короткие коды платформ: после них скрывается любое следующее слово
+/// (`ds user`, `add me tg vasya`); у полных названий слово без признаков
+/// идентификатора остаётся («спам про discord в чате»).
+const SHORT_LABELS = 'ds|дс|tg|тг|vk|вк|ig|wa|snap|insta';
 /// Метка платформы с разделителем (`:`, `=`, `-`, `@`) и идентификатором.
 const CONTACT_SEP_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})\\s*[:=\\-–—@]+\\s*[^\\s,;]{2,64}`,
+  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})(?:\\s+(?:${CONTACT_FILLERS}))?\\s*[:=\\-–—@]+\\s*[^\\s,;]{2,64}`,
   'giu',
 );
 /// Метка платформы, пробел и токен, похожий на идентификатор (цифра, `_`,
 /// `.`, `@`, `#`).
 const CONTACT_SPACE_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})\\s+(?=[^\\s]*[@#\\d_.])[^\\s,;]{2,64}`,
+  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})(?:\\s+(?:${CONTACT_FILLERS}))?\\s+(?=[^\\s]*[@#\\d_.])[^\\s,;]{2,64}`,
+  'giu',
+);
+/// Метка, слово-пояснение и любой идентификатор: `дискорд ник вася`.
+const CONTACT_FILLER_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})\\s+(?:${CONTACT_FILLERS})\\s*[:=\\-]?\\s*[^\\s,;]{2,64}`,
+  'giu',
+);
+/// Короткий код платформы и любое следующее слово; не после цифры
+/// («5000 тг штраф» не трогается).
+const CONTACT_SHORT_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?<!\\d\\s?)(?:${SHORT_LABELS})[^\\S\\n]+[^\\s,;]{2,64}`,
   'giu',
 );
 /// Старый тег Discord `name#1234`.
 const DISCORD_TAG_RE = /(?<![\p{L}\p{N}_.])[\p{L}\p{N}_.]{2,32}#\d{4}(?!\d)/gu;
+/// Путь после домена, в том числе с пробелами вокруг `/`: `t . me / user`.
+const URL_PATH = '(?:[^\\S\\n]{0,2}\\/[^\\S\\n]{0,2}\\S*)*';
 const DOMAIN_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\s?\\.\\s?)+(?:${TLDS})(?![\\p{L}\\p{N}])(?::\\d{1,5})?(?:\\/\\S*)?`,
+  `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\s?\\.\\s?)+(?:${TLDS})(?![\\p{L}\\p{N}])(?::\\d{1,5})?${URL_PATH}`,
   'giu',
 );
 /// Любая двухбуквенная ccTLD, punycode `xn--...` и расширенный список gTLD —
 /// только без пробелов вокруг точки.
 const DOMAIN_TIGHT_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\.)+(?:xn--[a-z0-9-]+|[a-z]{2}|${EXTRA_TLDS})(?![\\p{L}\\p{N}-])(?::\\d{1,5})?(?:\\/\\S*)?`,
+  `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\.)+(?:xn--[a-z0-9-]+|[a-z]{2}|${EXTRA_TLDS})(?![\\p{L}\\p{N}-])(?::\\d{1,5})?${URL_PATH}`,
+  'giu',
+);
+/// Доменная зона с ведущей точкой без имени (`.tokyo`, `.рф`).
+const DOT_TLD_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}.])\\.(?:${TLDS}|${EXTRA_TLDS})(?![\\p{L}\\p{N}-])`,
   'giu',
 );
 const HANDLE_RE = /(?<![\p{L}\p{N}_])@[\p{L}\p{N}_.]{2,}/gu;
-const PHONE_RE = /(?<![\p{L}\p{N}_])\+?\(?\d[\d\s().-]{5,}\d/gu;
+/// Телефон: цифры с разделителями пробел, `.`, `-`, `/`, `_`, скобки и
+/// чёрточки Юникода (`8/999/123/45/67`, `8–999–123–45–67`).
+const PHONE_RE = /(?<![\p{L}\p{N}_])\+?\(?\d[\d\s().\-‐‑‒–—―−/_]{5,}\d/gu;
 
 function looksLikeIpv6(candidate: string): boolean {
   const bracket = /^\[([^\]]*)\]/.exec(candidate);
@@ -345,6 +626,7 @@ function redactContacts(s: string): string {
   let out = s;
   out = out.replace(URL_RE, REDACTED);
   out = out.replace(EMAIL_RE, REDACTED);
+  out = out.replace(EMAIL_NODOT_RE, REDACTED);
   out = out.replace(IPV6_CANDIDATE_RE, (m) =>
     looksLikeIpv6(m) ? REDACTED : m,
   );
@@ -354,6 +636,8 @@ function redactContacts(s: string): string {
   out = out.replace(IPV4_WILDCARD_RE, REDACTED);
   out = out.replace(CONTACT_SEP_RE, REDACTED);
   out = out.replace(CONTACT_SPACE_RE, REDACTED);
+  out = out.replace(CONTACT_FILLER_RE, REDACTED);
+  out = out.replace(CONTACT_SHORT_RE, REDACTED);
   out = out.replace(DISCORD_TAG_RE, REDACTED);
   out = out.replace(PHONE_RE, (m) => {
     const digits = m.replace(/\D/g, '').length;
@@ -363,6 +647,7 @@ function redactContacts(s: string): string {
   });
   out = out.replace(DOMAIN_RE, REDACTED);
   out = out.replace(DOMAIN_TIGHT_RE, REDACTED);
+  out = out.replace(DOT_TLD_RE, REDACTED);
   out = out.replace(HANDLE_RE, REDACTED);
   return out;
 }
@@ -378,15 +663,39 @@ export interface SanitizeOptions {
   multiline: boolean;
 }
 
-/// Общий конвейер: обрезка входа, NFKC, цифры в ASCII, «точки», невидимые
-/// и bidi-символы, цветовые коды, обходные записи, скрытие контактов,
-/// пробелы, обрезка до `maxLength` (после скрытия: контакт не обрезается
-/// посередине и не остаётся «хвостом»).
-export function sanitizeText(
+/// Результат очистки: текст и признак, что часть текста скрыта.
+export interface SanitizeResult {
+  text: string | null;
+  /// true, если что-либо скрыто (в том числе в части, отсечённой обрезкой).
+  masked: boolean;
+}
+
+/// Хвост, оставшийся от маркера `[скрыто]`, рассечённого обрезкой.
+const PARTIAL_MASK_TAIL = /\[(?:с(?:к(?:р(?:ы(?:т(?:о)?)?)?)?)?)?$/u;
+
+/// Обрезка после очистки с повторной проверкой хвоста: обрезанный
+/// посередине фрагмент мог стать адресом (`1.2.3.4567` -> `1.2.3.45`), а
+/// маркер скрытия — потерять конец. Замена на `[скрыто]` может удлинить
+/// текст, поэтому цикл повторяется, пока результат не стабилен.
+function truncateSafely(s: string, max: number): string {
+  let out = s;
+  for (let i = 0; i < 4; i++) {
+    out = truncateCodePoints(out.trim(), max).replace(PARTIAL_MASK_TAIL, '');
+    const checked = redactContacts(out);
+    if (checked === out) return out.trim();
+    out = checked;
+  }
+  return truncateCodePoints(out.trim(), max)
+    .replace(PARTIAL_MASK_TAIL, '')
+    .trim();
+}
+
+/// Очистка с признаком маскировки. Разбор и правила — в `sanitizeText`.
+export function sanitizeTextDetailed(
   raw: string | null | undefined,
   options: SanitizeOptions,
-): string | null {
-  if (raw === null || raw === undefined) return null;
+): SanitizeResult {
+  if (raw === null || raw === undefined) return { text: null, masked: false };
   let s = String(raw);
   if (s.length > MAX_INPUT_LENGTH) {
     s = s.slice(0, MAX_INPUT_LENGTH);
@@ -400,9 +709,11 @@ export function sanitizeText(
   s = s.replace(NEWLINES, '\n').replace(/\t/g, ' ');
   s = s.replace(INVISIBLE, '');
   s = s.replace(MARKS_AFTER_NON_LETTER, '');
+  s = s.replace(BULLET_DOTS, '.');
   for (const pattern of COLOR_PATTERNS) s = s.replace(pattern, '');
   s = deobfuscate(s);
   s = redactContacts(s);
+  const masked = s.includes(REDACTED);
 
   if (options.multiline) {
     s = s
@@ -413,8 +724,47 @@ export function sanitizeText(
   } else {
     s = s.replace(/\s+/gu, ' ');
   }
-  s = truncateCodePoints(s.trim(), options.maxLength).trim();
-  return s.length === 0 ? null : s;
+  s = truncateSafely(s, options.maxLength);
+  return {
+    text: s.length === 0 ? null : s,
+    masked: masked || s.includes(REDACTED),
+  };
+}
+
+/// Общий конвейер: обрезка входа, NFKC, цифры в ASCII, «точки», невидимые
+/// и bidi-символы, цветовые коды, обходные записи, скрытие контактов,
+/// пробелы, обрезка до `maxLength` (после скрытия, затем повторная проверка
+/// хвоста: контакт не обрезается посередине и не остаётся «хвостом»).
+export function sanitizeText(
+  raw: string | null | undefined,
+  options: SanitizeOptions,
+): string | null {
+  return sanitizeTextDetailed(raw, options).text;
+}
+
+/// Очищенная причина с признаком маскировки (`masked`).
+export function sanitizeReasonDetailed(
+  raw: string | null | undefined,
+): SanitizeResult {
+  return sanitizeTextDetailed(raw, {
+    maxLength: MAX_REASON_LENGTH,
+    multiline: true,
+  });
+}
+
+/// Нужна ли маскировка: в уже очищенном (сохранённом) тексте есть маркер.
+export function isReasonMasked(sanitized: string | null | undefined): boolean {
+  return typeof sanitized === 'string' && sanitized.includes(REDACTED);
+}
+
+/// Допущение до ответа владельца на Q59: причина с любой маскировкой в
+/// публичном выводе скрывается ЦЕЛИКОМ (возвращает null). Публичного вывода
+/// пока нет (срез 2); функцию вызывать на публичном пути.
+export function publicReason(
+  sanitized: string | null | undefined,
+): string | null {
+  if (sanitized === null || sanitized === undefined) return null;
+  return isReasonMasked(sanitized) ? null : sanitized;
 }
 
 /// Причина наказания и причина снятия: до 2048, переводы строк сохраняются.

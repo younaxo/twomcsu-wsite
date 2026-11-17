@@ -22,6 +22,10 @@ const prod: Record<string, unknown> = {
 const validate = (v: Record<string, unknown>) =>
   envValidationSchema.validate(v, { allowUnknown: true });
 
+/// Ключ первой ошибки валидации: проверяем, что отвергнуто именно нужное поле.
+const errorKey = (v: Record<string, unknown>) =>
+  validate(v).error?.details[0]?.path[0];
+
 describe('envValidationSchema: LITEBANS_* (этап 02, ADR-0166)', () => {
   it('без переменных LITEBANS production не падает, интеграция выключена', () => {
     const { error, value } = validate(prod);
@@ -64,7 +68,9 @@ describe('envValidationSchema: LITEBANS_* (этап 02, ADR-0166)', () => {
   );
 
   it('LITEBANS_DB_SSL: мусорное значение отвергается', () => {
-    expect(validate({ ...base, LITEBANS_DB_SSL: 'maybe' }).error).toBeDefined();
+    expect(errorKey({ ...base, LITEBANS_DB_SSL: 'maybe' })).toBe(
+      'LITEBANS_DB_SSL',
+    );
   });
 
   it('production при LITEBANS_ENABLED=true без CA-файла отвергается', () => {
@@ -105,9 +111,9 @@ describe('envValidationSchema: LITEBANS_* (этап 02, ADR-0166)', () => {
     expect(
       validate({ ...base, LITEBANS_DB_DRIVER: 'mysql' }).error,
     ).toBeUndefined();
-    expect(
-      validate({ ...base, LITEBANS_DB_DRIVER: 'postgres' }).error,
-    ).toBeDefined();
+    expect(errorKey({ ...base, LITEBANS_DB_DRIVER: 'postgres' })).toBe(
+      'LITEBANS_DB_DRIVER',
+    );
   });
 
   it.each([
@@ -118,7 +124,7 @@ describe('envValidationSchema: LITEBANS_* (этап 02, ADR-0166)', () => {
     ['LITEBANS_BATCH_SIZE', '5000'],
     ['LITEBANS_DB_PORT', '70000'],
   ])('%s=%s отвергается', (name, value) => {
-    expect(validate({ ...base, [name]: value }).error).toBeDefined();
+    expect(errorKey({ ...base, [name]: value })).toBe(name);
   });
 
   it('допустимые границы принимаются', () => {

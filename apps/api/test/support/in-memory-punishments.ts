@@ -130,6 +130,49 @@ export class InMemoryMirrorStore implements PunishmentMirrorStore {
     const cur = await this.getState(source, kind);
     this.states.set(`${source}:${kind}`, { ...cur, ...patch });
   }
+  async setCursor(
+    source: string,
+    kind: PunishmentKind,
+    cursorId: bigint,
+  ): Promise<void> {
+    const cur = await this.getState(source, kind);
+    this.states.set(`${source}:${kind}`, { ...cur, cursorId });
+  }
+  async listExpiredWithFutureUntil(
+    _source: string,
+    kind: PunishmentKind,
+    now: Date,
+    limit: number,
+  ): Promise<bigint[]> {
+    return this.ids(
+      kind,
+      (m) =>
+        m.status === 'EXPIRED' &&
+        m.row.until !== null &&
+        m.row.until.getTime() > now.getTime(),
+    ).slice(0, limit);
+  }
+  async reactivate(
+    _source: string,
+    kind: PunishmentKind,
+    ids: bigint[],
+  ): Promise<MirrorChange[]> {
+    const out: MirrorChange[] = [];
+    for (const id of ids) {
+      const m = this.mirror.get(this.key(kind, id));
+      if (!m || m.status !== 'EXPIRED') continue;
+      m.status = 'ACTIVE';
+      m.rev += 1;
+      out.push({
+        kind,
+        sourceId: id.toString(),
+        inserted: false,
+        rev: m.rev,
+        status: 'ACTIVE',
+      });
+    }
+    return out;
+  }
   async applyBatch(
     source: string,
     kind: PunishmentKind,

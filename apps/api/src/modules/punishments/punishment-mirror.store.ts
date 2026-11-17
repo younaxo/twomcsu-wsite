@@ -43,6 +43,24 @@ export interface MirrorChange {
   status: PunishmentStatus;
 }
 
+/// Параметры транзакции `applyBatch` согласованы с TTL блокировки лидера
+/// (LEADER_LOCK_TTL_MS = 10 с): сервис продлевает блокировку непосредственно
+/// перед записью, поэтому ожидание соединения плюс сама транзакция обязаны
+/// уложиться в TTL с запасом. Пачка до 500 строк в норме пишется за 1–2 с.
+export const APPLY_TX_MAX_WAIT_MS = 2000;
+export const APPLY_TX_TIMEOUT_MS = 6000;
+/// Размер группы id в одном SQL-запросе: далеко от лимита PostgreSQL
+/// (32767 параметров) даже при будущем росте числа параметров на строку.
+export const SQL_ID_CHUNK = 1000;
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
 export interface PunishmentMirrorStore {
   getState(source: string, kind: PunishmentKind): Promise<SyncStateSnapshot>;
   patchState(
@@ -75,6 +93,29 @@ export interface PunishmentMirrorStore {
     afterId: bigint,
     upToId: bigint | null,
   ): Promise<bigint[]>;
+  /// Явно задать курсор (в том числе ниже текущего): после сверки при откате
+  /// источника. Обычное продвижение курсора — только через `applyBatch`.
+  setCursor(
+    source: string,
+    kind: PunishmentKind,
+    cursorId: bigint,
+  ): Promise<void>;
+  /// id строк EXPIRED, у которых `until` позже `now` (признак ошибочного
+  /// истечения из-за расхождения часов); до `limit` штук.
+  listExpiredWithFutureUntil(
+    source: string,
+    kind: PunishmentKind,
+    now: Date,
+    limit: number,
+  ): Promise<bigint[]>;
+  /// EXPIRED -> ACTIVE для перечисленных строк (источник подтвердил, что они
+  /// действуют).
+  reactivate(
+    source: string,
+    kind: PunishmentKind,
+    ids: bigint[],
+    now: Date,
+  ): Promise<MirrorChange[]>;
   /// Пометить строки как исчезнувшие в источнике (мягко, данные остаются).
   markDeletedAtSource(
     source: string,

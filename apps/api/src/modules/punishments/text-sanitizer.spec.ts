@@ -1,8 +1,11 @@
 import {
+  isReasonMasked,
   MAX_REASON_LENGTH,
+  publicReason,
   REDACTED,
   sanitizeLabel,
   sanitizeReason,
+  sanitizeReasonDetailed,
 } from './text-sanitizer';
 
 /// Всё, что считается IP или контактом, обязано исчезнуть из вывода.
@@ -402,5 +405,157 @@ describe('sanitizeReason: IPv4 с разделителями (ревью MEDIUM-
     expect(sanitizeReason('дата 17-11-2024')).toBe('дата 17-11-2024');
     expect(sanitizeReason('счёт 2024 10 12')).toBe('счёт 2024 10 12');
     expect(sanitizeReason('значения 300 400 500')).toBe('значения 300 400 500');
+  });
+});
+
+/// Каждая запись обязана быть скрыта целиком, без хвоста, в обычном тексте.
+function expectWholeHidden(prefix: string, input: string, suffix: string) {
+  expect(sanitizeReason(`${prefix} ${input} ${suffix}`)).toBe(
+    `${prefix} ${REDACTED} ${suffix}`,
+  );
+}
+
+describe('sanitizeReason: повторное ревью M1, телефоны с косой чертой, _ и тире', () => {
+  it.each([
+    '8/999/123/45/67',
+    '8_999_123_45_67',
+    '8–999–123–45–67',
+    '8—999—123—45—67',
+    '8‑999‑123‑45‑67',
+    '+7/999/123/45/67',
+  ])('%p', (input) => {
+    expectWholeHidden('звони', input, 'срочно');
+  });
+
+  it('IPv4 с en dash и em dash тоже скрывается', () => {
+    expectWholeHidden('ip', '192–168–0–1', 'бан');
+    expectWholeHidden('ip', '192—168—0—1', 'бан');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M2, символы-двойники точки', () => {
+  it.each([
+    '192‧168‧0‧1',
+    '192•168•0•1',
+    '192։168։0։1',
+    '192 • 168 • 0 • 1',
+    '192∙168∙0∙1',
+    '192⸱168⸱0⸱1',
+    '192･168･0･1',
+    '192ꓸ168ꓸ0ꓸ1',
+    '192●168●0●1',
+    '192◦168◦0◦1',
+  ])('%p', (input) => {
+    expectWholeHidden('ip', input, 'бан');
+  });
+
+  it('маркер списка в начале строки не превращается в точку', () => {
+    expect(sanitizeReason('• первое\n• второе')).toBe('• первое\n• второе');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M3, кириллические и длинные зоны', () => {
+  it.each([
+    'пример.москва',
+    'пример.онлайн',
+    'пример.сайт',
+    'example.museum',
+    'example.tokyo',
+    'EXAMPLE.TOKYO',
+    '.tokyo',
+    '.москва',
+  ])('%p', (input) => {
+    expectWholeHidden('заходи на', input, 'там');
+  });
+
+  it('точка в конце предложения не считается зоной', () => {
+    expect(sanitizeReason('Нарушение. Токио далеко')).toBe(
+      'Нарушение. Токио далеко',
+    );
+    expect(sanitizeReason('ждём... tokyo')).toBe('ждём... tokyo');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M4, пробелы вокруг слеша', () => {
+  it.each(['t . me / user', 'discord. gg /abc', 't.me / user', 't . me/user'])(
+    '%p',
+    (input) => {
+      expectWholeHidden('пиши', input, 'сюда');
+    },
+  );
+
+  it('несколько сегментов пути скрываются целиком', () => {
+    expectWholeHidden('см', 'example.com/a / b/c', 'конец');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M5, метки платформ и e-mail без зоны', () => {
+  it.each([
+    ['snap: foo', ['foo']],
+    ['ig: foo', ['foo']],
+    ['vk id 12345', ['12345']],
+    ['vk id: 12345', ['12345']],
+    ['ds user', ['user']],
+    ['add me tg vasya', ['vasya']],
+    ['user@gmail', ['user', 'gmail']],
+    ['дискорд ник вася', ['вася']],
+    ['insta foo', ['foo']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('add me tg vasya: скрыт только идентификатор с меткой', () => {
+    expect(sanitizeReason('add me tg vasya')).toBe(`add me ${REDACTED}`);
+  });
+
+  it('известные ложные срабатывания допустимы, обычные слова не затронуты', () => {
+    // Число перед меткой: денежная сумма, не контакт.
+    expect(sanitizeReason('штраф 5000 тг штраф')).toBe('штраф 5000 тг штраф');
+    expect(sanitizeReason('спам про discord в чате')).toBe(
+      'спам про discord в чате',
+    );
+  });
+});
+
+describe('sanitizeReason: повторное ревью L1, обрезка', () => {
+  it('обрезка не оставляет часть адреса: 1.2.3.4567 -> 1.2.3.45', () => {
+    const out = sanitizeReason(`${'а'.repeat(2039)} 1.2.3.4567`) as string;
+    expect(out).not.toContain('1.2.3.45');
+    expect(out.endsWith(REDACTED)).toBe(true);
+    expect(Array.from(out).length).toBeLessThanOrEqual(MAX_REASON_LENGTH + 1);
+  });
+
+  it('маркер скрытия не обрезается посередине', () => {
+    const out = sanitizeReason(`${'а'.repeat(2045)} 1.2.3.4`) as string;
+    expect(out).not.toMatch(/\[[скрыто]{0,6}$/u);
+    expect(Array.from(out).length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
+  });
+});
+
+describe('sanitizeReason: признак маскировки (Q59, допущение)', () => {
+  it('sanitizeReasonDetailed возвращает masked', () => {
+    expect(sanitizeReasonDetailed('читы 1.2.3.4')).toEqual({
+      text: `читы ${REDACTED}`,
+      masked: true,
+    });
+    expect(sanitizeReasonDetailed('читы')).toEqual({
+      text: 'читы',
+      masked: false,
+    });
+    expect(sanitizeReasonDetailed(null)).toEqual({ text: null, masked: false });
+  });
+
+  it('masked выставлен, даже если маркер отсечён обрезкой', () => {
+    const r = sanitizeReasonDetailed(`1.2.3.4 ${'а'.repeat(3000)}`);
+    expect(r.masked).toBe(true);
+  });
+
+  it('isReasonMasked и publicReason: причина с маскировкой скрывается целиком', () => {
+    expect(isReasonMasked(`читы ${REDACTED}`)).toBe(true);
+    expect(isReasonMasked('читы')).toBe(false);
+    expect(isReasonMasked(null)).toBe(false);
+    expect(publicReason(`читы ${REDACTED}`)).toBeNull();
+    expect(publicReason('читы')).toBe('читы');
+    expect(publicReason(null)).toBeNull();
   });
 });

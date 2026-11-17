@@ -205,12 +205,14 @@ describe('normalizePunishmentRow', () => {
   });
 
   it('текст ошибки не содержит данных строки', () => {
+    let caught: unknown = null;
     try {
       normalizePunishmentRow(row({ id: 'secret-host.example' }), NOW);
-      throw new Error('ожидалась ошибка');
     } catch (e) {
-      expect((e as Error).message).not.toContain('secret-host');
+      caught = e;
     }
+    expect(caught).toBeInstanceOf(SourceDataInvalid);
+    expect((caught as Error).message).not.toContain('secret-host');
   });
 });
 
