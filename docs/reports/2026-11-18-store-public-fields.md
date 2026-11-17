@@ -17,7 +17,7 @@
 5. Админские эндпоинты не менялись. Админский список заказов сохранил прежний include (ADMIN_ORDER_INCLUDE, поведение не изменено).
 6. S3. getBoughtTogether: исходный товар отсутствует или неактивен: одинаковый 404 «Товар не найден».
 7. Тип PublicProductDto и PublicProductVariantDto добавлены в packages/shared/src/api/site.ts (добавочно, существующие типы не менялись).
-8. Тесты: apps/api/src/modules/store/public-product.spec.ts (11 проверок структуры select и поведения) и дополнение apps/api/test/store-catalog.e2e-spec.ts (товар создаётся с gameCommands и server, в ответах списка, деталей, bought-together и набора они отсутствуют; 404 для несуществующего bought-together).
+8. Тесты: apps/api/src/modules/store/public-product.spec.ts (8 тестов структуры select и поведения) и дополнение apps/api/test/store-catalog.e2e-spec.ts (товар создаётся с gameCommands и server, в ответах списка, деталей, bought-together и набора они отсутствуют; 404 для несуществующего bought-together).
 
 ## 3. Git
 
