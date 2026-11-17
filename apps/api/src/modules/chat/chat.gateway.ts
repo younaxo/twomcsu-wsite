@@ -229,6 +229,7 @@ export class ChatGateway
           content: dto.content,
           parentId: dto.parentId,
         },
+        () => this.assertAdmin2fa(client.data.userId),
       );
       this.server.to(channelRoom(dto.channelId)).emit('message:new', message);
       return { ok: true, message };
