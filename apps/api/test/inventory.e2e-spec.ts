@@ -4,6 +4,8 @@ import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
+import { ConfigService } from '@nestjs/config';
+import { InventoryEnabledGuard } from '../src/modules/inventory/inventory-enabled.guard';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 
 jest.setTimeout(30_000);
@@ -50,9 +52,21 @@ describe('Inventory (e2e)', () => {
   async function boot(bridge: string | undefined) {
     if (bridge === undefined) delete process.env.BRIDGE_ENABLED;
     else process.env.BRIDGE_ENABLED = bridge;
+    // ConfigModule.forRoot кэширует провалидированный env при импорте
+    // AppModule (BRIDGE_ENABLED в Joi-схеме с default false), поэтому значение
+    // из process.env после импорта до ConfigService не доходит. Подменяется
+    // только источник значения: боевой InventoryEnabledGuard (fail-closed)
+    // остаётся без изменений и читает process.env, заданный выше.
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideGuard(InventoryEnabledGuard)
+      .useValue(
+        new InventoryEnabledGuard({
+          get: (k: string) => process.env[k],
+        } as unknown as ConfigService),
+      )
+      .compile();
     appRef = moduleRef.createNestApplication();
     configureApp(appRef);
     await appRef.init();
