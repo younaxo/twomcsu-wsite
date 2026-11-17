@@ -82,13 +82,28 @@ rotate_all() {
 
 # weekly_copy ИСХОДНЫЙ_КАТАЛОГ КАТАЛОГ_НАЗНАЧЕНИЯ — недельная копия ежедневного бэкапа: жёсткие ссылки (cp -al, без
 # дублирования места), при невозможности — обычная копия. Существующая копия не перезаписывается.
+# Копирование идёт в <КАТАЛОГ_НАЗНАЧЕНИЯ>.partial и переименовывается только после успеха: сбой посреди копирования
+# не оставляет каталог *-weekly под валидным именем (ротация `.partial` не видит — строгий шаблон имени).
+# Перед откатом на полную копию проверяется место: свободно должно остаться не меньше BACKUP_MIN_FREE_MB сверх размера копии.
 weekly_copy() {
-  local src=$1 dst=$2
+  local src=$1 dst=$2 tmp="${2}.partial" need_mb free_mb_now min_mb=${BACKUP_MIN_FREE_MB:-2048}
   [[ -d "$src" ]] || return 1
   [[ ! -e "$dst" ]] || return 0
-  if cp -al -- "$src" "$dst" 2>/dev/null; then return 0; fi
-  rm -rf -- "${dst:?}"
-  cp -a -- "$src" "$dst"
+  rm -rf -- "${tmp:?}"
+  if cp -al -- "$src" "$tmp" 2>/dev/null; then
+    mv -- "$tmp" "$dst" && return 0
+    rm -rf -- "${tmp:?}"; return 1
+  fi
+  rm -rf -- "${tmp:?}"
+  need_mb=$(du -sm -- "$src" 2>/dev/null | awk '{print $1}')
+  free_mb_now=$(df -Pk -- "$(dirname -- "$dst")" 2>/dev/null | awk 'NR==2 {print int($4/1024)}')
+  if ! [[ "$need_mb" =~ ^[0-9]+$ && "$free_mb_now" =~ ^[0-9]+$ ]] || (( free_mb_now - need_mb < min_mb )); then
+    echo "ОШИБКА: для обычной копии недельного бэкапа не хватает места (нужно ${need_mb:-?} МБ плюс ${min_mb} МБ запаса, свободно ${free_mb_now:-?} МБ)" >&2
+    return 1
+  fi
+  if cp -a -- "$src" "$tmp" && mv -- "$tmp" "$dst"; then return 0; fi
+  rm -rf -- "${tmp:?}"
+  return 1
 }
 
 # При подключении через source (стаб-тест) дальше не идём: ни cd, ни Docker, ни БД.
@@ -223,7 +238,10 @@ fi
 
 # Недельный уровень: плановая (scheduled) копия в день BACKUP_WEEKLY_DAY (по умолчанию воскресенье, UTC)
 # дополнительно сохраняется как twomc-<то же время>-weekly (жёсткие ссылки). Ошибка не отменяет бэкап: выход 5.
-if [[ "$BACKUP_TAG" == "scheduled" && "$(date -u +%u)" == "$BACKUP_WEEKLY_DAY" ]]; then
+# День недели берётся из метки времени самого бэкапа ($name), а не из нового `date`: иначе у полуночи UTC возможна гонка.
+backup_ts=${name#twomc-}; backup_ts=${backup_ts%%-*}
+backup_dow=$(date -u -d "${backup_ts:0:4}-${backup_ts:4:2}-${backup_ts:6:2}" +%u 2>/dev/null || true)
+if [[ "$BACKUP_TAG" == "scheduled" && "$backup_dow" == "$BACKUP_WEEKLY_DAY" ]]; then
   weekly_name="${name%-scheduled}-weekly"
   if weekly_copy "$final" "$BACKUP_DIR/$weekly_name"; then
     echo "Недельная копия: $BACKUP_DIR/$weekly_name"
