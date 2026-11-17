@@ -41,6 +41,7 @@ const REPORT_AUDIT_TARGET_TYPES = ['reports', 'report'];
 /// Право, дающее править чужие заметки (Q27, ADR-0172; автор всегда правит
 /// свои).
 const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.notes.edit';
+const FOREIGN_NOTE_UNPIN_PERMISSION = 'reports.notes.unpin';
 
 @Injectable()
 export class ReportsModerationService {
@@ -423,9 +424,37 @@ export class ReportsModerationService {
     });
   }
 
-  async deleteModeratorNote(reportNumber: string, noteId: string) {
+  /// Своя заметка удаляется автором. Чужая — только с reports.notes.edit;
+  /// чужая закреплённая — только с reports.notes.edit И reports.notes.unpin
+  /// (решение владельца Q52, ADR-0176).
+  async deleteModeratorNote(
+    reportNumber: string,
+    noteId: string,
+    actorId: string,
+  ) {
     const report = await this.requireReport(reportNumber);
-    await this.requireNote(report.id, noteId);
+    const note = await this.requireNote(report.id, noteId);
+    if (note.authorId !== actorId) {
+      if (
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_EDIT_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException('Удалять можно только свои заметки');
+      }
+      if (
+        note.isPinned &&
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_UNPIN_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException(
+          'Удалить чужую закреплённую заметку можно только с правом открепления',
+        );
+      }
+    }
     await this.prisma.reportModeratorNote.delete({ where: { id: noteId } });
     return this.prisma.report.findUnique({
       where: { id: report.id },

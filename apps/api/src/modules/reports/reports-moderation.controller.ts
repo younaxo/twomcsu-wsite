@@ -165,8 +165,9 @@ export class ReportsModerationController {
   async deleteNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.deleteModeratorNote(reportNumber, noteId);
+    return this.moderation.deleteModeratorNote(reportNumber, noteId, user.id);
   }
 
   /// Только закрепление (право `reports.notes.pin`). `pinned:false` отвергается:

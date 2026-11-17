@@ -99,3 +99,22 @@ describe('M1: pin заметки только закрепляет, unpin — т
     expect(unpinKeys).not.toContain('reports.notes.pin');
   });
 });
+
+describe('Q52: DELETE заметки — право и передача актора', () => {
+  it('DELETE notes/:noteId требует reports.notes (edit/unpin проверяет сервис)', () => {
+    const keys = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      ReportsModerationController.prototype.deleteNote,
+    ) as string[];
+    expect(keys).toEqual(['reports.notes']);
+  });
+
+  it('контроллер передаёт user.id третьим аргументом', async () => {
+    const deleteModeratorNote = jest.fn().mockResolvedValue({ ok: true });
+    const controller = new ReportsModerationController({
+      deleteModeratorNote,
+    } as unknown as ReportsModerationService);
+    await controller.deleteNote('R-1', 'n1', { id: 'actor-1' } as never);
+    expect(deleteModeratorNote).toHaveBeenCalledWith('R-1', 'n1', 'actor-1');
+  });
+});
