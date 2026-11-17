@@ -20,12 +20,25 @@ export const envValidationSchema = Joi.object({
         resolveTrustProxy(value);
         return value;
       } catch (error) {
-        return helpers.error('any.invalid', {
+        return helpers.error('trustproxy.format', {
           message: (error as Error).message,
         });
       }
     })
-    .messages({ 'any.invalid': '{{#message}}' }),
+    .messages({ 'trustproxy.format': '{{#message}}' })
+    /// В production без TRUST_PROXY rate limit и audit видят IP nginx, а не
+    /// клиента, поэтому значение обязательно и непустое.
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid('').required().messages({
+        'any.required':
+          'TRUST_PROXY обязателен в production (число доверенных прокси-хопов, например 1)',
+        'any.invalid':
+          'TRUST_PROXY обязателен в production (число доверенных прокси-хопов, например 1)',
+        'string.empty':
+          'TRUST_PROXY обязателен в production (число доверенных прокси-хопов, например 1)',
+      }),
+    }),
 
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })
@@ -131,10 +144,30 @@ export const envValidationSchema = Joi.object({
     }),
 
   /// TURNSTILE_DISABLED — только для автотестов без сети (CI e2e).
-  TURNSTILE_DISABLED: Joi.boolean().default(false),
+  /// В production запрещён (fail-closed): captcha не отключается, секрет
+  /// TURNSTILE_SECRET_KEY обязателен и непустой.
+  TURNSTILE_DISABLED: Joi.boolean()
+    .default(false)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.valid(false).messages({
+        'any.only': 'TURNSTILE_DISABLED запрещён в production',
+      }),
+    }),
   TURNSTILE_SECRET_KEY: Joi.string()
     .allow('')
-    .when('TURNSTILE_DISABLED', { is: false, then: Joi.string().required() }),
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().invalid('').required().messages({
+        'any.required': 'TURNSTILE_SECRET_KEY обязателен в production',
+        'any.invalid': 'TURNSTILE_SECRET_KEY обязателен в production',
+        'string.empty': 'TURNSTILE_SECRET_KEY обязателен в production',
+      }),
+      otherwise: Joi.when('TURNSTILE_DISABLED', {
+        is: false,
+        then: Joi.string().required(),
+      }),
+    }),
 
   SMTP_HOST: Joi.string().allow('').optional(),
   SMTP_PORT: Joi.number().port().default(587),

@@ -33,6 +33,9 @@ describe('envValidationSchema production cookie и 2FA (ADR-0156)', () => {
   const prod: Record<string, unknown> = {
     ...base,
     NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    TURNSTILE_DISABLED: 'false',
+    TURNSTILE_SECRET_KEY: 'test-secret',
     COOKIE_SECURE: 'true',
     COOKIE_DOMAIN: '.twomc.su',
     TWO_FACTOR_ENCRYPTION_KEY: 'k'.repeat(32),
@@ -166,4 +169,77 @@ describe('envValidationSchema PAYMENT_WEBHOOK_SECRET (ADR-0157)', () => {
     const { value } = validate({ ...base, PAYMENT_WEBHOOK_SECRET: 's3cret' });
     expect(value.PAYMENT_WEBHOOK_SECRET).toBe('s3cret');
   });
+});
+
+describe('envValidationSchema production startup check (TRUST_PROXY, Turnstile)', () => {
+  const prod: Record<string, unknown> = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    COOKIE_SECURE: 'true',
+    COOKIE_DOMAIN: '.twomc.su',
+    TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
+    TURNSTILE_SECRET_KEY: 'test-secret',
+  };
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true });
+
+  it('полный корректный production-набор проходит', () => {
+    expect(validate(prod).error).toBeUndefined();
+  });
+
+  it.each([
+    'TRUST_PROXY',
+    'TURNSTILE_SECRET_KEY',
+    'COOKIE_SECURE',
+    'COOKIE_DOMAIN',
+    'TWO_FACTOR_ENCRYPTION_KEY',
+  ])('production без %s отвергается', (name) => {
+    const copy = { ...prod };
+    delete copy[name];
+    expect(validate(copy).error?.message).toMatch(new RegExp(name));
+  });
+
+  it.each(['TRUST_PROXY', 'TURNSTILE_SECRET_KEY'])(
+    'production с пустым %s отвергается',
+    (name) => {
+      expect(validate({ ...prod, [name]: '' }).error?.message).toMatch(
+        new RegExp(name),
+      );
+    },
+  );
+
+  it('production: мусорный TRUST_PROXY по-прежнему отвергается', () => {
+    expect(validate({ ...prod, TRUST_PROXY: '*' }).error?.message).toMatch(
+      /TRUST_PROXY/,
+    );
+  });
+
+  it('production: TURNSTILE_DISABLED=true запрещён', () => {
+    expect(
+      validate({ ...prod, TURNSTILE_DISABLED: 'true' }).error?.message,
+    ).toMatch(/TURNSTILE_DISABLED запрещён в production/);
+    const copy: Record<string, unknown> = {
+      ...prod,
+      TURNSTILE_DISABLED: 'true',
+    };
+    delete copy.TURNSTILE_SECRET_KEY;
+    expect(validate(copy).error).toBeDefined();
+  });
+
+  it.each(['development', 'test'])(
+    '%s без TRUST_PROXY и с TURNSTILE_DISABLED=true проходит',
+    (env) => {
+      const { error } = validate({
+        DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+        JWT_ACCESS_SECRET: 'a'.repeat(32),
+        JWT_REFRESH_SECRET: 'b'.repeat(32),
+        NODE_ENV: env,
+        TURNSTILE_DISABLED: 'true',
+      });
+      expect(error).toBeUndefined();
+    },
+  );
 });

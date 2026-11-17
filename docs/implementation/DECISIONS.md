@@ -3684,3 +3684,29 @@ https, оба до 500 символов, `null` убирает логотип; P
 - Ничего не изменено на сервере и в коде; включение требует решения владельца о топологии.
 - Устаревший список ломает либо доступ, либо определение IP: нужна регулярная проверка.
 - Вне scope: покупка и настройка Cloudflare, DNS, WAF-правила, изменение apps/** и workflows.
+
+## ADR-0161 — Обязательные production-переменные при старте API
+
+**Status:** Proposed (допущение по D9; утверждается владельцем).
+
+**Context.** В production captcha могла отключаться (`TURNSTILE_DISABLED=true`) и работала fail-open, а без `TRUST_PROXY`
+rate limit и audit видели IP nginx вместо IP клиента. ADR-0156 уже сделал обязательными `COOKIE_SECURE=true`,
+`COOKIE_DOMAIN` и `TWO_FACTOR_ENCRYPTION_KEY`. Пропуск любой из этих переменных на сервере давал небезопасный запуск без явной ошибки.
+
+**Decision.**
+
+- В `NODE_ENV=production` API не стартует (fail-fast в `apps/api/src/config/env.validation.ts`) без: `TRUST_PROXY`
+  (непустой, число хопов), `TURNSTILE_SECRET_KEY`, `COOKIE_SECURE=true`, `COOKIE_DOMAIN` (не localhost),
+  `TWO_FACTOR_ENCRYPTION_KEY` (не короче 32 символов), `DATABASE_URL`, `JWT_ACCESS_SECRET`/`JWT_REFRESH_SECRET`.
+- `TURNSTILE_DISABLED=true` и `AUTH_TEST_OTP_ENABLED=true` в production запрещены (fail-closed).
+- `infrastructure/docker-compose.prod.yml` требует `TRUST_PROXY` и `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (`${VAR:?...}`): compose падает без значения.
+- Чек-лист: `docs/runbooks/production-env-checklist.md`. Значения переменных в репозиторий не попадают;
+  `TWO_FACTOR_ENCRYPTION_KEY` генерирует владелец у себя и не передаёт в чат, тикеты и логи.
+- Dev/test поведение не меняется.
+
+**Consequences.**
+
+- Деплой без этих переменных не стартует; перед выкатом проверить `.env` на сервере.
+- e2e с `NODE_ENV=production` и `TURNSTILE_DISABLED=true` перестанет работать; CI использует не production.
+- Смена `TWO_FACTOR_ENCRYPTION_KEY` ломает включённую 2FA: только вместе со сбросом 2FA.
+- Вне scope: создание ключей и аккаунтов Cloudflare, правка `.env` на сервере, деплой.
