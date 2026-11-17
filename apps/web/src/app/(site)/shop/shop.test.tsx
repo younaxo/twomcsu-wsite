@@ -178,7 +178,7 @@ describe('каталог /shop', () => {
 });
 
 describe('карточка /shop/[slug]', () => {
-  it('варианты и цены из API, «В корзину» неактивна, вход ведёт обратно на товар', async () => {
+  it('варианты и цены из API, «В корзину» неактивна анониму, вход ведёт обратно на товар', async () => {
     route({ '/store/products/ares': PRODUCT, '/store/products/ares/bought-together': [] });
     render(<ProductPage />, { wrapper: Providers });
     expect(
@@ -194,7 +194,7 @@ describe('карточка /shop/[slug]', () => {
 
     const cart = screen.getByRole('button', { name: /В корзину/ });
     expect(cart).toHaveAttribute('aria-disabled', 'true');
-    expect(cart).toHaveAccessibleDescription(/Корзина и оформление/);
+    expect(cart).toHaveAccessibleDescription(/понадобится вход/);
     const login = screen.getByRole('link', { name: 'Войти' });
     expect(login).toHaveAttribute('href', '/login?next=%2Fshop%2Fares');
     expect(screen.queryByRole('link', { name: /корзин/i })).not.toBeInTheDocument();
