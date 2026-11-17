@@ -13,7 +13,6 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { PUBLIC_PRODUCT_SELECT } from './public-product';
 
-
 @Injectable()
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}

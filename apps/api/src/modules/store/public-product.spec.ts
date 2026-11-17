@@ -94,7 +94,9 @@ describe('ProductsService: публичный ответ', () => {
   it('getBySlug: неактивный товар даёт 404', async () => {
     const prisma = {
       product: {
-        findUnique: jest.fn().mockResolvedValue({ ...product, isActive: false }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ ...product, isActive: false }),
       },
     };
     const service = new ProductsService(prisma as never);
@@ -147,7 +149,10 @@ describe('наборы и список желаний: без служебных
     } as never);
     await service.list();
     await service.getBySlug('b');
-    for (const args of [findMany.mock.calls[0][0], findUnique.mock.calls[0][0]]) {
+    for (const args of [
+      findMany.mock.calls[0][0],
+      findUnique.mock.calls[0][0],
+    ]) {
       const productArg = args.include.items.select.product;
       expect(productArg.select).toBe(PUBLIC_PRODUCT_BRIEF_SELECT);
       expect(args.include.items.include).toBeUndefined();
