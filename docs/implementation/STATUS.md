@@ -1,5 +1,29 @@
 # STATUS
 
+Project: twomc.su · Repository: https://github.com/younaxo/twomcsu-wsite
+Обновлено: 2026-11-15 (rebaseline roadmap).
+
+## Текущее состояние
+
+- План разработки: `docs/product-audit/MASTER-ROADMAP-2026.md` (v3.0, утверждён владельцем) — заменяет очерёдность волн 1–8 и PHASE 00–37; номера волн сохранены для трассировки.
+- `main`: `7bc8868` (merge PR #135). Последние реализованные функции — `docs/implementation/CHANGELOG.md`.
+- Фактическое состояние кода, тестов, безопасности и волн 1–8: `docs/audit/phase-02/FULL-PROJECT-AUDIT-REPORT.md` (2026-11-15; документ в PR #140).
+- Безопасность и стабильность: `docs/phase-03/PHASE-03-SECURITY-STABILITY-PLAN.md` (в PR #141).
+- Текущий этап: `docs/implementation/CURRENT-STAGE.md` — этап 00 (GitHub, агенты, техническая основа) и этап 01 (система обращений).
+
+## Проверки (последний полный прогон, 2026-11-15, код `main` `7bc8868`)
+
+lint, format, typecheck, prisma validate — PASS; api unit 132/132; web 545/545; build api и web — PASS; api e2e — зелёные в CI (PR #139).
+
+## Открытые PR
+
+#139 (агенты и настройки), #140 (Phase 02), #141 (Phase 03) — стеком; Dependabot #7, #9–#17, #138.
+
+---
+
+## Архив: состояние на 2026-10-09 (после PR #62) — устарело
+
+
 Project: twomc.su
 Repository: https://github.com/younaxo/twomcsu-wsite
 
@@ -120,7 +144,7 @@ Blocked:
 - Production deploy (PHASE 35 артефакты слиты, PR #36): нет данных хостинга — RISKS R8. (см. RISKS.md для внешних зависимостей, не блокирующих независимую работу;
   R11 — найдены чужие старые Docker volumes, не удалены, требуется решение владельца)
 
-## История веток (normalized, см. RISKS.md R12)
+### История веток (normalized, см. RISKS.md R12)
 
 PHASE 00–07 изначально велись в одной ветке (`feature/project-bootstrap`).
 Ниже — historical branches, задним числом указывающие на commit завершения
