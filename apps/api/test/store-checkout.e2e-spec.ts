@@ -17,6 +17,22 @@ import { PermissionService } from '../src/modules/roles/permission.service';
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
 
+/// Служебные поля товара не должны попадать в ответы покупателю (N3 ревью S1).
+const SERVICE_FIELDS = [
+  'gameCommands',
+  'server',
+  'currencyType',
+  'currencyAmount',
+  'positionId',
+  'decorationId',
+];
+function expectNoServiceFields(body: unknown) {
+  const json = JSON.stringify(body);
+  for (const field of SERVICE_FIELDS) {
+    expect(json).not.toContain(`"${field}"`);
+  }
+}
+
 describe('Store checkout (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -135,6 +151,8 @@ describe('Store checkout (e2e)', () => {
         categoryId,
         isGiftable: false,
         isUnique: false,
+        gameCommands: ['lp user {player} parent add e2e'],
+        server: 'e2e-server',
         variants: { create: [{ duration: 'MONTH_1', price: 100 }] },
       },
       include: { variants: true },
@@ -149,6 +167,8 @@ describe('Store checkout (e2e)', () => {
         type: 'BADGE',
         categoryId,
         isGiftable: true,
+        gameCommands: ['lp user {player} parent add e2e'],
+        server: 'e2e-server',
         variants: { create: [{ duration: 'FOREVER', price: 50 }] },
       },
       include: { variants: true },
@@ -370,6 +390,7 @@ describe('Store checkout (e2e)', () => {
     orderNumber = created.body.order.orderNumber;
     firstOrderId = created.body.order.id;
     createdOrderNumbers.push(orderNumber);
+    expectNoServiceFields(created.body);
     expect(created.body.order.status).toBe('PENDING');
     expect(created.body.order.paymentProvider).toBe('test');
     expect(created.body.paymentUrl).toBeNull();
@@ -382,10 +403,17 @@ describe('Store checkout (e2e)', () => {
   });
 
   it('заказ: доступен автору, недоступен другому пользователю', async () => {
-    await request(app.getHttpServer())
+    const own = await request(app.getHttpServer())
       .get(`/store/orders/${orderNumber}`)
       .set('Authorization', auth(alice))
       .expect(200);
+    expectNoServiceFields(own.body);
+    const list = await request(app.getHttpServer())
+      .get('/store/orders')
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(JSON.stringify(list.body)).toContain(orderNumber);
+    expectNoServiceFields(list.body);
     await request(app.getHttpServer())
       .get(`/store/orders/${orderNumber}`)
       .set('Authorization', auth(bob))
@@ -551,6 +579,7 @@ describe('Store checkout (e2e)', () => {
       })
       .expect(201);
     createdOrderNumbers.push(res.body.order.orderNumber);
+    expectNoServiceFields(res.body);
     expect(res.body.order.userId).toBeNull();
     expect(res.body.order.guestMinecraftNick).toBe('GuestNick123');
 
@@ -617,6 +646,7 @@ describe('Store checkout (e2e)', () => {
       .get('/store/wishlist')
       .set('Authorization', auth(alice))
       .expect(200);
+    expectNoServiceFields(mine.body);
     expect(
       mine.body.items.some(
         (i: { productId: string }) => i.productId === giftableProductId,
@@ -632,6 +662,7 @@ describe('Store checkout (e2e)', () => {
     const publicView = await request(app.getHttpServer())
       .get(`/store/wishlist/${alice.username}`)
       .expect(200);
+    expectNoServiceFields(publicView.body);
     expect(
       publicView.body.items.some(
         (i: { productId: string }) => i.productId === giftableProductId,
