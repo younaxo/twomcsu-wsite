@@ -141,3 +141,58 @@ R81 (публичные имена сотрудников, 152-ФЗ), R82 (ау�
 Проверки: статический unit-тест текста миграции (`punishments-public-indexes-migration.spec.ts`): только разрешённые операторы, ровно четыре колонки и три индекса, ни одна миграция каталога не удаляет эти индексы и колонки; статический unit-тест текста SQL upsert (`prisma-punishment-mirror.store.spec.ts`): `issuerHidden*` в нём нет. Не выполнено (одноразовой БД нет, запрещено): `prisma migrate diff`, `EXPLAIN`, оценка времени построения индекса на реальных данных (раздел 2.6 контракта, тест 20 и 38).
 
 Контроллеры и сервисы среза 2 не написаны до ревью миграции (Q28). Риски: R88 (блокировка записи при `CREATE INDEX`), R89 (скрытие несопоставленного выдавшего только для вершины персонала).
+
+## 13. Реализация бэкенда (этапы A, B, C; 2026-11-17)
+
+Ветка `feature/stage-02-s2-bans-contract`. Коммиты: `d596ec0` (миграция среза 2, правка по ревью Q28 M1), `3858e34` (этап A: реализация), `ba36556`, `6517d2a`, `ec75b5c` (этап B: unit-тесты), коммит этапа C (статические e2e, CHANGELOG, отчёт, RISKS; SHA в handback). Push не делался.
+
+### Эндпоинты
+
+| Метод и путь                                   | Доступ и лимит                                      |
+| ---------------------------------------------- | --------------------------------------------------- |
+| `GET /punishments/public`                      | без входа, 60/мин, ETag, `noindex`                  |
+| `GET /punishments/public/:ref`                 | без входа, 60/мин, ETag, `noindex`                  |
+| `GET /punishments/me`                          | JWT, 30/мин, `private, no-store`                    |
+| `GET /admin/punishments`                       | `users.punishments` + 2FA, 120/мин                  |
+| `GET /admin/punishments/status`                | `users.punishments` + 2FA, 120/мин                  |
+| `GET /admin/punishments/:ref`                  | `users.punishments` + 2FA, 120/мин, аудит просмотра |
+| `POST /admin/punishments/:ref/issuer-hidden`   | `punishments.issuer.hide` + 2FA, иерархия, 30/мин   |
+| `DELETE /admin/punishments/:ref/issuer-hidden` | `punishments.issuer.hide` + 2FA, иерархия, 30/мин   |
+
+Раздел выключен по умолчанию (`SiteSetting punishments.public.enabled`); публичная причина всегда `rules`, пока карта пуста (Q63 п.1-2); выдавший виден, скрывается флагом (Q63 п.3); область с названием сервера (Q63 п.4). Модуль чтения только читает зеркало; пишут только скрытие выдавшего и аудит.
+
+### Проверки
+
+- Unit: 675 тестов, 19 наборов (jest --runInBand src/modules/punishments, этап B); tsc, eslint, prettier чисты (этап B и этап C для файлов `apps/api/test/bans*.ts`; tsc по `apps/api/tsconfig.json` охватывает `test/`).
+- Статические e2e этапа C (НЕ запускались): `bans.e2e-spec.ts` (HTTP-стек, заголовки 6.1, порядок проверок п.14: 404 раздела раньше 400, 400 раньше 503, 401/403 раньше 400, `linked: false` раньше 503; ETag/304 и 404 без 304; курсор; `me` и персонал; аудит только карточки; скрытие и снятие, иерархия, идемпотентность, гонки POST/POST и POST/DELETE, откат транзакции через сбой `AuditService.logInTx`, сброс серверного кэша после скрытия (п.17, серверная часть)), `bans-throttle.e2e-spec.ts` (429 и `Retry-After` на списке и карточке), `bans-explain.e2e-spec.ts` (EXPLAIN п.20; включается только `BANS_EXPLAIN_E2E=1`, требует имя БД с `test`, `e2e` или `scratch`, вставляет 20 000 строк и удаляет).
+- Правила e2e: пользователи в `beforeAll` (6, один вход на роль, лимит 10/мин), `app.close()` в `finally`, настройки и состояние синхронизации возвращаются в исходное, фикстуры с префиксом `e2e-bans-<unique>-`.
+
+### Не проверено
+
+- e2e не запускались ни разу; миграция `20261117040000_punishments_public_indexes` не применялась ни к какой БД; `prisma migrate diff` не выполнялся.
+- Реальный откат транзакции, блокировки при гонках, заголовки 429 (в т.ч. `no-store` от фильтра контроллера), EXPLAIN (в т.ч. generic plan) - только статические сценарии.
+- Клиентская задержка скрытия (15 + 30 с, п.17) тестом не проверяется по природе.
+- Не покрыто e2e (остаётся на unit): офлайн-uuid (п.7), корпус обходов очистки (п.2), вытеснение LRU (п.18), контрактная синхронизация типов (п.19).
+- `admin_2fa_required` в e2e проверяется только при заданном `TWO_FACTOR_ENCRYPTION_KEY` (иначе сценарий выходит без проверки).
+
+### Ручная проверка миграции (п.38), одноразовая локальная БД, выполняет владелец или ревьюер
+
+Не автоматизируется против общей БД. На пустой локальной БД (имя `twomc_scratch`, не dev владельца и не production):
+
+1. `DATABASE_URL` на одноразовую БД; `prisma migrate deploy` (применяются все миграции подряд); убедиться, что миграция `20261117040000_punishments_public_indexes` применилась без ошибок и порядок операторов «три `CREATE INDEX`, затем четыре `ADD COLUMN`».
+2. `\d minecraft_punishments` в psql: колонки `issuerHidden` (boolean NOT NULL DEFAULT false), `issuerHiddenById`, `issuerHiddenAt`, `issuerHiddenReason`; три индекса: `minecraft_punishments_subjectName_lower_idx`, `minecraft_punishments_public_startedAt_id_idx` (WHERE-предикат совпадает с публичным), `minecraft_punishments_startedAt_id_idx`.
+3. `prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma --shadow-database-url <вторая одноразовая БД>`: колонки расхождений не дают; три индекса Prisma может показать как лишние (ожидаемо, следующие миграции пишутся вручную).
+4. Строки, существовавшие до миграции (вставить 2-3 до применения последней миграции), получают `issuerHidden = false`; данные не изменены.
+5. `BANS_EXPLAIN_E2E=1 pnpm --filter api exec jest --config ./test/jest-e2e.json bans-explain` и затем `bans.e2e-spec.ts`, `bans-throttle.e2e-spec.ts` на той же БД (e2e-файлы после прогона сами удаляют свои данные).
+6. Оценка блокировок и размера таблицы production - до применения владельцем (R88).
+
+### Риски
+
+R88 и R89 (миграция), R90 (право `punishments.issuer.hide` не выдано ролям кроме superuser до seed и назначения), R91 (моки не доказывают откат транзакции), R92 (generic plan для `LIKE`), а также R80-R87 из контракта.
+
+### Вопросы владельцу
+
+- Выполнить seed (право `punishments.issuer.hide` в БД) и назначить право ролям «куратор и выше» после применения миграции и включения среза.
+- Подтвердить: порог `M` для несопоставленного выдавшего оставить вычисляемым или задать числом приоритета (R89).
+- `online_mode` сервера (офлайн-uuid, fail-closed) и юридическая оценка по 152-ФЗ до включения публичного раздела остаются открытыми (ведёт chief).
+- Разрешить прогон e2e на одноразовой БД и применение миграции на ней (Q28).

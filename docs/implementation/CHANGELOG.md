@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Этап 02, срез 2: бэкенд /bans (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, миграция и e2e не запускались)
+
+- Эндпоинты (модуль `PunishmentsModule`, контроллеры `MinecraftPunishments{Public,Me,Admin}Controller`): `GET /punishments/public` и `/punishments/public/:ref` (без входа, throttle 60/мин, ETag, `noindex`), `GET /punishments/me` (JWT, 30/мин, только по подтверждённой привязке, uuid версии 3 даёт `linked: false`), `GET /admin/punishments`, `/admin/punishments/status`, `/admin/punishments/:ref` (право `users.punishments` + 2FA, аудит `punishment.card.view` только для карточки), `POST` и `DELETE /admin/punishments/:ref/issuer-hidden` (право `punishments.issuer.hide`, иерархия N3, условный `UPDATE` и аудит в одной транзакции). Публичная причина - закрытый словарь, пока карта пуста всегда `rules`; выдавший виден по умолчанию с флагом принудительного скрытия; область с названием сервера; курсорная пагинация; серверный кэш с TTL 5 с и сбросом при скрытии выдавшего.
+- Право `punishments.issuer.hide` добавлено в каталог `packages/shared/src/permissions.ts` (в БД попадает только seed, который выполняет владелец). Локальная копия типов API с контрактным тестом синхронизации (R80).
+- Коммиты: d596ec0, 3858e34, ba36556, 6517d2a, ec75b5c и коммит этапа C (e2e). 675 unit-тестов (19 наборов); статические e2e (не запускались): `apps/api/test/bans.e2e-spec.ts` (HTTP-стек, заголовки, порядок проверок, ETag/304, аудит, откат транзакции, гонки), `bans-throttle.e2e-spec.ts` (429 и `Retry-After`), `bans-explain.e2e-spec.ts` (EXPLAIN на одноразовой БД, включается только `BANS_EXPLAIN_E2E=1`). Миграция среза 2 не применялась. Риски R90, R91, R92.
+
 ### Этап 02, срез 2: миграция колонок скрытия выдавшего и индексов (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, не применялась, ждёт ревью Q28)
 
 - Миграция `20261117040000_punishments_public_indexes` (вручную, Q43 а; только `ADD COLUMN` четырёх колонок `issuerHidden*` и `CREATE INDEX` трёх индексов: выражение `lower("subjectName") text_pattern_ops`, частичный публичный `(startedAt, id)`, обычный `(startedAt, id)`). Поля добавлены в модель `MinecraftPunishment` (`schema.prisma`), индексы описаны комментарием модели. Юнит-тесты: текст миграции (только разрешённые операторы, нет `DROP` индексов и колонок в других миграциях) и текст SQL upsert синхронизации (нет `issuerHidden`). Контроллеры и сервисы среза 2 не писались; на БД не применялась. Риски R88, R89.
