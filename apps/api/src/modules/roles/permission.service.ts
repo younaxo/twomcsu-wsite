@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -127,6 +127,47 @@ export class PermissionService {
       this.getMaxPriority(targetUserId),
     ]);
     return actorPriority > targetPriority;
+  }
+
+  /// Выдача роли пользователю (Q23, ADR-0170): права выдаваемой роли должны
+  /// входить в эффективные права выдающего. Владелец (роль isSuperuser) —
+  /// исключение. Роль с полным доступом (isSuperuser) может выдать только
+  /// владелец; право '*' (WILDCARD) у выдающего покрывает любые права.
+  /// Бросает 403 `role_permissions_exceed_grantor`.
+  async assertGrantorCoversRole(
+    grantorId: string,
+    role: { id: string; isSuperuser: boolean },
+  ): Promise<void> {
+    const grantor = await this.getEffectivePermissions(grantorId);
+    if (grantor.superuser) {
+      return;
+    }
+    if (role.isSuperuser) {
+      throw new ForbiddenException({
+        code: 'role_permissions_exceed_grantor',
+        message: 'Роль с полным доступом может выдать только владелец',
+        missing: [WILDCARD],
+      });
+    }
+    if (grantor.permissions.includes(WILDCARD)) {
+      return;
+    }
+    const rolePermissions = await this.prisma.rolePermission.findMany({
+      where: { roleId: role.id, effect: 'ALLOW' },
+      include: { permission: true },
+    });
+    const own = new Set(grantor.permissions);
+    const missing = rolePermissions
+      .map((rp) => rp.permission.key)
+      .filter((key) => !own.has(key))
+      .sort();
+    if (missing.length > 0) {
+      throw new ForbiddenException({
+        code: 'role_permissions_exceed_grantor',
+        message: `Нельзя выдать роль с правами, которых нет у вас самих: ${missing.join(', ')}`,
+        missing,
+      });
+    }
   }
 
   async invalidateUser(userId: string): Promise<void> {
