@@ -3910,7 +3910,7 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 **Decision.**
 
 - Q26: новое значение enum `NotificationType.REPORT_STATUS_CHANGED`. `changeStatus` шлёт новый тип; `setVerdict` остаётся на `REPORT_VERDICT`.
-- Q27: новые права `reports.notes.edit` (правка чужих заметок; автор всегда правит свои) и `reports.notes.unpin` (открепление). Закрепление остаётся за `reports.notes.pin`. `reports.delete` и `reports.notes.pin` для правки и открепления больше не используются.
+- Q27: новые права `reports.notes.edit` (правка чужих заметок; автор всегда правит свои) и `reports.notes.unpin` (открепление). Закрепление остаётся за `reports.notes.pin`. Уточнение по ревью: `PATCH .../notes/:noteId/pin` только закрепляет (`pinned:false` -> 400), открепление — только `DELETE .../notes/:noteId/pin` под `reports.notes.unpin`, иначе держатель pin обходил бы право unpin. `reports.delete` и `reports.notes.pin` для правки и открепления больше не используются.
 - Миграция `20261017000000_report_status_changed`: одна команда `ALTER TYPE "NotificationType" ADD VALUE 'REPORT_STATUS_CHANGED';`.
 
 **PostgreSQL и ADD VALUE.** В PostgreSQL 12+ `ALTER TYPE ... ADD VALUE` допустим внутри транзакции, но добавленное значение нельзя использовать (в DML, значениях по умолчанию, индексах) в той же транзакции до её коммита. Миграция только добавляет значение и нигде его не использует. Prisma выполняет `migration.sql` одним скриптом; образец с тем же шаблоном: `20261004144405_add_activity_notification_types` (несколько `ADD VALUE` подряд). Здесь значение одно, оговорка про PostgreSQL 11 и ниже не применима. Код приложения использует значение только после применения миграции и деплоя.
