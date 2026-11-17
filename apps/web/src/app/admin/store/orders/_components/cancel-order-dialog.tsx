@@ -33,17 +33,21 @@ export function CancelOrderDialog({
   orderNumber,
   open,
   onOpenChange,
+  onCancelled,
 }: {
   orderId: string;
   orderNumber: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /// После успешной отмены кнопки-открывателя уже нет: родитель сам ставит фокус.
+  onCancelled?: () => void;
 }) {
   const cancel = useCancelOrder();
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [failure, setFailure] = useState<CancelErrorInfo | null>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const cancelledRef = useRef(false);
   // Radix без Trigger не знает, куда вернуть фокус: запоминаем кнопку, открывшую окно.
   const openerRef = useRef<Element | null>(
     typeof document === 'undefined' ? null : document.activeElement,
@@ -69,6 +73,7 @@ export function CancelOrderDialog({
       { id: orderId, reason: reason.trim() },
       {
         onSuccess: () => {
+          cancelledRef.current = true;
           toast.success(`Заказ ${orderNumber} отменён`);
           onOpenChange(false);
         },
@@ -96,7 +101,8 @@ export function CancelOrderDialog({
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          if (openerRef.current instanceof HTMLElement) openerRef.current.focus();
+          if (cancelledRef.current && onCancelled) onCancelled();
+          else if (openerRef.current instanceof HTMLElement) openerRef.current.focus();
         }}
         onEscapeKeyDown={(event) => {
           if (cancel.isPending) event.preventDefault();

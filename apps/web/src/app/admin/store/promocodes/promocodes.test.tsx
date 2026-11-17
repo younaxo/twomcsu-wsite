@@ -147,6 +147,39 @@ describe('Промокоды (0.4)', () => {
     expect(typeof body.discountValue).toBe('string');
   });
 
+  it('отключение: PATCH только с isActive', async () => {
+    for (const key of ['promocodes.view', 'promocodes.edit']) mocks.granted.add(key);
+    const user = userEvent.setup();
+    render(<AdminStorePromocodesPage />, { wrapper: Providers });
+    await screen.findByText('SPRING');
+    await user.click(screen.getByRole('button', { name: 'Отключить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/admin/promocodes/pr1', { isActive: false }),
+    );
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Промокод отключён'));
+  });
+
+  it('правка: PATCH только с изменёнными полями, значение строкой; без изменений запроса нет', async () => {
+    for (const key of ['promocodes.view', 'promocodes.edit']) mocks.granted.add(key);
+    const user = userEvent.setup();
+    render(<AdminStorePromocodesPage />, { wrapper: Providers });
+    await screen.findByText('SPRING');
+    await user.click(screen.getByRole('button', { name: 'Изменить' }));
+    let dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    // Без изменений окно закрывается, запроса нет.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mocks.patch).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Изменить' }));
+    dialog = await screen.findByRole('dialog');
+    const value = within(dialog).getByLabelText(/Размер скидки/);
+    await user.click(value);
+    await user.keyboard('{Control>}a{/Control}20.50');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    expect(mocks.patch).toHaveBeenCalledWith('/admin/promocodes/pr1', { discountValue: '20.50' });
+  });
+
   it('удаление: 409 PROMO_HAS_ORDERS — понятная ошибка', async () => {
     for (const key of ['promocodes.view', 'promocodes.delete']) mocks.granted.add(key);
     mocks.delete.mockRejectedValueOnce(new ApiError(409, ['x'], { code: 'PROMO_HAS_ORDERS' }));

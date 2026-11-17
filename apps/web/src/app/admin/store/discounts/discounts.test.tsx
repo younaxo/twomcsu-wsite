@@ -120,6 +120,45 @@ describe('Скидки (0.4)', () => {
     expect(path).toBe('/admin/store/discounts/loyalty');
     expect(body).toEqual({ name: 'Ветеран', minPurchases: 10, discountPercent: '7.50' });
   });
+
+  it('объём: отключение — PATCH только с isActive', async () => {
+    for (const key of ['store.discounts.view', 'store.discounts.bulk.edit']) mocks.granted.add(key);
+    const user = userEvent.setup();
+    render(<AdminStoreDiscountsPage />, { wrapper: Providers });
+    const bulk = await screen.findByTestId('admin-bulk-discounts');
+    await user.click(await within(bulk).findByRole('button', { name: 'Отключить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/admin/store/discounts/bulk/b1', {
+        isActive: false,
+      }),
+    );
+  });
+
+  it('лояльность: включение и правка — PATCH с изменёнными полями, процент строкой', async () => {
+    for (const key of ['store.discounts.view', 'store.discounts.loyalty.edit']) {
+      mocks.granted.add(key);
+    }
+    const user = userEvent.setup();
+    render(<AdminStoreDiscountsPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('tab', { name: 'За лояльность' }));
+    const loyalty = await screen.findByTestId('admin-loyalty-discounts');
+    await user.click(await within(loyalty).findByRole('button', { name: 'Включить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/admin/store/discounts/loyalty/l1', {
+        isActive: true,
+      }),
+    );
+    await user.click(within(loyalty).getByRole('button', { name: 'Изменить' }));
+    const dialog = await screen.findByRole('dialog');
+    const percent = within(dialog).getByLabelText(/Скидка, %/);
+    await user.clear(percent);
+    await user.type(percent, '6.25');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(2));
+    expect(mocks.patch).toHaveBeenLastCalledWith('/admin/store/discounts/loyalty/l1', {
+      discountPercent: '6.25',
+    });
+  });
 });
 
 describe('Навигация магазина (0.4)', () => {

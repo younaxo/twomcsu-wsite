@@ -3,7 +3,7 @@
 import { ArrowLeft, Ban } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   DescriptionItem,
   DescriptionList,
@@ -67,12 +67,20 @@ const LINE_COLUMNS: DataGridColumn<AdminOrderLine>[] = [
   },
 ];
 
+/// Строка Decimal ненулевая: без Number/float. Пусто, «0», «0.00», «-0» — ноль.
+function isNonZeroDecimal(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /[1-9]/.test(value.split(/[eE]/)[0] ?? '');
+}
+
 function OrderCard({ order }: { order: AdminOrderCard }) {
   const { can } = usePermissions();
   const [cancelOpen, setCancelOpen] = useState(false);
   const meta = ORDER_STATUS_META[order.status];
   const canCancel = order.status === 'PENDING' && can('orders.cancel');
-  const hasDiscount = Number(order.discountAmount) > 0;
+  const hasDiscount = isNonZeroDecimal(order.discountAmount);
+  // После отмены кнопки отмены нет: фокус уходит на блок сводки заказа.
+  const summaryRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,37 +122,47 @@ function OrderCard({ order }: { order: AdminOrderCard }) {
         </p>
       )}
 
-      <PageSection title="Заказ">
-        <DescriptionList className="rounded-xl bg-surface p-5 shadow-sm">
-          <DescriptionItem term="Покупатель">
-            {order.user
-              ? `${order.user.username} · ${order.user.email}`
-              : (order.guestMinecraftNick ?? '—')}
-          </DescriptionItem>
-          <DescriptionItem term="Подитог">{formatMoney(order.subtotal)}</DescriptionItem>
-          <DescriptionItem term="Скидка">
-            {hasDiscount ? formatMoney(order.discountAmount) : '—'}
-          </DescriptionItem>
-          <DescriptionItem term="Промокод">
-            {order.promoCode ? (
-              <span className="font-mono text-xs">{order.promoCode.code}</span>
-            ) : (
-              '—'
-            )}
-          </DescriptionItem>
-          <DescriptionItem term="Итого">
-            <strong>{formatMoney(order.total)}</strong>
-          </DescriptionItem>
-          {order.status === 'CANCELLED' || order.cancelReason ? (
-            <>
-              <DescriptionItem term="Отменён">{formatDateTime(order.cancelledAt)}</DescriptionItem>
-              <DescriptionItem term="Причина" className="sm:col-span-2">
-                {order.cancelReason ?? '—'}
-              </DescriptionItem>
-            </>
-          ) : null}
-        </DescriptionList>
-      </PageSection>
+      <div
+        ref={summaryRef}
+        tabIndex={-1}
+        aria-label={`Сводка заказа ${order.orderNumber}`}
+        data-testid="order-summary"
+        className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
+        <PageSection title="Заказ">
+          <DescriptionList className="rounded-xl bg-surface p-5 shadow-sm">
+            <DescriptionItem term="Покупатель">
+              {order.user
+                ? `${order.user.username} · ${order.user.email}`
+                : (order.guestMinecraftNick ?? '—')}
+            </DescriptionItem>
+            <DescriptionItem term="Подитог">{formatMoney(order.subtotal)}</DescriptionItem>
+            <DescriptionItem term="Скидка">
+              {hasDiscount ? formatMoney(order.discountAmount) : '—'}
+            </DescriptionItem>
+            <DescriptionItem term="Промокод">
+              {order.promoCode ? (
+                <span className="font-mono text-xs">{order.promoCode.code}</span>
+              ) : (
+                '—'
+              )}
+            </DescriptionItem>
+            <DescriptionItem term="Итого">
+              <strong>{formatMoney(order.total)}</strong>
+            </DescriptionItem>
+            {order.status === 'CANCELLED' || order.cancelReason ? (
+              <>
+                <DescriptionItem term="Отменён">
+                  {formatDateTime(order.cancelledAt)}
+                </DescriptionItem>
+                <DescriptionItem term="Причина" className="sm:col-span-2">
+                  {order.cancelReason ?? '—'}
+                </DescriptionItem>
+              </>
+            ) : null}
+          </DescriptionList>
+        </PageSection>
+      </div>
 
       <PageSection
         title="Оплата"
@@ -186,6 +204,7 @@ function OrderCard({ order }: { order: AdminOrderCard }) {
           orderNumber={order.orderNumber}
           open
           onOpenChange={setCancelOpen}
+          onCancelled={() => summaryRef.current?.focus()}
         />
       ) : null}
     </div>

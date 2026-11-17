@@ -44,6 +44,8 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'O-1' }),
 }));
 
+let cardDiscount = '50.00';
+
 function order(status: string) {
   return {
     id: 'o1',
@@ -52,7 +54,7 @@ function order(status: string) {
     guestMinecraftNick: null,
     status,
     subtotal: '500.00',
-    discountAmount: '50.00',
+    discountAmount: cardDiscount,
     promoCodeId: null,
     total: '450.00',
     paymentMethod: null,
@@ -110,6 +112,7 @@ function Providers({ children }: { children: ReactNode }) {
 let cardStatus = 'PENDING';
 beforeEach(() => {
   cardStatus = 'PENDING';
+  cardDiscount = '50.00';
   mocks.granted.clear();
   for (const fn of [mocks.get, mocks.patch, mocks.download]) fn.mockReset();
   for (const fn of Object.values(mocks.toast)) fn.mockReset();
@@ -139,6 +142,25 @@ describe('Заказы: чистые функции', () => {
       page: 2,
     });
     expect(buildOrderExportBody(filters)).toEqual({ status: 'PENDING', dateFrom: '2026-11-01' });
+  });
+
+  it('dateTo YYYY-MM-DD уходит как есть и в список, и в экспорт (API: конец суток UTC, включительно)', () => {
+    const filters = {
+      ...EMPTY_ORDER_FILTERS,
+      dateFrom: '2026-11-01',
+      dateTo: '2026-11-10',
+    };
+    // Без добавления времени и без сдвига часового пояса на стороне веба.
+    expect(buildOrderQuery(filters, 1, 25)).toMatchObject({
+      dateFrom: '2026-11-01',
+      dateTo: '2026-11-10',
+    });
+    expect(buildOrderExportBody(filters)).toEqual({ dateFrom: '2026-11-01', dateTo: '2026-11-10' });
+    // Один и тот же день в обеих границах допустим: это целые сутки.
+    expect(
+      validateOrderFilters({ ...EMPTY_ORDER_FILTERS, dateFrom: '2026-11-10', dateTo: '2026-11-10' })
+        .dateTo,
+    ).toBeUndefined();
   });
 
   it('валидация дат и причины отмены', () => {
@@ -255,5 +277,87 @@ describe('Заказы: карточка и отмена (0.4)', () => {
       /нельзя отменить/,
     );
     expect(within(dialog).getAllByRole('button', { name: 'Закрыть' }).length).toBeGreaterThan(0);
+  });
+
+  it('403 admin_2fa_required: подсказка и ссылка на включение 2FA', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.cancel');
+    mocks.patch.mockRejectedValueOnce(
+      new ApiError(403, ['Требуется 2FA'], { code: 'admin_2fa_required' }),
+    );
+    const user = userEvent.setup();
+    render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+    await screen.findByText('VIP');
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Причина отмены/), 'Ошибка');
+    await user.click(within(dialog).getByRole('button', { name: 'Отменить заказ' }));
+    const error = await within(dialog).findByTestId('cancel-order-error');
+    expect(error).toHaveTextContent(/двухфакторная/);
+    expect(within(error).getByRole('link', { name: 'Включить 2FA' })).toHaveAttribute(
+      'href',
+      '/settings/security',
+    );
+    // Кнопка отмены остаётся: 2FA можно включить и повторить.
+    expect(within(dialog).getByRole('button', { name: 'Отменить заказ' })).toBeInTheDocument();
+  });
+
+  it('пока идёт запрос, окно не закрывается (Esc, «Не отменять»)', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.cancel');
+    let resolve!: (value: unknown) => void;
+    mocks.patch.mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    const user = userEvent.setup();
+    render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+    await screen.findByText('VIP');
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Причина отмены/), 'Дубликат');
+    await user.click(within(dialog).getByRole('button', { name: 'Отменить заказ' }));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Не отменять' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // Повторный submit не создаёт второй запрос.
+    await user.type(within(dialog).getByLabelText(/Причина отмены/), '{Enter}');
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
+    cardStatus = 'CANCELLED';
+    resolve({});
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('успешная отмена: кнопки отмены нет, фокус на сводке заказа', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.cancel');
+    mocks.patch.mockResolvedValueOnce({});
+    const user = userEvent.setup();
+    render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+    await screen.findByText('VIP');
+    await user.click(screen.getByRole('button', { name: 'Отменить заказ' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Причина отмены/), 'Дубликат');
+    cardStatus = 'CANCELLED';
+    await user.click(within(dialog).getByRole('button', { name: 'Отменить заказ' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('order-summary')).toHaveFocus());
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Отменить заказ' })).toBeNull(),
+    );
+    expect(mocks.toast.success).toHaveBeenCalledWith(expect.stringMatching(/отменён/));
+  });
+
+  it('скидка: нулевая не показывается, ненулевая — да (без float)', async () => {
+    mocks.granted.add('orders.view');
+    const { unmount } = render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+    await screen.findByText('VIP');
+    expect(screen.getByText('Скидка').nextElementSibling).toHaveTextContent(/50/);
+    unmount();
+    for (const zero of ['0', '0.00', '-0.00']) {
+      cardDiscount = zero;
+      const view = render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+      await screen.findByText('VIP');
+      expect(screen.getByText('Скидка').nextElementSibling).toHaveTextContent(/^—$/);
+      view.unmount();
+    }
   });
 });
