@@ -157,14 +157,15 @@ describe('Reports support (e2e)', () => {
       'reports.messages',
       'reports.notes',
     ]);
-    // Срез 2: «старший» (правка чужих заметок, pin) и сотрудник только с view.
+    // Срез 2: «старший» (правка чужих заметок, pin, unpin) и сотрудник только с view.
     const seniorRole = await createRole(`support-senior-${unique}`, 20);
     await grantRole(senior.id, seniorRole.id);
     await grantPermissions(seniorRole.id, [
       'reports.view',
       'reports.notes',
       'reports.notes.pin',
-      'reports.delete',
+      'reports.notes.unpin',
+      'reports.notes.edit',
     ]);
     const viewRole = await createRole(`support-view-${unique}`, 5);
     await grantRole(viewerOnly.id, viewRole.id);
@@ -722,7 +723,7 @@ describe('Reports support (e2e)', () => {
       .expect(400);
   });
 
-  it('заметки: чужую без reports.delete править нельзя (403), автор и reports.delete — 200; pin/unpin и порядок', async () => {
+  it('заметки: чужую без reports.notes.edit править нельзя (403), автор и reports.notes.edit — 200; pin/unpin и порядок', async () => {
     const report = await createReportAs(filterUser);
     const base = `/moderation/reports/${report.reportNumber}`;
     const first = await request(app.getHttpServer())
@@ -738,7 +739,7 @@ describe('Reports support (e2e)', () => {
       .expect(201);
     expect(second.body.moderatorNotes).toHaveLength(2);
 
-    // Другой сотрудник с reports.notes, но без reports.delete.
+    // Другой сотрудник с reports.notes, но без reports.notes.edit.
     await request(app.getHttpServer())
       .patch(`${base}/notes/${noteId}`)
       .set('Authorization', auth(otherModerator))
@@ -768,7 +769,7 @@ describe('Reports support (e2e)', () => {
       byAuthor.body.moderatorNotes.find((n: { id: string }) => n.id === noteId)
         .content,
     ).toBe('Правка автора');
-    // Актёр с reports.delete.
+    // Актёр с reports.notes.edit.
     const bySenior = await request(app.getHttpServer())
       .patch(`${base}/notes/${noteId}`)
       .set('Authorization', auth(senior))
@@ -779,7 +780,7 @@ describe('Reports support (e2e)', () => {
         .content,
     ).toBe('Правка старшего');
 
-    // Закрепление: reports.notes.pin у senior; закреплённая — первой.
+    // Закрепление: reports.notes.pin и reports.notes.unpin у senior; закреплённая — первой.
     const secondId: string = second.body.moderatorNotes[1].id;
     await request(app.getHttpServer())
       .patch(`${base}/notes/${secondId}/pin`)
@@ -792,6 +793,11 @@ describe('Reports support (e2e)', () => {
     expect(pinned.body.moderatorNotes.map((n: { id: string }) => n.id)).toEqual(
       [secondId, noteId],
     );
+    // Открепление требует reports.notes.unpin (у otherModerator его нет).
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(otherModerator))
+      .expect(403);
     const unpinned = await request(app.getHttpServer())
       .delete(`${base}/notes/${secondId}/pin`)
       .set('Authorization', auth(senior))

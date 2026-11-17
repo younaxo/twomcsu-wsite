@@ -54,3 +54,9 @@
 | AUTH_TEST_OTP_ENABLED запрещён в production                               | Удалить или поставить `false`                                |
 
 После деплоя с ошибкой старта сработает автооткат образов (см. `docs/runbooks/deploy.md`): исправить `.env` и повторить деплой.
+
+## Владельцу: миграция и права обращений (Q26, Q27, ADR-0172)
+
+1. Применить на production миграцию `20261017000000_report_status_changed` (`ALTER TYPE "NotificationType" ADD VALUE 'REPORT_STATUS_CHANGED'`) до деплоя кода, который шлёт этот тип. Миграции на production применяет только владелец.
+2. Запустить seed синхронизации каталога прав (таблица `permissions` получит `reports.notes.edit` и `reports.notes.unpin`).
+3. В админке выдать нужным ролям `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`). Без этого персонал не сможет править чужие заметки и откреплять.

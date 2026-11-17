@@ -1294,3 +1294,10 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
 - e2e `chat.e2e-spec.ts`: иерархия снятия мута и бана (старший/равный/младший); написаны статически, не запускались.
 - `PermissionService.getEffectivePermissions`: при чтении из кеша `maxPriority` null восстанавливается в `-Infinity` (R39); unit-тесты кеш-пути.
 - ADR-0171 дополнен: самоснятие владельцем, момент сравнения приоритетов.
+
+## 2026-11-17 — Q26 и Q27: REPORT_STATUS_CHANGED и права заметок обращений (ADR-0172)
+
+- Новый тип уведомления `REPORT_STATUS_CHANGED` (миграция `20261017000000_report_status_changed`, `ADD VALUE`, не применялась): `changeStatus` шлёт его вместо `REPORT_VERDICT`; `setVerdict` без изменений.
+- Новые права `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`); закрепление остаётся `reports.notes.pin`. Каталог `packages/shared/src/permissions.ts`, API, web.
+- e2e `reports-support.e2e-spec.ts` обновлён статически, не запускался. ADR-0172, R40.
+- Для владельца: применить миграцию на production и выдать права ролям (`docs/runbooks/production-env-checklist.md`).
