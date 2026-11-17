@@ -36,6 +36,8 @@
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
     "postinstall": "prisma generate",
     "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts",
+    "bridge:register": "dotenv -e ../../.env -- ts-node scripts/bridge-register-server.ts",
+    "bridge:print-key": "ts-node scripts/bridge-print-key.ts",
     "mc:plugin-sim": "dotenv -e ../../.env -- ts-node scripts/minecraft-plugin-sim.ts"
   },
   "prisma": {
