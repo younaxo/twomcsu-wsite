@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { RequireSession } from '@/components/auth/require-session';
@@ -20,6 +21,7 @@ interface PunishmentDto {
   issuedAt: string;
   expiresAt: string | null;
   isActive: boolean;
+  isAppealable?: boolean;
 }
 
 const TYPE_LABELS: Record<PunishmentDto['punishmentType'], string> = {
@@ -86,6 +88,14 @@ export default function PunishmentsPage() {
                             ? ' · бессрочно'
                             : ''}
                       </p>
+                      {item.isAppealable !== false ? (
+                        <Link
+                          href="/support/new/punishment_appeal"
+                          className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          Обжаловать
+                        </Link>
+                      ) : null}
                     </li>
                   );
                 })}

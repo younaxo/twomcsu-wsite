@@ -16,6 +16,7 @@ export * from './api/chat';
 export * from './api/messages';
 export * from './api/friends';
 export * from './api/moderation';
+export * from './api/reports';
 export * from './api/admin';
 export * from './api/site';
 export * from './api/communications';

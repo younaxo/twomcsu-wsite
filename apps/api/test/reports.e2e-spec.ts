@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { REPORT_CREATE_LIMIT } from '../src/modules/reports/report-constants';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -84,6 +85,7 @@ describe('Reports (e2e)', () => {
   let alice: TestUser;
   let bob: TestUser;
   let troll: TestUser;
+  let spammer: TestUser;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -102,6 +104,7 @@ describe('Reports (e2e)', () => {
     alice = await createUser('alice');
     bob = await createUser('bob');
     troll = await createUser('troll');
+    spammer = await createUser('spammer');
 
     const moderatorRole = await createRole(`reports-moderator-${unique}`, 10);
     await grantRole(moderator.id, moderatorRole.id);
@@ -157,6 +160,7 @@ describe('Reports (e2e)', () => {
               alice.email,
               bob.email,
               troll.email,
+              spammer.email,
             ],
           },
         },
@@ -171,6 +175,7 @@ describe('Reports (e2e)', () => {
             alice.email,
             bob.email,
             troll.email,
+            spammer.email,
           ],
         },
       },
@@ -225,7 +230,12 @@ describe('Reports (e2e)', () => {
     reportNumber = res.body.reportNumber;
     createdReportNumbers.push(reportNumber);
     expect(reportNumber).toMatch(/^R-\d{8}-[0-9A-F]{6}$/);
-    expect(res.body.targets[0].userId).toBe(bob.id);
+    // Приватность: игрок не видит userId цели; резолв проверяем по БД.
+    expect(res.body.targets[0]).not.toHaveProperty('userId');
+    const stored = await prisma.reportTarget.findFirst({
+      where: { report: { reportNumber } },
+    });
+    expect(stored?.userId).toBe(bob.id);
     expect(res.body.evidenceLinks).toHaveLength(1);
   });
 
@@ -582,6 +592,28 @@ describe('Reports (e2e)', () => {
           r.reportNumber === created.body.reportNumber,
       ),
     ).toBe(true);
+  });
+
+  it('лимит по пользователю (SEC-01): обращение сверх лимита за окно — 429', async () => {
+    // Отдельный свежий пользователь: остальные тесты лимит не расходуют.
+    for (let i = 0; i < REPORT_CREATE_LIMIT; i += 1) {
+      const res = await request(app.getHttpServer())
+        .post('/reports')
+        .set('Authorization', auth(spammer))
+        .send({ type: 'OTHER', description: `Обращение ${i}` })
+        .expect(201);
+      createdReportNumbers.push(res.body.reportNumber);
+    }
+    await request(app.getHttpServer())
+      .post('/reports')
+      .set('Authorization', auth(spammer))
+      .send({ type: 'OTHER', description: 'Сверх лимита' })
+      .expect(429);
+    await request(app.getHttpServer())
+      .post('/support/donation-problem')
+      .set('Authorization', auth(spammer))
+      .send({ description: 'Тоже сверх лимита' })
+      .expect(429);
   });
 
   it('наказания: выдача/обновление администратором, список по username', async () => {
