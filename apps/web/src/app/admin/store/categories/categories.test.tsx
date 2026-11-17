@@ -149,6 +149,53 @@ describe('Админка магазина: категории (0.3)', () => {
     expect(mocks.patch.mock.calls[1]![1]).toMatchObject({ order: 7, name: 'Привилегии' });
   });
 
+  it('создание: пустая форма — фокус на первом невалидном поле, ровно один role=alert', async () => {
+    const user = userEvent.setup();
+    for (const key of ['store.categories.view', 'store.categories.create']) mocks.granted.add(key);
+    render(<AdminStoreCategoriesPage />, { wrapper: Providers });
+    await screen.findByTestId('admin-categories');
+    await user.click(screen.getByRole('button', { name: 'Новая категория' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    const name = within(dialog).getByLabelText(/Название/);
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(name.getAttribute('aria-describedby')).toContain('-error');
+    const alerts = within(dialog).getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveAttribute('data-testid', 'category-form-error');
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CATEGORY_HAS_CHILDREN', /есть подкатегории/],
+    ['CATEGORY_HAS_PRODUCTS', /есть товары/],
+  ])('удаление: 409 %s — понятное русское сообщение', async (code, pattern) => {
+    const user = userEvent.setup();
+    for (const key of ['store.categories.view', 'store.categories.delete']) mocks.granted.add(key);
+    mocks.delete.mockRejectedValueOnce(new ApiError(409, ['server text'], { code }));
+    render(<AdminStoreCategoriesPage />, { wrapper: Providers });
+    await screen.findByTestId('admin-categories');
+    await user.click(screen.getByRole('button', { name: 'Удалить' }));
+    const confirm = await screen.findByRole('alertdialog');
+    await user.click(within(confirm).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith(expect.stringMatching(pattern)),
+    );
+  });
+
+  it('удаление: 409 без кода — общий фолбэк (текст API)', async () => {
+    const user = userEvent.setup();
+    for (const key of ['store.categories.view', 'store.categories.delete']) mocks.granted.add(key);
+    mocks.delete.mockRejectedValueOnce(new ApiError(409, ['Конфликт данных']));
+    render(<AdminStoreCategoriesPage />, { wrapper: Providers });
+    await screen.findByTestId('admin-categories');
+    await user.click(screen.getByRole('button', { name: 'Удалить' }));
+    const confirm = await screen.findByRole('alertdialog');
+    await user.click(within(confirm).getByRole('button', { name: 'Удалить' }));
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('Конфликт данных'));
+  });
+
   it('удаление: 400 «есть товары» — сообщение API в toast', async () => {
     const user = userEvent.setup();
     for (const key of ['store.categories.view', 'store.categories.delete']) mocks.granted.add(key);

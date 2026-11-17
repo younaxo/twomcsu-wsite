@@ -13,7 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Field } from '@/components/ui/field';
+import {
+  FormErrorSummary,
+  FormField as Field,
+  useFocusFirstInvalid,
+} from '@/components/admin/form-field';
 import { Input, Textarea, inputClassName } from '@/components/ui/input';
 import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { SwitchField } from '@/components/ui/switch';
@@ -123,6 +127,7 @@ export function ProductDialog({
   const [errors, setErrors] = useState<FormErrors>({});
   const [draftErrors, setDraftErrors] = useState<Record<string, FormErrors>>({});
   const [formError, setFormError] = useState<{ message: string; twoFactor: boolean } | null>(null);
+  const { containerRef, focusFirstInvalid } = useFocusFirstInvalid<HTMLFormElement>();
   const set = (patch: Partial<ProductFormState>) =>
     setForm((current) => ({ ...current, ...patch }));
   const readOnly = mode === 'edit' && !permissions.canEdit;
@@ -161,6 +166,7 @@ export function ProductDialog({
             twoFactor: info.needsTwoFactor,
           },
     );
+    if (rest.length > 0) focusFirstInvalid();
   };
 
   const submit = (event: FormEvent) => {
@@ -175,11 +181,17 @@ export function ProductDialog({
       variantsListError = drafts.length === 0;
       setDraftErrors(nextDraftErrors);
     }
-    if (
-      Object.keys(next).length > 0 ||
-      Object.keys(nextDraftErrors).length > 0 ||
-      variantsListError
-    ) {
+    const invalidCount =
+      Object.keys(next).length +
+      Object.values(nextDraftErrors).reduce((sum, e) => sum + Object.keys(e).length, 0) +
+      (variantsListError ? 1 : 0);
+    if (invalidCount > 0) {
+      // Одна сводка (role="alert"); ошибки полей — текстом у полей, без своих alert.
+      setFormError({
+        message: `Исправьте ошибки в форме (${invalidCount}). Первое поле с ошибкой выделено.`,
+        twoFactor: false,
+      });
+      focusFirstInvalid();
       return;
     }
     if (product) {
@@ -218,24 +230,25 @@ export function ProductDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl">
-        <form onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
+        <form
+          ref={containerRef}
+          onSubmit={submit}
+          noValidate
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <DialogHeader>
             <DialogTitle>{product ? `Товар: ${product.name}` : 'Новый товар'}</DialogTitle>
           </DialogHeader>
           <DialogBody className="grid gap-4 overflow-y-auto sm:grid-cols-2">
             {formError ? (
-              <div
-                role="alert"
-                data-testid="product-form-error"
-                className="rounded-lg bg-destructive-soft p-3 text-sm text-destructive sm:col-span-2"
-              >
+              <FormErrorSummary data-testid="product-form-error" className="sm:col-span-2">
                 {formError.message}{' '}
                 {formError.twoFactor ? (
                   <Link href="/settings/security" className="font-medium underline">
                     Включить 2FA
                   </Link>
                 ) : null}
-              </div>
+              </FormErrorSummary>
             ) : null}
             <Field label="Название" required error={errors.name}>
               <Input
@@ -437,6 +450,8 @@ export function ProductDialog({
                       : 'Тип этого товара не входит в список продаваемых — сервер не даст его активировать'
                   }
                   checked={form.isActive}
+                  aria-invalid={errors.isActive ? true : undefined}
+                  aria-describedby={errors.isActive ? 'product-is-active-error' : undefined}
                   disabled={readOnly}
                   onCheckedChange={(checked) => set({ isActive: checked })}
                 />
@@ -446,7 +461,7 @@ export function ProductDialog({
                 </p>
               )}
               {errors.isActive ? (
-                <p role="alert" className="text-xs text-destructive">
+                <p id="product-is-active-error" className="text-xs text-destructive">
                   {errors.isActive}
                 </p>
               ) : null}

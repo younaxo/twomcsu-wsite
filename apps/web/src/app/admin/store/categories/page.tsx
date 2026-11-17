@@ -17,7 +17,11 @@ import {
 } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
-import { Field } from '@/components/ui/field';
+import {
+  FormErrorSummary,
+  FormField as Field,
+  useFocusFirstInvalid,
+} from '@/components/admin/form-field';
 import { Input, Textarea, inputClassName } from '@/components/ui/input';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { SwitchField } from '@/components/ui/switch';
@@ -59,6 +63,7 @@ function CategoryDialog({
   }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<{ message: string; twoFactor: boolean } | null>(null);
+  const { containerRef, focusFirstInvalid } = useFocusFirstInvalid<HTMLFormElement>();
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
 
   const submit = (event: FormEvent) => {
@@ -81,15 +86,27 @@ function CategoryDialog({
         'Снять родителя пока нельзя (ограничение API): выберите другую категорию или верните прежнюю';
     }
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    const count = Object.keys(next).length;
+    if (count > 0) {
+      // Одна сводка (role="alert"); ошибки полей — текстом у полей, без своих alert.
+      setFormError({
+        message: `Исправьте ошибки в форме (${count}). Первое поле с ошибкой выделено.`,
+        twoFactor: false,
+      });
+      focusFirstInvalid();
+      return;
+    }
 
     const onError = (error: unknown) => {
       const info = describeStoreAdminError(error);
       setErrors(info.fields);
-      // Ошибка поля уже показана у поля — общий баннер не дублирует её.
-      if (Object.keys(info.fields).length === 0) {
-        setFormError({ message: info.message, twoFactor: info.needsTwoFactor });
-      }
+      const hasFields = Object.keys(info.fields).length > 0;
+      setFormError(
+        hasFields
+          ? { message: 'Проверьте поля формы: сервер отклонил значения.', twoFactor: false }
+          : { message: info.message, twoFactor: info.needsTwoFactor },
+      );
+      if (hasFields) focusFirstInvalid();
     };
     const onSuccess = () => {
       toast.success(category ? 'Категория сохранена' : 'Категория создана');
@@ -122,24 +139,20 @@ function CategoryDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <form onSubmit={submit} noValidate>
+        <form ref={containerRef} onSubmit={submit} noValidate>
           <DialogHeader>
             <DialogTitle>{category ? 'Изменить категорию' : 'Новая категория'}</DialogTitle>
           </DialogHeader>
           <DialogBody className="grid gap-3 sm:grid-cols-2">
             {formError ? (
-              <div
-                role="alert"
-                data-testid="category-form-error"
-                className="rounded-lg bg-destructive-soft p-3 text-sm text-destructive sm:col-span-2"
-              >
+              <FormErrorSummary data-testid="category-form-error" className="sm:col-span-2">
                 {formError.message}{' '}
                 {formError.twoFactor ? (
                   <Link href="/settings/security" className="font-medium underline">
                     Включить 2FA
                   </Link>
                 ) : null}
-              </div>
+              </FormErrorSummary>
             ) : null}
             <Field label="Название" required error={errors.name}>
               <Input

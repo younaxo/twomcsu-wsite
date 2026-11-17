@@ -6,7 +6,11 @@ import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SwitchField } from '@/components/ui/switch';
-import { Field } from '@/components/ui/field';
+import {
+  FormErrorSummary,
+  FormField as Field,
+  useFocusFirstInvalid,
+} from '@/components/admin/form-field';
 import { Input, inputClassName } from '@/components/ui/input';
 import { toast } from '@/components/ui/toast';
 import {
@@ -85,7 +89,7 @@ export function VariantDraftsEditor({
     <fieldset className="flex flex-col gap-3" data-testid="variant-drafts">
       <legend className="text-sm font-semibold">Варианты и цена</legend>
       {listError ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p id="variant-drafts-list-error" className="text-xs text-destructive">
           {listError}
         </p>
       ) : null}
@@ -149,6 +153,8 @@ export function VariantDraftsEditor({
         size="sm"
         className="self-start"
         disabled={variants.length >= MAX_VARIANTS || free === null}
+        data-invalid={listError ? 'true' : undefined}
+        aria-describedby={listError ? 'variant-drafts-list-error' : undefined}
         onClick={() => free && onChange([...variants, newVariantDraft(free)])}
       >
         <Plus />
@@ -162,7 +168,9 @@ function VariantRow({ productId, variant }: { productId: string; variant: AdminV
   const { updateVariant, removeVariant } = useAdminProductActions();
   const [row, setRow] = useState(() => rowFromVariant(variant));
   const [errors, setErrors] = useState<FormErrors>({});
+  const [summary, setSummary] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const { containerRef, focusFirstInvalid } = useFocusFirstInvalid<HTMLDivElement>();
   const original = rowFromVariant(variant);
   const changed =
     row.price.trim() !== original.price ||
@@ -179,7 +187,13 @@ function VariantRow({ productId, variant }: { productId: string; variant: AdminV
     }
     if (!/^\d+$/.test(row.order.trim())) next.order = 'Целое число от 0';
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    const count = Object.keys(next).length;
+    if (count > 0) {
+      setSummary(`Исправьте ошибки в варианте (${count}). Первое поле с ошибкой выделено.`);
+      focusFirstInvalid();
+      return;
+    }
+    setSummary(null);
     const body: VariantPatchInput = {};
     if (row.price.trim() !== original.price) body.price = row.price.trim();
     if (row.oldPrice.trim() !== original.oldPrice) body.oldPrice = row.oldPrice.trim();
@@ -192,7 +206,13 @@ function VariantRow({ productId, variant }: { productId: string; variant: AdminV
         onError: (error) => {
           const info = describeStoreAdminError(error);
           setErrors(info.fields);
-          toast.error(info.message);
+          // Ошибка показывается одной сводкой в строке (role="alert"), без toast-дубля.
+          setSummary(
+            Object.keys(info.fields).length > 0
+              ? 'Проверьте поля варианта: сервер отклонил значения.'
+              : info.message,
+          );
+          if (Object.keys(info.fields).length > 0) focusFirstInvalid();
         },
       },
     );
@@ -200,11 +220,15 @@ function VariantRow({ productId, variant }: { productId: string; variant: AdminV
 
   return (
     <div
+      ref={containerRef}
       className="flex flex-col gap-3 rounded-lg bg-surface-sunken p-3"
       role="group"
       aria-label={`Вариант: ${durationLabel(variant.duration)}`}
       data-testid="variant-row"
     >
+      {summary ? (
+        <FormErrorSummary data-testid="variant-row-error">{summary}</FormErrorSummary>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">{durationLabel(variant.duration)}</span>
         {row.isActive ? null : <Badge tone="warning">Выключен</Badge>}
@@ -301,13 +325,21 @@ export function VariantsManager({
   const free = firstFreeDuration(taken);
   const [adding, setAdding] = useState<VariantDraft | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
+  const [summary, setSummary] = useState<string | null>(null);
+  const { containerRef, focusFirstInvalid } = useFocusFirstInvalid<HTMLDivElement>();
 
   const submitNew = () => {
     if (!adding) return;
     const next: FormErrors = validatePrices(adding.price, adding.oldPrice);
     if (!/^\d+$/.test(adding.order.trim())) next.order = 'Целое число от 0';
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    const count = Object.keys(next).length;
+    if (count > 0) {
+      setSummary(`Исправьте ошибки в новом варианте (${count}). Первое поле с ошибкой выделено.`);
+      focusFirstInvalid();
+      return;
+    }
+    setSummary(null);
     createVariant.mutate(
       { productId: product.id, body: variantInput(adding) },
       {
@@ -318,7 +350,11 @@ export function VariantsManager({
         onError: (error) => {
           const info = describeStoreAdminError(error);
           setErrors(info.fields);
-          toast.error(info.message);
+          const hasFields = Object.keys(info.fields).length > 0;
+          setSummary(
+            hasFields ? 'Проверьте поля варианта: сервер отклонил значения.' : info.message,
+          );
+          if (hasFields) focusFirstInvalid();
         },
       },
     );
@@ -355,10 +391,16 @@ export function VariantsManager({
       ))}
       {adding ? (
         <div
+          ref={containerRef}
           className="grid gap-3 rounded-lg bg-surface-sunken p-3 sm:grid-cols-[1.2fr_1fr_1fr_6rem]"
           role="group"
           aria-label="Новый вариант"
         >
+          {summary ? (
+            <FormErrorSummary data-testid="new-variant-error" className="sm:col-span-4">
+              {summary}
+            </FormErrorSummary>
+          ) : null}
           <Field label="Срок" error={errors.duration}>
             <DurationSelect
               value={adding.duration}
@@ -392,7 +434,15 @@ export function VariantsManager({
             <Button type="button" size="sm" loading={createVariant.isPending} onClick={submitNew}>
               Добавить
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(null)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setAdding(null);
+                setSummary(null);
+              }}
+            >
               Отмена
             </Button>
           </div>
@@ -406,6 +456,7 @@ export function VariantsManager({
           disabled={free === null || product.variants.length >= MAX_VARIANTS}
           onClick={() => {
             setErrors({});
+            setSummary(null);
             if (free) setAdding(newVariantDraft(free));
           }}
         >

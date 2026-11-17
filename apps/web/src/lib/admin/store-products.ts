@@ -341,6 +341,14 @@ export function describeStoreAdminError(error: unknown): StoreAdminErrorInfo {
       info.message =
         'Вариант входит в набор, поэтому его нельзя удалить. Сначала уберите его из набора.';
       return info;
+    case 'CATEGORY_HAS_CHILDREN':
+      info.message =
+        'В категории есть подкатегории, поэтому её нельзя удалить. Сначала удалите или перенесите подкатегории.';
+      return info;
+    case 'CATEGORY_HAS_PRODUCTS':
+      info.message =
+        'В категории есть товары, поэтому её нельзя удалить. Сначала перенесите или удалите товары.';
+      return info;
     case 'PRODUCT_TYPE_NOT_SELLABLE':
       info.fields.isActive =
         'Тип этого товара не входит в список продаваемых — активировать его нельзя.';
@@ -352,6 +360,7 @@ export function describeStoreAdminError(error: unknown): StoreAdminErrorInfo {
     // «Товар с таким slug уже существует», «Вариант с такой длительностью…».
     if (/slug/i.test(error.message)) info.fields.slug = error.message;
     else if (/длительност/i.test(error.message)) info.fields.duration = error.message;
+    // Прочие 409 (в т.ч. без кода): общий фолбэк — текст API (по умолчанию «Конфликт данных»).
     return info;
   }
   if (error.status === 400 || error.status === 422) {

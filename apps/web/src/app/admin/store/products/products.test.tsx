@@ -339,6 +339,81 @@ describe('Админка магазина: товары (0.3)', () => {
     );
   });
 
+  it('создание: пустая форма — фокус на первом невалидном поле, ровно один role=alert', async () => {
+    grantAll();
+    const { user, dialog } = await openCreate();
+    await user.click(within(dialog).getByRole('button', { name: 'Создать товар' }));
+    const name = within(dialog).getByLabelText(/Название/);
+    await waitFor(() => expect(name).toHaveFocus());
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(name.getAttribute('aria-describedby')).toContain('-error');
+    const alerts = within(dialog).getAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveAttribute('data-testid', 'product-form-error');
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('создание: ошибка только в варианте — фокус на цене варианта, один alert', async () => {
+    grantAll();
+    const { user, dialog } = await openCreate();
+    await user.type(within(dialog).getByLabelText(/Название/), 'Ключ');
+    await user.type(within(dialog).getByLabelText(/Slug/), 'key');
+    await user.click(within(dialog).getByRole('button', { name: 'Создать товар' }));
+    const price = within(within(dialog).getByTestId('variant-drafts')).getByLabelText(/Цена, ₽/);
+    await waitFor(() => expect(price).toHaveFocus());
+    expect(price).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(1);
+  });
+
+  it('вариант (правка): неверная цена — фокус на поле, один alert в строке', async () => {
+    grantAll();
+    const user = userEvent.setup();
+    render(<AdminStoreProductsPage />, { wrapper: Providers });
+    await screen.findByTestId('admin-products');
+    await user.click(screen.getByRole('button', { name: 'Изменить' }));
+    const dialog = await screen.findByRole('dialog');
+    const row = within(dialog).getByTestId('variant-row');
+    const price = within(row).getByLabelText(/Цена, ₽/);
+    await user.clear(price);
+    await user.type(price, 'abc');
+    await user.click(within(row).getByRole('button', { name: 'Сохранить вариант' }));
+    await waitFor(() => expect(price).toHaveFocus());
+    expect(price).toHaveAttribute('aria-invalid', 'true');
+    expect(within(row).getAllByRole('alert')).toHaveLength(1);
+    expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it('новый вариант (правка): пустая цена — фокус на цене, один alert', async () => {
+    grantAll();
+    const user = userEvent.setup();
+    render(<AdminStoreProductsPage />, { wrapper: Providers });
+    await screen.findByTestId('admin-products');
+    await user.click(screen.getByRole('button', { name: 'Изменить' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Добавить вариант' }));
+    const group = within(dialog).getByRole('group', { name: 'Новый вариант' });
+    await user.click(within(group).getByRole('button', { name: 'Добавить' }));
+    const price = within(group).getByLabelText(/Цена, ₽/);
+    await waitFor(() => expect(price).toHaveFocus());
+    expect(within(group).getAllByRole('alert')).toHaveLength(1);
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('400 сервера по картинке: фокус на поле, сводка одна', async () => {
+    grantAll();
+    mocks.post.mockRejectedValueOnce(
+      new ApiError(400, ['Картинка — https-ссылка на один из хостов: cdn-files.twomc.su']),
+    );
+    const { user, dialog } = await openCreate();
+    await user.type(within(dialog).getByLabelText(/Название/), 'Ключ');
+    await user.type(within(dialog).getByLabelText(/Slug/), 'key');
+    await user.type(within(dialog).getByLabelText(/Цена, ₽/), '10');
+    await user.click(within(dialog).getByRole('button', { name: 'Создать товар' }));
+    const image = within(dialog).getByLabelText('Картинка (URL)');
+    await waitFor(() => expect(image).toHaveFocus());
+    expect(within(dialog).getAllByRole('alert')).toHaveLength(1);
+  });
+
   it('поиск уходит в API параметром search', async () => {
     mocks.granted.add('store.products.view');
     const user = userEvent.setup();

@@ -54,6 +54,16 @@ describe('describeStoreAdminError', () => {
     ).toMatch(/не входит в список/);
   });
 
+  it('409 удаления категории: коды CATEGORY_HAS_* и общий фолбэк', () => {
+    expect(
+      describeStoreAdminError(new ApiError(409, ['x'], { code: 'CATEGORY_HAS_CHILDREN' })).message,
+    ).toMatch(/есть подкатегории/);
+    expect(
+      describeStoreAdminError(new ApiError(409, ['x'], { code: 'CATEGORY_HAS_PRODUCTS' })).message,
+    ).toMatch(/есть товары/);
+    expect(describeStoreAdminError(ApiError.fromResponse(409, {})).message).toBe('Конфликт данных');
+  });
+
   it('400 валидации раскладывается по полям', () => {
     const info = describeStoreAdminError(
       new ApiError(400, [
