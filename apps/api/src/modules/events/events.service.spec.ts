@@ -62,6 +62,28 @@ describe('EventsService.list и 2FA персонала (Q22, ADR-0169)', () => {
   });
 });
 
+describe('EventsService.mine (ADR-0169)', () => {
+  it('без фильтра видимости: только свои события (созданные или с участием)', async () => {
+    const { service, prisma } = setup({ key: KEY });
+    await service.mine('u1');
+    const call = prisma.calendarEvent.findMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+    };
+    expect(call.where).not.toHaveProperty('visibility');
+    expect(call.where).toEqual({
+      OR: [{ createdById: 'u1' }, { participants: { some: { userId: 'u1' } } }],
+    });
+  });
+
+  it('не проверяет право персонала: STAFF-события пользователя отдаются как есть', async () => {
+    const { service, prisma, hasPermission } = setup({ key: KEY });
+    const own = [{ id: 'e1', visibility: 'STAFF', createdById: 'u1' }];
+    prisma.calendarEvent.findMany.mockResolvedValue(own);
+    expect(await service.mine('u1')).toEqual(own);
+    expect(hasPermission).not.toHaveBeenCalled();
+  });
+});
+
 describe('EventsService: без ключа 2FA вне dev/test — fail closed (Q22)', () => {
   // NODE_ENV подаётся через мок ConfigService, process.env не затрагивается.
   it.each(['', undefined, 'staging'])(

@@ -40,6 +40,29 @@ describe('AdminToolsService.getSiteSettings', () => {
     expect(changes.after).not.toHaveProperty('requireAdmin2fa');
     expect(changes.after).toMatchObject({ siteName: 'B' });
   });
+
+  it('updateIpWhitelist не отдаёт requireAdmin2fa (Q22/Q44)', async () => {
+    const row = {
+      id: 'singleton',
+      ipWhitelist: [] as string[],
+      requireAdmin2fa: true,
+    };
+    const updated = { ...row, ipWhitelist: ['10.0.0.1'] };
+    const prisma = {
+      siteSettings: {
+        findFirst: jest.fn().mockResolvedValue(row),
+        update: jest.fn().mockResolvedValue(updated),
+      },
+    } as unknown as PrismaService;
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const service = new AdminToolsService(prisma, {} as never, audit as never);
+    const res = await service.updateIpWhitelist(
+      { ips: ['10.0.0.1'] } as never,
+      'admin-1',
+    );
+    expect(res).not.toHaveProperty('requireAdmin2fa');
+    expect(res).toMatchObject({ id: 'singleton', ipWhitelist: ['10.0.0.1'] });
+  });
 });
 
 describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
@@ -50,7 +73,7 @@ describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
     const redis = {
       client: {
         scan: jest.fn((_cursor: string, _m: string, pattern: string) => {
-          const prefix = pattern.replace('*', '');
+          const prefix = pattern.split('*').join('');
           return Promise.resolve([
             '0',
             Object.keys(store).filter((k) => k.startsWith(prefix)),
