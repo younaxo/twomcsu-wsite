@@ -13,7 +13,6 @@ import {
   BridgeSourceEvent,
 } from '../src/modules/bridge/bridge-punishment.source';
 import { signRequest } from '../src/modules/bridge/bridge-crypto';
-import { PrismaPunishmentMirrorStore } from '../src/modules/punishments/prisma-punishment-mirror.store';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import {
   batchBody,
@@ -35,9 +34,7 @@ jest.setTimeout(30_000);
 /// синтетический и задаётся здесь; значения из `.env*` не используются.
 /// Тест создаёт собственные серверы (slug `e2e-<unique>-*`), строки зеркала
 /// (`source='bridge'`, sourceId из случайного диапазона) и удаляет их в afterAll.
-/// Подписчика синхронизатора этапа 02 в приложении пока нет: тест подписывается
-/// на `BridgePunishmentSource` сам и пишет в зеркало через
-/// `PrismaPunishmentMirrorStore.applyBatch`.
+/// Зеркало пишет подписчик приложения (BridgeMirrorSubscriber, этап 02).
 const MASTER_SECRET = 'e2e-bridge-synthetic-master-secret-0123456789-abcdef';
 const MASTER = Buffer.from(MASTER_SECRET, 'utf8');
 const HELLO = { pluginVersion: '1.0.0', platform: 'paper' };
@@ -46,7 +43,6 @@ describe('Bridge receiver (e2e)', () => {
   let app: INestApplication | undefined;
   let prisma: PrismaService;
   let source: BridgePunishmentSource;
-  let mirror: PrismaPunishmentMirrorStore;
   const unique = randomUUID().replace(/-/g, '').slice(0, 6);
   const slugMain = `e2e-${unique}-a`;
   const slugRevoked = `e2e-${unique}-r`;
@@ -126,18 +122,11 @@ describe('Bridge receiver (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     source = app.get(BridgePunishmentSource);
-    mirror = new PrismaPunishmentMirrorStore(prisma);
 
-    disposeSub = source.subscribe(async (ev: BridgeSourceEvent) => {
+    // Зеркало пишет подписчик приложения (BridgeMirrorSubscriber); тест лишь
+    // записывает опубликованные события для проверок.
+    disposeSub = source.subscribe((ev: BridgeSourceEvent) => {
       published.push(ev);
-      if (ev.type === 'deleted') return;
-      await mirror.applyBatch(
-        'bridge',
-        ev.punishment.kind,
-        [ev.punishment],
-        null,
-        new Date(),
-      );
     });
 
     // Подписчик открывает вложенную транзакцию, пока транзакция приёмника
@@ -161,7 +150,7 @@ describe('Bridge receiver (e2e)', () => {
         {
           slug: slugMain,
           displayName: 'E2E main',
-          capabilities: { punishments: true },
+          capabilities: { punishments: true, 'punishments-authoritative': true },
         },
         { slug: slugRevoked, displayName: 'E2E revoked', status: 'REVOKED' },
         { slug: slugOther, displayName: 'E2E other' },
@@ -543,6 +532,126 @@ describe('Bridge receiver (e2e)', () => {
       });
       const rows = await logRows(slugMain);
       expect(rows.some((r) => r.type === 'punishment.deleted')).toBe(true);
+    });
+  });
+
+  describe('раунд безопасности', () => {
+    it('событие симулятора попадает в зеркало и видно в публичном списке без ручной подписки', async () => {
+      const sid = nextSourceId();
+      const name = `Br${unique}${seq}`;
+      await prisma.siteSetting.upsert({
+        where: { key: 'punishments.public.enabled' },
+        update: { value: 'true' },
+        create: { key: 'punishments.public.enabled', value: 'true' },
+      });
+      const ev = one(
+        slugMain,
+        'punishment.created',
+        punishmentData({ sourceId: sid, subjectName: name, subjectUuid: randomUUID() }),
+      );
+      await send(slugMain, batchBody([ev])).expect(200);
+      const row = await mirrorRow(sid);
+      expect(row?.sourceScope).toBe(slugMain);
+      const res = await http()
+        .get(`/punishments/public?name=${name}&limit=10`)
+        .expect(200);
+      expect(res.body.items.length).toBeGreaterThanOrEqual(1);
+      await prisma.siteSetting.deleteMany({
+        where: { key: 'punishments.public.enabled', value: 'true' },
+      });
+    });
+
+    it('M3: 200 КБ принимается, 300 КБ - 413', async () => {
+      const ok = Buffer.from(
+        JSON.stringify({ schema: 'twomc.bridge.v1', pad: 'x'.repeat(200_000) }),
+      );
+      const res = await send(slugMain, ok);
+      expect([200, 422]).toContain(res.status);
+      const big = Buffer.from(
+        JSON.stringify({ schema: 'twomc.bridge.v1', pad: 'x'.repeat(300_000) }),
+      );
+      await send(slugMain, big).expect(413);
+    });
+
+    it('M3: битый JSON - 400 invalid_body без текста парсера', async () => {
+      const res = await http()
+        .post('/bridge/v1/events')
+        .set('Content-Type', 'application/json')
+        .send('{"a":')
+        .expect(400);
+      expect(res.body).toEqual({ error: 'invalid_body' });
+    });
+
+    it('M1: 30 неверных подписей с того же IP не блокируют верный запрос', async () => {
+      const body = batchBody([one(slugOther, 'bridge.hello', HELLO)]);
+      for (let i = 0; i < 30; i++) {
+        await send(slugOther, body, { master: Buffer.from('x'.repeat(40)) }).expect(401);
+      }
+      await send(slugOther, batchBody([one(slugOther, 'bridge.hello', HELLO)])).expect(200);
+    });
+  });
+
+  describe('R121: пул из одного соединения', () => {
+    it('параллельные пачки при connection_limit=1: без P2028 и 503, все события применены', async () => {
+      const savedUrl = process.env.DATABASE_URL;
+      const base = savedUrl ?? '';
+      const sep = base.includes('?') ? '&' : '?';
+      // Только в этом тесте и только на одноразовой БД (значение не печатается).
+      process.env.DATABASE_URL = `${base}${sep}connection_limit=1&pool_timeout=20`;
+      let tiny: INestApplication | undefined;
+      try {
+        const fixture = await Test.createTestingModule({ imports: [AppModule] })
+          .overrideProvider(BRIDGE_CONFIG)
+          .useValue(
+            readBridgeConfig({ get: (k: string) => process.env[k] as never }),
+          )
+          .compile();
+        tiny = fixture.createNestApplication(APP_CREATE_OPTIONS);
+        configureApp(tiny);
+        await tiny.init();
+        const ids: string[] = [];
+        const requests = Array.from({ length: 8 }, () => {
+          const events = Array.from({ length: 5 }, () => {
+            const sid = nextSourceId();
+            ids.push(sid);
+            return one(
+              slugMain,
+              'punishment.created',
+              punishmentData({ sourceId: sid }),
+            );
+          });
+          const body = batchBody(events);
+          const headers = signedHeaders({ slug: slugMain, body, master: MASTER });
+          return request(tiny!.getHttpServer())
+            .post('/bridge/v1/events')
+            .set(headers)
+            .set('Content-Type', 'application/json')
+            .send(body.toString('utf8'));
+        });
+        const responses = await Promise.all(requests);
+        for (const r of responses) {
+          expect(r.status).toBe(200);
+          expect(
+            r.body.results.every((x: { status: string }) => x.status === 'accepted'),
+          ).toBe(true);
+        }
+        expect(
+          await prisma.minecraftPunishment.count({
+            where: {
+              source: 'bridge',
+              sourceId: { in: ids.map((i) => BigInt(i)) },
+            },
+          }),
+        ).toBe(ids.length);
+        const statuses = await prisma.bridgeEventLog.findMany({
+          where: { serverSlug: slugMain, status: 'received' },
+        });
+        expect(statuses).toHaveLength(0);
+      } finally {
+        await tiny?.close();
+        if (savedUrl === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = savedUrl;
+      }
     });
   });
 
