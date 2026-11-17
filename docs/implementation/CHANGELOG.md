@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### Безопасные cookie в production и обязательная 2FA админов (P3-A1, P3-A2)
+
+- В production API не стартует без `COOKIE_SECURE=true`, `COOKIE_DOMAIN` (не localhost/127.0.0.1/пусто)
+  и `TWO_FACTOR_ENCRYPTION_KEY` (≥ 32 символов). `COOKIE_SAMESITE=none` допустим только при
+  `COOKIE_SECURE=true` (во всех окружениях). dev/test сохраняют прежние дефолты.
+- `PermissionsGuard`: в production без ключа 2FA и при включённом `requireAdmin2fa` действия персонала
+  отклоняются (`403 admin_2fa_required`), а не пропускаются молча.
+- Та же проверка admin-2FA добавлена в WS `/chat` (`mute_user`, `ban_user`, `pin_message`, а также
+  `delete_message` в модераторской ветке — удаление чужого сообщения; автор удаляет своё без 2FA) и в
+  `GET /admin/communications/recipients`.
+- `TWO_FACTOR_ENCRYPTION_KEY` обрезается по краям (`trim`): ключ из пробелов не проходит проверку.
+- Вне production без ключа 2FA при старте один раз пишется предупреждение: admin-2FA не работает
+  (допустимо только вне production; production-compose задаёт `NODE_ENV: production`).
+- ПЕРЕД ДЕПЛОЕМ: задать `COOKIE_SECURE=true`, `COOKIE_DOMAIN`, `TWO_FACTOR_ENCRYPTION_KEY` в серверном
+  `.env`/compose — иначе API не запустится.
+
 ### Реальный IP клиента за прокси: TRUST_PROXY (P3-02)
 
 - Новая переменная `TRUST_PROXY` с проверкой при старте: пусто (выключено), число hop-ов (`1` для

@@ -265,7 +265,15 @@ export class ChatService {
     });
   }
 
-  async deleteMessage(userId: string, messageId: string, reason?: string) {
+  /// `beforeModerate` вызывается только для НЕавторской (модераторской) ветки
+  /// после проверки права — WS-gateway передаёт сюда admin-2FA (ADR-0156);
+  /// автор, удаляющий своё сообщение, 2FA не проходит.
+  async deleteMessage(
+    userId: string,
+    messageId: string,
+    reason?: string,
+    beforeModerate?: () => Promise<void>,
+  ) {
     const message = await this.prisma.chatMessage.findUnique({
       where: { id: messageId },
     });
@@ -281,6 +289,7 @@ export class ChatService {
       if (!canDelete) {
         throw new ForbiddenException('Удалить можно только свои сообщения');
       }
+      await beforeModerate?.();
     }
     return this.prisma.chatMessage.update({
       where: { id: messageId },

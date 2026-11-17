@@ -20,9 +20,10 @@
 | `JWT_REFRESH_EXPIRES` | api | no (`30d`) | no | `30d` | TTL refresh |
 | `TURNSTILE_SECRET_KEY` | api | prod | **yes** | `<SECRET>` | Cloudflare Turnstile secret (dev — тестовый `1x0000000000000000000000000000000AA`) |
 | `TURNSTILE_DISABLED` | api | no | no | `false` | отключает проверку — только CI e2e |
-| `COOKIE_DOMAIN` | api | prod | no | `.twomc.su` | default `localhost` |
-| `COOKIE_SECURE` | api | prod | no | `true` | default false |
-| `COOKIE_SAMESITE` | api | no (`lax`) | no | `lax` | `lax/strict/none` |
+| `COOKIE_DOMAIN` | api | prod | no | `.twomc.su` | default `localhost`; в production обязателен и не localhost/127.0.0.1 (ADR-0156) |
+| `COOKIE_SECURE` | api | prod | no | `true` | default false; в production должен быть `true`, иначе API не стартует (ADR-0156) |
+| `COOKIE_SAMESITE` | api | no (`lax`) | no | `lax` | `lax/strict/none`; `none` только при `COOKIE_SECURE=true` в любом окружении |
+| `TWO_FACTOR_ENCRYPTION_KEY` | api | prod | **yes** | `<SECRET>` | ключ шифрования секретов 2FA, ≥ 32 символов (`openssl rand -base64 32`); в production обязателен, без него API не стартует (ADR-0156) |
 | `UPLOADS_DIR` | api | no (`./uploads`) | no | `/data/uploads` | локальное хранилище файлов |
 | `UPLOAD_MAX_AVATAR_SIZE` | api | no (5 MiB) | no | `5242880` | байты |
 | `UPLOAD_MAX_BANNER_SIZE` | api | no (10 MiB) | no | `10485760` | байты |

@@ -46,9 +46,58 @@ export const envValidationSchema = Joi.object({
   JWT_REFRESH_EXPIRES: Joi.string().default('30d'),
   BCRYPT_ROUNDS: Joi.number().integer().min(4).max(15).default(12),
 
-  COOKIE_DOMAIN: Joi.string().default('localhost'),
-  COOKIE_SECURE: Joi.boolean().default(false),
-  COOKIE_SAMESITE: Joi.string().valid('lax', 'strict', 'none').default('lax'),
+  /// Cookie (ADR-0156). В production COOKIE_SECURE=true и COOKIE_DOMAIN
+  /// (не localhost/127.0.0.1/пусто) обязательны; SameSite=none — только при
+  /// COOKIE_SECURE=true в любом окружении. dev/test сохраняют дефолты.
+  COOKIE_DOMAIN: Joi.string()
+    .allow('')
+    .default('localhost')
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string()
+        .invalid('')
+        .required()
+        .custom((value: string, helpers) => {
+          const host = value.trim().toLowerCase().replace(/^\./, '');
+          if (
+            host === '' ||
+            host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host === '::1' ||
+            host === '0.0.0.0' ||
+            host.endsWith('.localhost')
+          ) {
+            return helpers.error('any.invalid');
+          }
+          return value;
+        })
+        .messages({
+          'any.required': 'COOKIE_DOMAIN обязателен в production',
+          'string.empty': 'COOKIE_DOMAIN обязателен в production',
+          'any.invalid': 'COOKIE_DOMAIN не может быть localhost в production',
+        }),
+    }),
+  COOKIE_SECURE: Joi.boolean()
+    .default(false)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.boolean().required().valid(true).messages({
+        'any.required': 'COOKIE_SECURE=true обязателен в production',
+        'any.only': 'COOKIE_SECURE=true обязателен в production',
+      }),
+    }),
+  COOKIE_SAMESITE: Joi.string()
+    .valid('lax', 'strict', 'none')
+    .default('lax')
+    .when('COOKIE_SECURE', {
+      is: Joi.boolean().valid(true).required(),
+      otherwise: Joi.string().invalid('none').messages({
+        'any.invalid':
+          'COOKIE_SAMESITE=none допустим только при COOKIE_SECURE=true',
+        'any.only':
+          'COOKIE_SAMESITE=none допустим только при COOKIE_SECURE=true',
+      }),
+    }),
 
   /// Файловое хранилище (PHASE 23, ADR-0008).
   STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
@@ -129,12 +178,24 @@ export const envValidationSchema = Joi.object({
   VAPID_SUBJECT: Joi.string().default('mailto:admin@twomc.su'),
 
   /// Ключ шифрования секретов 2FA (ADR-0109): строка ≥ 32 символов
-  /// (`openssl rand -base64 32`). Пусто — 2FA на сайте недоступна (настройка
-  /// честно сообщает причину), `requireAdmin2fa` не применяется. Смена ключа
-  /// делает уже включённую 2FA нерабочей — только вместе со сбросом 2FA.
-  TWO_FACTOR_ENCRYPTION_KEY: Joi.alternatives()
-    .try(Joi.string().valid(''), Joi.string().min(32))
-    .default(''),
+  /// (`openssl rand -base64 32`). В production обязателен (ADR-0156): без него
+  /// API не стартует, 2FA админов не отключается молча. Вне production пусто —
+  /// 2FA недоступна, `requireAdmin2fa` не применяется. Смена ключа делает уже
+  /// включённую 2FA нерабочей — только вместе со сбросом 2FA.
+  TWO_FACTOR_ENCRYPTION_KEY: Joi.string()
+    .trim()
+    .min(32)
+    .messages({
+      'any.required': 'TWO_FACTOR_ENCRYPTION_KEY обязателен в production',
+      'string.empty': 'TWO_FACTOR_ENCRYPTION_KEY обязателен в production',
+      'string.min':
+        'TWO_FACTOR_ENCRYPTION_KEY в production — не короче 32 символов',
+    })
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.string().allow('').default(''),
+    }),
 
   /// Без credentials реальный опрос Twitch/YouTube не выполняется (CRUD
   /// каналов и закэшированный в БД статус работают) — см. RISKS.md R6.
