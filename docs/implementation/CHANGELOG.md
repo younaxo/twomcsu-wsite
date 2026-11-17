@@ -5,14 +5,15 @@
 
 ## [Unreleased]
 
-### Этап 03, срез 1: приёмник Bridge (ADR-0182, ветка feature/stage-03-s1-bridge-receiver, не смержено, миграции и e2e не запускались)
+### Этап 03, срез 1: приёмник Bridge (ADR-0182, ветка feature/stage-03-s1-bridge-receiver, не смержено, миграции не применялись)
 
 - Модуль `apps/api/src/modules/bridge`: крипто (HKDF-ключ сервера по `slug` как соль, HMAC-SHA256 над сырым телом, `timingSafeEqual`), конфиг (`BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET` не короче 32 байт; без них все пути отвечают 503), схемы конверта и событий v1, `BridgeSignatureGuard` (порядок проверок раздела 2.3, нонс после подписи, fail-closed 503 при недоступном Redis), `BridgeRateLimitGuard` и Redis-лимиты (запросы на ключ, события в минуту, параллельные запросы, счётчик неудачных аутентификаций), `BridgeController` (`GET /bridge/v1/handshake`, `POST /bridge/v1/events`).
 - Приём (`BridgeIngestService`): `punishment.*` применяются в одной транзакции с записью в `bridge_event_log` (дедупликация `(serverSlug, eventId)`, `conflict` при другом `payloadHash`), порядок по маркеру `occurredAt` в Redis (`stale`), capabilities до применения; запись в зеркало этапа 02 идёт через `BridgePunishmentSource` (`id = 'bridge'`, push). `player.*` выключены (`unsupported_type`).
 - Очистка журнала раз в сутки, срок не меньше 7 суток (F5). CLI: `bridge:register` (запись сервера, секрет не читает) и `bridge:print-key` (ключ только владельцу, F3). Симулятор плагина `scripts/bridge-plugin-sim.ts` (только режим scenario) и fixtures `apps/api/test/fixtures/bridge`.
 - Статический e2e `apps/api/test/bridge.e2e-spec.ts` по плану раздела 11 контракта (не запускался).
-- Документы: ADR-0182, риски R111-R120, контракт `docs/stage-03/BRIDGE-CONTRACT.md`; отчёт `docs/reports/2026-11-17-03-s1-bridge-receiver.md`.
-- Проверки: `tsc --noEmit` 0 ошибок; jest `src/modules/bridge src/modules/punishments` 27 наборов, 940 тестов, все пройдены.
+- Сверка с итоговым контрактом (коммиты a43b0f3, c5b6efc): `chat.*`, `player.*`, `inventory.*` -> `rejected` `unsupported_type`, `features.player_events=false`; формат `key-id` по slug `^[a-z0-9][a-z0-9-]{1,31}$`; при недоступном Redis guard и лимитер отвечают 503 `unavailable` с `Retry-After: 5`; коды инвентаря 5.1 и раздел 6.1 не реализованы; регистрация сервера только данными через CLI `bridge:register`, без лимита (Q42). Тест `bridge-slice1-contract.spec.ts`.
+- Документы: ADR-0182, риски R111-R125, контракт `docs/stage-03/BRIDGE-CONTRACT.md`; отчёт `docs/reports/2026-11-17-03-s1-bridge-receiver.md`.
+- Проверки: `tsc --noEmit` 0 ошибок; jest `src/modules/bridge src/modules/punishments` 975 тестов, все пройдены. e2e в этой сверке не перезапускались (код не менялся; ранее на a43b0f3: bridge 21/21, bans 25/25). Открыто: противоречия контракта 1 и 2 (R122, R123), publish внутри транзакции при малом пуле Prisma (R121).
 
 ### Этап 02, срез 2: фронтенд /bans и «Наказания на серверах» (ADR-0181, ветка feature/stage-02-s2-bans-ui, не смержено, сборка и e2e не запускались)
 
