@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Этап 02, срез 2: контракт API наказаний (ADR-0180, ветка feature/stage-02-s2-bans-contract, только документ, не смержено)
+
+- `docs/stage-02/BANS-API-CONTRACT.md`: публичный список и карточка `/punishments/public`, «мои наказания» `/punishments/me`, просмотр персоналом `/admin/punishments` (право `users.punishments`, 2FA), причина на `/bans` только из закрытого словаря (Q59), недоступность 404/503/`stale`, DTO для `packages/shared`, синхронизация копий типов тестом (R77), WebSocket отложен. Код, схема и миграции не менялись; ADR-0180 в статусе Proposed.
+
 ### Этап 02, срез 1: зеркало наказаний и синхронизация (ADR-0178, ветка feature/stage-02-s1-punishments-core, не смержено)
 
 - Контракт `PunishmentSource`, нормализация, статус, очистка причины, `rowHash`; модели `MinecraftPunishment` и `PunishmentSyncState`; миграция `20261117020000_punishments_mirror` (не применялась); `PunishmentsSyncService` (слои 0-3 и T), лидерство через Redis, `PunishmentsModule` без побочных эффектов без источника; `LITEBANS_*` в валидации env. Адаптер mysql2, `/bans`, «Мои наказания», WebSocket и админ-управление не входят (срезы 2-3). Риски R52-R55. Отчёт: `docs/reports/2026-11-17-02-s1-punishments-core.md`.
