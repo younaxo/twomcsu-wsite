@@ -60,3 +60,9 @@ export const CAPABILITY_KEYS = [
   'player-events',
 ] as const;
 export type BridgeCapability = (typeof CAPABILITY_KEYS)[number];
+
+/// Очистка журнала дедупликации (F5): сигнал, если самая старая строка старше.
+export const LOG_AGE_ALERT_DAYS = 8;
+export const LOG_CLEANUP_BATCH_SIZE = 1000;
+export const LOG_CLEANUP_MAX_BATCHES = 500;
+export const DEFAULT_LOG_RETENTION_DAYS = 7;

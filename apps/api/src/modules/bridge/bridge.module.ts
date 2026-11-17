@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BridgeController } from './bridge.controller';
 import { BRIDGE_CONFIG, readBridgeConfig } from './bridge.config';
+import { BridgeLogRetentionScheduler } from './bridge-log-retention.scheduler';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgePunishmentSource } from './bridge-punishment.source';
 import { BridgeRateLimitGuard } from './bridge-rate-limit.guard';
@@ -25,6 +26,7 @@ import { BridgeSignatureGuard } from './bridge-signature.guard';
     BridgeIngestService,
     BridgeSignatureGuard,
     BridgeRateLimitGuard,
+    BridgeLogRetentionScheduler,
   ],
   exports: [BridgePunishmentSource],
 })
