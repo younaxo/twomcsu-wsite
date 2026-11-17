@@ -18,8 +18,8 @@ Prisma по умолчанию: `maxWait` 2000 мс (старт транзакц
 Пул в скриптах прогона e2e: `e2e-guarded.sh` и `e2e-local.sh` задают только `DATABASE_URL=postgresql://twomc:ci_password@localhost:55432/<БД>` без `connection_limit` и `pool_timeout`: пул Prisma = число CPU x 2 + 1, `pool_timeout` 10 с. Скрипты не менялись. Production: `infrastructure/docker-compose.prod.yml` - один контейнер API (768 МБ), Postgres 16 с `max_connections=100`, `shared_buffers=256MB`; `DATABASE_URL` берётся из `.env` (не читался), параметров пула в репозитории нет. Рекомендация записана в `docs/runbooks/production-env-checklist.md`.
 
 Точечные опции:
-- убраны (совпадали с общими): `forms.service.ts` (отправка формы), `orders.service.ts` (вебхук оплаты, только опции, логика не менялась);
-- оставлены: Bridge `TX_OPTIONS` 2000/6000 и зеркало наказаний `APPLY_TX_*` 2000/6000 (быстрый отказ намеренный, R121/F4); инвентарь - явные 2000/5000 (прежние умолчания Prisma) и Serializable: при повторе до 4 раз общие 10/10 с дали бы до 80 с.
+- убраны (совпадали с общими): `orders.service.ts` (вебхук оплаты, только опции, логика не менялась);
+- оставлены: `forms.service.ts` (отправка формы) 5/5 с (ADR-0162: соединение пула держится до `timeout` на анонимном маршруте; уже в main, PR #156); Bridge `TX_OPTIONS` 2000/6000 и зеркало наказаний `APPLY_TX_*` 2000/6000 (быстрый отказ намеренный, R121/F4); инвентарь - явные 2000/5000 (прежние умолчания Prisma) и Serializable: при повторе до 4 раз общие 10/10 с дали бы до 80 с.
 
 ## Фильтр ошибок
 
@@ -42,7 +42,7 @@ Prisma по умолчанию: `maxWait` 2000 мс (старт транзакц
 | Файл:строка | Сценарий | Сейчас | По ADR |
 | --- | --- | --- | --- |
 | voting/voting.service.ts:73 | вебхук голосования, advisory lock по игроку | 500 (P2028); P2002 externalId -> 200 duplicate | 503 busy; duplicate сохраняется |
-| forms/forms.service.ts:282 | отправка формы, advisory lock формы | 500; `maxWait` 10 с точечно | 503 busy; общие опции |
+| forms/forms.service.ts:282 | отправка формы, advisory lock формы | 500; точечные 5/5 с (ADR-0162, в main) | 503 busy; точечные 5/5 с сохранены |
 | store/orders.service.ts:348 | вебхук оплаты, PENDING -> COMPLETED + промокод | 500; точечные 10/10 с | 503 busy (провайдер ретраит); общие опции; логика не менялась |
 | bridge/bridge-ingest.service.ts:191 | шаг 1 приёма события, журнал `received` | контроллер (`bridge.controller.ts:106-111`) уже отвечал 503 `unavailable`, `Retry-After: 5` | без изменения для пути контроллера; фильтр даёт ту же форму для кодов Prisma вне контроллера; 2000/6000 оставлены |
 | punishments/prisma-punishment-mirror.store.ts:130 | запись зеркала наказаний | ошибка пробрасывается; опрос/Bridge ретраят | без изменения; 2000/6000 оставлены |
@@ -76,3 +76,7 @@ e2e исчерпания пула НЕ доказан. Попытка `test/pris
 
 1. `connection_limit=15&pool_timeout=10` в production `DATABASE_URL`? Рекомендация: да.
 2. Оставить `PRISMA_TX_*` по умолчанию 10000/10000? Рекомендация: да до нагрузочной проверки (R140).
+
+## Перестройка ветки (подэтап 0.0 плана приоритетов v1.1, 2026-11-17)
+
+Ветка `fix/prisma-tx-defaults` (25e478e) конфликтовала с main в `forms.service.ts`: `fix/forms-submit-tx-wait` (ADR-0162, PR #156) слита в main с двумя коммитами, которых не было в стеке. Создана `fix/prisma-tx-defaults-v2` от 620aaac: cherry-pick c0569e6 -> 92ea2a2, 988bbb0 -> 4088e1e, затем d472bb2 -> ad57c6b, ff6e8a6 -> 0df501c, 25e478e -> 65a8d7e. Старая ветка не тронута. Конфликт `forms.service.ts`: сохранены явные 5/5 с из ADR-0162 (общие 10 с хуже для анонимного маршрута), удаление точечных опций из d472bb2 отменено; `forms.service.spec.ts` - как в main. Отличие от v1: форма остаётся исключением из общих `PRISMA_TX_*`.
