@@ -18,6 +18,11 @@ export class InMemorySource implements PunishmentSource {
   rows = new Map<PunishmentKind, Map<string, NormalizedPunishment>>();
   serverTimeMs = 0;
   failWith: Error | null = null;
+  /// Ошибка только для fetchBatch указанного типа.
+  failBatchWith = new Map<PunishmentKind, Error>();
+  /// id строк, которые адаптер считает невалидными (пропускает).
+  invalidIds = new Set<string>();
+  private skippedPending: bigint[] = [];
   fetchBatchCalls: Array<{ kind: PunishmentKind; afterId: bigint }> = [];
 
   set(row: NormalizedPunishment): void {
@@ -53,9 +58,22 @@ export class InMemorySource implements PunishmentSource {
   ): Promise<NormalizedPunishment[]> {
     this.check();
     this.fetchBatchCalls.push({ kind, afterId });
-    return this.sorted(kind)
+    const failure = this.failBatchWith.get(kind);
+    if (failure) throw failure;
+    const rows = this.sorted(kind)
       .filter((r) => BigInt(r.sourceId) > afterId)
       .slice(0, limit);
+    for (const r of rows) {
+      if (this.invalidIds.has(r.sourceId)) {
+        this.skippedPending.push(BigInt(r.sourceId));
+      }
+    }
+    return rows.filter((r) => !this.invalidIds.has(r.sourceId));
+  }
+  drainSkippedIds(): bigint[] {
+    const out = this.skippedPending;
+    this.skippedPending = [];
+    return out;
   }
   async fetchByIds(
     kind: PunishmentKind,
@@ -67,6 +85,7 @@ export class InMemorySource implements PunishmentSource {
     const missing: bigint[] = [];
     for (const id of ids) {
       const r = m?.get(id.toString());
+      if (r && this.invalidIds.has(r.sourceId)) continue;
       if (r) found.push(r);
       else missing.push(id);
     }

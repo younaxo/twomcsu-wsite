@@ -9,9 +9,13 @@ import { isIPv6 } from 'net';
 /// (возможны ложные срабатывания, это сознательный выбор fail-closed).
 /// Результат выводить только как plain text, без автоссылок.
 ///
-/// Известные границы (см. RISKS.md): IPv4 в десятичной/шестнадцатеричной
-/// записи, контакты словами («собака», «точка» без скобок), гомоглифы
-/// (кириллица вместо латиницы) и контакты вне списка платформ не распознаются.
+/// ОЧИСТКА ЭВРИСТИЧЕСКАЯ, не гарантия. Принятые остаточные риски (RISKS.md):
+/// контакты словами (`user at example dot com`, «собака», «точка» без
+/// скобок), платформы без разделителя (`foo #1234`, `ds user` без цифр),
+/// IPv4 в десятичной/шестнадцатеричной записи (`0x7f.0.0.1`, `2130706433`),
+/// телефоны из 7–9 цифр без «+», гомоглифы (кириллица вместо латиницы) и
+/// контакты вне списка платформ не распознаются. Heartbeat лидерства
+/// выдаётся между пачками синхронизации, а не внутри одной.
 
 export const MAX_REASON_LENGTH = 2048;
 export const MAX_LABEL_LENGTH = 128;
@@ -164,16 +168,131 @@ const TLDS = [
   'onion',
 ].join('|');
 
+/// Зоны, которые распознаются только БЕЗ пробелов вокруг точки (со
+/// словами-зонами «hacking. Today» дало бы ложные срабатывания).
+const EXTRA_TLDS = [
+  'moe',
+  'lol',
+  'page',
+  'zip',
+  'mov',
+  'gay',
+  'art',
+  'blog',
+  'news',
+  'email',
+  'chat',
+  'team',
+  'zone',
+  'life',
+  'today',
+  'network',
+  'media',
+  'group',
+  'agency',
+  'digital',
+  'studio',
+  'design',
+  'wiki',
+  'fans',
+  'rocks',
+  'ninja',
+  'host',
+  'press',
+  'stream',
+  'download',
+  'click',
+  'bot',
+  'wtf',
+  'lat',
+  'xxx',
+  'porn',
+  'sex',
+  'casino',
+  'bet',
+  'poker',
+  'win',
+  'bid',
+  'trade',
+  'party',
+  'review',
+  'science',
+  'loan',
+  'men',
+  'date',
+  'racing',
+  'faith',
+  'cam',
+  'monster',
+  'quest',
+  'sbs',
+  'cyou',
+  'cfd',
+  'rest',
+  'bar',
+  'buzz',
+  'center',
+  'city',
+  'codes',
+  'community',
+  'company',
+  'computer',
+  'direct',
+  'expert',
+  'gallery',
+  'guru',
+  'house',
+  'land',
+  'plus',
+  'systems',
+  'tools',
+  'video',
+  'wang',
+  'works',
+  'ovh',
+  'dog',
+  'cat',
+].join('|');
+
 const URL_RE = /(?:[a-z][a-z0-9+.-]{1,15}:\/\/|www\.|mailto:)\S*/giu;
 const EMAIL_RE =
   /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+\s?@\s?[\p{L}\p{N}-]+(?:\s?\.\s?[\p{L}\p{N}-]+)+/giu;
 const IPV6_CANDIDATE_RE =
-  /(?<![\p{L}\p{N}_])\[?(?:[0-9a-f]{0,4}:){2,7}(?:[0-9a-f]{1,4}|(?:\d{1,3}\.){3}\d{1,3})?(?:%[0-9a-z]+)?\]?(?::\d{1,5})?/giu;
+  /(?<![\p{L}\p{N}_])\[?(?:[0-9a-f]{0,4}:){2,7}(?:(?:\d{1,3}\.){3}\d{1,3}(?!\d)|[0-9a-f]{1,4}(?![0-9a-f])|(?<=::))(?:%[0-9a-z]+)?\]?(?::\d{1,5})?/giu;
 const OCTET = '(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)';
 const IPV4_RE = new RegExp(
   `(?<!\\d)${OCTET}(?:\\s*\\.\\s*${OCTET}|,${OCTET}){3}(?!\\d)(?:\\s?:\\s?\\d{1,5})?(?:\\/\\d{1,2})?`,
   'g',
 );
+const OCT_D = '\\d(?: ?\\d){0,2}';
+const IP_SEP = '(?:\\s*(?:[.\\-_/]|dot|точка)\\s*|\\s+)';
+/// IPv4 с разделителями пробел, `-`, `_`, `/`, `dot`: `192 168 1 1`,
+/// `192-168-0-1`, `192 dot 168 dot 0 dot 1`.
+const IPV4_SEP_RE = new RegExp(
+  `(?<!\\d)${OCTET}(?:${IP_SEP}${OCTET}){3}(?!\\d)`,
+  'giu',
+);
+/// То же, но цифры внутри октета разделены пробелами: `1 9 2 . 1 6 8 . 0 . 1`.
+const IPV4_SPACED_DIGITS_RE = new RegExp(
+  `(?<!\\d)${OCT_D}(?:\\s*[.\\-_/]\\s*${OCT_D}){3}(?!\\d)`,
+  'gu',
+);
+
+/// Запись с разделителями легко совпадает с обычными числами («1 2 3 4»):
+/// без точки скрываем, только если в записи не меньше 5 цифр.
+function redactSeparatedIpv4(m: string): string {
+  const valid = (p: string[]) =>
+    p.length === 4 && p.every((x) => /^\d{1,3}$/.test(x) && Number(x) <= 255);
+  let parts = m.split(/\s*(?:[.\-_/]|dot|точка)\s*|\s+/iu);
+  if (!valid(parts)) {
+    // Цифры внутри октета разделены пробелами: `1 9 2 . 1 6 8 . 0 . 1`.
+    parts = m.split(/\s*[.\-_/]\s*/u).map((p) => p.replace(/\s+/g, ''));
+  }
+  if (!valid(parts)) return m;
+  const hasDot = /\./.test(m) || /dot|точка/iu.test(m);
+  return hasDot || parts.join('').length >= 5 ? REDACTED : m;
+}
+
 /// Шаблоны LiteBans вида `127.0.0.%` и маски `10.0.*`.
 const IPV4_WILDCARD_RE = /(?<!\d)(?:\d{1,3}\s*\.\s*){1,3}[%*]/g;
 const CONTACT_LABELS =
@@ -193,6 +312,12 @@ const CONTACT_SPACE_RE = new RegExp(
 const DISCORD_TAG_RE = /(?<![\p{L}\p{N}_.])[\p{L}\p{N}_.]{2,32}#\d{4}(?!\d)/gu;
 const DOMAIN_RE = new RegExp(
   `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\s?\\.\\s?)+(?:${TLDS})(?![\\p{L}\\p{N}])(?::\\d{1,5})?(?:\\/\\S*)?`,
+  'giu',
+);
+/// Любая двухбуквенная ccTLD, punycode `xn--...` и расширенный список gTLD —
+/// только без пробелов вокруг точки.
+const DOMAIN_TIGHT_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}@])(?:[\\p{L}\\p{N}-]+\\.)+(?:xn--[a-z0-9-]+|[a-z]{2}|${EXTRA_TLDS})(?![\\p{L}\\p{N}-])(?::\\d{1,5})?(?:\\/\\S*)?`,
   'giu',
 );
 const HANDLE_RE = /(?<![\p{L}\p{N}_])@[\p{L}\p{N}_.]{2,}/gu;
@@ -224,6 +349,8 @@ function redactContacts(s: string): string {
     looksLikeIpv6(m) ? REDACTED : m,
   );
   out = out.replace(IPV4_RE, REDACTED);
+  out = out.replace(IPV4_SPACED_DIGITS_RE, redactSeparatedIpv4);
+  out = out.replace(IPV4_SEP_RE, redactSeparatedIpv4);
   out = out.replace(IPV4_WILDCARD_RE, REDACTED);
   out = out.replace(CONTACT_SEP_RE, REDACTED);
   out = out.replace(CONTACT_SPACE_RE, REDACTED);
@@ -235,6 +362,7 @@ function redactContacts(s: string): string {
       : m;
   });
   out = out.replace(DOMAIN_RE, REDACTED);
+  out = out.replace(DOMAIN_TIGHT_RE, REDACTED);
   out = out.replace(HANDLE_RE, REDACTED);
   return out;
 }

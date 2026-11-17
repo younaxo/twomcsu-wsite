@@ -328,20 +328,25 @@ export class PunishmentsSyncService {
     for (let i = 0; i < MAX_BATCHES_PER_RUN; i++) {
       await this.beat(heartbeat);
       const batch = await source.fetchBatch(kind, afterId, limit);
+      // Пачка считается полной по сырому числу строк, включая пропущенные
+      // как невалидные: иначе пропуск оборвал бы чтение раньше конца.
+      const skipped = source.drainSkippedIds?.(kind) ?? [];
+      const raw = batch.length + skipped.length;
+      const lastValid = batch.length > 0 ? maxSourceId(batch) : 0n;
+      const lastRaw = maxBigint(lastValid, skipped);
       if (batch.length > 0) {
-        const last = maxSourceId(batch);
         const changes = await this.store.applyBatch(
           source.id,
           kind,
           batch,
-          last,
+          lastValid,
           date,
         );
         if (!initial) this.emitChanges(changes);
-        if (batch.length >= limit && last <= afterId) return false;
-        afterId = last > afterId ? last : afterId;
       }
-      if (batch.length < limit) return true;
+      if (raw >= limit && lastRaw <= afterId) return false;
+      afterId = lastRaw > afterId ? lastRaw : afterId;
+      if (raw < limit) return true;
     }
     return false;
   }
@@ -392,8 +397,15 @@ export class PunishmentsSyncService {
     for (;;) {
       await this.beat(heartbeat);
       const batch = await source.fetchBatch(kind, after, limit);
-      const last = batch.length > 0 ? maxSourceId(batch) : after;
-      const full = batch.length >= limit;
+      // Строки, пропущенные адаптером как невалидные (SourceDataInvalid),
+      // в источнике есть: их нельзя помечать DELETED_AT_SOURCE.
+      const skipped = source.drainSkippedIds?.(kind) ?? [];
+      const raw = batch.length + skipped.length;
+      const last =
+        raw > 0
+          ? maxBigint(batch.length > 0 ? maxSourceId(batch) : 0n, skipped)
+          : after;
+      const full = raw >= limit;
       if (full && last <= after) return false;
       const mirrored = await this.store.listMirroredIds(
         source.id,
@@ -401,7 +413,7 @@ export class PunishmentsSyncService {
         after,
         full ? last : null,
       );
-      if (batch.length === 0 && after === 0n && mirrored.length > 0) {
+      if (raw === 0 && after === 0n && mirrored.length > 0) {
         // Пустой источник при непустом зеркале: массовую пометку не делаем.
         await this.store.patchState(source.id, kind, {
           lastErrorCode: SOURCE_EMPTY,
@@ -414,6 +426,7 @@ export class PunishmentsSyncService {
         );
       }
       const present = new Set(batch.map((r) => r.sourceId));
+      for (const id of skipped) present.add(id.toString());
       const missing = mirrored.filter((id) => !present.has(id.toString()));
       if (missing.length > 0) {
         this.emit(
@@ -511,13 +524,32 @@ export class PunishmentsSyncService {
       );
     }
     for (const kind of PUNISHMENT_KINDS) {
+      // Флаги «требует сверки» и «источник пуст» снимаются только успешной
+      // сверкой: код обычного сбоя их не затирает.
+      let keepFlag = false;
+      if (this.source !== null) {
+        try {
+          const prev = (await this.store.getState(this.source.id, kind))
+            .lastErrorCode;
+          keepFlag = prev === NEEDS_RECONCILE || prev === SOURCE_EMPTY;
+        } catch {
+          // Состояние не прочиталось: пишем только счётчики.
+          keepFlag = true;
+        }
+      }
       await this.safePatch(kind, {
-        lastErrorCode: code,
+        ...(keepFlag ? {} : { lastErrorCode: code }),
         consecutiveFailures: this.failures,
         lastPollAt: new Date(nowReal),
       });
     }
   }
+}
+
+function maxBigint(start: bigint, ids: bigint[]): bigint {
+  let max = start;
+  for (const id of ids) if (id > max) max = id;
+  return max;
 }
 
 function maxSourceId(batch: NormalizedPunishment[]): bigint {

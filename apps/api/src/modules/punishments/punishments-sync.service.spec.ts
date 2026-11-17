@@ -13,6 +13,7 @@ import { PunishmentsRuntime } from './punishments.tokens';
 import {
   NormalizedPunishment,
   SourceAuthFailed,
+  SourceSchemaMismatch,
   SourceUnavailable,
 } from './punishment.types';
 
@@ -220,6 +221,72 @@ describe('PunishmentsSyncService: истечение, сбои, лидерств
     advance(60_000);
     await service.runOnce();
     expect(source.fetchBatchCalls).toHaveLength(0);
+  });
+
+  it('сбой не затирает NEEDS_RECONCILE, обычный код пишется и снимается', async () => {
+    const { service, source, store, advance } = setup();
+    source.set(mk(1));
+    await service.runOnce();
+    await store.patchState('test', 'BAN', { lastErrorCode: NEEDS_RECONCILE });
+    source.failWith = new SourceUnavailable();
+    advance(2000);
+    await service.runOnce();
+    const failed = await store.getState('test', 'BAN');
+    expect(failed.lastErrorCode).toBe(NEEDS_RECONCILE);
+    expect(failed.consecutiveFailures).toBe(1);
+    expect((await store.getState('test', 'MUTE')).lastErrorCode).toBe(
+      'SOURCE_UNAVAILABLE',
+    );
+    source.failWith = null;
+    advance(60_000);
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBeNull();
+  });
+
+  it('сбой не затирает SOURCE_EMPTY', async () => {
+    const { service, source, store, advance } = setup();
+    source.set(mk(1));
+    await service.runOnce();
+    advance(2000);
+    source.clear();
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      SOURCE_EMPTY,
+    );
+    source.failWith = new SourceUnavailable();
+    advance(2000);
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      SOURCE_EMPTY,
+    );
+  });
+
+  it('SourceSchemaMismatch останавливает только свою таблицу', async () => {
+    const { service, source, store } = setup();
+    source.set(mk(1));
+    source.set(mk(1, { kind: 'MUTE', sourceId: '1' }));
+    source.failBatchWith.set('BAN', new SourceSchemaMismatch());
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      'SOURCE_SCHEMA_MISMATCH',
+    );
+    expect((await service.getStatus()).state).toBe('halted');
+    expect(store.mirror.has('MUTE:1')).toBe(true);
+    expect(store.mirror.has('BAN:1')).toBe(false);
+    source.fetchBatchCalls.length = 0;
+    await service.runOnce();
+    expect(source.fetchBatchCalls.some((c) => c.kind === 'BAN')).toBe(false);
+  });
+
+  it('невалидная строка источника не помечается DELETED_AT_SOURCE при сверке', async () => {
+    const { service, source, store, advance } = setup();
+    for (let i = 1; i <= 3; i++) source.set(mk(i));
+    await service.runOnce();
+    source.invalidIds.add('2');
+    advance(3_700_000);
+    await service.runOnce();
+    expect(store.mirror.get('BAN:2')?.status).toBe('ACTIVE');
+    expect(store.mirror.get('BAN:3')?.status).toBe('ACTIVE');
   });
 
   it('потеря лидерства прерывает проход до записи', async () => {

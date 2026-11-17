@@ -321,3 +321,86 @@ describe('sanitizeLabel', () => {
     expect(sanitizeLabel('TestPlayer_001')).toBe('TestPlayer_001');
   });
 });
+
+describe('sanitizeReason: IPv6 со встроенным IPv4 и портом (ревью HIGH-1)', () => {
+  it.each([
+    ['::ffff:1.2.3.4', ['1.2.3.4', 'ffff']],
+    ['::ffff:10.0.0.5', ['10.0.0.5', '0.5']],
+    ['64:ff9b::192.0.2.1', ['192.0.2.1', '2.1', '64:ff9b']],
+    ['::192.0.2.1', ['192.0.2.1', '2.1']],
+    ['[::ffff:1.2.3.4]:25565', ['1.2.3.4', '25565', '.4']],
+    ['2001:db8::1:25565', ['25565', '2001', ':5']],
+  ])('%p', (input, leaks) => {
+    const out = sanitizeReason(input) ?? '';
+    expect(out).toBe(REDACTED);
+    for (const leak of leaks) expect(out).not.toContain(leak);
+  });
+
+  it('IPv6 внутри текста скрывается целиком, без хвоста', () => {
+    expect(sanitizeReason('ip ::ffff:1.2.3.4 бан')).toBe(`ip ${REDACTED} бан`);
+  });
+});
+
+describe('sanitizeReason: домены с любыми зонами (ревью MEDIUM-2)', () => {
+  it.each([
+    'a.fm',
+    'a.gd',
+    'a.sk',
+    'a.fi',
+    'a.se',
+    'a.no',
+    'a.dk',
+    'a.at',
+    'a.ch',
+    'a.is',
+    'a.moe',
+    'a.lol',
+    'a.page',
+    'a.zip',
+    'a.mov',
+    'a.gay',
+    'site.xn--p1ai',
+    'cheats.zz',
+  ])('%p скрывается', (input) => {
+    expect(sanitizeReason(`заходи на ${input} там`)).toBe(
+      `заходи на ${REDACTED} там`,
+    );
+  });
+
+  it('обычный текст с точками не затрагивается', () => {
+    expect(sanitizeReason('ban for hacking.')).toBe('ban for hacking.');
+    expect(sanitizeReason('Banned for hacking. Appeal later.')).toBe(
+      'Banned for hacking. Appeal later.',
+    );
+    expect(sanitizeReason('Грубое нарушение. Повторно.')).toBe(
+      'Грубое нарушение. Повторно.',
+    );
+    expect(sanitizeReason('e.g. fly hacks, i.e. cheats')).toBe(
+      'e.g. fly hacks, i.e. cheats',
+    );
+    expect(sanitizeReason('версия 1.20.4')).toBe('версия 1.20.4');
+  });
+});
+
+describe('sanitizeReason: IPv4 с разделителями (ревью MEDIUM-3)', () => {
+  it.each([
+    ['192 168 1 1', ['192', '168']],
+    ['1 9 2 . 1 6 8 . 0 . 1', ['1 9 2', '1 6 8']],
+    ['192 dot 168 dot 0 dot 1', ['192', '168']],
+    ['192-168-0-1', ['192', '168']],
+    ['192_168_0_1', ['192', '168']],
+    ['192/168/0/1', ['192', '168']],
+    ['192 . 168 . 0 . 1', ['192', '168']],
+  ])('%p', (input, leaks) => {
+    const out = sanitizeReason(`ip ${input} бан`) ?? '';
+    expect(out).toBe(`ip ${REDACTED} бан`);
+    for (const leak of leaks) expect(out).not.toContain(leak);
+  });
+
+  it('обычные числа и даты не затрагиваются', () => {
+    expect(sanitizeReason('бан на 1 2 3 4 дня')).toBe('бан на 1 2 3 4 дня');
+    expect(sanitizeReason('дата 17-11-2024')).toBe('дата 17-11-2024');
+    expect(sanitizeReason('счёт 2024 10 12')).toBe('счёт 2024 10 12');
+    expect(sanitizeReason('значения 300 400 500')).toBe('значения 300 400 500');
+  });
+});
