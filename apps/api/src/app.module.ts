@@ -24,6 +24,7 @@ import { FilesModule } from './modules/files/files.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
 import { NewsModule } from './modules/news/news.module';
 import { MinecraftModule } from './modules/minecraft/minecraft.module';
@@ -89,6 +90,7 @@ import { VotingModule } from './modules/voting/voting.module';
     StoreModule,
     MinecraftModule,
     PunishmentsModule,
+    InventoryModule,
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,

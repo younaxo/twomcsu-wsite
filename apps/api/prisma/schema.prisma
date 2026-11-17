@@ -377,6 +377,8 @@ model User {
   externalAccounts     UserExternalAccount[]
   legalConsents        LegalConsent[]
   minecraftAccount     MinecraftAccount?
+  playerInventories    PlayerInventory[]
+  inventoryPrivacy     InventoryPrivacy?
   refreshTokens        RefreshToken[]
   twoFactorBackupCodes TwoFactorBackupCode[]
   passwordResetTokens  PasswordResetToken[]
@@ -3416,4 +3418,47 @@ model PunishmentSyncState {
 
   @@unique([source, kind])
   @@map("punishment_sync_state")
+}
+
+/// Последнее состояние инвентаря игрока на сервере (этап 04, ADR-0168, ADR-0179).
+/// Один ряд на (пользователь, сервер, группа); сырой NBT не хранится, `slots` —
+/// нормализованный JSON (до 24 КБ). UUID не хранится: связь через `userId`.
+model PlayerInventory {
+  id            String   @id @default(cuid())
+  userId        String
+  serverSlug    String   @db.VarChar(32)
+  /// main | ender
+  grp           String   @db.VarChar(8)
+  epoch         String   @db.VarChar(64)
+  rev           Int
+  slots         Json
+  slotCount     Int
+  /// SHA-256 от канонического JSON слотов (дедупликация, ETag).
+  contentHash   String   @db.VarChar(64)
+  capturedAt    DateTime
+  /// Последнее подтверждение (в том числе без изменений).
+  lastSeenAt    DateTime
+  playerOnline  Boolean  @default(false)
+  schemaVersion Int      @default(1)
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverSlug, grp])
+  @@index([lastSeenAt])
+  @@map("player_inventories")
+}
+
+/// Приватность инвентаря (ADR-0168, раздел 6). Нет строки = «приватно».
+model InventoryPrivacy {
+  userId          String   @id
+  /// Основной инвентарь, броня и вторая рука видны другим игрокам.
+  inventoryPublic Boolean  @default(false)
+  /// Ender Chest виден другим; имеет смысл только при `inventoryPublic`.
+  enderPublic     Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("inventory_privacy")
 }
