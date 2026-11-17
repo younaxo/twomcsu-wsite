@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Этап 03, срез 1: приёмник Bridge (ADR-0182, ветка feature/stage-03-s1-bridge-receiver, не смержено, миграции и e2e не запускались)
+
+- Модуль `apps/api/src/modules/bridge`: крипто (HKDF-ключ сервера по `slug` как соль, HMAC-SHA256 над сырым телом, `timingSafeEqual`), конфиг (`BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET` не короче 32 байт; без них все пути отвечают 503), схемы конверта и событий v1, `BridgeSignatureGuard` (порядок проверок раздела 2.3, нонс после подписи, fail-closed 503 при недоступном Redis), `BridgeRateLimitGuard` и Redis-лимиты (запросы на ключ, события в минуту, параллельные запросы, счётчик неудачных аутентификаций), `BridgeController` (`GET /bridge/v1/handshake`, `POST /bridge/v1/events`).
+- Приём (`BridgeIngestService`): `punishment.*` применяются в одной транзакции с записью в `bridge_event_log` (дедупликация `(serverSlug, eventId)`, `conflict` при другом `payloadHash`), порядок по маркеру `occurredAt` в Redis (`stale`), capabilities до применения; запись в зеркало этапа 02 идёт через `BridgePunishmentSource` (`id = 'bridge'`, push). `player.*` выключены (`unsupported_type`).
+- Очистка журнала раз в сутки, срок не меньше 7 суток (F5). CLI: `bridge:register` (запись сервера, секрет не читает) и `bridge:print-key` (ключ только владельцу, F3). Симулятор плагина `scripts/bridge-plugin-sim.ts` (только режим scenario) и fixtures `apps/api/test/fixtures/bridge`.
+- Статический e2e `apps/api/test/bridge.e2e-spec.ts` по плану раздела 11 контракта (не запускался).
+- Документы: ADR-0182, риски R111-R120, контракт `docs/stage-03/BRIDGE-CONTRACT.md`; отчёт `docs/reports/2026-11-17-03-s1-bridge-receiver.md`.
+- Проверки: `tsc --noEmit` 0 ошибок; jest `src/modules/bridge src/modules/punishments` 27 наборов, 940 тестов, все пройдены.
+
 ### Этап 02, срез 2: фронтенд /bans и «Наказания на серверах» (ADR-0181, ветка feature/stage-02-s2-bans-ui, не смержено, сборка и e2e не запускались)
 
 - Публичная страница `/bans` (баны и муты: поиск по нику по кнопке, фильтры типа и статуса, сортировка по дате, курсорная пагинация «Показать ещё») и карточка `/bans/[ref]`, обе `noindex`. Вывод по белому списку полей, причина дословно как текст.
