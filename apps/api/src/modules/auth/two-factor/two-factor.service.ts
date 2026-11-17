@@ -21,8 +21,11 @@ import { generateTotpSecret, otpauthUri, verifyTotp } from './totp';
 ///   подтверждает его первым кодом и выдаёт резервные коды (один раз).
 /// - Вход: после пароля (или внешнего аккаунта) — одноразовый челлендж в Redis
 ///   (5 мин, ≤ 5 попыток), код TOTP или резервный код.
-/// - Без `TWO_FACTOR_ENCRYPTION_KEY` функция недоступна (503), а требование
-///   2FA для персонала не применяется — иначе никто не смог бы его выполнить.
+/// - Без `TWO_FACTOR_ENCRYPTION_KEY` функция недоступна (503). 2FA персонала
+///   обязательна всегда (Q22, ADR-0169): без ключа вне production (явные
+///   NODE_ENV=development/test) требование не применяется — выполнить его
+///   нельзя; в production без ключа действия персонала отклоняются (fail-closed,
+///   ADR-0156/ADR-0164).
 
 export const TWO_FACTOR_ISSUER = 'twomc.su';
 const CHALLENGE_TTL_SECONDS = 5 * 60;

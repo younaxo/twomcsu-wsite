@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -10,6 +10,33 @@ export interface EffectivePermissions {
   permissions: string[];
   /// -Infinity, если у пользователя нет ни одной роли.
   maxPriority: number;
+}
+
+export interface SanctionRevokeDecision {
+  allowed: boolean;
+  /// Владелец снял санкцию, выданную не им (или без известного выдавшего).
+  ownerOverride: boolean;
+  /// Цель снятия — сам действующий.
+  self: boolean;
+  /// Выдавший известен (запись есть, пользователь существует, не SYSTEM).
+  issuerKnown: boolean;
+}
+
+export const SANCTION_REVOKE_FORBIDDEN_CODE = 'sanction_revoke_forbidden';
+
+/// Metadata записи аудита при снятии санкции (Q48/Q49): кто выдал (или
+/// «нет записи»), владельческое переопределение, снятие с себя.
+export function sanctionRevokeAuditChanges(
+  decision: SanctionRevokeDecision,
+  issuerId: string | null | undefined,
+  extra: Record<string, string | number | boolean | null> = {},
+): Record<string, string | number | boolean | null> {
+  return {
+    ...extra,
+    issuerId: issuerId || 'нет записи',
+    ownerOverride: decision.ownerOverride,
+    self: decision.self,
+  };
 }
 
 const CACHE_TTL_SECONDS = 300;
@@ -36,7 +63,19 @@ export class PermissionService {
   async getEffectivePermissions(userId: string): Promise<EffectivePermissions> {
     const cached = await this.redis.client.get(cacheKeyUser(userId));
     if (cached) {
-      return JSON.parse(cached) as EffectivePermissions;
+      const parsed = JSON.parse(cached) as Omit<
+        EffectivePermissions,
+        'maxPriority'
+      > & { maxPriority: number | null };
+      // JSON.stringify(-Infinity) даёт null, а null в сравнениях равен 0:
+      // восстанавливаем «нет ролей» как -Infinity (L9, ревью Q25).
+      return {
+        ...parsed,
+        maxPriority:
+          typeof parsed.maxPriority === 'number'
+            ? parsed.maxPriority
+            : Number.NEGATIVE_INFINITY,
+      };
     }
 
     const userRoles = await this.prisma.userRole.findMany({
@@ -127,6 +166,132 @@ export class PermissionService {
       this.getMaxPriority(targetUserId),
     ]);
     return actorPriority > targetPriority;
+  }
+
+  /// Единое правило снятия санкции — мут/бан чата, бан аккаунта, бан в
+  /// обращениях, массовое снятие (Q25, Q48, Q49; ADR-0173). Порядок:
+  /// 1) действующий — владелец (isSuperuser): разрешено всегда, в т.ч. с себя;
+  /// 2) выдавший неизвестен (нет записи, пользователь удалён, SYSTEM): только
+  ///    владелец;
+  /// 3) цель — сам действующий, а выдал не он: запрещено (Q49);
+  /// 4) действующий — сам выдавший: разрешено;
+  /// 5) иначе — приоритет действующего >= приоритета выдавшего.
+  /// `ownerOverride` — владелец снял санкцию, выданную не им самим (или без
+  /// известного выдавшего); `self` — цель совпадает с действующим.
+  async evaluateSanctionRevoke(
+    actorId: string,
+    issuerId: string | null | undefined,
+    targetUserId?: string,
+  ): Promise<SanctionRevokeDecision> {
+    const self = targetUserId !== undefined && targetUserId === actorId;
+    const issuer = issuerId
+      ? await this.prisma.user.findUnique({
+          where: { id: issuerId },
+          select: { id: true, accountType: true },
+        })
+      : null;
+    const issuerKnown = Boolean(issuer) && issuer?.accountType !== 'SYSTEM';
+    if (await this.isSuperuser(actorId)) {
+      // issuerKnown отражает факт (запись есть, пользователь существует, не
+      // SYSTEM); на доступ владельца он не влияет.
+      return {
+        allowed: true,
+        ownerOverride: !issuerId || issuerId !== actorId,
+        self,
+        issuerKnown,
+      };
+    }
+    const deny = {
+      allowed: false,
+      ownerOverride: false,
+      self,
+      issuerKnown,
+    };
+    if (!issuer || issuer.accountType === 'SYSTEM') {
+      return deny;
+    }
+    if (self && issuer.id !== actorId) {
+      return deny;
+    }
+    if (issuer.id === actorId) {
+      return { ...deny, allowed: true };
+    }
+    const [actorPriority, issuerPriority] = await Promise.all([
+      this.getMaxPriority(actorId),
+      this.getMaxPriority(issuer.id),
+    ]);
+    return { ...deny, allowed: actorPriority >= issuerPriority };
+  }
+
+  /// Как evaluateSanctionRevoke, но при отказе бросает 403
+  /// `sanction_revoke_forbidden` (текст общий, роли не раскрываются).
+  async assertCanRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+    targetUserId?: string,
+  ): Promise<SanctionRevokeDecision> {
+    const decision = await this.evaluateSanctionRevoke(
+      actorId,
+      issuerId,
+      targetUserId,
+    );
+    if (!decision.allowed) {
+      throw new ForbiddenException({
+        code: SANCTION_REVOKE_FORBIDDEN_CODE,
+        message: 'Недостаточно прав для снятия этого ограничения',
+      });
+    }
+    return decision;
+  }
+
+  async canRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+    targetUserId?: string,
+  ): Promise<boolean> {
+    return (await this.evaluateSanctionRevoke(actorId, issuerId, targetUserId))
+      .allowed;
+  }
+
+  /// Выдача роли пользователю (Q23, ADR-0170): права выдаваемой роли должны
+  /// входить в эффективные права выдающего. Владелец (роль isSuperuser) —
+  /// исключение. Роль с полным доступом (isSuperuser) может выдать только
+  /// владелец; право '*' (WILDCARD) у выдающего покрывает любые права.
+  /// Бросает 403 `role_permissions_exceed_grantor`.
+  async assertGrantorCoversRole(
+    grantorId: string,
+    role: { id: string; isSuperuser: boolean },
+  ): Promise<void> {
+    const grantor = await this.getEffectivePermissions(grantorId);
+    if (grantor.superuser) {
+      return;
+    }
+    if (role.isSuperuser) {
+      throw new ForbiddenException({
+        code: 'role_permissions_exceed_grantor',
+        message: 'Роль с полным доступом может выдать только владелец',
+        missing: [WILDCARD],
+      });
+    }
+    if (grantor.permissions.includes(WILDCARD)) {
+      return;
+    }
+    const rolePermissions = await this.prisma.rolePermission.findMany({
+      where: { roleId: role.id, effect: 'ALLOW' },
+      include: { permission: true },
+    });
+    const own = new Set(grantor.permissions);
+    const missing = rolePermissions
+      .map((rp) => rp.permission.key)
+      .filter((key) => !own.has(key))
+      .sort();
+    if (missing.length > 0) {
+      throw new ForbiddenException({
+        code: 'role_permissions_exceed_grantor',
+        message: `Нельзя выдать роль с правами, которых нет у вас самих: ${missing.join(', ')}`,
+        missing,
+      });
+    }
   }
 
   async invalidateUser(userId: string): Promise<void> {

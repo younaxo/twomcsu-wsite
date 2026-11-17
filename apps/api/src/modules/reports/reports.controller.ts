@@ -11,6 +11,8 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { ConfigService } from '@nestjs/config';
+import { isAdmin2faDenied } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { CreateDonationProblemDto } from './dto/create-donation-problem.dto';
@@ -29,6 +31,7 @@ export class ReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly permissions: PermissionService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('reports/rules')
@@ -53,7 +56,15 @@ export class ReportsController {
       user.id,
       'reports.view',
     );
-    return this.reports.getByNumber(reportNumber, user.id, isStaff);
+    // ADR-0169: доступ к чужому обращению по праву персонала — действие
+    // администрации, требует 2FA. Автор без 2FA читает своё обращение как игрок.
+    const staff2faDenied = isStaff && isAdmin2faDenied(user, this.config);
+    return this.reports.getByNumber(
+      reportNumber,
+      user.id,
+      isStaff && !staff2faDenied,
+      staff2faDenied,
+    );
   }
 
   @Get('reports/:reportNumber/history')

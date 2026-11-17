@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -84,8 +85,12 @@ export class ReportsAdminController {
 
   @Delete('reports/ban/:userId')
   @RequirePermissions('reports.ban')
-  async unbanUser(@Param('userId') userId: string) {
-    await this.admin.unbanUser(userId);
+  @SkipAudit() // ReportsAdminService пишет запись reports.ban.revoke на каждый бан (Q48)
+  async unbanUser(
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.admin.unbanUser(userId, user.id);
     return { success: true };
   }
 

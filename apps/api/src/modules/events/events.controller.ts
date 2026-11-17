@@ -34,13 +34,13 @@ export class EventsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get()
   async list(@Query() query: ListEventsQueryDto, @Req() req: Request) {
-    return this.events.list(query, viewerOf(req)?.id ?? null);
+    return this.events.list(query, viewerOf(req));
   }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Get('featured')
   async featured(@Req() req: Request) {
-    return this.events.featured(viewerOf(req)?.id ?? null);
+    return this.events.featured(viewerOf(req));
   }
 
   @UseGuards(JwtAuthGuard)
@@ -52,7 +52,7 @@ export class EventsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':slug')
   async bySlug(@Param('slug') slug: string, @Req() req: Request) {
-    return this.events.bySlug(slug, viewerOf(req)?.id ?? null);
+    return this.events.bySlug(slug, viewerOf(req));
   }
 
   @UseGuards(JwtAuthGuard)
@@ -62,7 +62,7 @@ export class EventsController {
     @Param('id') id: string,
     @Body() dto: EventAttendanceDto,
   ) {
-    return this.events.attend(user.id, id, dto);
+    return this.events.attend(user, id, dto);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -73,6 +73,8 @@ export class UserRolesController {
           'Недостаточно приоритета над этим пользователем',
         );
       }
+      // Q23: права выдаваемой роли ⊆ права выдающего (кроме владельца).
+      await this.permissions.assertGrantorCoversRole(actor.id, role);
     } else if (target.accountType === 'SYSTEM') {
       throw new ForbiddenException(
         'Системный аккаунт защищён от изменения ролей',

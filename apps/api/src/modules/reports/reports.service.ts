@@ -16,6 +16,7 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { CreateDonationProblemDto } from './dto/create-donation-problem.dto';
 import { CreateReportDto } from './dto/create-report.dto';
+import { ADMIN_2FA_REQUIRED_MESSAGE } from '../roles/guards/permissions.guard';
 import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 import { UpdateOwnReportMessageDto } from './dto/update-own-report-message.dto';
@@ -240,7 +241,15 @@ export class ReportsService {
     return report;
   }
 
-  async getByNumber(reportNumber: string, viewerId: string, isStaff: boolean) {
+  /// `staff2faDenied` — у viewer есть право персонала, но 2FA не выполнена
+  /// (ADR-0169): чужое обращение недоступно (403 admin_2fa_required), своё —
+  /// отдаётся как игроку.
+  async getByNumber(
+    reportNumber: string,
+    viewerId: string,
+    isStaff: boolean,
+    staff2faDenied = false,
+  ) {
     const report = await this.prisma.report.findUnique({
       where: { reportNumber },
       // Игроку — без служебных полей персонала (ADR-0119).
@@ -274,6 +283,12 @@ export class ReportsService {
       throw new NotFoundException('Обращение не найдено');
     }
     if (!isStaff && report.authorId !== viewerId) {
+      if (staff2faDenied) {
+        throw new ForbiddenException({
+          code: 'admin_2fa_required',
+          message: ADMIN_2FA_REQUIRED_MESSAGE,
+        });
+      }
       throw new ForbiddenException('Это обращение вам не принадлежит');
     }
     if (isStaff) {
