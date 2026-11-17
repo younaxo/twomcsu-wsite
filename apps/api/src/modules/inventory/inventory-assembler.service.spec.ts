@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   InMemoryInventoryStore,
   iso,
@@ -16,10 +17,12 @@ import {
   DEFAULT_ASSEMBLY_CONFIG,
   redisPolicyAcknowledgedFromEnv,
   resolveAssemblyConfig,
+  uuidHashKeyFromEnv,
   type AssemblyConfig,
 } from './inventory-assembly.config';
 import {
   InventoryAssemblerService,
+  hashUuid,
   type AssembleResult,
 } from './inventory-assembler.service';
 import { InventoryRedisPolicyService } from './inventory-redis-policy.service';
@@ -363,6 +366,76 @@ describe('InventoryAssemblerService: Q35, обязательные сценар�
       status: 'applied',
     });
     expect(rows.get(USER, SERVER, 'main')?.slotCount).toBe(5);
+  });
+
+  it('БД применила, а finish(applied) упал: unavailable redis; захват держится до TTL, повтор применяет идемпотентно без второй записи', async () => {
+    const { clock, redis, rows, send } = await ready();
+    const all = mainSet();
+    for (const p of all.slice(0, 3)) await send(p);
+    redis.failFinishApplied = 1;
+    expect(await send(all[3], 'ev-final')).toMatchObject({
+      status: 'unavailable',
+      reason: 'redis',
+    });
+    // Ряд уже записан, а метки done нет: сборка и захват остаются.
+    expect(rows.get(USER, SERVER, 'main')?.slotCount).toBe(5);
+    expect(rows.mutateCalls).toBe(1);
+    expect(redis.hasDone(SERVER, snap(1))).toBe(false);
+    expect(redis.assemblyCount(SERVER)).toBe(1);
+    expect(redis.hasLock(SERVER, snap(1))).toBe(true);
+
+    // Пока захват жив (30 с), любая часть комплекта получает lock_busy.
+    expect(await send(all[3], 'ev-final')).toMatchObject({
+      status: 'unavailable',
+      reason: 'lock_busy',
+    });
+    expect(await send(all[0])).toMatchObject({
+      status: 'unavailable',
+      reason: 'lock_busy',
+    });
+    expect(rows.mutateCalls).toBe(1);
+
+    // Захват истёк: повтор любой части полного комплекта доходит до применения;
+    // равные (epoch, rev) и тот же состав — applied без изменений и без записи.
+    clock.t += 31_000;
+    const before = rows.get(USER, SERVER, 'main');
+    expect(await send(all[1])).toMatchObject({
+      status: 'applied',
+      contentChanged: false,
+    });
+    expect(rows.get(USER, SERVER, 'main')).toEqual(before);
+    expect(redis.hasDone(SERVER, snap(1))).toBe(true);
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+    // Дальше обычный duplicate.
+    expect(await send(all[3], 'ev-final-2')).toEqual({ status: 'duplicate' });
+  });
+
+  it('повтор пустой части с другим slotGroup: snapshot_mismatch, а не duplicate', async () => {
+    const { redis, rows, send } = await ready();
+    // Хэш считается только по слотам: у двух пустых частей он совпадает.
+    expect(await send(part(1, 'hotbar', { slots: [] }))).toEqual({
+      status: 'buffered',
+    });
+    expect(await send(part(1, 'storage_a', { slots: [] }))).toEqual({
+      status: 'rejected',
+      code: 'snapshot_mismatch',
+      reason: 'slot_group_differs',
+    });
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+    expect(redis.markOf(SERVER, snap(1))).toBe('poison');
+    // Настоящий повтор той же пустой части остаётся duplicate на другом снимке.
+    const other = snap(2);
+    expect(
+      await send(part(1, 'hotbar', { snapshotId: other, slots: [] })),
+    ).toEqual({
+      status: 'buffered',
+    });
+    expect(
+      await send(part(1, 'hotbar', { snapshotId: other, slots: [] })),
+    ).toEqual({
+      status: 'duplicate',
+    });
+    expect(rows.rows.size).toBe(0);
   });
 
   it('сбой дольше 120 с: сборка истекла, снимок не применён', async () => {
@@ -1098,5 +1171,61 @@ describe('InventoryAssemblerService: метрики и утечки', () => {
       expect.arrayContaining(['buffered', 'rejected:invalid_data']),
     );
     expect(JSON.stringify(keys)).not.toContain(TEST_UUID);
+  });
+});
+
+describe('InventoryAssemblerService: L-5, соль хэша UUID (HMAC)', () => {
+  it('без ключа — SHA-256 без соли (прежнее поведение); с ключом — HMAC, зависит от ключа', () => {
+    const plain = createHash('sha256').update(TEST_UUID).digest('hex');
+    expect(hashUuid(TEST_UUID, '')).toBe(plain.slice(0, 32));
+    const a = hashUuid(TEST_UUID, 'key-a');
+    expect(a).toHaveLength(32);
+    expect(a).not.toBe(plain.slice(0, 32));
+    expect(hashUuid(TEST_UUID, 'key-a')).toBe(a);
+    expect(hashUuid(TEST_UUID, 'key-b')).not.toBe(a);
+    expect(hashUuid(TEST_UUID_2, 'key-a')).not.toBe(a);
+    expect(a).not.toContain(TEST_UUID.replace(/-/g, '').slice(0, 8));
+  });
+
+  it('ключ читается из конфигурации владельца; по умолчанию пустой', () => {
+    expect(uuidHashKeyFromEnv({})).toBe('');
+    expect(uuidHashKeyFromEnv({ INVENTORY_UUID_HASH_KEY: '  k1 ' })).toBe('k1');
+    expect(resolveAssemblyConfig({ uuidHashKey: 'explicit' }).uuidHashKey).toBe(
+      'explicit',
+    );
+    expect(DEFAULT_ASSEMBLY_CONFIG.uuidHashKey).toBe('');
+  });
+
+  it('с ключом комплект собирается; части, принятые «другим ключом», дают snapshot_mismatch', async () => {
+    const { send } = await ready({ uuidHashKey: 'k-1' });
+    const results: AssembleResult[] = [];
+    for (const p of mainSet()) results.push(await send(p));
+    expect(statuses(results)).toEqual([
+      'buffered',
+      'buffered',
+      'buffered',
+      'applied',
+    ]);
+
+    // Один буфер, два экземпляра с разными ключами: заголовок `m:uh` не сойдётся.
+    const first = setup({ uuidHashKey: 'k-1' });
+    await first.policy.refresh();
+    const other = new InventoryAssemblerService(
+      first.redis,
+      first.rows,
+      first.apply,
+      first.policy,
+      resolveAssemblyConfig({ uuidHashKey: 'k-2' }),
+    );
+    const all = mainSet();
+    expect((await first.send(all[0])).status).toBe('buffered');
+    expect(
+      await other.acceptPart(
+        SERVER,
+        'ev-other',
+        all[1],
+        new Date(first.clock.t),
+      ),
+    ).toMatchObject({ status: 'rejected', code: 'snapshot_mismatch' });
   });
 });

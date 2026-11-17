@@ -46,6 +46,9 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
   readonly calls = { probe: 0, offer: 0, finish: 0, configGet: 0, info: 0 };
   /// Redis недоступен: любая операция бросает.
   down = false;
+  /// Сколько следующих вызовов `finish('applied')` упадут ДО выполнения
+  /// скрипта (имитация обрыва Redis после того, как БД уже применила снимок).
+  failFinishApplied = 0;
   /// Значения для `CONFIG GET`; `configError` — команда запрещена.
   policy: string | null = 'noeviction';
   maxMemory: string | null = String(512 * 1024 * 1024);
@@ -248,6 +251,17 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
         this.drop(s, id);
         return { kind: 'rejected', code: 'conflict', reason: 'part_differs' };
       }
+      // Хэш считается только по слотам: пустая часть с другим slotGroup имеет
+      // тот же хэш; это расхождение раскладки, а не повтор (зеркало Lua).
+      if (existing.sg !== part.slotGroup) {
+        this.setMark(s, id, 'poison', now, c);
+        this.drop(s, id);
+        return {
+          kind: 'rejected',
+          code: 'snapshot_mismatch',
+          reason: 'slot_group_differs',
+        };
+      }
       if (!this.isComplete(asm, input.expectedGroups)) {
         return { kind: 'duplicate' };
       }
@@ -406,6 +420,10 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
   finish(input: FinishInput): Promise<FinishResult> {
     this.calls.finish += 1;
     this.guard();
+    if (input.outcome === 'applied' && this.failFinishApplied > 0) {
+      this.failFinishApplied -= 1;
+      return Promise.reject(new Error('redis dropped during finish'));
+    }
     const c = input.config;
     const now = input.nowMs;
     const s = this.state(input.serverId);

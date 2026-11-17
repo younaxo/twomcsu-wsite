@@ -13,12 +13,22 @@ jest.setTimeout(30_000);
 /// пустой ответ, приватность по умолчанию и fail-closed без BRIDGE_ENABLED.
 /// Спека статическая: в срезе 2 не запускалась.
 describe('Inventory (e2e)', () => {
-  let app: INestApplication;
-  let prisma: PrismaService;
+  let appRef: INestApplication | undefined;
+  let prismaRef: PrismaService | undefined;
+  // Доступ только к живому приложению: после afterEach ссылки обнулены, и
+  // обращение к закрытому app/prisma упадёт с понятной ошибкой, а не молча.
+  const app = (): INestApplication => {
+    if (!appRef) throw new Error('приложение не запущено (boot не вызван)');
+    return appRef;
+  };
+  const prisma = (): PrismaService => {
+    if (!prismaRef) throw new Error('prisma недоступен (boot не вызван)');
+    return prismaRef;
+  };
   const unique = randomUUID().slice(0, 8);
   const password = 'Sup3rSecretPassw0rd!';
   const userIds: string[] = [];
-  const http = () => request(app.getHttpServer());
+  const http = () => request(app().getHttpServer());
   const previousBridge = process.env.BRIDGE_ENABLED;
 
   async function createUser(label: string) {
@@ -32,7 +42,7 @@ describe('Inventory (e2e)', () => {
       .post('/auth/login')
       .send({ emailOrUsername: username, password })
       .expect(200);
-    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const user = await prisma().user.findUniqueOrThrow({ where: { email } });
     userIds.push(user.id);
     return { id: user.id, auth: `Bearer ${login.body.accessToken}` };
   }
@@ -43,20 +53,31 @@ describe('Inventory (e2e)', () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleRef.createNestApplication();
-    configureApp(app);
-    await app.init();
-    prisma = app.get(PrismaService);
+    appRef = moduleRef.createNestApplication();
+    configureApp(appRef);
+    await appRef.init();
+    prismaRef = appRef.get(PrismaService);
   }
 
   afterEach(async () => {
-    if (userIds.length > 0 && prisma) {
-      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    // Закрытие и обнуление выполняются даже при сбое очистки данных: иначе
+    // упавший тест оставит открытое приложение и ссылку на него следующему.
+    try {
+      if (userIds.length > 0 && prismaRef) {
+        await prismaRef.user.deleteMany({ where: { id: { in: userIds } } });
+      }
+    } finally {
       userIds.length = 0;
+      const closing = appRef;
+      appRef = undefined;
+      prismaRef = undefined;
+      try {
+        if (closing) await closing.close();
+      } finally {
+        if (previousBridge === undefined) delete process.env.BRIDGE_ENABLED;
+        else process.env.BRIDGE_ENABLED = previousBridge;
+      }
     }
-    if (app) await app.close();
-    if (previousBridge === undefined) delete process.env.BRIDGE_ENABLED;
-    else process.env.BRIDGE_ENABLED = previousBridge;
   });
 
   describe('BRIDGE_ENABLED не задан', () => {
@@ -125,7 +146,7 @@ describe('Inventory (e2e)', () => {
     it('привязка есть, снимков нет: 200 no_data, ETag и 304 по If-None-Match', async () => {
       await boot('true');
       const user = await createUser('me');
-      await prisma.minecraftAccount.create({
+      await prisma().minecraftAccount.create({
         data: {
           userId: user.id,
           uuid: randomUUID(),

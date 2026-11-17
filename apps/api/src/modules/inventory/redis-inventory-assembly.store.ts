@@ -24,7 +24,14 @@ const ROOT = 'bridge:inv:';
 
 /// Ключи сервера содержат хэш-тег `{serverId}` (раздел 4.4): один слот в
 /// Redis Cluster. Ключи игрока строятся от внутреннего `userId`, UUID в
-/// ключах нет. Глобальные `g` и `gts` без тега требуют Redis без кластера.
+/// ключах нет.
+///
+/// L-6, ОГРАНИЧЕНИЕ: глобальные `g` и `gts` БЕЗ хэш-тега, а каждый скрипт
+/// трогает их вместе с ключами сервера `{serverId}` — в Redis Cluster это
+/// CROSSSLOT. Решение «только Redis без кластера» (одиночный узел или
+/// primary/replica; управляемый кластерный режим не поддерживается). Для
+/// кластера потребовался бы общий хэш-тег на `g`/`gts` и все ключи сервера
+/// (то есть единый слот на весь учёт) либо отдельный учёт долей вне Lua.
 export function assemblyKey(serverId: string, suffix: string): string {
   return `${ROOT}{${serverId}}:${suffix}`;
 }
@@ -242,6 +249,13 @@ local function main()
       setMark(a.snapId, 'poison')
       dropAsm(a.snapId)
       return {'rejected', 'conflict', 'part_differs'}
+    end
+    -- Хэш считается только по слотам: пустая часть с другим slotGroup имеет
+    -- тот же хэш. Это не повтор, а расхождение раскладки.
+    if hget('g:' .. a.n) ~= a.slotGroup then
+      setMark(a.snapId, 'poison')
+      dropAsm(a.snapId)
+      return {'rejected', 'snapshot_mismatch', 'slot_group_differs'}
     end
     if not isComplete() then return {'duplicate'} end
     -- полна, не применена: повтор завершающей части идёт к П4.7

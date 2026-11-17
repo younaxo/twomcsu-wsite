@@ -63,6 +63,15 @@ export interface AssemblyConfig {
   /// по умолчанию `true` (fail-closed). Действует только при отказе ACL
   /// (NOPERM); любая иная ошибка проверки флаг не учитывает.
   redisPolicyAcknowledged: boolean;
+  /// L-5: ключ HMAC-SHA256 для `m:uh` (заголовок сборки в Redis хранит не UUID,
+  /// а его хэш для сверки частей). Без ключа хэш — SHA-256 без соли: UUID игрока
+  /// публичен и перебирается по словарю, поэтому в production ключ нужно
+  /// задать (`INVENTORY_UUID_HASH_KEY`, значение задаёт владелец, не логируется).
+  /// Ключ должен быть ОДИНАКОВ на всех экземплярах API: иначе части одного
+  /// снимка, принятые разными экземплярами, дадут `snapshot_mismatch`. Смена
+  /// ключа делает несовместимыми только живые сборки (они живут до `T`).
+  /// Пустая строка — режим без соли.
+  uuidHashKey: string;
 }
 
 /// `TTLsvc = max(300, ceil10(1,4 × (T + 90)))` в секундах → мс.
@@ -94,6 +103,7 @@ export const DEFAULT_ASSEMBLY_CONFIG: AssemblyConfig = {
   epochAlarmAheadMs: 120 * 1000,
   globalEntryExtraMs: 30_000,
   redisPolicyAcknowledged: false,
+  uuidHashKey: '',
 };
 
 /// Флаг подтверждения политики Redis из окружения владельца: только строка
@@ -105,6 +115,14 @@ export function redisPolicyAcknowledgedFromEnv(
     (env.INVENTORY_REDIS_POLICY_ACKNOWLEDGED ?? '').trim().toLowerCase() ===
     'true'
   );
+}
+
+/// Ключ HMAC для хэша UUID из окружения владельца (значение не логируется);
+/// пусто или не задано — режим без соли.
+export function uuidHashKeyFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  return (env.INVENTORY_UUID_HASH_KEY ?? '').trim();
 }
 
 /// Собирает и проверяет конфигурацию. `ttlSvcMs`, если не задан, выводится из
@@ -123,6 +141,7 @@ export function resolveAssemblyConfig(
     ...overrides,
     redisPolicyAcknowledged:
       overrides.redisPolicyAcknowledged ?? redisPolicyAcknowledgedFromEnv(),
+    uuidHashKey: overrides.uuidHashKey ?? uuidHashKeyFromEnv(),
     assemblyTimeoutMs: timeout,
     ttlSvcMs: overrides.ttlSvcMs ?? deriveTtlSvcMs(timeout),
   };

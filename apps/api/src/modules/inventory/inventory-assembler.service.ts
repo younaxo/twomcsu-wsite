@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 import {
   INVENTORY_ASSEMBLY_CONFIG,
   cutoffMs,
@@ -154,10 +154,7 @@ export class InventoryAssemblerService {
     part: NormalizedPart,
     now: Date,
   ): Promise<AssembleResult> {
-    const uuidHash = createHash('sha256')
-      .update(part.uuid)
-      .digest('hex')
-      .slice(0, 32);
+    const uuidHash = hashUuid(part.uuid, this.config.uuidHashKey);
     const expectedGroups = expectedSlotGroups(part.group, part.parts) ?? [];
     const token = randomUUID();
     let probe = await this.redis(() =>
@@ -349,6 +346,16 @@ export class InventoryAssemblerService {
       throw new StageFailure(unavailable('db'));
     }
   }
+}
+
+/// Необратимый хэш UUID для `m:uh`. L-5: с ключом конфигурации это
+/// HMAC-SHA256 (соль не восстановить словарём по Redis-дампу), без ключа —
+/// SHA-256 без соли (прежнее поведение).
+export function hashUuid(uuid: string, key: string): string {
+  const h = key
+    ? createHmac('sha256', key).update(uuid)
+    : createHash('sha256').update(uuid);
+  return h.digest('hex').slice(0, 32);
 }
 
 class StageFailure extends Error {
