@@ -56,4 +56,4 @@
 - N1: paymentId, paymentProvider, paymentWebhookVerifiedAt, promoCodeId и bundle целиком в заказах покупателя. Судьба: отложено в 0.12.
 - N2: promoCode целиком в корзине. Судьба: в бэклог.
 - N3: нет e2e-проверок отсутствия служебных полей в заказах и wishlist. Судьба: закрыто этим срезом. В apps/api/test/store-checkout.e2e-spec.ts тестовым товарам заданы gameCommands и server; хелпер expectNoServiceFields (gameCommands, server, currencyType, currencyAmount, positionId, decorationId) применён к POST /store/orders, GET /store/orders, GET /store/orders/:number, POST /store/quick-buy, GET /store/wishlist и публичному GET /store/wishlist/:username. Результат: store-catalog 8 из 8, store-checkout 19 из 19, новых утечек не найдено, белый список не менялся.
-- N4, N5: текст ревью не доступен исполнителю, уточнить.
+- N4 (Info): у PUBLIC_PRODUCT_SELECT нет отдельных тестов на categories и currencies (вложенных товаров там нет); у вариантов в API нет name, в вебе поле name необязательное — поломки нет. Судьба: принято, без изменений.
