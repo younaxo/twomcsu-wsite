@@ -12,6 +12,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
+import { BridgeModule } from './modules/bridge/bridge.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
@@ -91,6 +92,7 @@ import { VotingModule } from './modules/voting/voting.module';
     MinecraftModule,
     PunishmentsModule,
     InventoryModule,
+    BridgeModule,
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,
