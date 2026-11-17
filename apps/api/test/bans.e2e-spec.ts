@@ -1091,8 +1091,12 @@ describe('Bans / punishments mirror (e2e)', () => {
       const before = await rowOf(ban4);
       const hidesBefore = await auditCount('punishment.issuer.hide', ban4.id);
       const hide = await post(path, hideOnly, { reason: 'x' }).expect(403);
+      // PermissionsGuard: нет users.punishments -> общий 403 без code
+      // (не punishments_issuer_hide_forbidden и не admin_2fa_required).
+      expect(hide.body.message).toBe('Недостаточно прав');
       expect(hide.body.code).toBeUndefined();
       const unhide = await del(path, hideOnly).expect(403);
+      expect(unhide.body.message).toBe('Недостаточно прав');
       expect(unhide.body.code).toBeUndefined();
       const after = await rowOf(ban4);
       expect(after.issuerHidden).toBe(before.issuerHidden);

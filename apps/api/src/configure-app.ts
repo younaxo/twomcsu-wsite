@@ -44,6 +44,8 @@ export function configureApp(app: INestApplication): void {
   app.enableCors({
     origin: corsOrigin(allowedOrigins(config)),
     credentials: true,
+    // Retry-After (429/503) должен быть виден браузеру на запросах web -> api.
+    exposedHeaders: ['Retry-After'],
   });
   app.useGlobalPipes(
     new ValidationPipe({
