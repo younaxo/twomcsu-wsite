@@ -3,12 +3,12 @@
 Скрипты: `infrastructure/backup/backup.sh`, `restore.sh`, `restore-drill.sh`; compose для drill — `infrastructure/docker-compose.restore-drill.yml`. Решение — ADR-0159, риск — R30 (связан с R3 и R8).
 Бэкап, восстановление и drill выполняет только владелец или назначенный им человек; агенты их не запускают. Сервера пока нет (R8): расписание не включено, drill не выполнялся («drill отложен: диск»).
 
-## Допущения (решение владельца D9 не принято)
+## Решения владельца (Q16, Q19) и допущения
 
-- RPO 24 часа (плановый бэкап раз в сутки) плюс снимок перед каждым деплоем с миграциями. RTO 4 часа.
-- Шифрование `age` публичным ключом; приватный ключ хранится офлайн у владельца и на сервере не лежит. Альтернатива — gpg (ниже).
-- Хранение: RU-S3 (провайдер не выбран) через rclone или aws cli; без S3 — локальный fallback с ротацией. Срок хранения: 14 локальных копий, срок в S3 задаётся lifecycle-правилом бакета (предложение: 30 дней).
-- Подтверждение restore в production (допущение, решение владельца не принято): интерактивно — ввод имени БД; без TTY — только при `RESTORE_CONFIRM=OVERWRITE-PRODUCTION` вместе с `--non-interactive`; api должен быть остановлен; перед `pg_restore --clean` скрипт сам снимает дамп текущей БД и при неудаче останавливается.
+- Решение Q16: RPO 24 часа (плановый бэкап раз в сутки) плюс снимок перед каждым деплоем с миграциями. RTO 4 часа.
+- Решение Q16: шифрование `age` публичным ключом; приватный ключ хранит владелец офлайн, на сервере его нет. Альтернатива — gpg (ниже).
+- Решение Q16: срок хранения 7 ежедневных и 4 еженедельных копий. Выбор RU-S3 провайдера отложен; до него копии хранятся локально и вывозятся вручную (rclone или aws cli подключаются после выбора).
+- Решение Q19: защищённый `restore.sh --target prod` оставлен. Порядок подтверждения: интерактивно — ввод имени БД; без TTY — только при `RESTORE_CONFIRM=OVERWRITE-PRODUCTION` вместе с `--non-interactive`; api должен быть остановлен; перед `pg_restore --clean` скрипт сам снимает дамп текущей БД и при неудаче останавливается.
 - Ключи и учётные данные S3 не создаются и в репозиторий не попадают; ниже только имена переменных.
 
 ## Что копируется
@@ -25,7 +25,7 @@
 
 ## Переменные окружения
 
-`backup.sh`: `BACKUP_DIR` (`$HOME/twomc-backups/scheduled`, вне репозитория), `BACKUP_KEEP` (14 последних на каждую метку отдельно), `BACKUP_MIN_FREE_MB` (2048), `BACKUP_TAG` (`scheduled`; перед деплоем — `predeploy`), `BACKUP_ENCRYPT` (`age` | `gpg` | `none` только с `BACKUP_ALLOW_UNENCRYPTED=1`), `AGE_RECIPIENT`, `GPG_RECIPIENT`, `BACKUP_S3_RCLONE_REMOTE` (вид `remote:bucket/prefix`; учётные данные в конфиге rclone) либо `BACKUP_S3_URI` и `BACKUP_S3_ENDPOINT` (aws cli; учётные данные в окружении aws), `UPLOADS_VOLUME`, `BACKUP_SKIP_UPLOADS`.
+`backup.sh`: `BACKUP_DIR` (`$HOME/twomc-backups/scheduled`, вне репозитория), `BACKUP_KEEP` (14 последних на каждую метку отдельно; не равно принятым 7+4, расхождение зафиксировано, скрипт не менялся), `BACKUP_MIN_FREE_MB` (2048), `BACKUP_TAG` (`scheduled`; перед деплоем — `predeploy`), `BACKUP_ENCRYPT` (`age` | `gpg` | `none` только с `BACKUP_ALLOW_UNENCRYPTED=1`), `AGE_RECIPIENT`, `GPG_RECIPIENT`, `BACKUP_S3_RCLONE_REMOTE` (вид `remote:bucket/prefix`; учётные данные в конфиге rclone) либо `BACKUP_S3_URI` и `BACKUP_S3_ENDPOINT` (aws cli; учётные данные в окружении aws), `UPLOADS_VOLUME`, `BACKUP_SKIP_UPLOADS`.
 `restore.sh`: `RESTORE_SINGLE_TRANSACTION` (1 по умолчанию, 0 отключает), `AGE_IDENTITY` (путь к файлу приватного ключа), `RESTORE_TMP_DIR`, `RESTORE_MIN_FREE_MB`, `RESTORE_CONFIRM` (только с `--non-interactive`), `RESTORE_SNAPSHOT_DIR` (снимки перед prod-восстановлением, по умолчанию `$HOME/twomc-backups/pre-restore`; внутри репозитория отказ), `RESTORE_SNAPSHOT_KEEP` (3 последних снимка), `AGE_RECIPIENT` (шифрование снимка), `RESTORE_SNAPSHOT_PLAIN_DAYS` (7, срок в предупреждении). Параметры: `--target drill|prod`, `--non-interactive`.
 Коды выхода `backup.sh`: 0 успех; 1 ошибка; 3 нет места (до начала); 4 бэкап создан локально, но выгрузка в S3 не удалась; 5 бэкап сохранён, но ротация не удалила старую копию (4 приоритетнее 5; причина в stderr; cron должен уведомлять о любом ненулевом коде). `restore.sh`: 2 — нарушена целостность (sha256, дешифровка, `pg_restore --list`), восстановление не начато; 3 — нет места; 5 — восстановление выполнено, но ротация pre-restore не удалила старый снимок.
 
