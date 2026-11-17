@@ -1,10 +1,11 @@
-import './helpers/payment-webhook-env';
+import { E2E_PAYMENT_WEBHOOK_SECRET } from './helpers/payment-webhook-env';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
-import { configureApp } from './../src/configure-app';
+import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
+import { signPaymentWebhook } from './helpers/sign-payment-webhook';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
@@ -21,6 +22,7 @@ describe('Orders admin (e2e)', () => {
   let permissions: PermissionService;
   const unique = randomUUID().slice(0, 8);
   const cleanupRoleSlugs: string[] = [];
+  const cleanupBulkIds: string[] = [];
 
   interface TestUser {
     id: string;
@@ -105,7 +107,7 @@ describe('Orders admin (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication(APP_CREATE_OPTIONS);
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
@@ -122,6 +124,13 @@ describe('Orders admin (e2e)', () => {
       'promocodes.create',
       'promocodes.edit',
       'promocodes.delete',
+      'store.discounts.view',
+      'store.discounts.bulk.create',
+      'store.discounts.bulk.edit',
+      'store.discounts.bulk.delete',
+      'store.discounts.loyalty.create',
+      'store.discounts.loyalty.edit',
+      'store.discounts.loyalty.delete',
     ]);
     await createStaff(viewer, `oad-viewer-${unique}`, 10, [
       'orders.view',
@@ -135,6 +144,12 @@ describe('Orders admin (e2e)', () => {
     });
     await prisma.promoCode.deleteMany({
       where: { code: { startsWith: `E2E-${unique.toUpperCase()}` } },
+    });
+    await prisma.bulkDiscount.deleteMany({
+      where: { id: { in: cleanupBulkIds } },
+    });
+    await prisma.loyaltyDiscount.deleteMany({
+      where: { name: { startsWith: `E2E ${unique}` } },
     });
     await prisma.userRole.deleteMany({
       where: { role: { slug: { in: cleanupRoleSlugs } } },
@@ -278,8 +293,9 @@ describe('Orders admin (e2e)', () => {
       .query({ nickname: 'zed_' })
       .set('Authorization', auth(viewer))
       .expect(200);
-    expect(byNick.body.items.map((o: { orderNumber: string }) => o.orderNumber))
-      .toEqual([orderNo('F1')]);
+    expect(
+      byNick.body.items.map((o: { orderNumber: string }) => o.orderNumber),
+    ).toEqual([orderNo('F1')]);
 
     const today = new Date().toISOString().slice(0, 10);
     const byDate = await http()
@@ -318,16 +334,313 @@ describe('Orders admin (e2e)', () => {
       .expect(404);
   });
 
-  it('экспорт заказов: право orders.export, CSV без лишних ПДн', async () => {
-    await makeOrder('X1', 'PENDING');
-    const res = await http()
+  const EXPORT_HEADER =
+    'id,orderNumber,userId,guestMinecraftNick,status,subtotal,discountAmount,total,paymentProvider,paidAt,createdAt';
+
+  const exportOrders = (body: Record<string, unknown>) =>
+    http()
       .post('/admin/orders/export')
       .set('Authorization', auth(admin))
-      .send({})
-      .expect(201);
-    const csv: string = res.text || JSON.stringify(res.body);
-    expect(csv).toContain(orderNo('X1'));
-    expect(csv).not.toContain('email');
+      .send(body);
+
+  it('экспорт заказов: заголовки, содержимое строки, без лишних ПДн', async () => {
+    const order = await makeOrder('X1', 'COMPLETED', {
+      guestMinecraftNick: 'Plain_Nick',
+      paymentProvider: 'test',
+    });
+    const res = await exportOrders({}).expect(201);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.headers['content-disposition']).toMatch(
+      /^attachment; filename="orders-\d+\.csv"$/,
+    );
+    const lines = res.text.split('\r\n');
+    expect(lines[0]).toBe(EXPORT_HEADER);
+    const row = lines.find((l) => l.includes(orderNo('X1')));
+    expect(row).toBeDefined();
+    const cells = row!.split(',');
+    expect(cells).toHaveLength(EXPORT_HEADER.split(',').length);
+    expect(cells[0]).toBe(order.id);
+    expect(cells[1]).toBe(orderNo('X1'));
+    expect(cells[3]).toBe('Plain_Nick');
+    expect(cells[4]).toBe('COMPLETED');
+    expect(cells[5]).toBe('100');
+    expect(cells[7]).toBe('100');
+    expect(cells[8]).toBe('test');
+    expect(cells[9]).toBe(order.paidAt?.toISOString());
+    expect(cells[10]).toBe(order.createdAt.toISOString());
+    // Ни e-mail, ни логина, ни IP в выгрузке нет (только перечисленные колонки).
+    expect(lines[0]).not.toMatch(/email|ip|username/i);
+  });
+
+  it('экспорт заказов: значения на = + - @ экранируются от CSV-инъекции', async () => {
+    const evil: [string, string][] = [
+      ['E1', '=A1,"x"'],
+      ['E2', '+SUM(1;1)'],
+      ['E3', '-2+3'],
+      ['E4', '@SUM(A1)'],
+    ];
+    for (const [n, nick] of evil) {
+      await makeOrder(n, 'PENDING', { guestMinecraftNick: nick });
+    }
+    const res = await exportOrders({}).expect(201);
+    const lines = res.text.split('\r\n');
+    // Ни одна ячейка с ником не начинается с опасного символа.
+    expect(res.text).toContain(`,"'=A1,""x""",`);
+    expect(res.text).toContain(",'+SUM(1;1),");
+    expect(res.text).toContain(",'-2+3,");
+    expect(res.text).toContain(",'@SUM(A1),");
+    for (const [n] of evil) {
+      const row = lines.find((l) => l.includes(orderNo(n)))!;
+      expect(row.split(',')[3]).toMatch(/^"?'/);
+    }
+    // Числовые суммы не искажаются префиксом.
+    expect(res.text).not.toContain(",'100");
+  });
+
+  it('экспорт заказов: dateTo=YYYY-MM-DD включает заказ последнего дня, как и список', async () => {
+    const lastDay = await makeOrder('D1', 'PENDING', {
+      createdAt: new Date('2031-03-05T23:30:00.000Z'),
+    });
+    const inRange = await exportOrders({
+      dateFrom: '2031-03-05',
+      dateTo: '2031-03-05',
+    }).expect(201);
+    expect(inRange.text).toContain(orderNo('D1'));
+    const before = await exportOrders({ dateTo: '2031-03-04' }).expect(201);
+    expect(before.text).not.toContain(orderNo('D1'));
+    const list = await http()
+      .get('/admin/orders')
+      .query({ dateFrom: '2031-03-05', dateTo: '2031-03-05' })
+      .set('Authorization', auth(viewer))
+      .expect(200);
+    expect(list.body.items.map((o: { id: string }) => o.id)).toContain(
+      lastDay.id,
+    );
+    await exportOrders({ dateFrom: '2031-03-06', dateTo: '2031-03-05' }).expect(
+      400,
+    );
+  });
+
+  it('экспорт заказов: аудит — кто, фильтр, число строк, без ПДн', async () => {
+    await makeOrder('A1', 'PENDING', {
+      guestMinecraftNick: 'AuditSecretNick',
+      createdAt: new Date('2032-06-10T12:00:00.000Z'),
+    });
+    await exportOrders({
+      status: 'PENDING',
+      dateFrom: '2032-06-10',
+      dateTo: '2032-06-10',
+    }).expect(201);
+    const audit = await prisma.auditLog.findFirst({
+      where: { actorId: admin.id, action: 'orders.export.completed' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(audit).not.toBeNull();
+    const changes = audit?.changes as {
+      filter: Record<string, unknown>;
+      rowCount: number;
+    };
+    expect(changes.filter).toEqual({
+      status: 'PENDING',
+      userId: null,
+      dateFrom: '2032-06-10',
+      dateTo: '2032-06-10',
+    });
+    expect(changes.rowCount).toBe(1);
+    const text = JSON.stringify(audit);
+    expect(text).not.toContain('AuditSecretNick');
+    expect(text).not.toContain(orderNo('A1'));
+  });
+
+  it('гонка: отмена PENDING против вебхука оплаты — ровно один исход', async () => {
+    const webhook = (orderNumber: string, paymentId: string) => {
+      const signed = signPaymentWebhook(E2E_PAYMENT_WEBHOOK_SECRET, {
+        orderNumber,
+        paymentId,
+        status: 'succeeded',
+        amount: '100.00',
+        currency: 'RUB',
+      });
+      return http()
+        .post('/webhooks/payments/test')
+        .set('Content-Type', 'application/json')
+        .set(signed.headers)
+        .send(signed.rawBody);
+    };
+    for (let i = 0; i < 6; i += 1) {
+      const order = await makeOrder(`R${i}`, 'PENDING', {
+        paymentProvider: 'test',
+        paymentId: `race-${unique}-${i}`,
+      });
+      const [cancelRes, hookRes] = await Promise.all([
+        http()
+          .patch(`/admin/orders/${order.id}/cancel`)
+          .set('Authorization', auth(admin))
+          .send({ reason: 'гонка' }),
+        webhook(orderNo(`R${i}`), `race-${unique}-${i}`),
+      ]);
+      expect(hookRes.status).toBe(200);
+      const final = await prisma.order.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+      const cancelAudits = await prisma.auditLog.count({
+        where: { action: 'orders.order.cancelled', targetId: order.id },
+      });
+      if (final.status === 'COMPLETED') {
+        // Оплата победила: оплаченный заказ не отменён.
+        expect(cancelRes.status).toBe(409);
+        expect(final.paidAt).not.toBeNull();
+        expect(final.cancelledAt).toBeNull();
+        expect(cancelAudits).toBe(0);
+      } else {
+        // Отмена победила: вебхук принят как already_processed, оплаты нет.
+        expect(final.status).toBe('CANCELLED');
+        expect(cancelRes.status).toBe(200);
+        expect(final.paidAt).toBeNull();
+        expect(cancelAudits).toBe(1);
+      }
+    }
+  });
+
+  it('скидки: CRUD bulk и loyalty, валидация, 404, аудит, права', async () => {
+    const adminHeader = { Authorization: auth(admin) };
+    const loyaltyName = `E2E ${unique} loyalty`;
+
+    // Права: viewer не создаёт и не видит админский список.
+    await http()
+      .post('/admin/store/discounts/bulk')
+      .set('Authorization', auth(viewer))
+      .send({ discountType: 'PERCENT', discountValue: '5', minQuantity: 2 })
+      .expect(403);
+    await http()
+      .get('/admin/store/discounts/bulk')
+      .set('Authorization', auth(viewer))
+      .expect(403);
+
+    // bulk: валидация
+    const createBulk = (body: Record<string, unknown>) =>
+      http()
+        .post('/admin/store/discounts/bulk')
+        .set(adminHeader)
+        .send({
+          discountType: 'PERCENT',
+          discountValue: '10',
+          minQuantity: 5,
+          ...body,
+        });
+    await createBulk({ discountValue: '101' }).expect(400);
+    await createBulk({ discountValue: '0' }).expect(400);
+    await createBulk({ discountValue: 'abc' }).expect(400);
+    await createBulk({ productId: 'no-such-product' }).expect(400);
+
+    const bulk = await createBulk({ discountValue: '12.50' }).expect(201);
+    cleanupBulkIds.push(bulk.body.id);
+    expect(bulk.body.minQuantity).toBe(5);
+
+    const bulkList = await http()
+      .get('/admin/store/discounts/bulk')
+      .set(adminHeader)
+      .expect(200);
+    expect(bulkList.body.map((d: { id: string }) => d.id)).toContain(
+      bulk.body.id,
+    );
+
+    await http()
+      .patch(`/admin/store/discounts/bulk/${bulk.body.id}`)
+      .set(adminHeader)
+      .send({ discountValue: '150' })
+      .expect(400);
+    const bulkUpd = await http()
+      .patch(`/admin/store/discounts/bulk/${bulk.body.id}`)
+      .set(adminHeader)
+      .send({ minQuantity: 7, isActive: false })
+      .expect(200);
+    expect(bulkUpd.body.minQuantity).toBe(7);
+    expect(bulkUpd.body.isActive).toBe(false);
+    await http()
+      .patch('/admin/store/discounts/bulk/no-such-id')
+      .set(adminHeader)
+      .send({ minQuantity: 1 })
+      .expect(404);
+
+    // loyalty
+    const createLoyalty = (body: Record<string, unknown>) =>
+      http()
+        .post('/admin/store/discounts/loyalty')
+        .set(adminHeader)
+        .send({
+          minPurchases: 3,
+          discountPercent: '4',
+          name: loyaltyName,
+          ...body,
+        });
+    await createLoyalty({ discountPercent: '101' }).expect(400);
+    await createLoyalty({ minPurchases: 0 }).expect(400);
+    await createLoyalty({ name: '' }).expect(400);
+    const loyalty = await createLoyalty({}).expect(201);
+    const loyaltyUpd = await http()
+      .patch(`/admin/store/discounts/loyalty/${loyalty.body.id}`)
+      .set(adminHeader)
+      .send({ discountPercent: '6' })
+      .expect(200);
+    expect(String(loyaltyUpd.body.discountPercent)).toBe('6');
+    await http()
+      .patch(`/admin/store/discounts/loyalty/${loyalty.body.id}`)
+      .set(adminHeader)
+      .send({ discountPercent: '0' })
+      .expect(400);
+    const loyaltyList = await http()
+      .get('/admin/store/discounts/loyalty')
+      .set(adminHeader)
+      .expect(200);
+    expect(loyaltyList.body.map((d: { id: string }) => d.id)).toContain(
+      loyalty.body.id,
+    );
+
+    // Аудит создания/изменения
+    for (const [action, id] of [
+      ['store.discount.bulk_created', bulk.body.id],
+      ['store.discount.bulk_updated', bulk.body.id],
+      ['store.discount.loyalty_created', loyalty.body.id],
+      ['store.discount.loyalty_updated', loyalty.body.id],
+    ]) {
+      expect(
+        await prisma.auditLog.count({
+          where: { actorId: admin.id, action, targetId: id },
+        }),
+      ).toBe(1);
+    }
+
+    // Удаление и повторное удаление
+    await http()
+      .delete(`/admin/store/discounts/bulk/${bulk.body.id}`)
+      .set(adminHeader)
+      .expect(200);
+    await http()
+      .delete(`/admin/store/discounts/bulk/${bulk.body.id}`)
+      .set(adminHeader)
+      .expect(404);
+    await http()
+      .delete(`/admin/store/discounts/loyalty/${loyalty.body.id}`)
+      .set(adminHeader)
+      .expect(200);
+    await http()
+      .delete(`/admin/store/discounts/loyalty/${loyalty.body.id}`)
+      .set(adminHeader)
+      .expect(404);
+    expect(
+      await prisma.bulkDiscount.count({ where: { id: bulk.body.id } }),
+    ).toBe(0);
+    for (const [action, id] of [
+      ['store.discount.bulk_deleted', bulk.body.id],
+      ['store.discount.loyalty_deleted', loyalty.body.id],
+    ]) {
+      expect(
+        await prisma.auditLog.count({
+          where: { actorId: admin.id, action, targetId: id },
+        }),
+      ).toBe(1);
+    }
   });
 
   it('промокод: CRUD, валидация Decimal/процентов/дат, дубль 409, аудит', async () => {

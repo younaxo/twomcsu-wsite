@@ -22,8 +22,15 @@ export function toCsv(
     if (value === null || value === undefined) {
       return '';
     }
-    const str = value instanceof Date ? value.toISOString() : String(value);
-    if (/[",\n]/.test(str)) {
+    let str = value instanceof Date ? value.toISOString() : String(value);
+    // Защита от CSV-инъекции (формулы в Excel/Sheets): текстовые значения,
+    // начинающиеся с = + - @ (а также TAB/CR), получают префикс-апостроф.
+    // Числа и Decimal (typeof не string) не трогаем — отрицательные суммы
+    // остаются числами.
+    if (typeof value === 'string' && /^[=+\-@\t\r]/.test(str)) {
+      str = `'${str}`;
+    }
+    if (/[",\r\n]/.test(str)) {
       return `"${str.replace(/"/g, '""')}"`;
     }
     return str;

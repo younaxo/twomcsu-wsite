@@ -1,5 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  isDateRangeInverted,
+  parseDateRange,
+} from '../../common/date-range.util';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { toCsv } from './csv.util';
 import { ExportAuditDto } from './dto/export-audit.dto';
@@ -15,25 +19,19 @@ export interface ExportResult {
 
 const MAX_ROWS = 10_000;
 
-function dateRangeFilter(
-  dateFrom?: string,
-  dateTo?: string,
-): Prisma.DateTimeFilter | undefined {
-  if (!dateFrom && !dateTo) {
-    return undefined;
-  }
-  return {
-    ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-    ...(dateTo ? { lte: new Date(dateTo) } : {}),
-  };
-}
+/// Единый разбор диапазона дат (общий со списком заказов): "YYYY-MM-DD" в
+/// `dateTo` — конец суток.
+const dateRangeFilter = parseDateRange;
 
 /// CSV-экспорт напрямую в ответ (без файлового хранилища — CDN/файлы ещё
 /// не реализованы, PHASE 23). Каждый метод ограничен MAX_ROWS строк —
 /// честное ограничение, а не пагинация (экспорт — разовая выгрузка).
 @Injectable()
 export class ExportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async exportUsers(dto: ExportUsersDto): Promise<ExportResult> {
     const createdAt = dateRangeFilter(dto.dateFrom, dto.dateTo);
@@ -83,7 +81,16 @@ export class ExportService {
     };
   }
 
-  async exportOrders(dto: ExportOrdersDto): Promise<ExportResult> {
+  /// Аудит экспорта (без ПДн): кто, применённый фильтр, число строк. Строгий
+  /// режим не нужен — экспорт не меняет данные, но сбой логируется самим
+  /// AuditService.
+  async exportOrders(
+    dto: ExportOrdersDto,
+    actorId: string,
+  ): Promise<ExportResult> {
+    if (isDateRangeInverted(dto.dateFrom, dto.dateTo)) {
+      throw new BadRequestException('dateFrom не может быть позже dateTo');
+    }
     const createdAt = dateRangeFilter(dto.dateFrom, dto.dateTo);
     const orders = await this.prisma.order.findMany({
       where: {
@@ -120,6 +127,22 @@ export class ExportService {
       'paidAt',
       'createdAt',
     ];
+    await this.audit.log({
+      actorId,
+      action: 'orders.export.completed',
+      targetType: 'order',
+      changes: {
+        filter: {
+          status: dto.status ?? null,
+          userId: dto.userId ?? null,
+          dateFrom: dto.dateFrom ?? null,
+          dateTo: dto.dateTo ?? null,
+        },
+        rowCount: orders.length,
+        truncated: orders.length === MAX_ROWS,
+      },
+      severity: 'warning',
+    });
     return {
       filename: `orders-${Date.now()}.csv`,
       csv: toCsv(orders, columns),

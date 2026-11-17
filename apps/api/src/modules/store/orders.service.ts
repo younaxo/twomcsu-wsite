@@ -9,6 +9,10 @@ import {
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import {
+  isDateRangeInverted,
+  parseDateRange,
+} from '../../common/date-range.util';
 import { maskNickname } from '../../common/privacy.util';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
@@ -105,15 +109,6 @@ const ADMIN_ORDER_CARD_INCLUDE = {
 } satisfies Prisma.OrderInclude;
 
 const MAX_SEARCH_LENGTH = 100;
-
-/// Дата без времени ("2026-11-18") в `dateTo` означает конец этих суток, иначе
-/// фильтр «по 18 ноября» отрезал бы весь день.
-function dateToUpperBound(value: string): Date {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date(`${value}T23:59:59.999Z`);
-  }
-  return new Date(value);
-}
 
 @Injectable()
 export class OrdersService {
@@ -476,11 +471,10 @@ export class OrdersService {
   async listAdmin(query: ListAdminOrdersQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;
-    if (query.dateFrom && query.dateTo) {
-      if (new Date(query.dateFrom) > dateToUpperBound(query.dateTo)) {
-        throw new BadRequestException('dateFrom не может быть позже dateTo');
-      }
+    if (isDateRangeInverted(query.dateFrom, query.dateTo)) {
+      throw new BadRequestException('dateFrom не может быть позже dateTo');
     }
+    const createdAtRange = parseDateRange(query.dateFrom, query.dateTo);
     const search = query.search?.trim().slice(0, MAX_SEARCH_LENGTH);
     const orderNumber = query.orderNumber?.trim();
     const nickname = query.nickname?.trim();
@@ -496,18 +490,13 @@ export class OrdersService {
               {
                 guestMinecraftNick: { contains: nickname, mode: 'insensitive' },
               },
-              { user: { username: { contains: nickname, mode: 'insensitive' } } },
+              {
+                user: { username: { contains: nickname, mode: 'insensitive' } },
+              },
             ],
           }
         : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            createdAt: {
-              ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: dateToUpperBound(query.dateTo) } : {}),
-            },
-          }
-        : {}),
+      ...(createdAtRange ? { createdAt: createdAtRange } : {}),
       ...(search
         ? {
             AND: [

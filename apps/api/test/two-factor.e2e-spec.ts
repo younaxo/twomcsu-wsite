@@ -470,6 +470,99 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     resetAdmin2faCache();
   });
 
+  it('админка заказов, промокодов и скидок: без 2FA — 403 admin_2fa_required, с 2FA — доступ', async () => {
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { slug: roleSlug },
+    });
+    const keys = [
+      'orders.view',
+      'orders.cancel',
+      'orders.export',
+      'promocodes.view',
+      'promocodes.create',
+      'promocodes.edit',
+      'promocodes.delete',
+      'store.discounts.view',
+      'store.discounts.bulk.create',
+      'store.discounts.bulk.edit',
+      'store.discounts.bulk.delete',
+      'store.discounts.loyalty.create',
+      'store.discounts.loyalty.edit',
+      'store.discounts.loyalty.delete',
+    ];
+    const perms = await prisma.permission.findMany({
+      where: { key: { in: keys } },
+    });
+    // Права обязаны существовать, иначе 403 был бы по другой причине.
+    expect(perms).toHaveLength(keys.length);
+    await prisma.rolePermission.createMany({
+      data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+    await app.get(PermissionService).invalidateUser(userId);
+    const auth = `Bearer ${token}`;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false },
+    });
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
+    resetAdmin2faCache();
+
+    const promoCode = `E2E-2FA-${unique.toUpperCase()}`;
+    const denials = [
+      http().get('/admin/orders'),
+      http().get('/admin/orders/any'),
+      http().patch('/admin/orders/any/cancel').send({ reason: 'x' }),
+      http().post('/admin/orders/export').send({}),
+      http().get('/admin/promocodes'),
+      http().post('/admin/promocodes').send({
+        code: promoCode,
+        discountType: 'PERCENT',
+        discountValue: '10',
+      }),
+      http().patch('/admin/promocodes/any').send({ isActive: false }),
+      http().delete('/admin/promocodes/any'),
+      http().get('/admin/store/discounts/bulk'),
+      http().get('/admin/store/discounts/loyalty'),
+      http()
+        .post('/admin/store/discounts/bulk')
+        .send({ discountType: 'PERCENT', discountValue: '5', minQuantity: 2 }),
+      http().patch('/admin/store/discounts/bulk/any').send({ minQuantity: 3 }),
+      http().delete('/admin/store/discounts/bulk/any'),
+      http()
+        .post('/admin/store/discounts/loyalty')
+        .send({ minPurchases: 1, discountPercent: '5', name: 'E2E 2FA' }),
+      http().patch('/admin/store/discounts/loyalty/any').send({ name: 'x' }),
+      http().delete('/admin/store/discounts/loyalty/any'),
+    ];
+    for (const req of denials) {
+      const denied = await req.set('Authorization', auth).expect(403);
+      expect(denied.body.code).toBe('admin_2fa_required');
+    }
+    expect(await prisma.promoCode.count({ where: { code: promoCode } })).toBe(
+      0,
+    );
+    expect(
+      await prisma.loyaltyDiscount.count({ where: { name: 'E2E 2FA' } }),
+    ).toBe(0);
+
+    // С включённой 2FA guard пропускает.
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+    for (const url of [
+      '/admin/orders',
+      '/admin/promocodes',
+      '/admin/store/discounts/bulk',
+      '/admin/store/discounts/loyalty',
+    ]) {
+      await http().get(url).set('Authorization', auth).expect(200);
+    }
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
+    resetAdmin2faCache();
+  });
+
   it('отключение: нужен пароль и код; после — вход без второго шага', async () => {
     const auth = `Bearer ${token}`;
     await http()
