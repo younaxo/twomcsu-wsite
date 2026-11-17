@@ -6,11 +6,12 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CartService } from './cart.service';
 import { GiftWishlistItemDto } from './dto/gift-wishlist-item.dto';
+import { PUBLIC_PRODUCT_SELECT } from './public-product';
 
 const WISHLIST_INCLUDE = {
   items: {
     include: {
-      product: { include: { variants: { where: { isActive: true } } } },
+      product: { select: PUBLIC_PRODUCT_SELECT },
     },
   },
 } as const;
@@ -90,7 +91,7 @@ export class WishlistService {
     const item = await this.prisma.wishlistItem.findUnique({
       where: { wishlistId_productId: { wishlistId: wishlist.id, productId } },
       include: {
-        product: { include: { variants: { where: { isActive: true } } } },
+        product: { select: PUBLIC_PRODUCT_SELECT },
       },
     });
     if (!item) {
