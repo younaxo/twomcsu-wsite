@@ -3,8 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
-import { PageHeader } from '@/components/admin/page-header';
+import { PageHeader, PageSection } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
+import { MyServerPunishments } from '@/components/punishments/my-server-punishments';
 import { RequireSession } from '@/components/auth/require-session';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -47,62 +48,69 @@ export default function PunishmentsPage() {
     <>
       <PageHeader
         title="Наказания"
-        description="Предупреждения, муты и баны на серверах и сайте twomc.su."
+        description="Наказания на сайте twomc.su и на игровых серверах."
       />
       <RequireSession>
-        <QueryBoundary query={query} skeleton={<SkeletonRows rows={4} />}>
-          {(items) =>
-            items.length === 0 ? (
-              <EmptyState
-                icon={<ShieldCheck />}
-                title="Наказаний нет"
-                description="Так держать — история чистая."
-              />
-            ) : (
-              <ul className="flex flex-col gap-3" data-testid="punishments">
-                {items.map((item) => {
-                  const active = inEffect(item);
-                  return (
-                    <li
-                      key={item.id}
-                      data-active={active}
-                      className="flex flex-col gap-1 rounded-xl bg-surface p-4 shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">
-                          {TYPE_LABELS[item.punishmentType]}
-                        </span>
-                        <Badge tone={active ? 'warning' : 'neutral'}>
-                          {active ? 'Действует' : 'Не действует'}
-                        </Badge>
-                        {item.server ? (
-                          <span className="text-xs text-subtle-foreground">{item.server}</span>
+        <PageSection
+          aria-labelledby="site-punishments-title"
+          title={<span id="site-punishments-title">Наказания на сайте</span>}
+          description="Предупреждения и ограничения аккаунта на сайте."
+        >
+          <QueryBoundary query={query} skeleton={<SkeletonRows rows={4} />}>
+            {(items) =>
+              items.length === 0 ? (
+                <EmptyState
+                  icon={<ShieldCheck />}
+                  title="Наказаний нет"
+                  description="Так держать — история чистая."
+                />
+              ) : (
+                <ul className="flex flex-col gap-3" data-testid="punishments">
+                  {items.map((item) => {
+                    const active = inEffect(item);
+                    return (
+                      <li
+                        key={item.id}
+                        data-active={active}
+                        className="flex flex-col gap-1 rounded-xl bg-surface p-4 shadow-sm"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold">
+                            {TYPE_LABELS[item.punishmentType]}
+                          </span>
+                          <Badge tone={active ? 'warning' : 'neutral'}>
+                            {active ? 'Действует' : 'Не действует'}
+                          </Badge>
+                          {item.server ? (
+                            <span className="text-xs text-subtle-foreground">{item.server}</span>
+                          ) : null}
+                        </div>
+                        <p className="text-sm text-muted-foreground">{item.reason}</p>
+                        <p className="text-xs text-subtle-foreground">
+                          Выдано {formatDateTime(item.issuedAt)}
+                          {item.expiresAt
+                            ? ` · до ${formatDateTime(item.expiresAt)}`
+                            : item.punishmentType === 'PERMBAN'
+                              ? ' · бессрочно'
+                              : ''}
+                        </p>
+                        {item.isAppealable !== false ? (
+                          <Link
+                            href="/support/new/punishment_appeal"
+                            className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+                          >
+                            Обжаловать
+                          </Link>
                         ) : null}
-                      </div>
-                      <p className="text-sm text-muted-foreground">{item.reason}</p>
-                      <p className="text-xs text-subtle-foreground">
-                        Выдано {formatDateTime(item.issuedAt)}
-                        {item.expiresAt
-                          ? ` · до ${formatDateTime(item.expiresAt)}`
-                          : item.punishmentType === 'PERMBAN'
-                            ? ' · бессрочно'
-                            : ''}
-                      </p>
-                      {item.isAppealable !== false ? (
-                        <Link
-                          href="/support/new/punishment_appeal"
-                          className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
-                        >
-                          Обжаловать
-                        </Link>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )
-          }
-        </QueryBoundary>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )
+            }
+          </QueryBoundary>
+        </PageSection>
+        <MyServerPunishments />
       </RequireSession>
     </>
   );

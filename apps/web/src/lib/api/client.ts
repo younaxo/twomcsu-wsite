@@ -69,6 +69,15 @@ async function parseBody(response: Response, mode: ParseMode): Promise<unknown> 
   return text.length > 0 ? text : undefined;
 }
 
+/// `Retry-After`: только целые секунды (формат HTTP-даты не разбираем), 1..3600.
+export function parseRetryAfter(value: string | null): number | undefined {
+  if (!value || !/^\d{1,5}$/.test(value.trim())) {
+    return undefined;
+  }
+  const seconds = Number(value.trim());
+  return seconds >= 1 && seconds <= 3600 ? seconds : undefined;
+}
+
 async function parseErrorBody(response: Response): Promise<unknown> {
   const contentType = response.headers.get('content-type') ?? '';
   try {
@@ -174,7 +183,9 @@ export async function apiFetchRaw(path: string, options: RequestOptions = {}): P
   }
 
   if (!response.ok) {
-    throw ApiError.fromResponse(response.status, await parseErrorBody(response));
+    const error = ApiError.fromResponse(response.status, await parseErrorBody(response));
+    error.retryAfterSeconds = parseRetryAfter(response.headers.get('retry-after'));
+    throw error;
   }
   return response;
 }

@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Этап 02, срез 2: фронтенд /bans и «Наказания на серверах» (ADR-0181, ветка feature/stage-02-s2-bans-ui, не смержено, сборка и e2e не запускались)
+
+- Публичная страница `/bans` (баны и муты: поиск по нику по кнопке, фильтры типа и статуса, сортировка по дате, курсорная пагинация «Показать ещё») и карточка `/bans/[ref]`, обе `noindex`. Вывод по белому списку полей, причина дословно как текст.
+- «Настройки -> Наказания»: блок «Наказания на серверах» (`GET /punishments/me`) отдельно от «Наказаний на сайте»; состояния загрузки, пусто, ошибка с повтором, 401, 404, 429 (Retry-After), 503, `meta.stale`, аккаунт не привязан (`linked: false`).
+- Клиент API: `ApiError.retryAfterSeconds` (целые секунды из `Retry-After`). Ссылка «Список наказаний» в футере.
+- Экспорт `Retry-After` через CORS (коммит d89fa51, `fix(api)`): `exposedHeaders: ['Retry-After']` в `apps/api/src/configure-app.ts`, unit-spec `configure-app.spec.ts`, усиление assert Low-1 в `bans.e2e-spec.ts`. Без этого браузер не видит `Retry-After` на кросс-доменных запросах web -> api (R110).
+- Проверки: `tsc --noEmit` (apps/web) 0 ошибок; vitest apps/web 103 файла, 605 тестов, все пройдены (из них 21 новый в `punishments-ui.test.tsx` и 2 в `client.test.ts`). e2e и `next build` не запускались.
+
 ### Этап 02, срез 2: бэкенд /bans (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, миграция и e2e не запускались)
 
 - Эндпоинты (модуль `PunishmentsModule`, контроллеры `MinecraftPunishments{Public,Me,Admin}Controller`): `GET /punishments/public` и `/punishments/public/:ref` (без входа, throttle 60/мин, ETag, `noindex`), `GET /punishments/me` (JWT, 30/мин, только по подтверждённой привязке, uuid версии 3 даёт `linked: false`), `GET /admin/punishments`, `/admin/punishments/status`, `/admin/punishments/:ref` (право `users.punishments` + 2FA, аудит `punishment.card.view` только для карточки), `POST` и `DELETE /admin/punishments/:ref/issuer-hidden` (право `punishments.issuer.hide`, иерархия N3, условный `UPDATE` и аудит в одной транзакции). Публичная причина - закрытый словарь, пока карта пуста всегда `rules`; выдавший виден по умолчанию с флагом принудительного скрытия; область с названием сервера; курсорная пагинация; серверный кэш с TTL 5 с и сбросом при скрытии выдавшего.
