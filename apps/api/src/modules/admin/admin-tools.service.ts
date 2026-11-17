@@ -242,8 +242,13 @@ export class AdminToolsService {
     return this.prisma.siteSettings.create({ data: {} });
   }
 
+  /// Ответ API без deprecated-колонки `requireAdmin2fa` (Q22/Q44): флага
+  /// больше нет, наружу он не отдаётся.
   async getSiteSettings() {
-    return this.getOrCreateSiteSettings();
+    const { requireAdmin2fa: _deprecated, ...rest } =
+      await this.getOrCreateSiteSettings();
+    void _deprecated;
+    return rest;
   }
 
   // --- Глобальная плашка (ADR-0066) -------------------------------------------
