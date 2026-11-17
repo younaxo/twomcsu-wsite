@@ -248,7 +248,12 @@ export class OrdersService {
       variant: { id: variant.id, price: variant.price },
       bundle: null,
     };
-    const totals = await this.pricing.computeTotals([fakeCartItem], null, null);
+    const priced = await this.pricing.computeTotals([fakeCartItem], null, null);
+    // Без корзины строки нет: cartItemId = null (CartLineRef).
+    const totals = {
+      ...priced,
+      lines: priced.lines.map((l) => ({ ...l, cartItemId: null })),
+    };
     assertCartLimits(limitLinesOf(totals.lines));
     return this.createOrderFromLines(
       null,

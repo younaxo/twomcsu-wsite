@@ -15,13 +15,25 @@ export interface CartLimitLine {
 /// заказом). Лимиты — на товар целиком: количество суммируется по всем
 /// строкам/вариантам/получателям подарка. Уникальный товар — не более одной
 /// штуки и одной строки.
-export function assertCartLimits(lines: CartLimitLine[]): void {
+/// `onlyProductId` (L1): add/patch проверяют только товар, затронутый
+/// операцией (null — набор, лимитов нет); старые нарушения других товаров в
+/// корзине не блокируют операцию. Без аргумента — полная проверка (заказ).
+export function assertCartLimits(
+  lines: CartLimitLine[],
+  onlyProductId?: string | null,
+): void {
+  if (onlyProductId === null) {
+    return;
+  }
   const byProduct = new Map<
     string,
     { lines: number; quantity: number; line: CartLimitLine }
   >();
   for (const line of lines) {
-    if (!line.productId) {
+    if (
+      !line.productId ||
+      (onlyProductId && line.productId !== onlyProductId)
+    ) {
       continue;
     }
     const entry = byProduct.get(line.productId);

@@ -23,11 +23,14 @@ describe('Store cart: серверные лимиты и коды ошибок (
     username: string;
     email: string;
   }
-  async function createUser(label: string): Promise<TestUser> {
+  async function createUser(
+    label: string,
+    exactUsername?: string,
+  ): Promise<TestUser> {
     const email = `cart-${label}-${unique}@example.com`;
-    const username = `ct${label}${unique}`
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 16);
+    const username =
+      exactUsername ??
+      `ct${label}${unique}`.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
     const password = 'Sup3rSecretPassw0rd!';
     await request(app.getHttpServer())
       .post('/auth/register')
@@ -613,6 +616,27 @@ describe('Store cart: серверные лимиты и коды ошибок (
     });
   });
 
+  describe('старые нарушения в корзине не блокируют несвязанный товар (L1)', () => {
+    beforeEach(() => clearCart(alice));
+
+    it('дубли уникального товара лежат в корзине — добавление другого товара 201', async () => {
+      const cart = await prisma.cart.findUniqueOrThrow({
+        where: { userId: alice.id },
+      });
+      await prisma.cartItem.createMany({
+        data: [1, 2].map(() => ({
+          cartId: cart.id,
+          productId: uniqueProductId,
+          variantId: uniqueVariant,
+          quantity: 1,
+        })),
+      });
+      await addItem(alice, { variantId: plainVariant }).expect(201);
+      // затронутый товар по-прежнему проверяется
+      await addItem(alice, { variantId: uniqueVariant }).expect(409);
+    });
+  });
+
   describe('подарок: формат ника и единый ответ (A3)', () => {
     beforeEach(() => clearCart(alice));
 
@@ -658,6 +682,28 @@ describe('Store cart: серверные лимиты и коды ошибок (
         giftToUsername: bob.username.toUpperCase(),
       }).expect(201);
       expect(res.body.items[0].giftToUserId).toBe(bob.id);
+    });
+  });
+
+  describe('подарок: ник с подчёркиванием не работает как маска (M2)', () => {
+    beforeEach(() => clearCart(alice));
+
+    it('a_b и aXb — подарок уходит именно a_b', async () => {
+      const tail = unique.slice(0, 4);
+      const under = await createUser('x', `u_${tail}`);
+      const other = await createUser('y', `uX${tail}`);
+      const res = await addItem(alice, {
+        variantId: giftableVariant,
+        giftToUsername: under.username,
+      }).expect(201);
+      expect(res.body.items[0].giftToUserId).toBe(under.id);
+      expect(res.body.items[0].giftToUserId).not.toBe(other.id);
+      await clearCart(alice);
+      const res2 = await addItem(alice, {
+        variantId: giftableVariant,
+        giftToUsername: other.username.toLowerCase(),
+      }).expect(201);
+      expect(res2.body.items[0].giftToUserId).toBe(other.id);
     });
   });
 });

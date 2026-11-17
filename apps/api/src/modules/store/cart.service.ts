@@ -158,10 +158,14 @@ export class CartService {
           : 'Этот товар нельзя подарить',
       );
     }
-    const target = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
-      select: { id: true },
-    });
+    // Без ILIKE: Prisma insensitive = ILIKE, где `_` — подстановка (a_b нашёл бы
+    // aXb). Сравнение lower() = lower($1) с параметром, точное совпадение
+    // регистра — первым (username unique различает регистр).
+    const [target] = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM users
+      WHERE lower(username) = lower(${username})
+      ORDER BY (username = ${username}) DESC, id
+      LIMIT 1`;
     if (!target || target.id === senderId) {
       throw notFound(
         StoreCartError.CART_GIFT_UNAVAILABLE,
@@ -248,7 +252,7 @@ export class CartService {
       if (!existing) {
         projected.push({ ...target.limit, quantity });
       }
-      assertCartLimits(projected);
+      assertCartLimits(projected, target.productId);
 
       if (existing) {
         // Тот же вариант (и получатель) — одна строка, количество суммируется.
@@ -333,7 +337,7 @@ export class CartService {
       } else {
         projected.push({ ...limitLine(current), quantity });
       }
-      assertCartLimits(projected);
+      assertCartLimits(projected, current.productId);
 
       const message =
         dto.giftMessage !== undefined ? { giftMessage: dto.giftMessage } : {};

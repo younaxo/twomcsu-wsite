@@ -79,6 +79,28 @@ describe('assertCartLimits (S1)', () => {
   });
 });
 
+describe('assertCartLimits: только затронутый товар (L1)', () => {
+  const broken = [
+    line({ productId: 'old', isUnique: true, quantity: 2 }),
+    line({ productId: 'new', quantity: 1 }),
+  ];
+
+  it('старое нарушение другого товара не блокирует операцию над новым', () => {
+    expect(() => assertCartLimits(broken, 'new')).not.toThrow();
+  });
+
+  it('нарушение затронутого товара по-прежнему отказ', () => {
+    expect(codeOf(() => assertCartLimits(broken, 'old')).code).toBe(
+      'CART_UNIQUE_DUPLICATE',
+    );
+  });
+
+  it('null (набор) — лимитов нет, без аргумента — полная проверка', () => {
+    expect(() => assertCartLimits(broken, null)).not.toThrow();
+    expect(() => assertCartLimits(broken)).toThrow();
+  });
+});
+
 describe('toPromoError', () => {
   it('распознаёт только отказы с кодом PROMO_*', () => {
     expect(
