@@ -30,7 +30,7 @@ export interface PunishmentViewBase {
 
 export interface PublicPunishmentView extends PunishmentViewBase {
   subjectName: string;
-  /// Подпись причины из ответа (`reason.label`) как есть.
+  /// Подпись причины (`reason.label`) как есть; если пуста или отсутствует — «Нарушение правил» (Q59).
   reasonLabel: string;
 }
 
@@ -47,6 +47,7 @@ export interface PunishmentPageMeta {
 export const PUBLIC_REF_PATTERN = /^(ban|mute)-[1-9][0-9]{0,17}$/;
 export const NAME_SEARCH_PATTERN = /^[A-Za-z0-9_.]{3,16}$/;
 
+const DEFAULT_REASON_LABEL = 'Нарушение правил';
 const KINDS: readonly PunishmentKind[] = ['BAN', 'MUTE', 'WARN', 'KICK'];
 const STATUSES: readonly PunishmentViewStatus[] = ['ACTIVE', 'EXPIRED', 'REMOVED'];
 
@@ -112,7 +113,11 @@ export function toPublicView(raw: unknown): PublicPunishmentView | null {
   if (!base || !subjectName) {
     return null;
   }
-  return { ...base, subjectName, reasonLabel: reason ?? '' };
+  return {
+    ...base,
+    subjectName,
+    reasonLabel: reason !== null && reason.trim() !== '' ? reason : DEFAULT_REASON_LABEL,
+  };
 }
 
 export function toMyView(raw: unknown): MyPunishmentView | null {
