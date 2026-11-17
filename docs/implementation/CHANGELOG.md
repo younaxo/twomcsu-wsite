@@ -1288,3 +1288,9 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
   `exports.scheduled.*`, `security.*`, `content.view`, `finance.*`,
   `users.bulk.edit`, `users.export`, `orders.export`, `reports.export`,
   `news.export`).
+
+## 2026-11-17 — Исправления по ревью Q25 (ADR-0171)
+
+- e2e `chat.e2e-spec.ts`: иерархия снятия мута и бана (старший/равный/младший); написаны статически, не запускались.
+- `PermissionService.getEffectivePermissions`: при чтении из кеша `maxPriority` null восстанавливается в `-Infinity` (R39); unit-тесты кеш-пути.
+- ADR-0171 дополнен: самоснятие владельцем, момент сравнения приоритетов.

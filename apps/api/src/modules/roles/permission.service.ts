@@ -36,7 +36,19 @@ export class PermissionService {
   async getEffectivePermissions(userId: string): Promise<EffectivePermissions> {
     const cached = await this.redis.client.get(cacheKeyUser(userId));
     if (cached) {
-      return JSON.parse(cached) as EffectivePermissions;
+      const parsed = JSON.parse(cached) as Omit<
+        EffectivePermissions,
+        'maxPriority'
+      > & { maxPriority: number | null };
+      // JSON.stringify(-Infinity) даёт null, а null в сравнениях равен 0:
+      // восстанавливаем «нет ролей» как -Infinity (L9, ревью Q25).
+      return {
+        ...parsed,
+        maxPriority:
+          typeof parsed.maxPriority === 'number'
+            ? parsed.maxPriority
+            : Number.NEGATIVE_INFINITY,
+      };
     }
 
     const userRoles = await this.prisma.userRole.findMany({
