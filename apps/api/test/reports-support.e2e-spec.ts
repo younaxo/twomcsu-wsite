@@ -121,6 +121,8 @@ describe('Reports support (e2e)', () => {
   let outsider: TestUser;
   let senior: TestUser;
   let viewerOnly: TestUser;
+  let pinOnly: TestUser;
+  let unpinOnly: TestUser;
   let msgSpammer: TestUser;
   let filterUser: TestUser;
   let typeFilterUser: TestUser;
@@ -142,6 +144,8 @@ describe('Reports support (e2e)', () => {
     outsider = await createUser('out');
     senior = await createUser('sen');
     viewerOnly = await createUser('view');
+    pinOnly = await createUser('pin');
+    unpinOnly = await createUser('unp');
     msgSpammer = await createUser('msp');
     filterUser = await createUser('flt');
     typeFilterUser = await createUser('typ');
@@ -166,6 +170,21 @@ describe('Reports support (e2e)', () => {
       'reports.notes.pin',
       'reports.notes.unpin',
       'reports.notes.edit',
+    ]);
+    // Разделение прав: pin без unpin и unpin без pin (M1).
+    const pinRole = await createRole(`support-pin-${unique}`, 6);
+    await grantRole(pinOnly.id, pinRole.id);
+    await grantPermissions(pinRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.pin',
+    ]);
+    const unpinRole = await createRole(`support-unpin-${unique}`, 7);
+    await grantRole(unpinOnly.id, unpinRole.id);
+    await grantPermissions(unpinRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.unpin',
     ]);
     const viewRole = await createRole(`support-view-${unique}`, 5);
     await grantRole(viewerOnly.id, viewRole.id);
@@ -194,6 +213,8 @@ describe('Reports support (e2e)', () => {
       outsider.email,
       senior.email,
       viewerOnly.email,
+      pinOnly.email,
+      unpinOnly.email,
       msgSpammer.email,
       filterUser.email,
       typeFilterUser.email,
@@ -805,16 +826,20 @@ describe('Reports support (e2e)', () => {
     expect(
       unpinned.body.moderatorNotes.map((n: { id: string }) => n.id),
     ).toEqual([noteId, secondId]);
+    // PATCH только закрепляет: pinned:false отвергается (400), состояние не меняется.
     const viaBody = await request(app.getHttpServer())
       .patch(`${base}/notes/${secondId}/pin`)
       .set('Authorization', auth(senior))
       .send({ pinned: false })
-      .expect(200);
+      .expect(400);
+    expect(JSON.stringify(viaBody.body)).toContain('DELETE');
     expect(
-      viaBody.body.moderatorNotes.every(
-        (n: { isPinned: boolean }) => n.isPinned === false,
-      ),
-    ).toBe(true);
+      (
+        await prisma.reportModeratorNote.findUniqueOrThrow({
+          where: { id: secondId },
+        })
+      ).isPinned,
+    ).toBe(false);
 
     // Ответ GET для персонала тоже отсортирован (закреплённые первыми).
     await request(app.getHttpServer())
@@ -870,6 +895,85 @@ describe('Reports support (e2e)', () => {
       staffView.body.messages.find((m: { isStaff: boolean }) => m.isStaff)
         .authorId,
     ).toBe(moderator.id);
+  });
+
+  it('заметки: pin без unpin только закрепляет, unpin без pin только открепляет (M1)', async () => {
+    const report = await createReportAs(filterUser);
+    const base = `/moderation/reports/${report.reportNumber}`;
+    const created = await request(app.getHttpServer())
+      .post(`${base}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Заметка для pin/unpin' })
+      .expect(201);
+    const noteId: string = created.body.moderatorNotes[0].id;
+    const isPinned = async () =>
+      (
+        await prisma.reportModeratorNote.findUniqueOrThrow({
+          where: { id: noteId },
+        })
+      ).isPinned;
+
+    // unpin без pin: закрепить нельзя.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(unpinOnly))
+      .expect(403);
+    expect(await isPinned()).toBe(false);
+
+    // pin без unpin: закрепляет, но открепить ни через DELETE, ни через PATCH нельзя.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .expect(200);
+    expect(await isPinned()).toBe(true);
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .send({ pinned: false })
+      .expect(400);
+    expect(await isPinned()).toBe(true);
+
+    // unpin без pin: DELETE работает.
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(unpinOnly))
+      .expect(200);
+    expect(await isPinned()).toBe(false);
+  });
+
+  it('смена статуса создаёт уведомление REPORT_STATUS_CHANGED автору обращения', async () => {
+    const report = await createReportAs(filterUser);
+    await request(app.getHttpServer())
+      .patch(`/moderation/reports/${report.reportNumber}/status`)
+      .set('Authorization', auth(moderator))
+      .send({ status: 'IN_REVIEW' })
+      .expect(200);
+    await waitFor(
+      async () =>
+        (await prisma.notification.count({
+          where: {
+            userId: filterUser.id,
+            type: 'REPORT_STATUS_CHANGED',
+            link: `/support/${report.reportNumber}`,
+          },
+        })) >= 1,
+      'уведомление REPORT_STATUS_CHANGED автору',
+    );
+    const notification = await prisma.notification.findFirstOrThrow({
+      where: {
+        userId: filterUser.id,
+        type: 'REPORT_STATUS_CHANGED',
+        link: `/support/${report.reportNumber}`,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification.metadata).toMatchObject({
+      reportNumber: report.reportNumber,
+    });
   });
 
   it('история для игрока: санитизированная лента автора; чужой игрок — 403', async () => {
