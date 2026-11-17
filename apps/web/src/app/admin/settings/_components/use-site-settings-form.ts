@@ -23,7 +23,6 @@ export const EDITABLE_KEYS = [
   // Флаги модулей (chat/store/…) больше не редактируются здесь — реестр
   // модулей в «Система → Техработы и модули» (ADR-0082).
   'defaultNotificationsEnabled',
-  'requireAdmin2fa',
 ] as const satisfies readonly (keyof SiteSettingsDto)[];
 
 export type EditableKey = (typeof EDITABLE_KEYS)[number];

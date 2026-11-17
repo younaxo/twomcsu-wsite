@@ -219,7 +219,7 @@ export const envValidationSchema = Joi.object({
   /// Ключ шифрования секретов 2FA (ADR-0109): строка ≥ 32 символов
   /// (`openssl rand -base64 32`). В production обязателен (ADR-0156): без него
   /// API не стартует, 2FA админов не отключается молча. Вне production пусто —
-  /// 2FA недоступна, `requireAdmin2fa` не применяется. Смена ключа делает уже
+  /// 2FA недоступна, требование 2FA персонала не применяется. Смена ключа делает уже
   /// включённую 2FA нерабочей — только вместе со сбросом 2FA.
   TWO_FACTOR_ENCRYPTION_KEY: Joi.string()
     .trim()
@@ -248,4 +248,52 @@ export const envValidationSchema = Joi.object({
   PAYMENT_PROVIDER: Joi.string().valid('test').default('test'),
   PAYMENT_API_KEY: Joi.string().allow('').default(''),
   PAYMENT_WEBHOOK_SECRET: Joi.string().allow('').default(''),
+
+  /// Интеграция наказаний LiteBans (этап 02, ADR-0166, раздел 2.3 дизайна).
+  /// Все переменные необязательны и без дефолтов с секретами: без них модуль
+  /// бездействует (статус «не настроено»), production не падает. Пароль задаёт
+  /// владелец в хранилище секретов; значения в репозиторий не попадают.
+  LITEBANS_ENABLED: Joi.boolean().default(false),
+  LITEBANS_DB_DRIVER: Joi.string().valid('mysql').optional(),
+  LITEBANS_DB_HOST: Joi.string().allow('').optional(),
+  LITEBANS_DB_PORT: Joi.number().port().optional(),
+  LITEBANS_DB_NAME: Joi.string().allow('').optional(),
+  LITEBANS_DB_USER: Joi.string().allow('').optional(),
+  LITEBANS_DB_PASSWORD: Joi.string().allow('').optional(),
+  /// `required` = проверка сертификата и имени хоста. В production `disabled`
+  /// отвергается (по образцу ADR-0164); пусто допустимо, пока интеграция
+  /// выключена.
+  LITEBANS_DB_SSL: Joi.string().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.string().valid('required', 'disabled', ''),
+    otherwise: Joi.string().valid('required', '').messages({
+      'any.only': 'LITEBANS_DB_SSL=disabled запрещён в production',
+    }),
+  }),
+  /// В production при включённой интеграции без CA-файла старт отклоняется.
+  LITEBANS_DB_SSL_CA_FILE: Joi.string()
+    .allow('')
+    .when('NODE_ENV', {
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.when('LITEBANS_ENABLED', {
+        is: true,
+        then: Joi.string().invalid('').required().messages({
+          'any.required':
+            'LITEBANS_DB_SSL_CA_FILE обязателен в production при LITEBANS_ENABLED=true',
+          'any.invalid':
+            'LITEBANS_DB_SSL_CA_FILE обязателен в production при LITEBANS_ENABLED=true',
+          'string.empty':
+            'LITEBANS_DB_SSL_CA_FILE обязателен в production при LITEBANS_ENABLED=true',
+        }),
+      }),
+    }),
+  LITEBANS_TABLE_PREFIX: Joi.string()
+    .pattern(/^[A-Za-z0-9_]{1,32}$/)
+    .optional(),
+  LITEBANS_POLL_INTERVAL_MS: Joi.number().integer().min(500).max(10_000),
+  LITEBANS_BATCH_SIZE: Joi.number().integer().min(10).max(1000),
+  LITEBANS_ACTIVE_CHECK_INTERVAL_S: Joi.number().integer().min(5).max(3600),
+  LITEBANS_RECONCILE_INTERVAL_MIN: Joi.number().integer().min(5).max(1440),
+  LITEBANS_DB_CONNECT_TIMEOUT_MS: Joi.number().integer().min(500).max(60_000),
+  LITEBANS_DB_QUERY_TIMEOUT_MS: Joi.number().integer().min(500).max(60_000),
 }).unknown(true);

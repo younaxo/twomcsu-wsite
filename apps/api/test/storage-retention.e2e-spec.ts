@@ -6,6 +6,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { StorageRetentionService } from '../src/modules/system/storage-retention.service';
 
@@ -59,6 +60,7 @@ describe('Storage retention (e2e)', () => {
       data: records.map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
     await prisma.userRole.create({ data: { userId, roleId: role.id } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 

@@ -101,8 +101,6 @@ export interface SiteSettingsDto {
   newsEnabled: boolean;
   reportsEnabled: boolean;
   defaultNotificationsEnabled: boolean;
-  /// Поле сохраняется, механизма 2FA в проекте нет (ADR-0050).
-  requireAdmin2fa: boolean;
   ipWhitelist: string[];
   updatedBy: string | null;
   updatedAt: IsoDateString;
@@ -218,9 +216,16 @@ export interface UserIdFilterQuery {
   userId?: string;
 }
 
-/// `GET /admin/security/suspicious` — Redis-счётчики brute-force по IP (ADR-0049).
+/// `GET /admin/security/suspicious` — Redis-счётчики brute-force (ADR-0049).
+/// Счётчик ведётся по ключу подсети (ADR-0163): IPv4 — полный адрес, IPv6 —
+/// префикс /64 (`v6:2001:db8:0:1`), мусор — `raw:<hash>`, пусто — `unknown`;
+/// рядом отдаётся последний полный IP, с которого была неудачная попытка.
 export interface SuspiciousIpDto {
+  /// Ключ подсети (`rateLimitKey`), а не обязательно полный адрес клиента.
   ip: string;
+  /// Последний полный нормализованный IP неудачной попытки; `null`, если
+  /// ключ в Redis истёк или отсутствует. IP — персональные данные (TTL).
+  lastIp: string | null;
   failedAttempts: number;
   isBlocked: boolean;
   blockedTtlSeconds: number | null;

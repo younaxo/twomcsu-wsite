@@ -331,6 +331,24 @@ describe('ReportsService: приватность служебных полей',
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('getByNumber: персонал без 2FA, чужое обращение — 403 admin_2fa_required', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow());
+    await expect(
+      service.getByNumber('R-1', 'staff', false, true),
+    ).rejects.toMatchObject({
+      response: { code: 'admin_2fa_required' },
+      status: 403,
+    });
+  });
+
+  it('getByNumber: автор без 2FA (персонал) — своё обращение доступно как игроку', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(reportRow());
+    const res = await service.getByNumber('R-1', 'author', false, true);
+    expect(res).toBeDefined();
+  });
+
   it('listMine: omit служебных полей и userId целей, фильтр только по автору', async () => {
     const { prisma, service } = setup();
     await service.listMine('author', { status: 'PENDING' });

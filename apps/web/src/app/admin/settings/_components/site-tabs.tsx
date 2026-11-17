@@ -138,13 +138,12 @@ export function GeneralTab({ settings, api, editable }: TabProps) {
           </SettingsIsland>
 
           <SettingsIsland title="Безопасность админ-панели">
-            <BoolSwitch
-              api={api}
-              editable={editable}
-              field="requireAdmin2fa"
-              label="Требовать 2FA у администраторов"
-              description="Флаг сохраняется; сам механизм 2FA ещё не реализован (ADR-0050)"
-            />
+            <p className="flex items-start gap-2 text-sm text-muted-foreground">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                Двухфакторная аутентификация персонала обязательна всегда и не отключается.
+              </span>
+            </p>
           </SettingsIsland>
         </>
       }
