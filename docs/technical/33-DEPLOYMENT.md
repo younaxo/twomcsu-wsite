@@ -20,6 +20,9 @@ Defaults паролей в compose (`minecraft`, `redis_dev_password`) — то�
 `pnpm build` (`pnpm -r build`) → `prisma migrate deploy` (`pnpm --filter @twomc/api db:deploy`) → `node dist/main.js` (API) и `next start` (web). Seed в production запускать нельзя до исправления S1.
 ## Зависимости между сервисами
 Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (обязателен), Redis (обязателен: brute-force, кеш, presence), SMTP/VAPID/Twitch/YouTube/Cloudflare Turnstile (опционально/внешние), Minecraft-серверы (TCP ping). Health: `GET /health` (проверка БД `SELECT 1`). Статус системы: `GET /system/status` (опрашивается middleware web для maintenance).
+## Ключи Turnstile при сборке web
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY` (публичный site key) передаётся как build-arg образа web (`web.Dockerfile`, `docker-compose.prod.yml`) и вшивается в сборку Next.js; без него сборка падает (fail-fast). `TURNSTILE_SECRET_KEY` используется только API и в образ web не передаётся.
+
 ## Сеть и прокси
 Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); в API включить `trust proxy` (S6). Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
 ## Backup

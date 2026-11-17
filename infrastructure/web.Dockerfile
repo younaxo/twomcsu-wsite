@@ -2,8 +2,11 @@
 # Production-образ frontend (Next.js standalone). Собирается из корня монорепо:
 #   docker build -f infrastructure/web.Dockerfile \
 #     --build-arg NEXT_PUBLIC_API_URL=https://api.twomc.su \
-#     --build-arg NEXT_PUBLIC_CDN_BASE_URL=https://cdn-files.twomc.su -t twomc-web .
+#     --build-arg NEXT_PUBLIC_CDN_BASE_URL=https://cdn-files.twomc.su \
+#     --build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY=<публичный site key Cloudflare Turnstile> -t twomc-web .
 # NEXT_PUBLIC_* вшиваются на этапе сборки — это публичные значения, не секреты.
+# NEXT_PUBLIC_TURNSTILE_SITE_KEY обязателен: без него сборка падает. Секретный ключ Turnstile
+# (TURNSTILE_SECRET_KEY) живёт только в API и в образ web не попадает.
 
 FROM node:20-alpine AS base
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true
@@ -22,15 +25,16 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_CDN_BASE_URL=https://cdn-files.twomc.su
-ARG NEXT_PUBLIC_HCAPTCHA_SITE_KEY
+ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_CDN_BASE_URL=$NEXT_PUBLIC_CDN_BASE_URL \
-    NEXT_PUBLIC_HCAPTCHA_SITE_KEY=$NEXT_PUBLIC_HCAPTCHA_SITE_KEY \
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_TURNSTILE_SITE_KEY \
     NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY \
     NEXT_TELEMETRY_DISABLED=1
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+RUN test -n "$NEXT_PUBLIC_TURNSTILE_SITE_KEY" || (echo "ОШИБКА: не задан build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY (публичный site key Cloudflare Turnstile); сборка web без него остановлена" >&2; exit 1)
 RUN pnpm --filter @twomc/shared run build && pnpm --filter @twomc/web run build
 
 FROM node:20-alpine AS runtime

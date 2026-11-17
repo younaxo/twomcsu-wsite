@@ -314,3 +314,8 @@ Client ID и Client Secret — в env (`TELEGRAM_CLIENT_ID`, `TELEGRAM_CLIENT_SE
 
 Нужны реальные `NEXT_PUBLIC_TURNSTILE_SITE_KEY` и `TURNSTILE_SECRET_KEY` из Cloudflare
 Dashboard для домена twomc.su. В dev работают официальные тестовые ключи.
+
+P3-04: Docker-образ web принимает ключ под именем `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+(прежнее `NEXT_PUBLIC_HCAPTCHA_SITE_KEY` удалено); `docker-compose.prod.yml` и `web.Dockerfile`
+падают при пустом ключе (ADR-0154). Проверка действует только для Docker-сборки: локальный
+`next build` без ключа тихо отключает капчу. Остаётся получить реальные ключи от владельца.
