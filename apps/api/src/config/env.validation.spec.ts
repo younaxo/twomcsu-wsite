@@ -151,3 +151,19 @@ describe('envValidationSchema production cookie и 2FA (ADR-0156)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('envValidationSchema PAYMENT_WEBHOOK_SECRET (ADR-0157)', () => {
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true });
+
+  it('дефолта секрета нет: по умолчанию пустая строка (вебхуки отклоняются)', () => {
+    const { error, value } = validate(base);
+    expect(error).toBeUndefined();
+    expect(value.PAYMENT_WEBHOOK_SECRET).toBe('');
+  });
+
+  it('заданный секрет сохраняется', () => {
+    const { value } = validate({ ...base, PAYMENT_WEBHOOK_SECRET: 's3cret' });
+    expect(value.PAYMENT_WEBHOOK_SECRET).toBe('s3cret');
+  });
+});

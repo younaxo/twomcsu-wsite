@@ -204,8 +204,9 @@ export const envValidationSchema = Joi.object({
   YOUTUBE_API_KEY: Joi.string().allow('').default(''),
 
   /// Провайдер не выбран (RISKS.md R2, ADR-0009) — только 'test' реализован.
-  /// PAYMENT_WEBHOOK_SECRET подписывает вебхук (HMAC-SHA256 от сырого тела).
+  /// PAYMENT_WEBHOOK_SECRET — ключ HMAC-SHA256 подписи вебхука (ADR-0157),
+  /// без дефолта: пустой секрет = все вебхуки отклоняются (401).
   PAYMENT_PROVIDER: Joi.string().valid('test').default('test'),
   PAYMENT_API_KEY: Joi.string().allow('').default(''),
-  PAYMENT_WEBHOOK_SECRET: Joi.string().allow('').default('test-webhook-secret'),
+  PAYMENT_WEBHOOK_SECRET: Joi.string().allow('').default(''),
 }).unknown(true);

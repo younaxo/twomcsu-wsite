@@ -2,12 +2,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { randomBytes, timingSafeEqual } from 'crypto';
-import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'crypto';
 import { maskNickname } from '../../common/privacy.util';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,9 +15,12 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
-import { PaymentWebhookDto } from './dto/payment-webhook.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
+import {
+  PaymentProvider,
+  PaymentWebhookEvent,
+} from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { PricedLine, PricingService } from './pricing.service';
 
@@ -29,11 +32,12 @@ const ORDER_INCLUDE = {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly payments: PaymentProviderRegistry,
-    private readonly config: ConfigService,
     private readonly storage: StorageService,
   ) {}
 
@@ -297,65 +301,97 @@ export class OrdersService {
     });
   }
 
-  private verifyWebhookSecret(secret: string): boolean {
-    const configured = this.config.get<string>('PAYMENT_WEBHOOK_SECRET') ?? '';
-    const a = Buffer.from(secret);
-    const b = Buffer.from(configured);
-    if (a.length !== b.length) {
-      return false;
-    }
-    return timingSafeEqual(a, b);
-  }
-
-  /// Всегда 200 (внешние провайдеры агрессивно ретраят non-2xx — та же
-  /// причина, что и Voting webhook, ADR-0025). Идемпотентно: повторный
-  /// вебхук для уже обработанного заказа не меняет состояние повторно.
+  /// ADR-0157. Подпись уже проверена провайдером (PaymentsWebhookController).
+  /// Всегда 200 для проверенных событий (внешние провайдеры агрессивно
+  /// ретраят non-2xx, ADR-0025). Идемпотентно и безопасно при конкуренции:
+  /// переход статуса — атомарный `updateMany where {id, status: PENDING}`;
+  /// побочные эффекты (usedCount) выполняются только если переход состоялся.
   async handleWebhook(
-    dto: PaymentWebhookDto,
+    provider: PaymentProvider,
+    event: PaymentWebhookEvent,
   ): Promise<{ accepted: boolean; reason?: string }> {
-    if (!this.verifyWebhookSecret(dto.secret)) {
-      return { accepted: false, reason: 'invalid_secret' };
-    }
     const order = await this.prisma.order.findUnique({
-      where: { orderNumber: dto.orderNumber },
+      where: { orderNumber: event.orderNumber },
     });
     if (!order) {
       return { accepted: false, reason: 'order_not_found' };
     }
+    if (order.paymentProvider !== provider.name) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=provider_mismatch`,
+      );
+      return { accepted: false, reason: 'provider_mismatch' };
+    }
     if (order.status !== OrderStatus.PENDING) {
       return { accepted: true, reason: 'already_processed' };
     }
-
-    if (dto.status === 'succeeded') {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.order.update({
-          where: { id: order.id },
-          data: {
-            status: OrderStatus.COMPLETED,
-            paidAt: new Date(),
-            paymentWebhookVerifiedAt: new Date(),
-            paymentId: dto.paymentId,
-          },
-        });
-        if (order.promoCodeId) {
-          await tx.promoCode.update({
-            where: { id: order.promoCodeId },
-            data: { usedCount: { increment: 1 } },
-          });
-          if (order.userId) {
-            await tx.promoCodeUsage.create({
-              data: { promoCodeId: order.promoCodeId, userId: order.userId },
-            });
-          }
-        }
-      });
-    } else {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: OrderStatus.FAILED },
-      });
+    if (order.paymentId && order.paymentId !== event.paymentId) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=payment_id_mismatch`,
+      );
+      return { accepted: false, reason: 'payment_id_mismatch' };
     }
-    return { accepted: true };
+
+    if (event.status === 'succeeded') {
+      if (event.currency !== provider.currency) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=currency_mismatch`,
+        );
+        return { accepted: false, reason: 'currency_mismatch' };
+      }
+      if (!event.amount.equals(order.total)) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=amount_mismatch`,
+        );
+        return { accepted: false, reason: 'amount_mismatch' };
+      }
+      const transitioned = await this.prisma.$transaction(
+        async (tx) => {
+          const now = new Date();
+          const moved = await tx.order.updateMany({
+            where: { id: order.id, status: OrderStatus.PENDING },
+            data: {
+              status: OrderStatus.COMPLETED,
+              paidAt: now,
+              paymentWebhookVerifiedAt: now,
+              ...(order.paymentId ? {} : { paymentId: event.paymentId }),
+            },
+          });
+          if (moved.count !== 1) {
+            return false;
+          }
+          if (order.promoCodeId) {
+            await tx.promoCode.update({
+              where: { id: order.promoCodeId },
+              data: { usedCount: { increment: 1 } },
+            });
+            if (order.userId) {
+              await tx.promoCodeUsage.createMany({
+                data: [
+                  { promoCodeId: order.promoCodeId, userId: order.userId },
+                ],
+                skipDuplicates: true,
+              });
+            }
+          }
+          return true;
+        },
+        // Параллельные ретраи вебхука ждут блокировку строки заказа, удерживая
+        // соединения пула: дефолтные 2 с на старт транзакции не хватает (500).
+        { maxWait: 10_000, timeout: 10_000 },
+      );
+      return transitioned
+        ? { accepted: true }
+        : { accepted: true, reason: 'already_processed' };
+    }
+
+    const failed = await this.prisma.order.updateMany({
+      where: { id: order.id, status: OrderStatus.PENDING },
+      data: { status: OrderStatus.FAILED },
+    });
+    return failed.count === 1
+      ? { accepted: true }
+      : { accepted: true, reason: 'already_processed' };
   }
 
   async listAdmin(query: ListAdminOrdersQueryDto) {

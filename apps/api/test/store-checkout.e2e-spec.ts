@@ -1,10 +1,17 @@
+import { E2E_PAYMENT_WEBHOOK_SECRET } from './helpers/payment-webhook-env';
 import { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
-import { configureApp } from './../src/configure-app';
+import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
+import { signPaymentWebhook } from './helpers/sign-payment-webhook';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { OrdersService } from '../src/modules/store/orders.service';
+import { PaymentsWebhookController } from '../src/modules/store/payments-webhook.controller';
+import { PaymentProviderRegistry } from '../src/modules/store/payment/payment-provider.registry';
+import { TestPaymentProvider } from '../src/modules/store/payment/test-payment-provider.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -16,7 +23,7 @@ describe('Store checkout (e2e)', () => {
   let permissions: PermissionService;
   const unique = randomUUID().slice(0, 8);
   const cleanupRoleSlugs: string[] = [];
-  const webhookSecret = process.env.PAYMENT_WEBHOOK_SECRET ?? '';
+  const webhookSecret = E2E_PAYMENT_WEBHOOK_SECRET;
 
   interface TestUser {
     id: string;
@@ -94,7 +101,7 @@ describe('Store checkout (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication(APP_CREATE_OPTIONS);
     configureApp(app);
     await app.init();
 
@@ -228,6 +235,42 @@ describe('Store checkout (e2e)', () => {
 
   const auth = (user: TestUser) => `Bearer ${user.accessToken}`;
 
+  /// Подписанный вебхук тестового провайдера (ADR-0157). Тело — ровно rawBody.
+  function postWebhook(
+    payload: Record<string, unknown> | string,
+    opts: { secret?: string; provider?: string; sign?: boolean } = {},
+  ) {
+    const signed = signPaymentWebhook(opts.secret ?? webhookSecret, payload);
+    const req = request(app.getHttpServer())
+      .post(`/webhooks/payments/${opts.provider ?? 'test'}`)
+      .set('Content-Type', 'application/json');
+    if (opts.sign !== false) {
+      req.set(signed.headers);
+    }
+    return req.send(signed.rawBody);
+  }
+
+  async function webhookPayload(
+    orderNumber: string,
+    over: Record<string, unknown> = {},
+  ) {
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    return {
+      orderNumber,
+      paymentId: order.paymentId,
+      status: 'succeeded',
+      amount: order.total.toString(),
+      currency: 'RUB',
+      ...over,
+    };
+  }
+
+  async function payOrder(orderNumber: string) {
+    return postWebhook(await webhookPayload(orderNumber)).expect(200);
+  }
+
   it('webhook secret задан в окружении', () => {
     expect(webhookSecret.length).toBeGreaterThan(0);
   });
@@ -349,27 +392,61 @@ describe('Store checkout (e2e)', () => {
       .expect(403);
   });
 
-  it('вебхук: неверный секрет отклоняется, верный — завершает заказ (идемпотентно)', async () => {
-    const rejected = await request(app.getHttpServer())
-      .post('/webhooks/payments/test')
-      .send({
-        secret: 'wrong-secret',
-        orderNumber,
-        paymentId: 'x',
-        status: 'succeeded',
-      })
-      .expect(200);
-    expect(rejected.body.accepted).toBe(false);
+  it('вебхук: без подписи, с чужой подписью и подменой тела — 401, заказ не меняется', async () => {
+    const payload = await webhookPayload(orderNumber);
+    await postWebhook(payload, { sign: false }).expect(401);
+    await postWebhook(payload, { secret: 'wrong-secret' }).expect(401);
 
-    const accepted = await request(app.getHttpServer())
+    const signed = signPaymentWebhook(webhookSecret, payload);
+    await request(app.getHttpServer())
       .post('/webhooks/payments/test')
-      .send({
-        secret: webhookSecret,
-        orderNumber,
-        paymentId: 'test_paid',
-        status: 'succeeded',
-      })
-      .expect(200);
+      .set('Content-Type', 'application/json')
+      .set(signed.headers)
+      .send(signed.rawBody.replace(orderNumber, 'O-00000000-FFFFFF'))
+      .expect(401);
+    // Секрет в теле (старый протокол) больше не принимается.
+    await request(app.getHttpServer())
+      .post('/webhooks/payments/test')
+      .send({ ...payload, secret: webhookSecret })
+      .expect(401);
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    expect(order.status).toBe('PENDING');
+  });
+
+  it('вебхук: неизвестный провайдер — 404', async () => {
+    await postWebhook(await webhookPayload(orderNumber), {
+      provider: 'nope',
+    }).expect(404);
+  });
+
+  it('вебхук: переплата и недоплата, чужая валюта, чужой paymentId — отказ без перехода', async () => {
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ amount: order.total.plus(0.01).toString() }, 'amount_mismatch'],
+      [{ amount: order.total.minus(0.01).toString() }, 'amount_mismatch'],
+      [{ currency: 'USD' }, 'currency_mismatch'],
+      [{ paymentId: 'forged_payment' }, 'payment_id_mismatch'],
+    ];
+    for (const [over, reason] of cases) {
+      const res = await postWebhook(
+        await webhookPayload(orderNumber, over),
+      ).expect(200);
+      expect(res.body).toEqual({ accepted: false, reason });
+    }
+    const after = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    expect(after.status).toBe('PENDING');
+    expect(after.paymentId).toBe(order.paymentId);
+  });
+
+  it('вебхук: верная подпись завершает заказ, повтор — already_processed', async () => {
+    const accepted = await payOrder(orderNumber);
     expect(accepted.body.accepted).toBe(true);
 
     const order = await prisma.order.findUniqueOrThrow({
@@ -378,17 +455,67 @@ describe('Store checkout (e2e)', () => {
     expect(order.status).toBe('COMPLETED');
     expect(order.paymentWebhookVerifiedAt).not.toBeNull();
 
-    const replay = await request(app.getHttpServer())
-      .post('/webhooks/payments/test')
-      .send({
-        secret: webhookSecret,
-        orderNumber,
-        paymentId: 'test_paid',
-        status: 'succeeded',
-      })
-      .expect(200);
+    const replay = await postWebhook(await webhookPayload(orderNumber)).expect(
+      200,
+    );
     expect(replay.body.reason).toBe('already_processed');
+
+    // failed после COMPLETED статус не меняет.
+    await postWebhook(
+      await webhookPayload(orderNumber, { status: 'failed' }),
+    ).expect(200);
+    const still = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    expect(still.status).toBe('COMPLETED');
   });
+
+  it.each([2, 10])(
+    'вебхук: %i параллельных подписанных запросов — один переход, usedCount === 1, нет 500',
+    async (n) => {
+      const code = `CHK${unique.toUpperCase()}C${n}`;
+      const promo = await prisma.promoCode.create({
+        data: { code, discountType: 'PERCENT', discountValue: 10 },
+      });
+      await request(app.getHttpServer())
+        .post('/store/cart/items')
+        .set('Authorization', auth(alice))
+        .send({ variantId, quantity: 1 })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/store/cart/apply-promo')
+        .set('Authorization', auth(alice))
+        .send({ code })
+        .expect(201);
+      const created = await request(app.getHttpServer())
+        .post('/store/orders')
+        .set('Authorization', auth(alice))
+        .expect(201);
+      const number = created.body.order.orderNumber;
+      createdOrderNumbers.push(number);
+      expect(created.body.order.promoCodeId).toBe(promo.id);
+
+      const payload = await webhookPayload(number);
+      const results = await Promise.all(
+        Array.from({ length: n }, () => postWebhook(payload)),
+      );
+      expect(results.map((r) => r.status)).toEqual(Array(n).fill(200));
+      const transitions = results.filter((r) => r.body.reason === undefined);
+      expect(transitions).toHaveLength(1);
+      expect(
+        results.filter((r) => r.body.reason === 'already_processed'),
+      ).toHaveLength(n - 1);
+
+      const order = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber: number },
+      });
+      expect(order.status).toBe('COMPLETED');
+      const after = await prisma.promoCode.findUniqueOrThrow({
+        where: { id: promo.id },
+      });
+      expect(after.usedCount).toBe(1);
+    },
+  );
 
   it('заказ: покупка уникального товара второй раз отклоняется', async () => {
     await request(app.getHttpServer())
@@ -402,15 +529,7 @@ describe('Store checkout (e2e)', () => {
       .expect(201);
     const firstOrderNumber = firstOrder.body.order.orderNumber;
     createdOrderNumbers.push(firstOrderNumber);
-    await request(app.getHttpServer())
-      .post('/webhooks/payments/test')
-      .send({
-        secret: webhookSecret,
-        orderNumber: firstOrderNumber,
-        paymentId: 'x',
-        status: 'succeeded',
-      })
-      .expect(200);
+    await payOrder(firstOrderNumber);
 
     await request(app.getHttpServer())
       .post('/store/cart/items')
@@ -435,15 +554,7 @@ describe('Store checkout (e2e)', () => {
     expect(res.body.order.userId).toBeNull();
     expect(res.body.order.guestMinecraftNick).toBe('GuestNick123');
 
-    await request(app.getHttpServer())
-      .post('/webhooks/payments/test')
-      .send({
-        secret: webhookSecret,
-        orderNumber: res.body.order.orderNumber,
-        paymentId: 'x',
-        status: 'succeeded',
-      })
-      .expect(200);
+    await payOrder(res.body.order.orderNumber);
   });
 
   it('admin: список заказов, статистика, отмена PENDING, возврат COMPLETED', async () => {
@@ -553,5 +664,55 @@ describe('Store checkout (e2e)', () => {
       .get('/store/recent-purchases')
       .expect(200);
     expect(Array.isArray(recent.body)).toBe(true);
+  });
+});
+
+describe('Payment webhook при NODE_ENV=production (e2e, ADR-0157)', () => {
+  let app: INestApplication;
+  const handleWebhook = jest.fn();
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({
+      controllers: [PaymentsWebhookController],
+      providers: [
+        PaymentProviderRegistry,
+        TestPaymentProvider,
+        { provide: OrdersService, useValue: { handleWebhook } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === 'NODE_ENV'
+                ? 'production'
+                : key === 'PAYMENT_WEBHOOK_SECRET'
+                  ? E2E_PAYMENT_WEBHOOK_SECRET
+                  : undefined,
+          },
+        },
+      ],
+    }).compile();
+    app = moduleFixture.createNestApplication(APP_CREATE_OPTIONS);
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('тестовый провайдер не зарегистрирован: корректно подписанный вебхук — 404', async () => {
+    const signed = signPaymentWebhook(E2E_PAYMENT_WEBHOOK_SECRET, {
+      orderNumber: 'O-1',
+      paymentId: 'p',
+      status: 'succeeded',
+      amount: '1',
+      currency: 'RUB',
+    });
+    await request(app.getHttpServer())
+      .post('/webhooks/payments/test')
+      .set('Content-Type', 'application/json')
+      .set(signed.headers)
+      .send(signed.rawBody)
+      .expect(404);
+    expect(handleWebhook).not.toHaveBeenCalled();
   });
 });

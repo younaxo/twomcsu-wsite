@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Платёжный вебхук: HMAC и сверка суммы (P3-01)
+
+- `POST /webhooks/payments/:provider` проверяет HMAC-SHA256 подпись над сырым телом (`x-twomc-signature`,
+  `x-twomc-timestamp`, окно ±5 минут); неверная подпись — 401, неизвестный провайдер — 404. Секрет в теле
+  и дефолт `PAYMENT_WEBHOOK_SECRET` удалены (пустой секрет отклоняет всё).
+- Сверка суммы и валюты, запрет перезаписи `paymentId`, атомарный переход `PENDING` -> `COMPLETED`/`FAILED`;
+  `usedCount` промокода растёт ровно один раз при параллельных вебхуках; повтор — 200 `already_processed`.
+- Тестовый платёжный провайдер регистрируется только при `NODE_ENV` development/test; `quick-buy` ограничен
+  10 запросами в минуту.
+- Отказы сверки вебхука (provider/paymentId/валюта/сумма) пишутся в `Logger.warn` без подписей и сумм; добавлены
+  тесты идемпотентности `failed`; задокументирован риск R29 (порядок событий).
+
 ### Безопасные cookie в production и обязательная 2FA админов (P3-A1, P3-A2)
 
 - В production API не стартует без `COOKIE_SECURE=true`, `COOKIE_DOMAIN` (не localhost/127.0.0.1/пусто)

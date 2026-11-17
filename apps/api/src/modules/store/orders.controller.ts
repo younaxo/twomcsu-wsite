@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
+import { Throttle } from '@nestjs/throttler';
 import { SiteModule } from '../system/site-module.decorator';
 
 @SiteModule('store')
@@ -17,6 +18,8 @@ export class StoreExtrasController {
     return this.orders.recentPurchases();
   }
 
+  /// Анонимный: без лимита любой может плодить PENDING-заказы (SEC-07, ADR-0157).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('quick-buy')
   async quickBuy(@Body() dto: QuickBuyDto) {
     return this.orders.quickBuy(dto);
