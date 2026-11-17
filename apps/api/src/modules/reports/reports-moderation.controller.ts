@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -168,6 +169,8 @@ export class ReportsModerationController {
     return this.moderation.deleteModeratorNote(reportNumber, noteId);
   }
 
+  /// Только закрепление (право `reports.notes.pin`). `pinned:false` отвергается:
+  /// иначе держатель pin без unpin обошёл бы право открепления.
   @Patch(':reportNumber/notes/:noteId/pin')
   @RequirePermissions('reports.notes.pin')
   async pinNote(
@@ -175,16 +178,17 @@ export class ReportsModerationController {
     @Param('noteId') noteId: string,
     @Body() dto: PinModeratorNoteDto,
   ) {
-    return this.moderation.pinModeratorNote(
-      reportNumber,
-      noteId,
-      dto.pinned ?? true,
-    );
+    if (dto.pinned === false) {
+      throw new BadRequestException(
+        'Для открепления используйте DELETE /moderation/reports/:reportNumber/notes/:noteId/pin (право reports.notes.unpin)',
+      );
+    }
+    return this.moderation.pinModeratorNote(reportNumber, noteId, true);
   }
 
-  /// Открепление заметки (то же право `reports.notes.pin`).
+  /// Открепление заметки (право `reports.notes.unpin`).
   @Delete(':reportNumber/notes/:noteId/pin')
-  @RequirePermissions('reports.notes.pin')
+  @RequirePermissions('reports.notes.unpin')
   async unpinNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,

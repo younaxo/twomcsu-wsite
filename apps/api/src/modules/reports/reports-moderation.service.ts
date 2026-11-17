@@ -38,9 +38,9 @@ import { buildStaffReportWhere } from './report-staff-filters';
 /// (из результата хендлера); `report` — для явных вызовов AuditService.log.
 const REPORT_AUDIT_TARGET_TYPES = ['reports', 'report'];
 
-/// Право, дающее править чужие заметки (допущение: существующее «старшее»
-/// право обращений; отдельного права на это в каталоге нет).
-const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.delete';
+/// Право, дающее править чужие заметки (Q27, ADR-0172; автор всегда правит
+/// свои).
+const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.notes.edit';
 
 @Injectable()
 export class ReportsModerationService {
@@ -223,7 +223,7 @@ export class ReportsModerationService {
       await this.notifyAuthor(
         report,
         actorId,
-        NotificationType.REPORT_VERDICT,
+        NotificationType.REPORT_STATUS_CHANGED,
         `Статус обращения ${report.reportNumber} изменён`,
         REPORT_STATUS_LABEL_RU[dto.status as ReportStatus],
       );
@@ -400,7 +400,7 @@ export class ReportsModerationService {
   ) {
     const report = await this.requireReport(reportNumber);
     const note = await this.requireNote(report.id, noteId);
-    // Править может автор заметки или актёр с reports.delete.
+    // Править может автор заметки или актёр с reports.notes.edit.
     if (
       note.authorId !== actorId &&
       !(await this.permissions.hasPermission(

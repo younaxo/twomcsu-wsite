@@ -1,6 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
 import { PERMISSIONS_KEY } from '../roles/decorators/require-permissions.decorator';
 import { ReportsAdminController } from './reports-admin.controller';
 import { ReportsModerationController } from './reports-moderation.controller';
+import { ReportsModerationService } from './reports-moderation.service';
 
 /// Каждый хендлер staff-контроллеров обращений обязан иметь
 /// @RequirePermissions (иначе PermissionsGuard пропустит любого игрока).
@@ -47,12 +49,53 @@ describe('RBAC: срез 2', () => {
     expect(keysOf('assignableStaff')).toEqual(['reports.assign']);
   });
 
-  it('правка заметки — reports.notes (автор/reports.delete проверяет сервис)', () => {
+  it('правка заметки — reports.notes (автор/reports.notes.edit проверяет сервис)', () => {
     expect(keysOf('updateNote')).toEqual(['reports.notes']);
   });
 
-  it('pin и unpin заметки — reports.notes.pin', () => {
+  it('pin — reports.notes.pin, unpin — reports.notes.unpin', () => {
     expect(keysOf('pinNote')).toEqual(['reports.notes.pin']);
-    expect(keysOf('unpinNote')).toEqual(['reports.notes.pin']);
+    expect(keysOf('unpinNote')).toEqual(['reports.notes.unpin']);
+  });
+});
+
+describe('M1: pin заметки только закрепляет, unpin — только через DELETE', () => {
+  const pinModeratorNote = jest.fn().mockResolvedValue({ ok: true });
+  const controller = new ReportsModerationController({
+    pinModeratorNote,
+  } as unknown as ReportsModerationService);
+
+  beforeEach(() => pinModeratorNote.mockClear());
+
+  it('PATCH без тела и с pinned:true закрепляет', async () => {
+    await controller.pinNote('R-1', 'n1', {});
+    await controller.pinNote('R-1', 'n1', { pinned: true });
+    expect(pinModeratorNote).toHaveBeenNthCalledWith(1, 'R-1', 'n1', true);
+    expect(pinModeratorNote).toHaveBeenNthCalledWith(2, 'R-1', 'n1', true);
+  });
+
+  it('PATCH с pinned:false -> 400, сервис не вызывается', async () => {
+    await expect(
+      controller.pinNote('R-1', 'n1', { pinned: false }),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      controller.pinNote('R-1', 'n1', { pinned: false }),
+    ).rejects.toThrow(/DELETE/);
+    expect(pinModeratorNote).not.toHaveBeenCalled();
+  });
+
+  it('DELETE открепляет под reports.notes.unpin, не требуя reports.notes.pin', async () => {
+    await controller.unpinNote('R-1', 'n1');
+    expect(pinModeratorNote).toHaveBeenCalledWith('R-1', 'n1', false);
+    const pinKeys = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      ReportsModerationController.prototype.pinNote,
+    ) as string[];
+    const unpinKeys = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      ReportsModerationController.prototype.unpinNote,
+    ) as string[];
+    expect(pinKeys).not.toContain('reports.notes.unpin');
+    expect(unpinKeys).not.toContain('reports.notes.pin');
   });
 });

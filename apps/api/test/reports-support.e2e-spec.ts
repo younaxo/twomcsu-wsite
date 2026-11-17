@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
+import { AuthService } from '../src/modules/auth/auth.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { REPORT_MESSAGE_LIMIT } from '../src/modules/reports/report-constants';
 
@@ -35,6 +36,8 @@ describe('Reports support (e2e)', () => {
   const unique = randomUUID().slice(0, 8);
   const cleanupRoleSlugs: string[] = [];
   const createdReportNumbers: string[] = [];
+  const createdEmails: string[] = [];
+  let authService: AuthService;
 
   interface TestUser {
     id: string;
@@ -53,14 +56,18 @@ describe('Reports support (e2e)', () => {
       .post('/auth/register')
       .send({ email, username, password })
       .expect(201);
-    const loginRes = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ emailOrUsername: email, password })
-      .expect(200);
+    createdEmails.push(email);
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    // Токен выдаёт тот же AuthService.issueSessionForUser, что и вход через
+    // внешний аккаунт: та же пара access/refresh, но без HTTP-лимита
+    // POST /auth/login (10/мин с IP) — 12 входов подряд упирались в 429.
+    const session = await authService.issueSessionForUser(user.id, {
+      ip: '127.0.0.1',
+      userAgent: 'reports-support-e2e',
+    });
     return {
       id: user.id,
-      accessToken: loginRes.body.accessToken,
+      accessToken: session.accessToken,
       username,
       email,
     };
@@ -121,6 +128,8 @@ describe('Reports support (e2e)', () => {
   let outsider: TestUser;
   let senior: TestUser;
   let viewerOnly: TestUser;
+  let pinOnly: TestUser;
+  let unpinOnly: TestUser;
   let msgSpammer: TestUser;
   let filterUser: TestUser;
   let typeFilterUser: TestUser;
@@ -134,6 +143,7 @@ describe('Reports support (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     permissions = app.get(PermissionService);
+    authService = app.get(AuthService);
 
     moderator = await createUser('mod');
     otherModerator = await createUser('mod2');
@@ -142,6 +152,8 @@ describe('Reports support (e2e)', () => {
     outsider = await createUser('out');
     senior = await createUser('sen');
     viewerOnly = await createUser('view');
+    pinOnly = await createUser('pin');
+    unpinOnly = await createUser('unp');
     msgSpammer = await createUser('msp');
     filterUser = await createUser('flt');
     typeFilterUser = await createUser('typ');
@@ -157,14 +169,30 @@ describe('Reports support (e2e)', () => {
       'reports.messages',
       'reports.notes',
     ]);
-    // Срез 2: «старший» (правка чужих заметок, pin) и сотрудник только с view.
+    // Срез 2: «старший» (правка чужих заметок, pin, unpin) и сотрудник только с view.
     const seniorRole = await createRole(`support-senior-${unique}`, 20);
     await grantRole(senior.id, seniorRole.id);
     await grantPermissions(seniorRole.id, [
       'reports.view',
       'reports.notes',
       'reports.notes.pin',
-      'reports.delete',
+      'reports.notes.unpin',
+      'reports.notes.edit',
+    ]);
+    // Разделение прав: pin без unpin и unpin без pin (M1).
+    const pinRole = await createRole(`support-pin-${unique}`, 6);
+    await grantRole(pinOnly.id, pinRole.id);
+    await grantPermissions(pinRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.pin',
+    ]);
+    const unpinRole = await createRole(`support-unpin-${unique}`, 7);
+    await grantRole(unpinOnly.id, unpinRole.id);
+    await grantPermissions(unpinRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.unpin',
     ]);
     const viewRole = await createRole(`support-view-${unique}`, 5);
     await grantRole(viewerOnly.id, viewRole.id);
@@ -172,39 +200,39 @@ describe('Reports support (e2e)', () => {
   }, 30_000);
 
   afterAll(async () => {
-    await prisma.report.deleteMany({
-      where: { reportNumber: { in: createdReportNumbers } },
-    });
-    await prisma.userPunishment.deleteMany({
-      where: { userId: { in: [alice.id, bob.id] } },
-    });
-    await prisma.userRole.deleteMany({
-      where: { role: { slug: { in: cleanupRoleSlugs } } },
-    });
-    await prisma.rolePermission.deleteMany({
-      where: { role: { slug: { in: cleanupRoleSlugs } } },
-    });
-    await prisma.role.deleteMany({ where: { slug: { in: cleanupRoleSlugs } } });
-    const emails = [
-      moderator.email,
-      otherModerator.email,
-      alice.email,
-      bob.email,
-      outsider.email,
-      senior.email,
-      viewerOnly.email,
-      msgSpammer.email,
-      filterUser.email,
-      typeFilterUser.email,
-    ];
-    await prisma.auditLog.deleteMany({
-      where: { actor: { email: { in: emails } } },
-    });
-    await prisma.notification.deleteMany({
-      where: { user: { email: { in: emails } } },
-    });
-    await prisma.user.deleteMany({ where: { email: { in: emails } } });
-    await app.close();
+    // app/prisma могут быть не созданы, если beforeAll упал раньше; приложение
+    // закрываем всегда, иначе jest не завершится (висят соединения).
+    try {
+      if (prisma) {
+        const emails = createdEmails;
+        await prisma.report.deleteMany({
+          where: { reportNumber: { in: createdReportNumbers } },
+        });
+        await prisma.userPunishment.deleteMany({
+          where: { user: { email: { in: emails } } },
+        });
+        await prisma.userRole.deleteMany({
+          where: { role: { slug: { in: cleanupRoleSlugs } } },
+        });
+        await prisma.rolePermission.deleteMany({
+          where: { role: { slug: { in: cleanupRoleSlugs } } },
+        });
+        await prisma.role.deleteMany({
+          where: { slug: { in: cleanupRoleSlugs } },
+        });
+        await prisma.auditLog.deleteMany({
+          where: { actor: { email: { in: emails } } },
+        });
+        await prisma.notification.deleteMany({
+          where: { user: { email: { in: emails } } },
+        });
+        await prisma.user.deleteMany({ where: { email: { in: emails } } });
+      }
+    } finally {
+      if (app) {
+        await app.close();
+      }
+    }
   }, 20_000);
 
   async function createPunishment(userId: string, isAppealable = true) {
@@ -728,7 +756,7 @@ describe('Reports support (e2e)', () => {
       .expect(400);
   });
 
-  it('заметки: чужую без reports.delete править нельзя (403), автор и reports.delete — 200; pin/unpin и порядок', async () => {
+  it('заметки: чужую без reports.notes.edit править нельзя (403), автор и reports.notes.edit — 200; pin/unpin и порядок', async () => {
     const report = await createReportAs(filterUser);
     const base = `/moderation/reports/${report.reportNumber}`;
     const first = await request(app.getHttpServer())
@@ -744,7 +772,7 @@ describe('Reports support (e2e)', () => {
       .expect(201);
     expect(second.body.moderatorNotes).toHaveLength(2);
 
-    // Другой сотрудник с reports.notes, но без reports.delete.
+    // Другой сотрудник с reports.notes, но без reports.notes.edit.
     await request(app.getHttpServer())
       .patch(`${base}/notes/${noteId}`)
       .set('Authorization', auth(otherModerator))
@@ -774,7 +802,7 @@ describe('Reports support (e2e)', () => {
       byAuthor.body.moderatorNotes.find((n: { id: string }) => n.id === noteId)
         .content,
     ).toBe('Правка автора');
-    // Актёр с reports.delete.
+    // Актёр с reports.notes.edit.
     const bySenior = await request(app.getHttpServer())
       .patch(`${base}/notes/${noteId}`)
       .set('Authorization', auth(senior))
@@ -785,7 +813,7 @@ describe('Reports support (e2e)', () => {
         .content,
     ).toBe('Правка старшего');
 
-    // Закрепление: reports.notes.pin у senior; закреплённая — первой.
+    // Закрепление: reports.notes.pin и reports.notes.unpin у senior; закреплённая — первой.
     const secondId: string = second.body.moderatorNotes[1].id;
     await request(app.getHttpServer())
       .patch(`${base}/notes/${secondId}/pin`)
@@ -798,6 +826,11 @@ describe('Reports support (e2e)', () => {
     expect(pinned.body.moderatorNotes.map((n: { id: string }) => n.id)).toEqual(
       [secondId, noteId],
     );
+    // Открепление требует reports.notes.unpin (у otherModerator его нет).
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(otherModerator))
+      .expect(403);
     const unpinned = await request(app.getHttpServer())
       .delete(`${base}/notes/${secondId}/pin`)
       .set('Authorization', auth(senior))
@@ -805,16 +838,20 @@ describe('Reports support (e2e)', () => {
     expect(
       unpinned.body.moderatorNotes.map((n: { id: string }) => n.id),
     ).toEqual([noteId, secondId]);
+    // PATCH только закрепляет: pinned:false отвергается (400), состояние не меняется.
     const viaBody = await request(app.getHttpServer())
       .patch(`${base}/notes/${secondId}/pin`)
       .set('Authorization', auth(senior))
       .send({ pinned: false })
-      .expect(200);
+      .expect(400);
+    expect(JSON.stringify(viaBody.body)).toContain('DELETE');
     expect(
-      viaBody.body.moderatorNotes.every(
-        (n: { isPinned: boolean }) => n.isPinned === false,
-      ),
-    ).toBe(true);
+      (
+        await prisma.reportModeratorNote.findUniqueOrThrow({
+          where: { id: secondId },
+        })
+      ).isPinned,
+    ).toBe(false);
 
     // Ответ GET для персонала тоже отсортирован (закреплённые первыми).
     await request(app.getHttpServer())
@@ -870,6 +907,85 @@ describe('Reports support (e2e)', () => {
       staffView.body.messages.find((m: { isStaff: boolean }) => m.isStaff)
         .authorId,
     ).toBe(moderator.id);
+  });
+
+  it('заметки: pin без unpin только закрепляет, unpin без pin только открепляет (M1)', async () => {
+    const report = await createReportAs(filterUser);
+    const base = `/moderation/reports/${report.reportNumber}`;
+    const created = await request(app.getHttpServer())
+      .post(`${base}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Заметка для pin/unpin' })
+      .expect(201);
+    const noteId: string = created.body.moderatorNotes[0].id;
+    const isPinned = async () =>
+      (
+        await prisma.reportModeratorNote.findUniqueOrThrow({
+          where: { id: noteId },
+        })
+      ).isPinned;
+
+    // unpin без pin: закрепить нельзя.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(unpinOnly))
+      .expect(403);
+    expect(await isPinned()).toBe(false);
+
+    // pin без unpin: закрепляет, но открепить ни через DELETE, ни через PATCH нельзя.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .expect(200);
+    expect(await isPinned()).toBe(true);
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(pinOnly))
+      .send({ pinned: false })
+      .expect(400);
+    expect(await isPinned()).toBe(true);
+
+    // unpin без pin: DELETE работает.
+    await request(app.getHttpServer())
+      .delete(`${base}/notes/${noteId}/pin`)
+      .set('Authorization', auth(unpinOnly))
+      .expect(200);
+    expect(await isPinned()).toBe(false);
+  });
+
+  it('смена статуса создаёт уведомление REPORT_STATUS_CHANGED автору обращения', async () => {
+    const report = await createReportAs(filterUser);
+    await request(app.getHttpServer())
+      .patch(`/moderation/reports/${report.reportNumber}/status`)
+      .set('Authorization', auth(moderator))
+      .send({ status: 'IN_REVIEW' })
+      .expect(200);
+    await waitFor(
+      async () =>
+        (await prisma.notification.count({
+          where: {
+            userId: filterUser.id,
+            type: 'REPORT_STATUS_CHANGED',
+            link: `/support/${report.reportNumber}`,
+          },
+        })) >= 1,
+      'уведомление REPORT_STATUS_CHANGED автору',
+    );
+    const notification = await prisma.notification.findFirstOrThrow({
+      where: {
+        userId: filterUser.id,
+        type: 'REPORT_STATUS_CHANGED',
+        link: `/support/${report.reportNumber}`,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(notification.metadata).toMatchObject({
+      reportNumber: report.reportNumber,
+    });
   });
 
   it('история для игрока: санитизированная лента автора; чужой игрок — 403', async () => {

@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Исправления по ревью Q26/Q27 (ветка feature/q26-q27-report-status-notification, не смержено)
+
+- `PATCH /moderation/reports/:reportNumber/notes/:noteId/pin` только закрепляет: `pinned:false` даёт 400; открепление только `DELETE .../pin` под `reports.notes.unpin` (иначе держатель pin обходил право unpin). Web должен перейти на DELETE. Unit-тесты добавлены; e2e дописаны статически, не запускались.
+- Документация: уточнён риск R40 (без миграции смена статуса не падает, уведомление теряется с `logger.warn`), порядок выкладки и сверка PostgreSQL (образ 16) в чек-листе, права и эндпоинты заметок в `04-API-REFERENCE.md`.
+
 ### Безопасность: снятие мута и бана в чате по иерархии
 
 - Снять мут или бан чата (`DELETE /admin/chat/mutes/:id`, `/bans/:id`) может выдавший либо сотрудник с приоритетом не ниже выдавшего; иначе 403 с общим текстом (решение владельца Q25, ADR-0171, ветка fix/q25-chat-unmute-hierarchy, не смержено). Снять санкцию с себя может только выдавший. Выдавший неизвестен (пусто, удалён, SYSTEM): снимает только приоритет не ниже максимального по ролям (допущение, ADR-0171). Новый метод `PermissionService.canRevokeSanction`; HTTP-контракт и схема не менялись. Unit-тесты добавлены, e2e не запускались. Другие пути снятия бана не менялись, записан R38.
@@ -1294,3 +1299,10 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
 - e2e `chat.e2e-spec.ts`: иерархия снятия мута и бана (старший/равный/младший); написаны статически, не запускались.
 - `PermissionService.getEffectivePermissions`: при чтении из кеша `maxPriority` null восстанавливается в `-Infinity` (R39); unit-тесты кеш-пути.
 - ADR-0171 дополнен: самоснятие владельцем, момент сравнения приоритетов.
+
+## 2026-11-17 — Q26 и Q27: REPORT_STATUS_CHANGED и права заметок обращений (ADR-0172)
+
+- Новый тип уведомления `REPORT_STATUS_CHANGED` (миграция `20261017000000_report_status_changed`, `ADD VALUE`, не применялась): `changeStatus` шлёт его вместо `REPORT_VERDICT`; `setVerdict` без изменений.
+- Новые права `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`); закрепление остаётся `reports.notes.pin`. Каталог `packages/shared/src/permissions.ts`, API, web.
+- e2e `reports-support.e2e-spec.ts` обновлён статически, не запускался. ADR-0172, R40.
+- Для владельца: применить миграцию на production и выдать права ролям (`docs/runbooks/production-env-checklist.md`).
