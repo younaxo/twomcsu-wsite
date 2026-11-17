@@ -110,9 +110,8 @@ export class ChatGateway
       select: { twoFactorEnabled: true },
     });
     if (
-      await isAdmin2faDenied(
+      isAdmin2faDenied(
         { twoFactorEnabled: row?.twoFactorEnabled ?? false },
-        this.prisma,
         this.config,
       )
     ) {

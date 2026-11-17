@@ -3,29 +3,21 @@ import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
-import { resetAdmin2faCache } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { SiteStatusService } from '../system/site-status.service';
 import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { ModerationService } from './moderation.service';
 
-function build(opts: {
-  twoFactorEnabled: boolean;
-  requireFlag: boolean;
-  authorId?: string;
-}) {
+function build(opts: { twoFactorEnabled: boolean; authorId?: string }) {
+  const findFirst = jest.fn();
   const prisma = {
     user: {
       findUnique: jest
         .fn()
         .mockResolvedValue({ twoFactorEnabled: opts.twoFactorEnabled }),
     },
-    siteSettings: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue({ requireAdmin2fa: opts.requireFlag }),
-    },
+    siteSettings: { findFirst },
   } as unknown as PrismaService;
   const config = {
     get: (name: string, fallback?: unknown) =>
@@ -92,16 +84,13 @@ function build(opts: {
     data: { userId: 'admin1' },
     emit,
   } as unknown as Socket;
-  return { gateway, client, emit, moderation, chat, chatMessage };
+  return { gateway, client, emit, moderation, chat, chatMessage, findFirst };
 }
 
 describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
-  beforeEach(() => resetAdmin2faCache());
-
-  it('mute_user без 2FA при включённом требовании — отказ', async () => {
+  it('mute_user без 2FA — отказ', async () => {
     const { gateway, client, emit, moderation } = build({
       twoFactorEnabled: false,
-      requireFlag: true,
     });
     await gateway.onMuteUser(client, { userId: 'u2' } as never);
     expect(moderation.muteUser).not.toHaveBeenCalled();
@@ -114,10 +103,9 @@ describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
     );
   });
 
-  it('ban_user без 2FA при включённом требовании — отказ', async () => {
+  it('ban_user без 2FA — отказ', async () => {
     const { gateway, client, emit, moderation } = build({
       twoFactorEnabled: false,
-      requireFlag: true,
     });
     await gateway.onBanUser(client, { userId: 'u2' } as never);
     expect(moderation.banUser).not.toHaveBeenCalled();
@@ -127,37 +115,26 @@ describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
     );
   });
 
-  it('pin_message без 2FA при включённом требовании — отказ', async () => {
+  it('pin_message без 2FA — отказ', async () => {
     const { gateway, client, chat } = build({
       twoFactorEnabled: false,
-      requireFlag: true,
     });
     await gateway.onPinMessage(client, { messageId: 'x' } as never);
     expect(chat.setPinned).not.toHaveBeenCalled();
   });
 
-  it('mute_user с 2FA выполняется', async () => {
-    const { gateway, client, moderation } = build({
+  it('mute_user с 2FA выполняется, siteSettings не читается', async () => {
+    const { gateway, client, moderation, findFirst } = build({
       twoFactorEnabled: true,
-      requireFlag: true,
     });
     await gateway.onMuteUser(client, { userId: 'u2' } as never);
     expect(moderation.muteUser).toHaveBeenCalled();
+    expect(findFirst).not.toHaveBeenCalled();
   });
 
-  it('mute_user без 2FA при выключенном требовании выполняется', async () => {
-    const { gateway, client, moderation } = build({
-      twoFactorEnabled: false,
-      requireFlag: false,
-    });
-    await gateway.onMuteUser(client, { userId: 'u2' } as never);
-    expect(moderation.muteUser).toHaveBeenCalled();
-  });
-
-  it('delete_message чужого без 2FA при включённом требовании — отказ', async () => {
+  it('delete_message чужого без 2FA — отказ', async () => {
     const { gateway, client, emit, chatMessage } = build({
       twoFactorEnabled: false,
-      requireFlag: true,
     });
     await gateway.onDeleteMessage(client, { messageId: 'x' } as never);
     expect(chatMessage.update).not.toHaveBeenCalled();
@@ -173,7 +150,6 @@ describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
   it('delete_message чужого с 2FA выполняется', async () => {
     const { gateway, client, chatMessage } = build({
       twoFactorEnabled: true,
-      requireFlag: true,
     });
     await gateway.onDeleteMessage(client, { messageId: 'x' } as never);
     expect(chatMessage.update).toHaveBeenCalled();
@@ -182,7 +158,6 @@ describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
   it('delete_message автором без 2FA выполняется (2FA не требуется)', async () => {
     const { gateway, client, chatMessage, emit } = build({
       twoFactorEnabled: false,
-      requireFlag: true,
       authorId: 'admin1',
     });
     await gateway.onDeleteMessage(client, { messageId: 'x' } as never);

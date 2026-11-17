@@ -101,8 +101,6 @@ export interface SiteSettingsDto {
   newsEnabled: boolean;
   reportsEnabled: boolean;
   defaultNotificationsEnabled: boolean;
-  /// Поле сохраняется, механизма 2FA в проекте нет (ADR-0050).
-  requireAdmin2fa: boolean;
   ipWhitelist: string[];
   updatedBy: string | null;
   updatedAt: IsoDateString;

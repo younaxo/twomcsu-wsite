@@ -219,7 +219,7 @@ export const envValidationSchema = Joi.object({
   /// Ключ шифрования секретов 2FA (ADR-0109): строка ≥ 32 символов
   /// (`openssl rand -base64 32`). В production обязателен (ADR-0156): без него
   /// API не стартует, 2FA админов не отключается молча. Вне production пусто —
-  /// 2FA недоступна, `requireAdmin2fa` не применяется. Смена ключа делает уже
+  /// 2FA недоступна, требование 2FA персонала не применяется. Смена ключа делает уже
   /// включённую 2FA нерабочей — только вместе со сбросом 2FA.
   TWO_FACTOR_ENCRYPTION_KEY: Joi.string()
     .trim()
