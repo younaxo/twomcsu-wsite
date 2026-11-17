@@ -482,3 +482,7 @@ Heartbeat выдаётся между пачками и непосредстве
 ## R58 — Контракт адаптера: невалидные строки (ADR-0178, ревью среза 1) — OPEN (требование к срезу 2, скорректировано)
 
 `fullReconcile` и `poll` учитывают `PunishmentSource.drainSkippedIds?()` (F5): невалидные строки (SourceDataInvalid) не получают `DELETED_AT_SOURCE`, пачка считается полной по сырому числу строк, непродвигающаяся сверка даёт `RECONCILE_STALLED`. Адаптер среза 2 обязан реализовать `drainSkippedIds`, а `fetchByIds` не должен включать невалидные строки в `missing` (иначе слой 2 пометит их удалёнными).
+
+## R80 — Расхождение копий типов api и shared (ADR-0180, срез 2) — OPEN (требование к срезу реализации)
+
+`eslint` запрещает `apps/api` импортировать `@twomc/shared`, поэтому типы наказаний (`PublicPunishment`, `MyPunishment`, `StaffPunishment`, виды, статусы, коды ошибок) живут в двух копиях: `apps/api/src/modules/punishments/api/punishments-api.types.ts` и `packages/shared/src/api/punishments.ts`. Без защиты копии разойдутся, и web получит форму ответа, которой API не отдаёт (или наоборот). Мера: контрактный тест `punishments-contract-sync.spec.ts` (текстовый разбор компилятором TypeScript, нормализация, равенство множеств экспортов без API-only экспортов, кроме `IsoDateString`; сверка видов и статусов с `punishment.types.ts` и enum Prisma из `schema.prisma`). Также `export * from './api/punishments';` в `packages/shared/src/index.ts` - часть реализации. Диапазон рисков среза 2: R80-R89.
