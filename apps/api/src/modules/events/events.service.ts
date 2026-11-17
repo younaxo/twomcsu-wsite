@@ -4,53 +4,68 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   CalendarEventStatus,
   CalendarEventVisibility,
   Prisma,
 } from '@prisma/client';
+import { isAdmin2faDenied } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventAttendanceDto } from './dto/event-attendance.dto';
 import { ListEventsQueryDto } from './dto/list-events-query.dto';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 
+/// Зритель: id и признак 2FA (из JwtStrategy); null — аноним.
+export type EventViewer = { id: string; twoFactorEnabled?: boolean } | null;
+
 @Injectable()
 export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionService,
+    private readonly config: ConfigService,
   ) {}
+
+  /// ADR-0169 / Q22: право персонала расширяет видимость только при 2FA.
+  /// Чтение без 2FA — видимость обычного игрока (без 403).
+  private async hasStaffView(viewer: EventViewer): Promise<boolean> {
+    if (!viewer || isAdmin2faDenied(viewer, this.config)) {
+      return false;
+    }
+    return this.permissions.hasPermission(viewer.id, 'events.view.staff');
+  }
 
   private async canView(
     visibility: CalendarEventVisibility,
-    viewerId: string | null,
+    viewer: EventViewer,
   ): Promise<boolean> {
     if (visibility === CalendarEventVisibility.PUBLIC) {
       return true;
     }
-    if (!viewerId) {
+    if (!viewer) {
       return false;
     }
     if (visibility === CalendarEventVisibility.AUTHENTICATED) {
       return true;
     }
-    return this.permissions.hasPermission(viewerId, 'events.view.staff');
+    return this.hasStaffView(viewer);
   }
 
   /// Список фильтруется по видимости уже в запросе (PUBLIC+AUTHENTICATED
   /// для любого авторизованного viewer; STAFF добавляется отдельным
   /// запросом, если у viewer есть соответствующее право — дешевле, чем
   /// грузить все STAFF-события и выкидывать их построчно).
-  async list(query: ListEventsQueryDto, viewerId: string | null) {
+  async list(query: ListEventsQueryDto, viewer: EventViewer) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const visibilityIn: CalendarEventVisibility[] = [
       CalendarEventVisibility.PUBLIC,
     ];
-    if (viewerId) {
+    if (viewer) {
       visibilityIn.push(CalendarEventVisibility.AUTHENTICATED);
-      if (await this.permissions.hasPermission(viewerId, 'events.view.staff')) {
+      if (await this.hasStaffView(viewer)) {
         visibilityIn.push(CalendarEventVisibility.STAFF);
       }
     }
@@ -75,7 +90,7 @@ export class EventsService {
     return { items, total, page, limit };
   }
 
-  async featured(viewerId: string | null) {
+  async featured(viewer: EventViewer) {
     const all = await this.prisma.calendarEvent.findMany({
       where: { status: CalendarEventStatus.PUBLISHED, isFeatured: true },
       include: {
@@ -87,7 +102,7 @@ export class EventsService {
     });
     const visible = await Promise.all(
       all.map(async (e) =>
-        (await this.canView(e.visibility, viewerId)) ? e : null,
+        (await this.canView(e.visibility, viewer)) ? e : null,
       ),
     );
     return visible.filter((e) => e !== null);
@@ -107,7 +122,7 @@ export class EventsService {
     });
   }
 
-  async bySlug(slug: string, viewerId: string | null) {
+  async bySlug(slug: string, viewer: EventViewer) {
     const event = await this.prisma.calendarEvent.findUnique({
       where: { slug },
       include: {
@@ -118,25 +133,25 @@ export class EventsService {
     if (!event || event.status !== CalendarEventStatus.PUBLISHED) {
       throw new NotFoundException('Событие не найдено');
     }
-    if (!(await this.canView(event.visibility, viewerId))) {
+    if (!(await this.canView(event.visibility, viewer))) {
       throw new NotFoundException('Событие не найдено');
     }
-    const myStatus = viewerId
+    const myStatus = viewer
       ? await this.prisma.eventParticipant.findUnique({
-          where: { eventId_userId: { eventId: event.id, userId: viewerId } },
+          where: { eventId_userId: { eventId: event.id, userId: viewer.id } },
         })
       : null;
     return { ...event, myStatus: myStatus?.status ?? null };
   }
 
-  private async requireAttendable(eventId: string, viewerId: string) {
+  private async requireAttendable(eventId: string, viewer: EventViewer) {
     const event = await this.prisma.calendarEvent.findUnique({
       where: { id: eventId },
     });
     if (!event || event.status !== CalendarEventStatus.PUBLISHED) {
       throw new NotFoundException('Событие не найдено');
     }
-    if (!(await this.canView(event.visibility, viewerId))) {
+    if (!(await this.canView(event.visibility, viewer))) {
       throw new NotFoundException('Событие не найдено');
     }
     if (event.registrationDeadline && event.registrationDeadline < new Date()) {
@@ -145,8 +160,13 @@ export class EventsService {
     return event;
   }
 
-  async attend(userId: string, eventId: string, dto: EventAttendanceDto) {
-    const event = await this.requireAttendable(eventId, userId);
+  async attend(
+    viewer: NonNullable<EventViewer>,
+    eventId: string,
+    dto: EventAttendanceDto,
+  ) {
+    const userId = viewer.id;
+    const event = await this.requireAttendable(eventId, viewer);
     // Прошедшее событие (ADR-0118): записаться нельзя, выйти — можно (leave).
     if ((event.endsAt ?? event.startsAt) < new Date()) {
       throw new ForbiddenException('Событие уже прошло');

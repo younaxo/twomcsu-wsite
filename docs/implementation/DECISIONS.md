@@ -3909,3 +3909,40 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 - Расхождение документов: Bridge называет инвентарь этапом 10, дорожная карта — этапом 04; поправить при ревизии контракта.
 - Остаточный риск: скомпрометированный ключ сервера может подменить инвентарь любого привязанного игрока (проверка присутствия невозможна без `player.join`, выключенного по умолчанию).
 - Расхождение с ТЗ доната: там скрытие инвентаря — привилегия Poseidon+, в базовой модели оно доступно всем; решает владелец.
+
+## ADR-0169 — 2FA персонала обязательна всегда (флаг requireAdmin2fa снят)
+
+**Status:** Accepted (решение владельца Q22 и Q24, 2026-11-17). Уточняет ADR-0109 и ADR-0156 (пункты про `requireAdmin2fa`, его кэш и поведение без ключа). Реализация: коммиты a1b1e30 (API, shared), 8507dbe (web), fe368f0 (e2e); в `main` не смержено.
+
+**Context.** По ADR-0109 требование 2FA для персонала включалось флагом `SiteSettings.requireAdmin2fa` (по умолчанию выключен) и кэшировалось на 15 с; ADR-0156 добавил fail-closed без ключа, но только при включённом флаге. Владелец решил (Q22): 2FA персонала обязательна всегда, переключателя нет. По Q24 (вариант а): зафиксировать охват в ADR, повторное подтверждение 2FA для чувствительных операций (step-up) сделать позже отдельной задачей.
+
+**Decision.**
+
+- Требование действует всегда; таблица настроек для этого решения не читается, кэш и `resetAdmin2faCache` удалены. Единая проверка `isAdmin2faDenied` / `assertAdmin2fa` в `apps/api/src/modules/roles/guards/permissions.guard.ts`.
+- Нет ключа `TWO_FACTOR_ENCRYPTION_KEY` (после `trim` короче 32 символов) и окружение production-like (пустой или не заданный `NODE_ENV` = production, ADR-0164): отказ всем действиям персонала (fail-closed).
+- Нет ключа и явный `NODE_ENV=development` или `test`: требование не применяется, при старте один раз пишется предупреждение. Допущение: исключение сохранено из ADR-0156 для dev/test, где ключ не задан; требует подтверждения владельца.
+- Ключ есть: пользователь без включённой 2FA получает 403 с `code: 'admin_2fa_required'`.
+- Охват:
+  - любое действие, защищённое `@RequirePermissions`, через `PermissionsGuard`;
+  - staff-эндпоинты без `@RequirePermissions`, где проверка вызывается явно через `assertAdmin2fa`: в `communications.controller.ts` это `GET /communications/recipients` (достаточно любого из прав `communications.messages.send` или `communications.messages.bulk`); остальные методы контроллера идут через `@RequirePermissions`;
+  - WS-gateway чата (`chat.gateway.ts`): `pin_message`, `mute_user`, `ban_user`, `delete_message` в модераторской ветке (не автор, ADR-0156) и `send_message` в read-only канал по праву `chat.messages.post_readonly` (`chat.service.ts:195`, колбэк `beforeStaffAction`); флаг читается из БД на действии, ошибка `admin_2fa_required: ...` уходит событием `error`;
+  - явные вызовы `assertAdmin2fa`/`isAdmin2faDenied` в местах, где доступ даётся правом персонала вне guard: `communications.controller.ts:57` (`GET /communications/recipients`); `reports.controller.ts:61` и `reports.service.ts:286` (`GET /reports/:reportNumber`: чужое обращение по `reports.view` без 2FA даёт 403 `admin_2fa_required`, автор без 2FA читает своё как игрок); `files.service.ts:111` (загрузка типов с `preset.permission`, обычная загрузка без права не затронута; `user` передаётся из `files.controller.ts`).
+- Чтение staff-видимого контента (закрыто, R35): `events.service.ts` (`events.view.staff`: `canView`, `list`), `forms.service.ts` (`forms.view.helper|moderator|admin|owner`: `canView`), `topics.service.ts` (`topics.view.*`: `canView`). Семантика: чтение -> видимость игрока, действие -> 403. Если видимость расширяется правом персонала и `isAdmin2faDenied(viewer, config)` истинно, сотрудник считается обычным игроком: публичные страницы работают, скрытые, черновые и staff-видимые элементы не отдаются, без 403; право при этом даже не запрашивается. Сервисы принимают viewer как `{ id, twoFactorEnabled }` (из `JwtStrategy`) вместо одного `id` и получают `ConfigService`. Запись на staff-событие (`EventsService.attend` через `canView`) без 2FA даёт 404 как игроку; отдельного действия по праву персонала (создание/правка/удаление) в этих трёх публичных сервисах нет, админские контроллеры закрыты `PermissionsGuard`. `GET /events/mine` фильтра видимости не применяет сознательно: отдаются только собственные события пользователя (созданные им или с его участием, включая STAFF-события), чужого не раскрывает, поэтому 2FA там не проверяется.
+- Вне охвата (осознанно, по инвентаризации проверок прав вне `PermissionsGuard`):
+  - Обход техработ и выключенных модулей (`system.maintenance.bypass`): `site-module.guard.ts:69`, `chat.gateway.ts:96`, `direct-messages.gateway.ts:95`. Даёт только доступ к сайту во время техработ, не действие администрации; отказ сотруднику без 2FA только мешал бы ему дойти до настройки 2FA.
+  - Проверки внутри эндпоинтов, уже закрытых `PermissionsGuard` (2FA проверена guard-ом): `reports-moderation.service.ts:406` (`reports.delete` для чужой заметки, эндпоинт `reports.notes`), `storage-retention.service.ts:253`, `system.service.ts:66`, `users.controller.ts:142`, `roles.controller.ts`, `role-bulk.service.ts:68`, `user-roles.controller.ts:70` и `:131`.
+  - Иерархия `canActOn` внутри guard-защищённых вызовов: `admin-users-bulk.service.ts:33`, `moderation.service.ts:32`, `users.controller.ts:152`.
+  - `reports-moderation.service.ts:180`: проверяется право назначаемого исполнителя, а не актёра (актёр под guard `reports.assign`).
+  - `auth.controller.ts:291`: свои effective permissions для UX меню, привилегированных данных не даёт.
+- Step-up (повторное подтверждение 2FA перед чувствительными операциями) НЕ делается (Q24 а); отдельная задача позже.
+- Колонка `SiteSettings.requireAdmin2fa` остаётся в `schema.prisma` с пометкой `/// Deprecated`; DROP только по отдельному решению владельца как contract-миграция по ADR-0158 (раздельные expand и contract).
+- Вход, `/auth/2fa/*` и настройка 2FA не требуют прав и проверку не проходят: пользователь без 2FA может войти и включить её сам. Следствие: сотрудник без 2FA сам настраивает 2FA через `/auth/2fa/*`; это же смягчает lockout R31 (после выкладки достаточно включить 2FA самому, до этого момента действия по праву отклоняются).
+
+**Consequences.**
+
+- Lockout: при заданном ключе у каждого сотрудника, у кого 2FA ещё не включена, любые действия по праву дают 403 `admin_2fa_required` до включения. Для владельца при потере устройства и резервных кодов остаётся только сброс в БД вручную: офлайн-процедура `docs/runbooks/owner-emergency-access.md` (зависимость от неё принята; SQL выполняет только владелец, агентам запрещено).
+- Смена `TWO_FACTOR_ENCRYPTION_KEY` делает все включённые 2FA нерабочими (ADR-0109); менять только вместе со сбросом 2FA у пользователей.
+- Тесты: e2e ставят тестовым сотрудникам `twoFactorEnabled=true` через `apps/api/test/helpers/staff-two-factor.ts` (секрет TOTP не создаётся; test-only, на production не влияет и реальный вход со 2FA не покрывает). e2e не запускались (запрет владельца).
+- Комментарий в шапке `two-factor.service.ts` обновлён под это решение (по ревью).
+- Контракт API: поле `requireAdmin2fa` убрано из DTO обновления настроек сайта (`forbidNonWhitelisted`) и из ответа `GET /admin/settings/site`; старый клиент, присылающий его, получает 400.
+- DROP колонки `requireAdmin2fa` не выполнен: до отдельного решения поле остаётся и не читается.

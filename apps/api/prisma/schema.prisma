@@ -1801,6 +1801,7 @@ model SiteSettings {
   newsEnabled                  Boolean  @default(true)
   reportsEnabled               Boolean  @default(true)
   defaultNotificationsEnabled  Boolean  @default(true)
+  /// Deprecated: 2FA персонала обязательна всегда (Q22), поле не читается.
   requireAdmin2fa              Boolean  @default(false)
   ipWhitelist                  String[] @default([])
   updatedBy                    String?

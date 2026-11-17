@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { fromBuffer } from 'file-type';
 import { sharp } from './sharp';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertAdmin2fa } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { StorageService } from './storage.service';
 import {
@@ -87,6 +88,7 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
   async assertCanUpload(
     type: UploadType,
     uploaderId: string | null,
+    uploader?: { twoFactorEnabled?: boolean },
   ): Promise<void> {
     const preset = this.preset(type);
     if (!uploaderId) {
@@ -104,6 +106,9 @@ export class FilesService implements OnModuleInit, OnModuleDestroy {
           'Недостаточно прав для этого типа загрузки',
         );
       }
+      // Загрузка по праву персонала — действие администрации (ADR-0169):
+      // 2FA обязательна; у обычной загрузки (без permission) проверки нет.
+      assertAdmin2fa(uploader ?? {}, this.config);
     }
   }
 

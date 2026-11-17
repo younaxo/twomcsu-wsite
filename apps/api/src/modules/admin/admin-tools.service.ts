@@ -26,7 +26,6 @@ import {
   SEASONAL_MAX_EFFECTS,
   UpdateSeasonalDto,
 } from './dto/update-seasonal.dto';
-import { resetAdmin2faCache } from '../roles/guards/permissions.guard';
 
 /// Переопределение кампании в `seasonal_settings.campaigns` (ADR-0079).
 type SeasonalOverride = {
@@ -243,8 +242,20 @@ export class AdminToolsService {
     return this.prisma.siteSettings.create({ data: {} });
   }
 
+  /// Ответ API без deprecated-колонки `requireAdmin2fa` (Q22/Q44): флага
+  /// больше нет, наружу он не отдаётся.
   async getSiteSettings() {
-    return this.getOrCreateSiteSettings();
+    return AdminToolsService.withoutDeprecated2fa(
+      await this.getOrCreateSiteSettings(),
+    );
+  }
+
+  private static withoutDeprecated2fa<T extends { requireAdmin2fa?: unknown }>(
+    row: T,
+  ): Omit<T, 'requireAdmin2fa'> {
+    const { requireAdmin2fa: _deprecated, ...rest } = row;
+    void _deprecated;
+    return rest;
   }
 
   // --- Глобальная плашка (ADR-0066) -------------------------------------------
@@ -407,16 +418,17 @@ export class AdminToolsService {
       where: { id: current.id },
       data: { ...dto, updatedBy: actorId },
     });
-    // Требование 2FA персоналу (ADR-0109) — сразу, без ожидания кэша guard'а.
-    resetAdmin2faCache();
     await this.audit.log({
       actorId,
       action: 'settings.site.update',
       targetType: 'SiteSettings',
       targetId: updated.id,
-      changes: { before: current, after: updated },
+      changes: {
+        before: AdminToolsService.withoutDeprecated2fa(current),
+        after: AdminToolsService.withoutDeprecated2fa(updated),
+      } as Prisma.InputJsonValue,
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Сезонная система (ADR-0079) -----------------------------------------
@@ -602,7 +614,7 @@ export class AdminToolsService {
       changes: { before: current.ipWhitelist, after: updated.ipWhitelist },
       severity: 'warning',
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Security -------------------------------------------------------------

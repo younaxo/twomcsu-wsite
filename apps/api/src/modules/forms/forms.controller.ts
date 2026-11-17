@@ -29,7 +29,7 @@ export class FormsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get()
   async listPublished(@Req() req: Request) {
-    return this.forms.listPublished(viewerOf(req)?.id ?? null);
+    return this.forms.listPublished(viewerOf(req));
   }
 
   @UseGuards(JwtAuthGuard)
@@ -59,7 +59,7 @@ export class FormsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':slug')
   async getBySlug(@Param('slug') slug: string, @Req() req: Request) {
-    return this.forms.getBySlug(slug, viewerOf(req)?.id ?? null);
+    return this.forms.getBySlug(slug, viewerOf(req));
   }
 
   @UseGuards(OptionalJwtAuthGuard)
@@ -71,7 +71,7 @@ export class FormsController {
   ) {
     return this.forms.submitResponse(
       slug,
-      viewerOf(req)?.id ?? null,
+      viewerOf(req),
       dto,
       req.ip,
       req.headers['user-agent'],
@@ -85,6 +85,6 @@ export class FormsController {
     @Param('slug') slug: string,
     @Body() dto: SaveDraftDto,
   ) {
-    return this.forms.saveDraft(slug, user.id, dto);
+    return this.forms.saveDraft(slug, user, dto);
   }
 }

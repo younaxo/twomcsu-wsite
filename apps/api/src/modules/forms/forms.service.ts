@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import {
   BadRequestException,
   ForbiddenException,
@@ -15,6 +16,7 @@ import {
 import { createHash } from 'crypto';
 import { CaptchaService } from '../auth/captcha.service';
 import { FriendsService } from '../friends/friends.service';
+import { isAdmin2faDenied } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { FieldAnswerDto } from './dto/field-answer.dto';
@@ -49,6 +51,9 @@ interface FieldAnswerValues {
   fileUrls?: string[];
 }
 
+/// Зритель: id и признак 2FA (из JwtStrategy); null — аноним.
+export type FormViewer = { id: string; twoFactorEnabled?: boolean } | null;
+
 @Injectable()
 export class FormsService {
   constructor(
@@ -56,11 +61,12 @@ export class FormsService {
     private readonly permissions: PermissionService,
     private readonly captcha: CaptchaService,
     private readonly friends: FriendsService,
+    private readonly config: ConfigService,
   ) {}
 
   async canView(
     visibility: FormVisibility,
-    viewerId: string | null,
+    viewer: FormViewer,
   ): Promise<boolean> {
     if (visibility === FormVisibility.PUBLIC) {
       return true;
@@ -68,19 +74,24 @@ export class FormsService {
     if (visibility === FormVisibility.INVITE_ONLY) {
       return false;
     }
-    if (!viewerId) {
+    if (!viewer) {
       return false;
     }
     if (visibility === FormVisibility.AUTHENTICATED) {
       return true;
     }
+    // ADR-0169 / Q22: право персонала расширяет видимость только при 2FA;
+    // без неё — видимость обычного игрока (без 403).
+    if (isAdmin2faDenied(viewer, this.config)) {
+      return false;
+    }
     const permission = VISIBILITY_PERMISSION[visibility];
     return permission
-      ? this.permissions.hasPermission(viewerId, permission)
+      ? this.permissions.hasPermission(viewer.id, permission)
       : false;
   }
 
-  async listPublished(viewerId: string | null) {
+  async listPublished(viewer: FormViewer) {
     const all = await this.prisma.form.findMany({
       where: {
         status: FormStatus.PUBLISHED,
@@ -90,7 +101,7 @@ export class FormsService {
     });
     const visible = await Promise.all(
       all.map(async (f) =>
-        (await this.canView(f.visibility, viewerId)) ? f : null,
+        (await this.canView(f.visibility, viewer)) ? f : null,
       ),
     );
     return visible.filter((f) => f !== null);
@@ -131,7 +142,7 @@ export class FormsService {
     return invite.form;
   }
 
-  async getBySlug(slug: string, viewerId: string | null) {
+  async getBySlug(slug: string, viewer: FormViewer) {
     const form = await this.prisma.form.findUnique({
       where: { slug },
       include: { fields: { orderBy: { order: 'asc' } } },
@@ -139,7 +150,7 @@ export class FormsService {
     if (!form || form.status !== FormStatus.PUBLISHED) {
       throw new NotFoundException('Форма не найдена');
     }
-    if (!(await this.canView(form.visibility, viewerId))) {
+    if (!(await this.canView(form.visibility, viewer))) {
       throw new NotFoundException('Форма не найдена');
     }
     return form;
@@ -147,7 +158,7 @@ export class FormsService {
 
   private async requireSubmittableForm(
     slug: string,
-    viewerId: string | null,
+    viewer: FormViewer,
     inviteCode: string | undefined,
   ): Promise<Form & { fields: FormField[] }> {
     const form = await this.prisma.form.findUnique({
@@ -174,11 +185,11 @@ export class FormsService {
       if (invite.maxUses !== null && invite.usedCount >= invite.maxUses) {
         throw new ForbiddenException('Приглашение исчерпано');
       }
-    } else if (!(await this.canView(form.visibility, viewerId))) {
+    } else if (!(await this.canView(form.visibility, viewer))) {
       throw new NotFoundException('Форма не найдена');
     }
 
-    if (form.requiresAuth && !viewerId) {
+    if (form.requiresAuth && !viewer) {
       throw new ForbiddenException('Для заполнения формы нужна авторизация');
     }
     const now = new Date();
@@ -215,14 +226,15 @@ export class FormsService {
 
   async submitResponse(
     slug: string,
-    viewerId: string | null,
+    viewer: FormViewer,
     dto: SubmitResponseDto,
     ip: string | undefined,
     userAgent: string | undefined,
   ) {
+    const viewerId = viewer?.id ?? null;
     const form = await this.requireSubmittableForm(
       slug,
-      viewerId,
+      viewer,
       dto.inviteCode,
     );
 
@@ -357,10 +369,15 @@ export class FormsService {
 
   /// Черновик — по тем же правилам доступа, что и отправка (видимость,
   /// приглашение, сроки приёма; ADR-0122).
-  async saveDraft(slug: string, viewerId: string, dto: SaveDraftDto) {
+  async saveDraft(
+    slug: string,
+    viewer: NonNullable<FormViewer>,
+    dto: SaveDraftDto,
+  ) {
+    const viewerId = viewer.id;
     const form = await this.requireSubmittableForm(
       slug,
-      viewerId,
+      viewer,
       dto.inviteCode,
     );
 

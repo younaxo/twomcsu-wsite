@@ -18,12 +18,12 @@ export class TopicsController {
   @UseGuards(OptionalJwtAuthGuard)
   @Get()
   async list(@Query() query: ListTopicsQueryDto, @Req() req: Request) {
-    return this.topics.listPublic(query, viewerOf(req)?.id ?? null);
+    return this.topics.listPublic(query, viewerOf(req));
   }
 
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':slug')
   async getBySlug(@Param('slug') slug: string, @Req() req: Request) {
-    return this.topics.getBySlug(slug, viewerOf(req)?.id ?? null);
+    return this.topics.getBySlug(slug, viewerOf(req));
   }
 }
