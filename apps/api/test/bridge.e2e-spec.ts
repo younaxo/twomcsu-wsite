@@ -115,7 +115,9 @@ describe('Bridge receiver (e2e)', () => {
       imports: [AppModule],
     })
       .overrideProvider(BRIDGE_CONFIG)
-      .useValue(readBridgeConfig({ get: (k: string) => process.env[k] as never }))
+      .useValue(
+        readBridgeConfig({ get: (k: string) => process.env[k] as never }),
+      )
       .compile();
     app = moduleFixture.createNestApplication(APP_CREATE_OPTIONS);
     configureApp(app);
@@ -150,7 +152,10 @@ describe('Bridge receiver (e2e)', () => {
         {
           slug: slugMain,
           displayName: 'E2E main',
-          capabilities: { punishments: true, 'punishments-authoritative': true },
+          capabilities: {
+            punishments: true,
+            'punishments-authoritative': true,
+          },
         },
         { slug: slugRevoked, displayName: 'E2E revoked', status: 'REVOKED' },
         { slug: slugOther, displayName: 'E2E other' },
@@ -520,9 +525,7 @@ describe('Bridge receiver (e2e)', () => {
       });
       const res = await send(slugMain, batchBody([deleted])).expect(200);
       expect(res.body.results[0].status).toBe('accepted');
-      const got = published
-        .slice(before)
-        .filter((p) => p.type === 'deleted');
+      const got = published.slice(before).filter((p) => p.type === 'deleted');
       expect(got).toHaveLength(1);
       expect(got[0]).toMatchObject({
         type: 'deleted',
@@ -547,11 +550,28 @@ describe('Bridge receiver (e2e)', () => {
       const ev = one(
         slugMain,
         'punishment.created',
-        punishmentData({ sourceId: sid, subjectName: name, subjectUuid: randomUUID() }),
+        punishmentData({
+          sourceId: sid,
+          subjectName: name,
+          subjectUuid: randomUUID(),
+        }),
       );
       await send(slugMain, batchBody([ev])).expect(200);
       const row = await mirrorRow(sid);
-      expect(row?.sourceScope).toBe(slugMain);
+      expect(row?.sourceScope).toBe('default'); // sourceScope строки сервера (фикстура)
+      // Публичный список требует первичной загрузки источника (контракт наказаний, шаг 6).
+      for (const kind of ['BAN', 'MUTE', 'WARN', 'KICK'] as const) {
+        await prisma.punishmentSyncState.upsert({
+          where: { source_kind: { source: 'litebans', kind } },
+          update: { initialSyncDoneAt: new Date(), lastSuccessAt: new Date() },
+          create: {
+            source: 'litebans',
+            kind,
+            initialSyncDoneAt: new Date(),
+            lastSuccessAt: new Date(),
+          },
+        });
+      }
       const res = await http()
         .get(`/punishments/public?name=${name}&limit=10`)
         .expect(200);
@@ -585,9 +605,14 @@ describe('Bridge receiver (e2e)', () => {
     it('M1: 30 неверных подписей с того же IP не блокируют верный запрос', async () => {
       const body = batchBody([one(slugOther, 'bridge.hello', HELLO)]);
       for (let i = 0; i < 30; i++) {
-        await send(slugOther, body, { master: Buffer.from('x'.repeat(40)) }).expect(401);
+        await send(slugOther, body, {
+          master: Buffer.from('x'.repeat(40)),
+        }).expect(401);
       }
-      await send(slugOther, batchBody([one(slugOther, 'bridge.hello', HELLO)])).expect(200);
+      await send(
+        slugOther,
+        batchBody([one(slugOther, 'bridge.hello', HELLO)]),
+      ).expect(200);
     });
   });
 
@@ -610,7 +635,7 @@ describe('Bridge receiver (e2e)', () => {
         configureApp(tiny);
         await tiny.init();
         const ids: string[] = [];
-        const requests = Array.from({ length: 8 }, () => {
+        const makeRequest = () => {
           const events = Array.from({ length: 5 }, () => {
             const sid = nextSourceId();
             ids.push(sid);
@@ -621,18 +646,30 @@ describe('Bridge receiver (e2e)', () => {
             );
           });
           const body = batchBody(events);
-          const headers = signedHeaders({ slug: slugMain, body, master: MASTER });
+          const headers = signedHeaders({
+            slug: slugMain,
+            body,
+            master: MASTER,
+          });
           return request(tiny!.getHttpServer())
             .post('/bridge/v1/events')
             .set(headers)
             .set('Content-Type', 'application/json')
             .send(body.toString('utf8'));
-        });
-        const responses = await Promise.all(requests);
+        };
+        const responses: Awaited<ReturnType<typeof makeRequest>>[] = [];
+        for (let wave = 0; wave < 4; wave++) {
+          // Контракт 5.4: не более 2 параллельных запросов на сервер.
+          responses.push(
+            ...(await Promise.all([makeRequest(), makeRequest()])),
+          );
+        }
         for (const r of responses) {
           expect(r.status).toBe(200);
           expect(
-            r.body.results.every((x: { status: string }) => x.status === 'accepted'),
+            r.body.results.every(
+              (x: { status: string }) => x.status === 'accepted',
+            ),
           ).toBe(true);
         }
         expect(
