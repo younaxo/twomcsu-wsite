@@ -5,11 +5,18 @@
 # Запускать на сервере из любого каталога (скрипт сам переходит в корень checkout).
 # Redis НЕ бэкапится (кеш и временные счётчики; refresh-сессии лежат в Postgres) — docs/runbooks/backup-restore.md.
 #
-# Коды выхода: 0 успех; 1 ошибка; 3 нехватка места; 4 бэкап создан локально, но выгрузка в S3 не удалась.
+# Коды выхода: 0 успех; 1 ошибка; 3 нехватка места; 4 бэкап создан локально, но выгрузка в S3 не удалась;
+# 5 бэкап сохранён, но ротация не смогла удалить старую копию (4 приоритетнее 5; детали в stderr).
 #
 # Переменные окружения (значения секретов здесь не хранятся; ключи age/S3 задаёт владелец на сервере):
 #   BACKUP_DIR            каталог локальных бэкапов вне репозитория (по умолчанию $HOME/twomc-backups/scheduled)
-#   BACKUP_KEEP           сколько последних локальных бэкапов хранить (14)
+#   BACKUP_KEEP_DAILY     сколько хранить ежедневных копий (метка scheduled) (7)
+#   BACKUP_KEEP_WEEKLY    сколько хранить еженедельных копий (метка weekly) (4)
+#   BACKUP_KEEP_PREDEPLOY сколько хранить снимков перед деплоем (метка predeploy) (7)
+#   BACKUP_KEEP_OTHER     сколько хранить копий прочих меток (prerestore, drill, ...), отдельно на каждую метку (7)
+#   BACKUP_WEEKLY_DAY     день недели недельной копии, 1-7 по date +%u, UTC (7 = воскресенье)
+#   BACKUP_ROTATE_DRY_RUN 1 — ротация только печатает, что удалила бы
+#   (BACKUP_KEEP устарел и игнорируется: заменён переменными BACKUP_KEEP_*)
 #   BACKUP_MIN_FREE_MB    минимум свободного места на старте, МБ (2048); меньше — выход 3
 #   BACKUP_TAG            метка в имени: scheduled | predeploy | ... (scheduled)
 #   BACKUP_ENCRYPT        age (по умолчанию) | gpg | none (none только вместе с BACKUP_ALLOW_UNENCRYPTED=1)
@@ -23,11 +30,89 @@
 #   BACKUP_COMPOSE_FILE, BACKUP_ENV_FILE, BACKUP_COMPOSE_PROJECT  переопределение compose (для restore-drill)
 set -euo pipefail
 
+# --- Хранение: функции ротации и недельной копии (можно подключить через source без БД и Docker) ---
+BACKUP_KEEP_DAILY=${BACKUP_KEEP_DAILY:-7}
+BACKUP_KEEP_WEEKLY=${BACKUP_KEEP_WEEKLY:-4}
+BACKUP_KEEP_PREDEPLOY=${BACKUP_KEEP_PREDEPLOY:-7}
+BACKUP_KEEP_OTHER=${BACKUP_KEEP_OTHER:-7}
+BACKUP_WEEKLY_DAY=${BACKUP_WEEKLY_DAY:-7}
+BACKUP_ROTATE_DRY_RUN=${BACKUP_ROTATE_DRY_RUN:-0}
+rotate_failed=0
+
+# rotate_tag КАТАЛОГ МЕТКА СКОЛЬКО_ХРАНИТЬ — оставляет СКОЛЬКО_ХРАНИТЬ последних копий с этой меткой.
+# Удаляются только каталоги верхнего уровня КАТАЛОГа с именем twomc-YYYYMMDDTHHMMSSZ-МЕТКА (строгий шаблон).
+# `.partial`, файлы и копии других меток не затрагиваются. Порядок — по UTC-времени в имени (лексикографический).
+# Сбой удаления: копия остаётся, rotate_failed=1 (выход 5, если нет более важного 4).
+rotate_tag() {
+  local dir=$1 tag=$2 keep=$3 old
+  [[ -n "$dir" && -d "$dir" ]] || { echo "ОШИБКА РОТАЦИИ: каталог '$dir' не существует" >&2; rotate_failed=1; return 0; }
+  [[ "$dir" != "/" ]] || { echo "ОШИБКА РОТАЦИИ: каталог '/' запрещён" >&2; rotate_failed=1; return 0; }
+  [[ "$tag" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ОШИБКА РОТАЦИИ: недопустимая метка '$tag'" >&2; rotate_failed=1; return 0; }
+  if ! [[ "$keep" =~ ^[0-9]+$ ]] || (( keep < 1 )); then
+    echo "ОШИБКА РОТАЦИИ: число хранимых копий '$keep' некорректно" >&2; rotate_failed=1; return 0
+  fi
+  local -a same_tag=()
+  mapfile -t same_tag < <(find "$dir" -maxdepth 1 -mindepth 1 -type d -name 'twomc-*' 2>/dev/null \
+    | sed 's|.*/||' | grep -E "^twomc-[0-9]{8}T[0-9]{6}Z-${tag}\$" | sort -r || true)
+  (( ${#same_tag[@]} > keep )) || return 0
+  for old in "${same_tag[@]:keep}"; do
+    [[ "$old" =~ ^twomc-[0-9]{8}T[0-9]{6}Z-${tag}$ ]] || continue
+    if [[ "$BACKUP_ROTATE_DRY_RUN" == "1" ]]; then
+      echo "Ротация ($tag, dry-run): был бы удалён $old"
+    elif rm -rf -- "${dir:?}/${old:?}"; then
+      echo "Ротация ($tag): удалён $old"
+    else
+      echo "ОШИБКА РОТАЦИИ: не удалось удалить $old; бэкап сохранён, выход будет ненулевым (5, либо 4 при провале S3)" >&2
+      rotate_failed=1
+    fi
+  done
+}
+
+# rotate_all КАТАЛОГ [ТЕКУЩАЯ_МЕТКА] — три уровня хранения плюс текущая нестандартная метка.
+rotate_all() {
+  local dir=$1 cur=${2:-}
+  rotate_tag "$dir" scheduled "$BACKUP_KEEP_DAILY"
+  rotate_tag "$dir" weekly "$BACKUP_KEEP_WEEKLY"
+  rotate_tag "$dir" predeploy "$BACKUP_KEEP_PREDEPLOY"
+  case "$cur" in
+    ""|scheduled|weekly|predeploy) ;;
+    *) rotate_tag "$dir" "$cur" "$BACKUP_KEEP_OTHER" ;;
+  esac
+}
+
+# weekly_copy ИСХОДНЫЙ_КАТАЛОГ КАТАЛОГ_НАЗНАЧЕНИЯ — недельная копия ежедневного бэкапа: жёсткие ссылки (cp -al, без
+# дублирования места), при невозможности — обычная копия. Существующая копия не перезаписывается.
+# Копирование идёт в <КАТАЛОГ_НАЗНАЧЕНИЯ>.partial и переименовывается только после успеха: сбой посреди копирования
+# не оставляет каталог *-weekly под валидным именем (ротация `.partial` не видит — строгий шаблон имени).
+# Перед откатом на полную копию проверяется место: свободно должно остаться не меньше BACKUP_MIN_FREE_MB сверх размера копии.
+weekly_copy() {
+  local src=$1 dst=$2 tmp="${2}.partial" need_mb free_mb_now min_mb=${BACKUP_MIN_FREE_MB:-2048}
+  [[ -d "$src" ]] || return 1
+  [[ ! -e "$dst" ]] || return 0
+  rm -rf -- "${tmp:?}"
+  if cp -al -- "$src" "$tmp" 2>/dev/null; then
+    mv -- "$tmp" "$dst" && return 0
+    rm -rf -- "${tmp:?}"; return 1
+  fi
+  rm -rf -- "${tmp:?}"
+  need_mb=$(du -sm -- "$src" 2>/dev/null | awk '{print $1}')
+  free_mb_now=$(df -Pk -- "$(dirname -- "$dst")" 2>/dev/null | awk 'NR==2 {print int($4/1024)}')
+  if ! [[ "$need_mb" =~ ^[0-9]+$ && "$free_mb_now" =~ ^[0-9]+$ ]] || (( free_mb_now - need_mb < min_mb )); then
+    echo "ОШИБКА: для обычной копии недельного бэкапа не хватает места (нужно ${need_mb:-?} МБ плюс ${min_mb} МБ запаса, свободно ${free_mb_now:-?} МБ)" >&2
+    return 1
+  fi
+  if cp -a -- "$src" "$tmp" && mv -- "$tmp" "$dst"; then return 0; fi
+  rm -rf -- "${tmp:?}"
+  return 1
+}
+
+# При подключении через source (стаб-тест) дальше не идём: ни cd, ни Docker, ни БД.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+
 cd "$(dirname "$0")/../.."
 umask 077
 
 BACKUP_DIR=${BACKUP_DIR:-$HOME/twomc-backups/scheduled}
-BACKUP_KEEP=${BACKUP_KEEP:-14}
 BACKUP_MIN_FREE_MB=${BACKUP_MIN_FREE_MB:-2048}
 BACKUP_TAG=${BACKUP_TAG:-scheduled}
 BACKUP_ENCRYPT=${BACKUP_ENCRYPT:-age}
@@ -44,8 +129,11 @@ if [[ -n "$BACKUP_COMPOSE_PROJECT" ]]; then COMPOSE+=(-p "$BACKUP_COMPOSE_PROJEC
 if [[ -n "$BACKUP_ENV_FILE" ]]; then COMPOSE+=(--env-file "$BACKUP_ENV_FILE"); fi
 COMPOSE+=(-f "$BACKUP_COMPOSE_FILE")
 
-[[ "$BACKUP_KEEP" =~ ^[0-9]+$ ]] || fail "BACKUP_KEEP='$BACKUP_KEEP' некорректно (число не меньше 1)"
-(( BACKUP_KEEP >= 1 )) || fail "BACKUP_KEEP должен быть не меньше 1"
+if [[ -n "${BACKUP_KEEP:-}" ]]; then echo "ПРЕДУПРЕЖДЕНИЕ: BACKUP_KEEP устарел и игнорируется (используйте BACKUP_KEEP_DAILY/WEEKLY/PREDEPLOY/OTHER)" >&2; fi
+for v in BACKUP_KEEP_DAILY BACKUP_KEEP_WEEKLY BACKUP_KEEP_PREDEPLOY BACKUP_KEEP_OTHER; do
+  if ! [[ "${!v}" =~ ^[0-9]+$ ]] || (( ${!v} < 1 )); then fail "$v='${!v}' некорректно (число не меньше 1)"; fi
+done
+[[ "$BACKUP_WEEKLY_DAY" =~ ^[1-7]$ ]] || fail "BACKUP_WEEKLY_DAY='$BACKUP_WEEKLY_DAY' некорректно (1-7)"
 [[ "$BACKUP_MIN_FREE_MB" =~ ^[0-9]+$ ]] || fail "BACKUP_MIN_FREE_MB='$BACKUP_MIN_FREE_MB' некорректно"
 [[ "$BACKUP_TAG" =~ ^[A-Za-z0-9_-]+$ ]] || fail "BACKUP_TAG допускает только буквы, цифры, _ и -"
 
@@ -145,12 +233,26 @@ elif [[ -n "${BACKUP_S3_URI:-}" ]]; then
   if [[ -n "${BACKUP_S3_ENDPOINT:-}" ]]; then s3args+=(--endpoint-url "$BACKUP_S3_ENDPOINT"); fi
   aws s3 cp --recursive "${s3args[@]}" "$final" "${BACKUP_S3_URI%/}/$name" || { echo "Выгрузка в S3 не удалась; локальная копия сохранена" >&2; rc=4; }
 else
-  echo "S3 не настроен — локальный fallback (BACKUP_DIR, хранится $BACKUP_KEEP последних)"
+  echo "S3 не настроен — локальный fallback (BACKUP_DIR; хранится $BACKUP_KEEP_DAILY ежедневных, $BACKUP_KEEP_WEEKLY недельных, $BACKUP_KEEP_PREDEPLOY predeploy)"
 fi
 
-# Ротация локальных копий: оставить BACKUP_KEEP последних (имя содержит UTC-время, порядок лексикографический).
-find "$BACKUP_DIR" -maxdepth 1 -type d -name 'twomc-*' | sort -r | tail -n +"$((BACKUP_KEEP + 1))" | while IFS= read -r old; do
-  rm -rf -- "$old" && echo "Ротация: удалён $(basename "$old")"
-done
+# Недельный уровень: плановая (scheduled) копия в день BACKUP_WEEKLY_DAY (по умолчанию воскресенье, UTC)
+# дополнительно сохраняется как twomc-<то же время>-weekly (жёсткие ссылки). Ошибка не отменяет бэкап: выход 5.
+# День недели берётся из метки времени самого бэкапа ($name), а не из нового `date`: иначе у полуночи UTC возможна гонка.
+backup_ts=${name#twomc-}; backup_ts=${backup_ts%%-*}
+backup_dow=$(date -u -d "${backup_ts:0:4}-${backup_ts:4:2}-${backup_ts:6:2}" +%u 2>/dev/null || true)
+if [[ "$BACKUP_TAG" == "scheduled" && "$backup_dow" == "$BACKUP_WEEKLY_DAY" ]]; then
+  weekly_name="${name%-scheduled}-weekly"
+  if weekly_copy "$final" "$BACKUP_DIR/$weekly_name"; then
+    echo "Недельная копия: $BACKUP_DIR/$weekly_name"
+  else
+    echo "ОШИБКА: не удалось создать недельную копию $weekly_name; ежедневная сохранена, выход будет ненулевым (5)" >&2
+    rotate_failed=1
+  fi
+fi
 
+# Ротация локальных копий по уровням (scheduled/weekly/predeploy и текущая прочая метка), см. rotate_tag.
+rotate_all "$BACKUP_DIR" "$BACKUP_TAG"
+
+if (( rotate_failed == 1 && rc == 0 )); then rc=5; fi
 exit "$rc"
