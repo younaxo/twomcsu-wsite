@@ -212,13 +212,13 @@ export function useStaffReportActions(number: string) {
     mutationFn: (content: string) => api.post(`${base}/notes`, { content }),
     onSuccess,
   });
-  /// 403 — править можно только свои заметки (или при `reports.delete`).
+  /// 403 — править можно только свои заметки (или при `reports.notes.edit`).
   const editNote = useMutation({
     mutationFn: ({ noteId, content }: { noteId: string; content: string }) =>
       api.patch(`${base}/notes/${encodeURIComponent(noteId)}`, { content }),
     onSuccess,
   });
-  /// Закрепление/открепление — право `reports.notes.pin`.
+  /// Закрепление — право `reports.notes.pin`, открепление — `reports.notes.unpin`.
   const pinNote = useMutation({
     mutationFn: ({ noteId, pinned }: { noteId: string; pinned: boolean }) =>
       api.patch(`${base}/notes/${encodeURIComponent(noteId)}/pin`, { pinned }),

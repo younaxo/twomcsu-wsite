@@ -365,7 +365,12 @@ describe('Обращения в админке (срез 7.3)', () => {
 
   it('заметки: правка своей, закреп/открепление, скрытие по правам, 403 при правке', async () => {
     const actor = userEvent.setup();
-    for (const key of ['reports.view', 'reports.notes', 'reports.notes.pin']) {
+    for (const key of [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.pin',
+      'reports.notes.unpin',
+    ]) {
       mocks.granted.add(key);
     }
     const note = (id: string, authorId: string, pinned: boolean, content: string) => ({
@@ -391,7 +396,7 @@ describe('Обращения в админке (срез 7.3)', () => {
     await screen.findByTestId('staff-report');
     const own = screen.getByTestId('note-n1');
     const foreign = screen.getByTestId('note-n2');
-    // Закреплённая — первой, с индикатором; править чужую нельзя без reports.delete.
+    // Закреплённая — первой, с индикатором; править чужую нельзя без reports.notes.edit.
     expect(own.compareDocumentPosition(foreign) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
     expect(within(foreign).getByLabelText('Закреплено')).toBeInTheDocument();
     expect(within(foreign).queryByRole('button', { name: /Изменить/ })).toBeNull();
@@ -431,5 +436,69 @@ describe('Обращения в админке (срез 7.3)', () => {
     render(<ReportCardPage />, { wrapper: Providers });
     await screen.findByTestId('staff-report');
     expect(screen.queryByRole('button', { name: /Закрепить заметку/ })).toBeNull();
+  });
+
+  const noteOf = (id: string, authorId: string, pinned: boolean) => ({
+    id,
+    authorId,
+    content: `Заметка ${id}`,
+    isPinned: pinned,
+    createdAt: '2026-10-10T12:00:00.000Z',
+    updatedAt: '2026-10-10T12:00:00.000Z',
+  });
+  const mockNotes = (notes: ReturnType<typeof noteOf>[]) =>
+    mocks.get.mockImplementation(async (path: string) =>
+      path === '/reports/R-1' ? { ...REPORT, moderatorNotes: notes } : null,
+    );
+
+  it('заметки: чужая правится только с reports.notes.edit', async () => {
+    for (const key of ['reports.view', 'reports.notes']) mocks.granted.add(key);
+    mockNotes([noteOf('n1', 'me', false), noteOf('n2', 'other', false)]);
+    const first = render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    expect(
+      within(screen.getByTestId('note-n1')).getByRole('button', { name: /Изменить/ }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId('note-n2')).queryByRole('button', { name: /Изменить/ }),
+    ).toBeNull();
+    first.unmount();
+
+    mocks.granted.add('reports.notes.edit');
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    expect(
+      within(screen.getByTestId('note-n2')).getByRole('button', { name: /Изменить/ }),
+    ).toBeTruthy();
+  });
+
+  it('заметки: закреплённую без reports.notes.unpin открепить нельзя', async () => {
+    for (const key of ['reports.view', 'reports.notes', 'reports.notes.pin']) {
+      mocks.granted.add(key);
+    }
+    mockNotes([noteOf('n1', 'me', false), noteOf('n2', 'me', true)]);
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    expect(
+      within(screen.getByTestId('note-n2')).queryByRole('button', { name: 'Открепить заметку' }),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId('note-n1')).getByRole('button', { name: 'Закрепить заметку' }),
+    ).toBeTruthy();
+  });
+
+  it('заметки: незакреплённую без reports.notes.pin закрепить нельзя', async () => {
+    for (const key of ['reports.view', 'reports.notes', 'reports.notes.unpin']) {
+      mocks.granted.add(key);
+    }
+    mockNotes([noteOf('n1', 'me', false), noteOf('n2', 'me', true)]);
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByTestId('staff-report');
+    expect(
+      within(screen.getByTestId('note-n1')).queryByRole('button', { name: 'Закрепить заметку' }),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId('note-n2')).getByRole('button', { name: 'Открепить заметку' }),
+    ).toBeTruthy();
   });
 });
