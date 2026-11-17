@@ -47,12 +47,12 @@ describe('RBAC: срез 2', () => {
     expect(keysOf('assignableStaff')).toEqual(['reports.assign']);
   });
 
-  it('правка заметки — reports.notes (автор/reports.delete проверяет сервис)', () => {
+  it('правка заметки — reports.notes (автор/reports.notes.edit проверяет сервис)', () => {
     expect(keysOf('updateNote')).toEqual(['reports.notes']);
   });
 
-  it('pin и unpin заметки — reports.notes.pin', () => {
+  it('pin — reports.notes.pin, unpin — reports.notes.unpin', () => {
     expect(keysOf('pinNote')).toEqual(['reports.notes.pin']);
-    expect(keysOf('unpinNote')).toEqual(['reports.notes.pin']);
+    expect(keysOf('unpinNote')).toEqual(['reports.notes.unpin']);
   });
 });

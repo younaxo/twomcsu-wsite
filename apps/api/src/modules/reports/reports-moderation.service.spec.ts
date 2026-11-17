@@ -328,7 +328,7 @@ describe('ReportsModerationService.updateModeratorNote: права', () => {
     expect(prisma.reportModeratorNote.update).toHaveBeenCalledTimes(1);
   });
 
-  it('чужая заметка без reports.delete — 403, без записи', async () => {
+  it('чужая заметка без reports.notes.edit — 403, без записи', async () => {
     const { prisma, permissions, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
     prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
@@ -338,12 +338,12 @@ describe('ReportsModerationService.updateModeratorNote: права', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(permissions.hasPermission).toHaveBeenCalledWith(
       'other',
-      'reports.delete',
+      'reports.notes.edit',
     );
     expect(prisma.reportModeratorNote.update).not.toHaveBeenCalled();
   });
 
-  it('чужая заметка с reports.delete — правится', async () => {
+  it('чужая заметка с reports.notes.edit — правится', async () => {
     const { prisma, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
     prisma.reportModeratorNote.findUnique.mockResolvedValue(note);

@@ -346,6 +346,16 @@ export const PERMISSIONS = [
     description: 'Закрепление заметки модератора',
   },
   {
+    key: 'reports.notes.unpin',
+    module: 'reports',
+    description: 'Открепление заметки модератора',
+  },
+  {
+    key: 'reports.notes.edit',
+    module: 'reports',
+    description: 'Правка чужих заметок модератора (автор всегда правит свои)',
+  },
+  {
     key: 'reports.lock',
     module: 'reports',
     description: 'Блокировка обращения для новых сообщений',

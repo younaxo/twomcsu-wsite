@@ -182,9 +182,9 @@ export class ReportsModerationController {
     );
   }
 
-  /// Открепление заметки (то же право `reports.notes.pin`).
+  /// Открепление заметки (право `reports.notes.unpin`).
   @Delete(':reportNumber/notes/:noteId/pin')
-  @RequirePermissions('reports.notes.pin')
+  @RequirePermissions('reports.notes.unpin')
   async unpinNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
