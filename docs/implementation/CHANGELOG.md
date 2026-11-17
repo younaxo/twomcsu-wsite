@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Этап 02, срез 2: миграция колонок скрытия выдавшего и индексов (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, не применялась, ждёт ревью Q28)
+
+- Миграция `20261117040000_punishments_public_indexes` (вручную, Q43 а; только `ADD COLUMN` четырёх колонок `issuerHidden*` и `CREATE INDEX` трёх индексов: выражение `lower("subjectName") text_pattern_ops`, частичный публичный `(startedAt, id)`, обычный `(startedAt, id)`). Поля добавлены в модель `MinecraftPunishment` (`schema.prisma`), индексы описаны комментарием модели. Юнит-тесты: текст миграции (только разрешённые операторы, нет `DROP` индексов и колонок в других миграциях) и текст SQL upsert синхронизации (нет `issuerHidden`). Контроллеры и сервисы среза 2 не писались; на БД не применялась. Риски R88, R89.
+
 ### Этап 02, срез 2: контракт API наказаний (ADR-0180, ветка feature/stage-02-s2-bans-contract, только документ, не смержено)
 
 - `docs/stage-02/BANS-API-CONTRACT.md`: публичный список и карточка `/punishments/public`, «мои наказания» `/punishments/me`, просмотр персоналом `/admin/punishments` (право `users.punishments`, 2FA), причина на `/bans` только из закрытого словаря (Q59), недоступность 404/503/`stale`, DTO для `packages/shared`, синхронизация копий типов тестом (R80), WebSocket отложен. Код, схема и миграции не менялись; ADR-0180 в статусе Proposed.

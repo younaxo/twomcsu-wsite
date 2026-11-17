@@ -183,3 +183,37 @@ describe('PrismaPunishmentMirrorStore.applyBatch', () => {
     expect(fake.txStarted).toBe(0);
   });
 });
+
+describe('PrismaPunishmentMirrorStore: текст SQL upsert (ADR-0180, 4.2)', () => {
+  /// Тексты всех SQL, ушедших в `$queryRaw` при записи пачки.
+  async function upsertTexts(): Promise<string[]> {
+    const texts: string[] = [];
+    const db = {
+      $queryRaw: async (sql: Prisma.Sql) => {
+        texts.push(sql.sql);
+        return [];
+      },
+      $executeRaw: async () => 0,
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+    };
+    const store = new PrismaPunishmentMirrorStore(
+      db as unknown as PrismaService,
+    );
+    await store.applyBatch('litebans', 'BAN', [row(1)], null, new Date());
+    return texts;
+  }
+
+  it('upsert не содержит колонок issuerHidden*: синхронизация флаг не затирает', async () => {
+    const texts = await upsertTexts();
+    expect(texts).toHaveLength(1);
+    const text = texts[0];
+    expect(text).toContain('INSERT INTO "minecraft_punishments"');
+    expect(text).toContain('ON CONFLICT');
+    expect(text).not.toMatch(/issuerHidden/i);
+  });
+
+  it('upsert не трогает и колонки скрытия записи (isHidden, hiddenById, hiddenReason)', async () => {
+    const [text] = await upsertTexts();
+    expect(text).not.toMatch(/"isHidden"|"hiddenById"|"hiddenReason"/);
+  });
+});
