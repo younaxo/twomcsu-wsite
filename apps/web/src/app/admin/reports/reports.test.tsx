@@ -403,16 +403,14 @@ describe('Обращения в админке (срез 7.3)', () => {
 
     await actor.click(within(foreign).getByRole('button', { name: 'Открепить заметку' }));
     await waitFor(() =>
-      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n2/pin', {
-        pinned: false,
-      }),
+      expect(mocks.delete).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n2/pin'),
     );
     await actor.click(within(own).getByRole('button', { name: 'Закрепить заметку' }));
     await waitFor(() =>
-      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n1/pin', {
-        pinned: true,
-      }),
+      expect(mocks.patch).toHaveBeenCalledWith('/moderation/reports/R-1/notes/n1/pin', {}),
     );
+    // PATCH никогда не используется для открепления.
+    expect(mocks.patch).not.toHaveBeenCalledWith(expect.any(String), { pinned: false });
 
     mocks.patch.mockRejectedValueOnce(new ApiError(403, ['Недостаточно прав']));
     await actor.click(within(own).getByRole('button', { name: /Изменить/ }));

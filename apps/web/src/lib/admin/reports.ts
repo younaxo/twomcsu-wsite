@@ -220,8 +220,11 @@ export function useStaffReportActions(number: string) {
   });
   /// Закрепление — право `reports.notes.pin`, открепление — `reports.notes.unpin`.
   const pinNote = useMutation({
-    mutationFn: ({ noteId, pinned }: { noteId: string; pinned: boolean }) =>
-      api.patch(`${base}/notes/${encodeURIComponent(noteId)}/pin`, { pinned }),
+    mutationFn: ({ noteId, pinned }: { noteId: string; pinned: boolean }) => {
+      const url = `${base}/notes/${encodeURIComponent(noteId)}/pin`;
+      // PATCH только закрепляет, открепление — DELETE.
+      return pinned ? api.patch(url, {}) : api.delete(url);
+    },
     onSuccess,
   });
   const lock = useMutation({
