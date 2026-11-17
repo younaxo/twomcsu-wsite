@@ -1,0 +1,10 @@
+{
+  "auto_install_extensions": {
+    "html": true,
+    "prisma": true,
+    "docker-compose": true
+  },
+  "terminal": {
+    "working_directory": "current_project_directory"
+  }
+}
