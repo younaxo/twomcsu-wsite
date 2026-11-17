@@ -1,4 +1,4 @@
-import type { InventoryGroup } from '@twomc/shared';
+import type { InventoryGroup } from './inventory-contract';
 
 /// Точка расширения для донат-правил (ADR-0168, раздел 6.4; срез 7). Правил и
 /// уровней здесь НЕТ: Donation Privileges — hard gate (этап 05). Реализация по

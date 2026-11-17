@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import type { InventoryArea, InventoryGroup } from '@twomc/shared';
+import type { InventoryArea, InventoryGroup } from './inventory-contract';
 import {
   AREA_ORDER,
   AREA_SIZE,
@@ -40,8 +40,7 @@ type Obj = Record<string, unknown>;
 const UUID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const EPOCH_RE = /^[\x21-\x7E]{26,64}$/;
-const ISO_UTC =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|\+00:00)$/;
+const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|\+00:00)$/;
 const MAX_INT32 = 2_147_483_647;
 
 function fail(reason: string): never {
@@ -69,12 +68,7 @@ function assertKeys(obj: Obj, allowed: readonly string[], path: string): void {
   }
 }
 
-function asInt(
-  value: unknown,
-  path: string,
-  min: number,
-  max: number,
-): number {
+function asInt(value: unknown, path: string, min: number, max: number): number {
   if (
     typeof value !== 'number' ||
     !Number.isInteger(value) ||
@@ -426,7 +420,8 @@ export function parseDelta(raw: unknown, now: Date): NormalizedDelta {
     return {
       area,
       slot,
-      item: change.item === null ? null : parseItem(change.item, `${path}.item`),
+      item:
+        change.item === null ? null : parseItem(change.item, `${path}.item`),
     };
   });
   const baseRev = asInt(obj.baseRev, 'baseRev', 1, MAX_INT32);

@@ -1,4 +1,4 @@
-import type { InventoryArea, InventoryGroup } from '@twomc/shared';
+import type { InventoryArea, InventoryGroup } from './inventory-contract';
 
 /// Лимиты ADR-0168 (разделы 3.2, 3.3, 7.3) и допущения владельца (ADR-0179).
 

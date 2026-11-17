@@ -3,8 +3,8 @@ import type {
   InventoryGroupViewDto,
   InventoryItemDto,
   InventorySlotDto,
-} from '@twomc/shared';
-import { INVENTORY_FRESH_THRESHOLD_MS } from '@twomc/shared';
+} from './inventory-contract';
+import { INVENTORY_FRESH_THRESHOLD_MS } from './inventory-contract';
 import { reparseStoredSlots } from './inventory-normalize';
 import type { StoredInventoryRow } from './inventory.store';
 import type { NormalizedItem } from './inventory.types';

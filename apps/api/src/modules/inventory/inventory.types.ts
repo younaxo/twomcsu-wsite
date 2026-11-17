@@ -1,4 +1,4 @@
-import type { InventoryArea, InventoryGroup } from '@twomc/shared';
+import type { InventoryArea, InventoryGroup } from './inventory-contract';
 
 /// Нормализованная модель снимка инвентаря (ADR-0168, раздел 3; ADR-0179).
 /// Не зависит от источника: сегодня вход подаётся из тестов, позже — из

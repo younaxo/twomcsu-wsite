@@ -37,8 +37,10 @@ export class InventoryApplyService {
     data: unknown,
     now: Date = new Date(),
   ): Promise<ApplyResult> {
-    return this.run(serverSlug, () => parseSnapshot(data, now), (p) =>
-      this.decideSnapshot(p, now),
+    return this.run(
+      serverSlug,
+      () => parseSnapshot(data, now),
+      (p) => this.decideSnapshot(p, now),
     );
   }
 
@@ -47,15 +49,19 @@ export class InventoryApplyService {
     data: unknown,
     now: Date = new Date(),
   ): Promise<ApplyResult> {
-    return this.run(serverSlug, () => parseDelta(data, now), (p) =>
-      this.decideDelta(p, now),
+    return this.run(
+      serverSlug,
+      () => parseDelta(data, now),
+      (p) => this.decideDelta(p, now),
     );
   }
 
   private async run<T extends NormalizedSnapshot | NormalizedDelta>(
     serverSlug: string,
     parse: () => T,
-    decide: (parsed: T) => (current: StoredInventory | null) => InventoryDecision,
+    decide: (
+      parsed: T,
+    ) => (current: StoredInventory | null) => InventoryDecision,
   ): Promise<ApplyResult> {
     if (!SERVER_SLUG.test(serverSlug)) {
       return { status: 'rejected', code: 'invalid_data', reason: 'serverSlug' };
@@ -65,7 +71,11 @@ export class InventoryApplyService {
       parsed = parse();
     } catch (error) {
       if (error instanceof InventoryValidationError) {
-        return { status: 'rejected', code: 'invalid_data', reason: error.reason };
+        return {
+          status: 'rejected',
+          code: 'invalid_data',
+          reason: error.reason,
+        };
       }
       throw error;
     }
@@ -98,7 +108,11 @@ export class InventoryApplyService {
       if (current && current.contentHash === contentHash) {
         return {
           write: { kind: 'touch', ...meta },
-          result: { status: 'applied', kind: 'snapshot', contentChanged: false },
+          result: {
+            status: 'applied',
+            kind: 'snapshot',
+            contentChanged: false,
+          },
         };
       }
       return {

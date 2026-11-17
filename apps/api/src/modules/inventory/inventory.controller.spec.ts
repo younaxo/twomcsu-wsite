@@ -33,8 +33,12 @@ function makeRes() {
 function setup() {
   const inventory = { getMine: jest.fn().mockResolvedValue(BODY) };
   const privacy = {
-    get: jest.fn().mockResolvedValue({ inventoryPublic: false, enderPublic: false }),
-    update: jest.fn().mockResolvedValue({ inventoryPublic: true, enderPublic: false }),
+    get: jest
+      .fn()
+      .mockResolvedValue({ inventoryPublic: false, enderPublic: false }),
+    update: jest
+      .fn()
+      .mockResolvedValue({ inventoryPublic: true, enderPublic: false }),
   };
   const controller = new InventoryController(
     inventory as unknown as InventoryService,
@@ -117,8 +121,14 @@ describe('InventoryController', () => {
     await controller.getPrivacy(user, res);
     expect(privacy.get).toHaveBeenCalledWith('u1');
     expect(headers['Cache-Control']).toBe('private, no-cache');
-    await controller.updatePrivacy(user, { inventoryPublic: true }, makeRes().res);
-    expect(privacy.update).toHaveBeenCalledWith('u1', { inventoryPublic: true });
+    await controller.updatePrivacy(
+      user,
+      { inventoryPublic: true },
+      makeRes().res,
+    );
+    expect(privacy.update).toHaveBeenCalledWith('u1', {
+      inventoryPublic: true,
+    });
   });
 });
 

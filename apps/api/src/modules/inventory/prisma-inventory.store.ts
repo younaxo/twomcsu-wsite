@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { InventoryGroup } from '@twomc/shared';
+import type { InventoryGroup } from './inventory-contract';
 import { PrismaService } from '../prisma/prisma.service';
 import { SCHEMA_VERSION } from './inventory-limits';
 import type {

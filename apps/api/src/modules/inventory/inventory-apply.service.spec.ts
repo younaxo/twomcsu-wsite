@@ -99,7 +99,11 @@ describe('InventoryApplyService.applySnapshot', () => {
         capturedAt: iso(20),
         rev: 2,
         slots: [
-          { area: 'hotbar', slot: 4, item: item('minecraft:bread', { count: 3 }) },
+          {
+            area: 'hotbar',
+            slot: 4,
+            item: item('minecraft:bread', { count: 3 }),
+          },
         ],
       }),
       NOW,
@@ -137,7 +141,9 @@ describe('InventoryApplyService.applySnapshot', () => {
       NOW,
     );
     expect(result).toMatchObject({ status: 'applied', contentChanged: true });
-    expect(reparseStoredSlots(store.get(USER, SERVER, 'main')!.slots)[0]).toMatchObject({
+    expect(
+      reparseStoredSlots(store.get(USER, SERVER, 'main')!.slots)[0],
+    ).toMatchObject({
       slot: 2,
     });
   });
@@ -206,7 +212,10 @@ describe('InventoryApplyService.applySnapshot', () => {
     const { store, service } = setup();
     for (const slug of ['', 'Survival', 'a b', 'x'.repeat(33), 'a_b']) {
       const result = await service.applySnapshot(slug, snapshot(), NOW);
-      expect(result).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+      expect(result).toMatchObject({
+        status: 'rejected',
+        code: 'invalid_data',
+      });
     }
     expect(store.rows.size).toBe(0);
   });
@@ -230,7 +239,11 @@ describe('InventoryApplyService.applyDelta', () => {
       snapshot({
         slots: [
           { area: 'hotbar', slot: 0, item: item('minecraft:diamond_sword') },
-          { area: 'hotbar', slot: 1, item: item('minecraft:bread', { count: 5 }) },
+          {
+            area: 'hotbar',
+            slot: 1,
+            item: item('minecraft:bread', { count: 5 }),
+          },
         ],
       }),
       NOW,
@@ -365,7 +378,13 @@ describe('InventoryApplyService.applyDelta', () => {
         epoch: TEST_EPOCH_2,
         rev: 1,
         capturedAt: iso(60),
-        slots: [{ area: 'hotbar', slot: 8, item: item('minecraft:torch', { count: 64 }) }],
+        slots: [
+          {
+            area: 'hotbar',
+            slot: 8,
+            item: item('minecraft:torch', { count: 64 }),
+          },
+        ],
       }),
       NOW,
     );

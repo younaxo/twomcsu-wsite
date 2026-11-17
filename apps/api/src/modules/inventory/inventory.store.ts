@@ -1,4 +1,4 @@
-import type { InventoryGroup } from '@twomc/shared';
+import type { InventoryGroup } from './inventory-contract';
 import type { ApplyResult, NormalizedSlot } from './inventory.types';
 
 export const INVENTORY_STORE = Symbol('INVENTORY_STORE');

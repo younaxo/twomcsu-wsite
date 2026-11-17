@@ -1,4 +1,7 @@
-import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import {
   InMemoryInventoryStore,
   item,
@@ -15,7 +18,12 @@ import { InventoryService } from './inventory.service';
 const USER = 'user-1';
 const NOW = new Date(T0.getTime() + 60_000);
 
-function setup(opts: { linked?: boolean; servers?: Array<{ slug: string; name: string }> } = {}) {
+function setup(
+  opts: {
+    linked?: boolean;
+    servers?: Array<{ slug: string; name: string }>;
+  } = {},
+) {
   const store = new InMemoryInventoryStore();
   store.link(TEST_UUID, USER);
   const prisma = {
@@ -28,7 +36,10 @@ function setup(opts: { linked?: boolean; servers?: Array<{ slug: string; name: s
       findMany: jest.fn().mockResolvedValue(opts.servers ?? []),
     },
   };
-  const service = new InventoryService(prisma as unknown as PrismaService, store);
+  const service = new InventoryService(
+    prisma as unknown as PrismaService,
+    store,
+  );
   const apply = new InventoryApplyService(store);
   return { store, prisma, service, apply };
 }
@@ -67,7 +78,10 @@ describe('InventoryService.getMine', () => {
     const res = await service.getMine(USER, 'survival', NOW);
     expect(res.state).toBe('no_data');
     expect(res.servers).toHaveLength(1);
-    expect(res.servers[0].server).toEqual({ slug: 'survival', name: 'survival' });
+    expect(res.servers[0].server).toEqual({
+      slug: 'survival',
+      name: 'survival',
+    });
     expect(res.servers[0].groups.map((g) => [g.group, g.state])).toEqual([
       ['main', 'no_data'],
       ['ender', 'no_data'],
@@ -136,7 +150,11 @@ describe('InventoryService.getMine', () => {
       unbreakable: false,
       itemsAdderId: null,
     });
-    expect(ender).toMatchObject({ group: 'ender', state: 'no_data', slots: [] });
+    expect(ender).toMatchObject({
+      group: 'ender',
+      state: 'no_data',
+      slots: [],
+    });
   });
 
   it('несколько серверов, сортировка по slug, Ender виден владельцу', async () => {
@@ -158,7 +176,10 @@ describe('InventoryService.getMine', () => {
     ]);
     const creative = res.servers[0];
     expect(creative.groups[1]).toMatchObject({ group: 'ender', state: 'ok' });
-    expect(creative.groups[1].slots[0]).toMatchObject({ area: 'ender', slot: 3 });
+    expect(creative.groups[1].slots[0]).toMatchObject({
+      area: 'ender',
+      slot: 3,
+    });
     // Фильтр по серверу.
     const only = await service.getMine(USER, 'survival', NOW);
     expect(only.servers.map((s) => s.server.slug)).toEqual(['survival']);
@@ -177,10 +198,22 @@ describe('InventoryService.getMine', () => {
     const byServer = Object.fromEntries(
       res.servers.map((s) => [s.server.slug, s.groups[0]]),
     );
-    expect(byServer.survival).toMatchObject({ playerOnline: true, isFresh: false });
-    expect(byServer.creative).toMatchObject({ playerOnline: false, isFresh: true });
-    const soon = await service.getMine(USER, undefined, new Date(T0.getTime() + 14 * 60_000));
-    expect(soon.servers.find((s) => s.server.slug === 'survival')!.groups[0].isFresh).toBe(true);
+    expect(byServer.survival).toMatchObject({
+      playerOnline: true,
+      isFresh: false,
+    });
+    expect(byServer.creative).toMatchObject({
+      playerOnline: false,
+      isFresh: true,
+    });
+    const soon = await service.getMine(
+      USER,
+      undefined,
+      new Date(T0.getTime() + 14 * 60_000),
+    );
+    expect(
+      soon.servers.find((s) => s.server.slug === 'survival')!.groups[0].isFresh,
+    ).toBe(true);
   });
 
   it('ответ не содержит UUID, userId, epoch, rev, contentHash, lastSeenAt', async () => {
@@ -191,7 +224,15 @@ describe('InventoryService.getMine', () => {
     expect(text).not.toContain(TEST_UUID);
     expect(text).not.toContain(USER);
     expect(text).not.toContain(TEST_EPOCH);
-    for (const key of ['uuid', 'userId', 'epoch', 'rev', 'contentHash', 'lastSeenAt', 'slotCount']) {
+    for (const key of [
+      'uuid',
+      'userId',
+      'epoch',
+      'rev',
+      'contentHash',
+      'lastSeenAt',
+      'slotCount',
+    ]) {
       expect(text).not.toContain(`"${key}"`);
     }
   });

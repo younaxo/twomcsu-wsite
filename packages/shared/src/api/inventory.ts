@@ -12,10 +12,7 @@ export type InventoryArea = 'hotbar' | 'main' | 'armor' | 'offhand' | 'ender';
 export type InventoryState = 'ok' | 'no_data';
 
 /// Коды `code` в теле ошибок (раздел 5.1 дизайна).
-export type InventoryErrorCode =
-  | 'not_found'
-  | 'invalid_param'
-  | 'inventory_unavailable';
+export type InventoryErrorCode = 'not_found' | 'invalid_param' | 'inventory_unavailable';
 
 /// «Прогон» текста предмета: только данные, выводить как plain text.
 export interface InventoryTextRunDto {

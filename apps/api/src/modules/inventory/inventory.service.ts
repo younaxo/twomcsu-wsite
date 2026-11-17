@@ -8,7 +8,7 @@ import type {
   InventoryGroupViewDto,
   InventoryMeResponseDto,
   InventoryServerViewDto,
-} from '@twomc/shared';
+} from './inventory-contract';
 import { PrismaService } from '../prisma/prisma.service';
 import { noDataGroup, toGroupView } from './inventory-dto';
 import { SERVER_SLUG } from './inventory-limits';

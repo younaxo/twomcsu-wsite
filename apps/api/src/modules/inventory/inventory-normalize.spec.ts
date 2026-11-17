@@ -130,7 +130,10 @@ describe('parseSnapshot', () => {
     });
     rejects(() => parseSnapshot(snapshot({ slots: [slot('ender', 0)] }), T0));
     rejects(() =>
-      parseSnapshot(snapshot({ group: 'ender', slots: [slot('hotbar', 0)] }), T0),
+      parseSnapshot(
+        snapshot({ group: 'ender', slots: [slot('hotbar', 0)] }),
+        T0,
+      ),
     );
     rejects(() => parseSnapshot(snapshot({ slots: [slot('hotbar', 9)] }), T0));
     rejects(() => parseSnapshot(snapshot({ slots: [slot('hotbar', -1)] }), T0));
@@ -139,7 +142,10 @@ describe('parseSnapshot', () => {
     rejects(() => parseSnapshot(snapshot({ slots: [slot('offhand', 1)] }), T0));
     rejects(() => parseSnapshot(snapshot({ slots: [slot('legs', 0)] }), T0));
     rejects(() =>
-      parseSnapshot(snapshot({ slots: [slot('hotbar', 0), slot('hotbar', 0)] }), T0),
+      parseSnapshot(
+        snapshot({ slots: [slot('hotbar', 0), slot('hotbar', 0)] }),
+        T0,
+      ),
     );
     rejects(() =>
       parseSnapshot(
@@ -169,7 +175,9 @@ describe('parseSnapshot', () => {
       return slots;
     };
     expect(all(41)).toHaveLength(41);
-    expect(parseSnapshot(snapshot({ slots: all(41) }), T0).slots).toHaveLength(41);
+    expect(parseSnapshot(snapshot({ slots: all(41) }), T0).slots).toHaveLength(
+      41,
+    );
     const tooMany = [...all(41), { area: 'hotbar', slot: 0, item: item() }];
     rejects(() => parseSnapshot(snapshot({ slots: tooMany }), T0));
   });
@@ -261,8 +269,9 @@ describe('parseItem: схема и лимиты', () => {
       damage: 0,
       maxDamage: 100_000,
     });
-    expect(ok({ customModelData: 2_147_483_647, dyeColor: 16_777_215 }))
-      .toMatchObject({ customModelData: 2_147_483_647, dyeColor: 16_777_215 });
+    expect(
+      ok({ customModelData: 2_147_483_647, dyeColor: 16_777_215 }),
+    ).toMatchObject({ customModelData: 2_147_483_647, dyeColor: 16_777_215 });
     expect(ok({ containerItemCount: 64 }).containerItemCount).toBe(64);
   });
 
@@ -331,9 +340,9 @@ describe('parseItem: схема и лимиты', () => {
     expect(parsed.loreTruncated).toBe(true);
     expect(parsed.lore!.length).toBeGreaterThan(0);
     expect(parsed.lore!.length).toBeLessThan(8);
-    expect(Buffer.byteLength(JSON.stringify(parsed), 'utf8')).toBeLessThanOrEqual(
-      600,
-    );
+    expect(
+      Buffer.byteLength(JSON.stringify(parsed), 'utf8'),
+    ).toBeLessThanOrEqual(600);
     // Начало лора сохраняется.
     expect(parsed.lore![0][0].text.startsWith('Строка 0')).toBe(true);
   });
@@ -365,9 +374,7 @@ describe('parseDelta', () => {
     const parsed = parseDelta(delta(), T0);
     expect(parsed.baseRev).toBe(1);
     expect(parsed.rev).toBe(2);
-    expect(parsed.changes).toEqual([
-      { area: 'hotbar', slot: 0, item: null },
-    ]);
+    expect(parsed.changes).toEqual([{ area: 'hotbar', slot: 0, item: null }]);
   });
 
   it.each([
@@ -415,7 +422,11 @@ describe('applyChanges, хэш и канонизация', () => {
     snapshot({
       slots: [
         { area: 'hotbar', slot: 0, item: item('minecraft:diamond_sword') },
-        { area: 'hotbar', slot: 1, item: item('minecraft:bread', { count: 5 }) },
+        {
+          area: 'hotbar',
+          slot: 1,
+          item: item('minecraft:bread', { count: 5 }),
+        },
       ],
     }),
     T0,
@@ -454,7 +465,11 @@ describe('applyChanges, хэш и канонизация', () => {
     const a = parseSnapshot(
       snapshot({
         slots: [
-          { area: 'hotbar', slot: 0, item: { count: 1, id: 'minecraft:stone' } },
+          {
+            area: 'hotbar',
+            slot: 0,
+            item: { count: 1, id: 'minecraft:stone' },
+          },
           { area: 'hotbar', slot: 1, item: { id: 'minecraft:dirt', count: 2 } },
         ],
       }),
@@ -464,7 +479,11 @@ describe('applyChanges, хэш и канонизация', () => {
       snapshot({
         slots: [
           { item: { id: 'minecraft:dirt', count: 2 }, slot: 1, area: 'hotbar' },
-          { item: { id: 'minecraft:stone', count: 1 }, slot: 0, area: 'hotbar' },
+          {
+            item: { id: 'minecraft:stone', count: 1 },
+            slot: 0,
+            area: 'hotbar',
+          },
         ],
       }),
       T0,
@@ -501,7 +520,11 @@ describe('applyChanges, хэш и канонизация', () => {
     const b = parseSnapshot(
       snapshot({
         slots: [
-          { area: 'hotbar', slot: 0, item: item('minecraft:diamond_sword', { count: 2 }) },
+          {
+            area: 'hotbar',
+            slot: 0,
+            item: item('minecraft:diamond_sword', { count: 2 }),
+          },
         ],
       }),
       T0,

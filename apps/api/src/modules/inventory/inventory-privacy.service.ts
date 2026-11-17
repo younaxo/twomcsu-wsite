@@ -1,5 +1,5 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
-import type { InventoryPrivacyDto } from '@twomc/shared';
+import type { InventoryPrivacyDto } from './inventory-contract';
 import { PrismaService } from '../prisma/prisma.service';
 
 /// Настройки приватности инвентаря (ADR-0168, раздел 6.1, Q34 (а)): для всех,

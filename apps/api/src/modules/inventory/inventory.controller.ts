@@ -14,7 +14,7 @@ import { createHash } from 'crypto';
 import type {
   InventoryMeResponseDto,
   InventoryPrivacyDto,
-} from '@twomc/shared';
+} from './inventory-contract';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';

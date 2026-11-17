@@ -20,7 +20,11 @@ describe('InventoryRetentionService (очистка выключена: толь
     const apply = new InventoryApplyService(store);
     const longAgo = new Date(T0.getTime() - 100 * DAY);
     const recent = new Date(T0.getTime() - 10 * DAY);
-    await apply.applySnapshot('old', snapshot({ capturedAt: longAgo.toISOString() }), longAgo);
+    await apply.applySnapshot(
+      'old',
+      snapshot({ capturedAt: longAgo.toISOString() }),
+      longAgo,
+    );
     await apply.applySnapshot(
       'new',
       snapshot({
@@ -42,7 +46,11 @@ describe('InventoryRetentionService (очистка выключена: толь
     store.link(TEST_UUID, 'u1');
     const apply = new InventoryApplyService(store);
     const edge = new Date(T0.getTime() - 90 * DAY);
-    await apply.applySnapshot('edge', snapshot({ capturedAt: edge.toISOString() }), edge);
+    await apply.applySnapshot(
+      'edge',
+      snapshot({ capturedAt: edge.toISOString() }),
+      edge,
+    );
     expect(await new InventoryRetentionService(store).purgeStale(T0)).toBe(0);
   });
 });

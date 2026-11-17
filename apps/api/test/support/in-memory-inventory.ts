@@ -1,6 +1,6 @@
 /// Только для тестов: хранилище снимков в памяти и построители явно
 /// тестовых данных (ники `TestPlayer001`, UUID из тестового диапазона).
-import type { InventoryGroup } from '@twomc/shared';
+import type { InventoryGroup } from '../../src/modules/inventory/inventory-contract';
 import {
   type InventoryDecision,
   type InventoryKey,

@@ -10,10 +10,12 @@ function setup(initial: Row | null = null) {
     findUnique: jest.fn(() => Promise.resolve(row)),
     upsert: jest.fn(
       (args: { create: Row & { userId: string }; update: Row }) => {
-        row = row ? { ...args.update } : {
-          inventoryPublic: args.create.inventoryPublic,
-          enderPublic: args.create.enderPublic,
-        };
+        row = row
+          ? { ...args.update }
+          : {
+              inventoryPublic: args.create.inventoryPublic,
+              enderPublic: args.create.enderPublic,
+            };
         return Promise.resolve(row);
       },
     ),
