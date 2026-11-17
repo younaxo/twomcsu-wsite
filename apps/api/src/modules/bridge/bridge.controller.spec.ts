@@ -269,7 +269,10 @@ describe('BridgeController (HTTP, подпись по сырому телу)', (
       );
       expect(res.status).toBe(503);
       expect(res.body).toEqual({ error: 'unavailable' });
-      expect(h.prisma.log.size).toBe(0);
+      // Журнал хранит received: повтор той же пачки применится заново.
+      expect([...h.prisma.log.values()].map((r) => r.status)).toEqual([
+        'received',
+      ]);
     });
   });
 

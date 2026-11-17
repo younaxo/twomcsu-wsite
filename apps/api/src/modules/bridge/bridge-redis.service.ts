@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { RedisService } from '../redis/redis.service';
 import { NONCE_TTL_S } from './bridge.constants';
 
@@ -7,20 +8,54 @@ export const REQUESTS_BURST_PER_SECOND = 30;
 export const REQUESTS_PER_10S = 100;
 export const EVENTS_PER_MINUTE = 3000;
 export const CONCURRENT_REQUESTS = 2;
-/// Грубый счётчик неудачных аутентификаций по подсети (2.3, п. 9).
+/// Счётчик неудачных аутентификаций по паре (подсеть, key-id) (2.3, п. 9, M1).
 export const AUTH_FAILURES_PER_MINUTE = 30;
+const AUTH_FAILURE_WINDOW_S = 60;
 /// TTL маркера свежести записи: дольше срока хранения журнала (7 суток).
 export const STALE_MARKER_TTL_S = 8 * 24 * 60 * 60;
 const SLOT_SAFETY_TTL_S = 30;
+/// Блокировка записи на время применения: дольше таймаута транзакции зеркала.
+export const RECORD_LOCK_TTL_MS = 15_000;
+const RECORD_LOCK_WAIT_MS = 5_000;
+const RECORD_LOCK_POLL_MS = 25;
 
-const ADVANCE_SCRIPT = `
+/// INCRBY + EXPIRE одной атомарной командой (L1): при сбое между командами
+/// ключ не остаётся без TTL. ARGV: шаг, TTL (с), режим `first` (TTL только
+/// при создании ключа) или `always` (обновлять TTL каждый раз).
+export const INCR_EXPIRE_SCRIPT = `
+local n = redis.call('INCRBY', KEYS[1], ARGV[1])
+if ARGV[3] == 'always' or n == tonumber(ARGV[1]) then
+  redis.call('EXPIRE', KEYS[1], ARGV[2])
+end
+return n
+`;
+
+/// Атомарное «сравнить и установить» маркера свежести записи (M2): маркер
+/// обновляется, только если новый не меньше текущего; 0 - событие устарело.
+export const CLAIM_MARKER_SCRIPT = `
 local c = redis.call('GET', KEYS[1])
-if (not c) or (tonumber(c) <= tonumber(ARGV[1])) then
-  redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
-  return 1
+if c and tonumber(c) > tonumber(ARGV[1]) then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+return 1
+`;
+
+/// Снять блокировку, только если токен совпадает (не чужая после истечения TTL).
+export const RELEASE_LOCK_SCRIPT = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
 end
 return 0
 `;
+
+/// Не удалось получить блокировку записи вовремя: ответ 503, плагин повторит.
+export class RecordLockTimeout extends Error {
+  constructor() {
+    super('Блокировка записи Bridge занята');
+    this.name = 'RecordLockTimeout';
+  }
+}
 
 /// Все обращения приёмника к Redis. Ошибки Redis не глотаются: вызывающий
 /// отвечает 503 (fail-closed, 2.3 п. 8). В ключах нет секретов и IP игроков;
@@ -41,19 +76,45 @@ export class BridgeRedisService {
     return res === 'OK';
   }
 
-  /// Секунд до снятия блокировки по неудачным аутентификациям; 0 - не заблокирован.
-  async authFailureRetryAfter(ipKey: string): Promise<number> {
-    const key = `bridge:authfail:${ipKey}`;
+  private authFailKey(ipKey: string, keyId: string): string {
+    return `bridge:authfail:${ipKey}:${keyId}`;
+  }
+
+  /// Секунд до снятия блокировки по неудачным аутентификациям пары
+  /// (подсеть, key-id); 0 - не заблокирован. Блокировка не отменяет верно
+  /// подписанный запрос: её применяет только guard после неверной подписи.
+  async authFailureRetryAfter(ipKey: string, keyId: string): Promise<number> {
+    const key = this.authFailKey(ipKey, keyId);
     const raw = await this.redis.client.get(key);
     if (raw === null || Number(raw) < AUTH_FAILURES_PER_MINUTE) return 0;
     const ttl = await this.redis.client.ttl(key);
     return ttl > 0 ? ttl : 1;
   }
 
-  async recordAuthFailure(ipKey: string): Promise<void> {
-    const key = `bridge:authfail:${ipKey}`;
-    const n = await this.redis.client.incr(key);
-    if (n === 1) await this.redis.client.expire(key, 60);
+  async recordAuthFailure(ipKey: string, keyId: string): Promise<void> {
+    await this.incrExpire(
+      this.authFailKey(ipKey, keyId),
+      1,
+      AUTH_FAILURE_WINDOW_S,
+      'first',
+    );
+  }
+
+  private async incrExpire(
+    key: string,
+    amount: number,
+    ttlS: number,
+    mode: 'first' | 'always',
+  ): Promise<number> {
+    const n = await this.redis.client.eval(
+      INCR_EXPIRE_SCRIPT,
+      1,
+      key,
+      String(amount),
+      String(ttlS),
+      mode,
+    );
+    return Number(n);
   }
 
   private async bucket(
@@ -66,8 +127,7 @@ export class BridgeRedisService {
     const nowS = Math.floor(Date.now() / 1000);
     const bucket = Math.floor(nowS / windowS);
     const key = `bridge:rl:${scope}:${keyId}:${bucket}`;
-    const n = await this.redis.client.incrby(key, amount);
-    if (n === amount) await this.redis.client.expire(key, windowS + 1);
+    const n = await this.incrExpire(key, amount, windowS + 1, 'first');
     if (n <= limit) return 0;
     return Math.max(1, (bucket + 1) * windowS - nowS);
   }
@@ -93,8 +153,7 @@ export class BridgeRedisService {
 
   async acquireSlot(keyId: string): Promise<boolean> {
     const key = `bridge:conc:${keyId}`;
-    const n = await this.redis.client.incr(key);
-    await this.redis.client.expire(key, SLOT_SAFETY_TTL_S);
+    const n = await this.incrExpire(key, 1, SLOT_SAFETY_TTL_S, 'always');
     if (n > CONCURRENT_REQUESTS) {
       await this.redis.client.decr(key);
       return false;
@@ -121,33 +180,59 @@ export class BridgeRedisService {
     return `bridge:ps:${slug}:${kind}:${sourceId}`;
   }
 
-  /// `occurredAt` (мс) последнего применённого состояния записи или null.
-  async getMarker(
-    slug: string,
-    kind: string,
-    sourceId: string,
-  ): Promise<number | null> {
-    const raw = await this.redis.client.get(
-      this.staleKey(slug, kind, sourceId),
-    );
-    if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  /// Продвинуть маркер до `max(текущий, occurredMs)`.
-  async advanceMarker(
+  /// Атомарно (Lua): маркер записи становится `occurredMs`, если текущий не
+  /// больше; `false` - в Redis уже есть более новое состояние (событие stale).
+  /// Равное значение проходит: при равенстве побеждает принятое позже, а
+  /// повтор события после сбоя применения не считается устаревшим.
+  async claimMarker(
     slug: string,
     kind: string,
     sourceId: string,
     occurredMs: number,
-  ): Promise<void> {
-    await this.redis.client.eval(
-      ADVANCE_SCRIPT,
+  ): Promise<boolean> {
+    const res = await this.redis.client.eval(
+      CLAIM_MARKER_SCRIPT,
       1,
       this.staleKey(slug, kind, sourceId),
       String(occurredMs),
       String(STALE_MARKER_TTL_S),
     );
+    return Number(res) === 1;
+  }
+
+  /// Выполнить `fn` под блокировкой записи `(slug, kind, sourceId)`: события
+  /// одной записи применяются по одному (порядок публикации = порядок
+  /// захвата маркера), а повтор события ждёт завершения первого применения.
+  /// Не получили блокировку за ~5 с - `RecordLockTimeout` (503).
+  async withRecordLock<T>(
+    slug: string,
+    kind: string,
+    sourceId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const key = `bridge:pl:${slug}:${kind}:${sourceId}`;
+    const token = randomBytes(12).toString('hex');
+    const deadline = Date.now() + RECORD_LOCK_WAIT_MS;
+    for (;;) {
+      const res = await this.redis.client.set(
+        key,
+        token,
+        'PX',
+        RECORD_LOCK_TTL_MS,
+        'NX',
+      );
+      if (res === 'OK') break;
+      if (Date.now() >= deadline) throw new RecordLockTimeout();
+      await new Promise((r) => setTimeout(r, RECORD_LOCK_POLL_MS));
+    }
+    try {
+      return await fn();
+    } finally {
+      try {
+        await this.redis.client.eval(RELEASE_LOCK_SCRIPT, 1, key, token);
+      } catch {
+        // Блокировка сама истечёт по TTL.
+      }
+    }
   }
 }

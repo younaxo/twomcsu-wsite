@@ -4,6 +4,11 @@ import {
   formatKeyId,
   signRequest,
 } from '../../src/modules/bridge/bridge-crypto';
+import {
+  CLAIM_MARKER_SCRIPT,
+  INCR_EXPIRE_SCRIPT,
+  RELEASE_LOCK_SCRIPT,
+} from '../../src/modules/bridge/bridge-redis.service';
 
 /// Синтетические значения для тестов Bridge. Это НЕ боевой секрет: он нигде не
 /// используется, кроме автотестов; значения из `.env*` и хранилища секретов не
@@ -49,7 +54,7 @@ export class FakeRedisClient {
   set(
     key: string,
     value: string,
-    _ex: 'EX',
+    _ex: 'EX' | 'PX',
     ttl: number,
     nx?: 'NX',
   ): Promise<'OK' | null> {
@@ -100,22 +105,42 @@ export class FakeRedisClient {
     return Promise.resolve(this.store.delete(key) ? 1 : 0);
   }
 
-  /// Единственный Lua-скрипт приёмника: продвижение маркера до максимума.
+  /// Lua-скрипты приёмника (по тексту скрипта): INCRBY+EXPIRE, сравнение и
+  /// установка маркера, снятие блокировки по токену.
   eval(
-    _script: string,
+    script: string,
     _n: number,
     key: string,
-    value: string,
-    ttl: string,
+    ...args: string[]
   ): Promise<number> {
     this.guard('eval');
-    const cur = this.store.get(key);
-    if (cur === undefined || Number(cur) <= Number(value)) {
+    if (script === INCR_EXPIRE_SCRIPT) {
+      const [amount, ttl, mode] = args;
+      const next = Number(this.store.get(key) ?? '0') + Number(amount);
+      this.store.set(key, String(next));
+      if (mode === 'always' || next === Number(amount)) {
+        this.ttls.set(key, Number(ttl));
+      }
+      return Promise.resolve(next);
+    }
+    if (script === CLAIM_MARKER_SCRIPT) {
+      const [value, ttl] = args;
+      const cur = this.store.get(key);
+      if (cur !== undefined && Number(cur) > Number(value)) {
+        return Promise.resolve(0);
+      }
       this.store.set(key, value);
       this.ttls.set(key, Number(ttl));
       return Promise.resolve(1);
     }
-    return Promise.resolve(0);
+    if (script === RELEASE_LOCK_SCRIPT) {
+      if (this.store.get(key) === args[0]) {
+        this.store.delete(key);
+        return Promise.resolve(1);
+      }
+      return Promise.resolve(0);
+    }
+    return Promise.reject(new Error('unknown script'));
   }
 
   keysWithPrefix(prefix: string): string[] {
@@ -138,7 +163,9 @@ export interface LogRow {
 }
 
 /// Prisma в памяти: журнал с уникальностью `(serverSlug, eventId)` и
-/// транзакция с откатом при исключении.
+/// транзакция с откатом при исключении. Операции журнала доступны и внутри
+/// транзакции, и вне её (приёмник пишет `received` в короткой транзакции, а
+/// `applied` - отдельной записью после публикации).
 export class FakePrisma {
   log = new Map<string, LogRow>();
   txCount = 0;
@@ -148,38 +175,63 @@ export class FakePrisma {
     return `${slug}\u0000${id}`;
   }
 
+  bridgeEventLog = {
+    createMany: ({ data }: { data: LogRow[]; skipDuplicates: boolean }) => {
+      let count = 0;
+      for (const row of data) {
+        const k = this.key(row.serverSlug, row.eventId);
+        if (!this.log.has(k)) {
+          this.log.set(k, { ...row });
+          count += 1;
+        }
+      }
+      return Promise.resolve({ count });
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { serverSlug_eventId: { serverSlug: string; eventId: string } };
+    }) => {
+      const w = where.serverSlug_eventId;
+      const row = this.log.get(this.key(w.serverSlug, w.eventId));
+      return Promise.resolve(row === undefined ? null : { ...row });
+    },
+    updateMany: ({
+      where,
+      data,
+    }: {
+      where: { serverSlug: string; eventId: string };
+      data: Partial<LogRow>;
+    }) => {
+      const k = this.key(where.serverSlug, where.eventId);
+      const row = this.log.get(k);
+      if (row === undefined) return Promise.resolve({ count: 0 });
+      this.log.set(k, { ...row, ...data });
+      return Promise.resolve({ count: 1 });
+    },
+    deleteMany: ({
+      where,
+    }: {
+      where: { serverSlug: string; eventId: string; status?: string };
+    }) => {
+      const k = this.key(where.serverSlug, where.eventId);
+      const row = this.log.get(k);
+      if (
+        row === undefined ||
+        (where.status !== undefined && row.status !== where.status)
+      ) {
+        return Promise.resolve({ count: 0 });
+      }
+      this.log.delete(k);
+      return Promise.resolve({ count: 1 });
+    },
+  };
+
   async $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
     this.txCount += 1;
     const snapshot = new Map(this.log);
-    const tx = {
-      bridgeEventLog: {
-        createMany: ({ data }: { data: LogRow[]; skipDuplicates: boolean }) => {
-          let count = 0;
-          for (const row of data) {
-            const k = this.key(row.serverSlug, row.eventId);
-            if (!this.log.has(k)) {
-              this.log.set(k, row);
-              count += 1;
-            }
-          }
-          return Promise.resolve({ count });
-        },
-        findUnique: ({
-          where,
-        }: {
-          where: {
-            serverSlug_eventId: { serverSlug: string; eventId: string };
-          };
-        }) => {
-          const w = where.serverSlug_eventId;
-          return Promise.resolve(
-            this.log.get(this.key(w.serverSlug, w.eventId)) ?? null,
-          );
-        },
-      },
-    };
     try {
-      return await fn(tx);
+      return await fn({ bridgeEventLog: this.bridgeEventLog });
     } catch (err) {
       this.log = snapshot;
       throw err;

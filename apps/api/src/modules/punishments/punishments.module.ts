@@ -47,6 +47,10 @@ import {
     PunishmentsIssuerHideService,
     PunishmentsPublicEnabledGuard,
   ],
-  exports: [PunishmentsSyncService, PunishmentsReadService],
+  exports: [
+    PunishmentsSyncService,
+    PunishmentsReadService,
+    PUNISHMENT_MIRROR_STORE,
+  ],
 })
 export class PunishmentsModule {}

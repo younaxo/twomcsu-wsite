@@ -77,6 +77,9 @@ export interface PunishmentMirrorStore {
     rows: NormalizedPunishment[],
     cursorId: bigint | null,
     now: Date,
+    /// Область идентификаторов (ключ зеркала); по умолчанию SOURCE_SCOPE
+    /// (LiteBans). Bridge передаёт BridgeServer.sourceScope.
+    sourceScope?: string,
   ): Promise<MirrorChange[]>;
   /// id строк со статусом ACTIVE по возрастанию, строго после `afterId`.
   listActiveIds(
@@ -127,6 +130,8 @@ export interface PunishmentMirrorStore {
     ids: bigint[],
     now: Date,
     beforeGroup?: () => Promise<void>,
+    /// Область идентификаторов; по умолчанию SOURCE_SCOPE.
+    sourceScope?: string,
   ): Promise<MirrorChange[]>;
   /// ACTIVE -> EXPIRED для строк с `until <= now` (слой T).
   expireDue(source: string, now: Date): Promise<MirrorChange[]>;

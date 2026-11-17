@@ -32,7 +32,7 @@ export interface EventResult {
   code?: EventCode;
 }
 
-/// Запись журнала дедупликации и применение в ОДНОЙ транзакции БД (5.2).
+/// Короткая транзакция журнала (статус received); применение - вне неё (5.2, R121).
 const TX_OPTIONS = { maxWait: 2000, timeout: 6000 } as const;
 /// Не обновлять `lastSeenAt` чаще раза в 30 с (нагрузка на БД).
 const LAST_SEEN_STEP_MS = 30_000;
@@ -44,9 +44,6 @@ const PUNISHMENT_TYPES: ReadonlySet<string> = new Set([
   'punishment.removed',
   'punishment.deleted',
 ]);
-
-/// Событие старше уже применённого состояния записи: откат транзакции.
-class StaleSignal extends Error {}
 
 /// Приём пачки (раздел 7 контракта): сервер из ключа, capabilities до
 /// применения, диспетчер по типу. Исключения применения (Redis, БД, нет
@@ -186,45 +183,74 @@ export class BridgeIngestService {
             sourceScope: ctx.server.sourceScope,
           };
 
+    const logKey = { serverSlug: ctx.slug, eventId: ev.eventId };
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        // ON CONFLICT DO NOTHING: конфликт не обрывает транзакцию.
+      // Шаг 1 (короткая транзакция, без обращений к Redis и источнику):
+      // запись `received`. ON CONFLICT DO NOTHING: конфликт не обрывает
+      // транзакцию.
+      const step1 = await this.prisma.$transaction(async (tx) => {
         const inserted = await tx.bridgeEventLog.createMany({
-          data: [
-            {
-              serverSlug: ctx.slug,
-              eventId: ev.eventId,
-              type: ev.type,
-              status: 'applied',
-              payloadHash: hash,
-            },
-          ],
+          data: [{ ...logKey, type: ev.type, status: 'received', payloadHash: hash }],
           skipDuplicates: true,
         });
-        if (inserted.count === 0) {
-          const existing = await tx.bridgeEventLog.findUnique({
-            where: {
-              serverSlug_eventId: { serverSlug: ctx.slug, eventId: ev.eventId },
-            },
-            select: { payloadHash: true },
-          });
-          if (existing !== null && existing.payloadHash !== hash) {
-            return reject('conflict');
-          }
-          return { eventId: ev.eventId, status: 'duplicate' as const };
-        }
-        // Порядок определяет приёмник: событие старше применённого состояния
-        // записи по `occurredAt` - stale; при равенстве побеждает принятое позже.
-        const marker = await this.redis.getMarker(ctx.slug, kind, sourceId);
-        if (marker !== null && occurredMs < marker) throw new StaleSignal();
-        await this.source.publish(sourceEvent);
-        await this.redis.advanceMarker(ctx.slug, kind, sourceId, occurredMs);
-        return { eventId: ev.eventId, status: 'accepted' as const };
+        if (inserted.count === 1) return 'new' as const;
+        const existing = await tx.bridgeEventLog.findUnique({
+          where: { serverSlug_eventId: logKey },
+          select: { payloadHash: true, status: true },
+        });
+        if (existing === null) return 'new' as const;
+        if (existing.payloadHash !== hash) return 'conflict' as const;
+        // `received` - применение не завершено (сбой между шагами): повтор
+        // применяется заново; применение идемпотентно (upsert по ключу).
+        return existing.status === 'received'
+          ? ('retry' as const)
+          : ('duplicate' as const);
       }, TX_OPTIONS);
-    } catch (err) {
-      if (err instanceof StaleSignal) {
-        return { eventId: ev.eventId, status: 'stale' };
+      if (step1 === 'conflict') return reject('conflict');
+      if (step1 === 'duplicate') {
+        return { eventId: ev.eventId, status: 'duplicate' };
       }
+
+      // Шаг 2 (вне транзакции): применение под блокировкой записи. Событие,
+      // которое прямо сейчас применяет другой запрос, ждёт его завершения и
+      // получает `duplicate`; применение, упавшее на полпути, повторяется.
+      return await this.redis.withRecordLock(
+        ctx.slug,
+        kind,
+        sourceId,
+        async (): Promise<EventResult> => {
+          const current = await this.prisma.bridgeEventLog.findUnique({
+            where: { serverSlug_eventId: logKey },
+            select: { payloadHash: true, status: true },
+          });
+          if (current !== null && current.status === 'applied') {
+            return { eventId: ev.eventId, status: 'duplicate' };
+          }
+          // Порядок определяет приёмник: событие старше применённого
+          // состояния записи по `occurredAt` - stale; при равенстве побеждает
+          // принятое позже. Захват маркера - атомарный Lua (M2).
+          if (!(await this.redis.claimMarker(ctx.slug, kind, sourceId, occurredMs))) {
+            await this.prisma.bridgeEventLog.deleteMany({
+              where: { ...logKey, status: 'received' },
+            });
+            return { eventId: ev.eventId, status: 'stale' };
+          }
+          await this.source.publish(sourceEvent);
+          // Шаг 3: `applied`; строка могла быть удалена очисткой журнала.
+          const updated = await this.prisma.bridgeEventLog.updateMany({
+            where: logKey,
+            data: { status: 'applied' },
+          });
+          if (updated.count === 0) {
+            await this.prisma.bridgeEventLog.createMany({
+              data: [{ ...logKey, type: ev.type, status: 'applied', payloadHash: hash }],
+              skipDuplicates: true,
+            });
+          }
+          return { eventId: ev.eventId, status: 'accepted' };
+        },
+      );
+    } catch (err) {
       this.logger.error(
         `bridge apply failed key=${ctx.keyId} id=${ev.eventId} type=${ev.type} error=${err instanceof Error ? err.name : 'unknown'}`,
       );

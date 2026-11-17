@@ -97,10 +97,6 @@ export class BridgeSignatureGuard implements CanActivate {
     );
 
     try {
-      // Грубый счётчик неудачных аутентификаций (после формата, до БД).
-      const blockedFor = await this.redis.authFailureRetryAfter(ipKey);
-      if (blockedFor > 0) throw tooManyRequests(res, blockedFor);
-
       // Шаг 1: протокол.
       if (Number(protocol) !== BRIDGE_PROTOCOL) throw unsupportedProtocol();
 
@@ -169,7 +165,14 @@ export class BridgeSignatureGuard implements CanActivate {
       return true;
     } catch (err) {
       if (err instanceof HttpException) {
-        if (err.getStatus() === 401) await this.noteFailure(ipKey);
+        if (err.getStatus() === 401) {
+          // M1: счётчик по паре (подсеть, key-id). Блокировка применяется
+          // только к неудачным попыткам: верно подписанный запрос проходит
+          // даже при исчерпанном счётчике (его нельзя «выбить» чужим перебором).
+          const blockedFor = await this.blockedFor(ipKey, keyId);
+          await this.noteFailure(ipKey, keyId);
+          if (blockedFor > 0) throw tooManyRequests(res, blockedFor);
+        }
         throw err;
       }
       // Redis или БД недоступны: fail-closed, без деталей.
@@ -223,9 +226,17 @@ export class BridgeSignatureGuard implements CanActivate {
     );
   }
 
-  private async noteFailure(ipKey: string): Promise<void> {
+  private async blockedFor(ipKey: string, keyId: string): Promise<number> {
     try {
-      await this.redis.recordAuthFailure(ipKey);
+      return await this.redis.authFailureRetryAfter(ipKey, keyId);
+    } catch {
+      return 0;
+    }
+  }
+
+  private async noteFailure(ipKey: string, keyId: string): Promise<void> {
+    try {
+      await this.redis.recordAuthFailure(ipKey, keyId);
     } catch {
       // Счётчик вспомогательный; основной отказ уже определён.
     }

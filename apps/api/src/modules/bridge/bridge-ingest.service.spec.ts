@@ -435,7 +435,7 @@ describe('BridgeIngestService: отказы по событию', () => {
 });
 
 describe('BridgeIngestService: сбои применения (503 для вызывающего)', () => {
-  it('нет подписчика - исключение, журнал откатывается (повтор возможен)', async () => {
+  it('нет подписчика - исключение, в журнале остаётся received (повтор возможен)', async () => {
     const prisma = new FakePrisma();
     const redisClient = new FakeRedisClient();
     const service = new BridgeIngestService(
@@ -448,11 +448,10 @@ describe('BridgeIngestService: сбои применения (503 для выз�
     await expect(service.ingest(ctx(), batch([ev]))).rejects.toBeInstanceOf(
       NoPunishmentSubscriber,
     );
-    expect(prisma.log.size).toBe(0);
-    expect(redisClient.keysWithPrefix('bridge:ps:')).toEqual([]);
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['received']);
   });
 
-  it('исключение подписчика откатывает журнал, повтор применяется', async () => {
+  it('исключение подписчика оставляет received, повтор применяется заново', async () => {
     const { service, source, prisma, received } = setup();
     let fail = true;
     source.subscribe(() => {
@@ -462,19 +461,19 @@ describe('BridgeIngestService: сбои применения (503 для выз�
     await expect(service.ingest(ctx(), batch([ev]))).rejects.toThrow(
       'mirror down',
     );
-    expect(prisma.log.size).toBe(0);
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['received']);
     fail = false;
     const [res] = await service.ingest(ctx(), batch([ev]));
     expect(res.status).toBe('accepted');
-    expect(prisma.log.size).toBe(1);
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['applied']);
     expect(received.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('Redis недоступен при проверке порядка - исключение и откат', async () => {
+  it('Redis недоступен при проверке порядка - исключение, зеркало не тронуто', async () => {
     const { service, redisClient, prisma, received } = setup();
     redisClient.failAll = true;
     await expect(service.ingest(ctx(), batch([created()]))).rejects.toThrow();
-    expect(prisma.log.size).toBe(0);
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['received']);
     expect(received).toHaveLength(0);
   });
 });
@@ -586,5 +585,69 @@ describe('BridgeIngestService: логи', () => {
     } finally {
       spies.forEach((s) => s.mockRestore());
     }
+  });
+});
+
+describe('BridgeIngestService: сбой между шагами (R121, M2)', () => {
+  it('публикация прошла, applied не записан: повтор применяется заново и даёт accepted', async () => {
+    const { service, prisma, received } = setup();
+    const ev = created();
+    const original = prisma.bridgeEventLog.updateMany;
+    prisma.bridgeEventLog.updateMany = () => Promise.reject(new Error('db down'));
+    await expect(service.ingest(ctx(), batch([ev]))).rejects.toThrow('db down');
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['received']);
+    prisma.bridgeEventLog.updateMany = original;
+    const [res] = await service.ingest(ctx(), batch([ev]));
+    expect(res.status).toBe('accepted');
+    expect(received).toHaveLength(2);
+    expect([...prisma.log.values()].map((r) => r.status)).toEqual(['applied']);
+    const [again] = await service.ingest(ctx(), batch([ev]));
+    expect(again.status).toBe('duplicate');
+    expect(received).toHaveLength(2);
+  });
+
+  it('received с другим payloadHash - conflict, не повторное применение', async () => {
+    const { service, prisma, received } = setup();
+    const ev = created();
+    prisma.log.set(`${ev.serverId}\u0000${ev.eventId}`, {
+      serverSlug: ev.serverId as string,
+      eventId: ev.eventId as string,
+      type: 'punishment.created',
+      status: 'received',
+      payloadHash: 'x',
+    } as never);
+    const [res] = await service.ingest(ctx(), batch([ev]));
+    expect(res).toMatchObject({ status: 'rejected', code: 'conflict' });
+    expect(received).toHaveLength(0);
+  });
+
+  it('старое событие после нового - stale, зеркало не перезаписывается', async () => {
+    const { service, received } = setup();
+    const t = Date.now();
+    const at = (ms: number) => new Date(t - ms).toISOString();
+    const newer = created({}, { occurredAt: at(1000) });
+    const older = created({}, { occurredAt: at(5000) });
+    const [a] = await service.ingest(ctx(), batch([newer]));
+    const [b] = await service.ingest(ctx(), batch([older]));
+    expect(a.status).toBe('accepted');
+    expect(b.status).toBe('stale');
+    expect(received).toHaveLength(1);
+  });
+
+  it('конкурентные пачки одной записи: без исключений, статусы accepted/stale/duplicate', async () => {
+    const { service, received } = setup();
+    const t = Date.now();
+    const evs = [1, 2, 3, 4, 5, 6].map((i) =>
+      created({}, { occurredAt: new Date(t - 10_000 + i * 1000).toISOString() }),
+    );
+    const results = await Promise.all(
+      [...evs].reverse().map((e) => service.ingest(ctx(), batch([e]))),
+    );
+    const statuses = results.map((r) => r[0].status);
+    expect(statuses).toContain('accepted');
+    for (const s of statuses) {
+      expect(['accepted', 'stale']).toContain(s);
+    }
+    expect(received.length).toBe(statuses.filter((s) => s === 'accepted').length);
   });
 });

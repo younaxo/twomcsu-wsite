@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BridgeController } from './bridge.controller';
 import { BRIDGE_CONFIG, readBridgeConfig } from './bridge.config';
+import { PunishmentsModule } from '../punishments/punishments.module';
+import { BridgeMirrorSubscriber } from './bridge-mirror.subscriber';
 import { BridgeLogRetentionScheduler } from './bridge-log-retention.scheduler';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgePunishmentSource } from './bridge-punishment.source';
@@ -14,6 +16,7 @@ import { BridgeSignatureGuard } from './bridge-signature.guard';
 /// `punishment.*` уходят в `BridgePunishmentSource`; зеркало пишет только
 /// подписчик этого источника (синхронизатор этапа 02).
 @Module({
+  imports: [PunishmentsModule],
   controllers: [BridgeController],
   providers: [
     {
@@ -23,6 +26,7 @@ import { BridgeSignatureGuard } from './bridge-signature.guard';
     },
     BridgeRedisService,
     BridgePunishmentSource,
+    BridgeMirrorSubscriber,
     BridgeIngestService,
     BridgeSignatureGuard,
     BridgeRateLimitGuard,
