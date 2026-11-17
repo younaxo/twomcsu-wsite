@@ -236,6 +236,55 @@ describe('ReportsModerationService: уведомления автору', () => 
   });
 });
 
+describe('ReportsModerationService: приватность уведомлений автору (Q51)', () => {
+  /// Ни одного поля сотрудника: ни fromUserId, ни имя/аватар/роль.
+  function expectNoStaffData(call: Record<string, unknown>) {
+    expect(call).not.toHaveProperty('fromUserId');
+    expect(call).not.toHaveProperty('fromUser');
+    expect(call).not.toHaveProperty('imageUrl');
+    const serialized = JSON.stringify(call);
+    expect(serialized).not.toContain('m1');
+    expect(serialized).not.toContain('moder-name');
+    expect(Object.keys(call).sort()).toEqual(
+      ['link', 'metadata', 'title', 'type', 'userId']
+        .concat('message' in call ? ['message'] : [])
+        .sort(),
+    );
+  }
+
+  it('смена статуса, вердикт и ответ: payload без данных модератора', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    await service.changeStatus('R-1', { status: 'IN_REVIEW' }, 'm1');
+    await service.setVerdict(
+      'R-1',
+      { verdict: 'Ок', status: 'RESOLVED' },
+      'm1',
+    );
+    await service.addMessage('R-1', 'm1', { content: 'ответ' });
+    expect(notifications.create).toHaveBeenCalledTimes(3);
+    for (const [input] of notifications.create.mock.calls) {
+      expect(input.userId).toBe('author');
+      expectNoStaffData(input);
+    }
+  });
+
+  it('уведомление персоналу (назначение) не изменилось: fromUserId сохраняется', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.user.findUnique.mockResolvedValue({ id: 'm2', isBanned: false });
+    await service.assign('R-1', { assignedToId: 'm2' }, 'm1');
+    expect(notifications.create).toHaveBeenCalledWith({
+      userId: 'm2',
+      type: 'REPORT_ASSIGNED',
+      title: expect.any(String),
+      link: '/admin/reports/R-1',
+      fromUserId: 'm1',
+      metadata: { reportNumber: 'R-1' },
+    });
+  });
+});
+
 describe('ReportsModerationService.history', () => {
   it('читает AuditLog по id обращения, без IP/User-Agent, актор — публичные поля', async () => {
     const { prisma, service } = setup();

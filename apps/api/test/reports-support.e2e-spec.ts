@@ -974,6 +974,9 @@ describe('Reports support (e2e)', () => {
     expect(notification.metadata).toMatchObject({
       reportNumber: report.reportNumber,
     });
+    // Q51: отправитель — система, модератор автору не раскрывается.
+    expect(notification.fromUserId).toBeNull();
+    expect(JSON.stringify(notification)).not.toContain(moderator.id);
   });
 
   it('история для игрока: санитизированная лента автора; чужой игрок — 403', async () => {
