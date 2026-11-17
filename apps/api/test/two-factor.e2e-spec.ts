@@ -420,7 +420,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       data: { twoFactorEnabled: false },
     });
     await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
-    resetAdmin2faCache();
 
     const body = {
       name: 'E2E 2FA',
@@ -467,7 +466,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .set('Authorization', auth)
       .expect(200);
     await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
-    resetAdmin2faCache();
   });
 
   it('админка заказов, промокодов и скидок: без 2FA — 403 admin_2fa_required, с 2FA — доступ', async () => {
