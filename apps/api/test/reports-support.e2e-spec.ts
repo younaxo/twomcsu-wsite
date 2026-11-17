@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
+import { AuthService } from '../src/modules/auth/auth.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { REPORT_MESSAGE_LIMIT } from '../src/modules/reports/report-constants';
 
@@ -35,6 +36,8 @@ describe('Reports support (e2e)', () => {
   const unique = randomUUID().slice(0, 8);
   const cleanupRoleSlugs: string[] = [];
   const createdReportNumbers: string[] = [];
+  const createdEmails: string[] = [];
+  let authService: AuthService;
 
   interface TestUser {
     id: string;
@@ -53,14 +56,18 @@ describe('Reports support (e2e)', () => {
       .post('/auth/register')
       .send({ email, username, password })
       .expect(201);
-    const loginRes = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ emailOrUsername: email, password })
-      .expect(200);
+    createdEmails.push(email);
     const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    // Токен выдаёт тот же AuthService.issueSessionForUser, что и вход через
+    // внешний аккаунт: та же пара access/refresh, но без HTTP-лимита
+    // POST /auth/login (10/мин с IP) — 12 входов подряд упирались в 429.
+    const session = await authService.issueSessionForUser(user.id, {
+      ip: '127.0.0.1',
+      userAgent: 'reports-support-e2e',
+    });
     return {
       id: user.id,
-      accessToken: loginRes.body.accessToken,
+      accessToken: session.accessToken,
       username,
       email,
     };
@@ -136,6 +143,7 @@ describe('Reports support (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     permissions = app.get(PermissionService);
+    authService = app.get(AuthService);
 
     moderator = await createUser('mod');
     otherModerator = await createUser('mod2');
@@ -192,41 +200,39 @@ describe('Reports support (e2e)', () => {
   }, 30_000);
 
   afterAll(async () => {
-    await prisma.report.deleteMany({
-      where: { reportNumber: { in: createdReportNumbers } },
-    });
-    await prisma.userPunishment.deleteMany({
-      where: { userId: { in: [alice.id, bob.id] } },
-    });
-    await prisma.userRole.deleteMany({
-      where: { role: { slug: { in: cleanupRoleSlugs } } },
-    });
-    await prisma.rolePermission.deleteMany({
-      where: { role: { slug: { in: cleanupRoleSlugs } } },
-    });
-    await prisma.role.deleteMany({ where: { slug: { in: cleanupRoleSlugs } } });
-    const emails = [
-      moderator.email,
-      otherModerator.email,
-      alice.email,
-      bob.email,
-      outsider.email,
-      senior.email,
-      viewerOnly.email,
-      pinOnly.email,
-      unpinOnly.email,
-      msgSpammer.email,
-      filterUser.email,
-      typeFilterUser.email,
-    ];
-    await prisma.auditLog.deleteMany({
-      where: { actor: { email: { in: emails } } },
-    });
-    await prisma.notification.deleteMany({
-      where: { user: { email: { in: emails } } },
-    });
-    await prisma.user.deleteMany({ where: { email: { in: emails } } });
-    await app.close();
+    // app/prisma могут быть не созданы, если beforeAll упал раньше; приложение
+    // закрываем всегда, иначе jest не завершится (висят соединения).
+    try {
+      if (prisma) {
+        const emails = createdEmails;
+        await prisma.report.deleteMany({
+          where: { reportNumber: { in: createdReportNumbers } },
+        });
+        await prisma.userPunishment.deleteMany({
+          where: { user: { email: { in: emails } } },
+        });
+        await prisma.userRole.deleteMany({
+          where: { role: { slug: { in: cleanupRoleSlugs } } },
+        });
+        await prisma.rolePermission.deleteMany({
+          where: { role: { slug: { in: cleanupRoleSlugs } } },
+        });
+        await prisma.role.deleteMany({
+          where: { slug: { in: cleanupRoleSlugs } },
+        });
+        await prisma.auditLog.deleteMany({
+          where: { actor: { email: { in: emails } } },
+        });
+        await prisma.notification.deleteMany({
+          where: { user: { email: { in: emails } } },
+        });
+        await prisma.user.deleteMany({ where: { email: { in: emails } } });
+      }
+    } finally {
+      if (app) {
+        await app.close();
+      }
+    }
   }, 20_000);
 
   async function createPunishment(userId: string, isAppealable = true) {
