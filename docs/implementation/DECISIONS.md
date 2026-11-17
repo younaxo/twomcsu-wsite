@@ -4007,10 +4007,12 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 **Decision.**
 
 1. `notifyAuthor` (единственная точка уведомлений автору по действиям персонала: `REPORT_STATUS_CHANGED`, `REPORT_VERDICT`, ответ модерации `SYSTEM`) больше не передаёт `fromUserId` и иных данных сотрудника. Payload: `userId`, `type`, `title`, `message` (только метка статуса), `link`, `metadata.reportNumber`. Образец системного уведомления — вызовы `notifications.create` без `fromUserId` (объявления, `announcements.service.ts`).
-2. Без `fromUserId` в общем сервисе уведомлений `fromUser` = null, push-превью не подставляет имя, WS и email несут только текст выше. Изменений в `NotificationsService` нет.
+2. Без `fromUserId` в общем сервисе уведомлений `fromUser` = null, push-превью не подставляет имя, WS и email несут только текст выше. Для новых записей этого достаточно.
 3. Уведомление исполнителю при назначении (`REPORT_ASSIGNED`, адресат — персонал) не менялось: `fromUserId` сохраняется.
 4. Проверка «себе не шлём» (автор == исполнитель) сохранена.
-5. Web не менялся: компонент уведомления при пустом `fromUser` не рисует отправителя; блок «twomc.su · Системное» уже показывается для типа `SYSTEM` (ответ модерации).
+5. Старые записи (R44) скрываются при чтении, на уровне API, без миграции и UPDATE данных. Правило `isReportAuthorNotification` (`apps/api/src/modules/notifications/report-author-privacy.ts`): `type` ∈ {`REPORT_STATUS_CHANGED`, `REPORT_VERDICT`, `SYSTEM`} И `link` начинается с `/support/` (карточка обращения автора). Для таких уведомлений `maskReportAuthorSender` отдаёт `fromUserId: null` и `fromUser: null`. Применяется в `NotificationsService.list`, `markRead`, `markUnread` (ответы с одним уведомлением) и в `create` перед WS-доставкой и push-превью (страховка, если вызывающий передал `fromUserId`). `REPORT_ASSIGNED` и ссылки `/admin/reports/…` (персонал) не затрагиваются. Данные в БД не меняются, поэтому `fromUserId` остаётся доступным для расследования на стороне сервера.
+6. Тесты: `report-author-privacy.spec.ts` (правило, граничные случаи: чужой тип, `/admin/reports/`, `null`-ссылка), `notifications.service.spec.ts` (list, markRead/markUnread, WS), `reports-moderation.service.spec.ts` (в том числе «автору, совершившему действие, себе не шлём»).
+7. Web: компонент уведомления при пустом `fromUser` не рисует отправителя; блок «twomc.su · Системное» уже показывается для типа `SYSTEM`. Подпись «Система» для `REPORT_STATUS_CHANGED` и `REPORT_VERDICT` без отправителя реализуется в web-коммите той же ветки.
 
 **Вне решения.** Уже созданные уведомления хранят `fromUserId` (см. R44); внутри самого обращения сообщения персонала уже отдаются автору с `authorId: null` (`reports.service.ts:304-306`), отдельных правок не потребовалось.
 

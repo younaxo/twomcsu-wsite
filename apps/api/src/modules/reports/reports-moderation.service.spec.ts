@@ -224,6 +224,18 @@ describe('ReportsModerationService: уведомления автору', () => 
     ).resolves.toMatchObject({ verdict: 'Ок' });
   });
 
+  it('автор = актор: смена статуса и вердикт не шлют уведомление себе', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    await service.changeStatus('R-1', { status: 'IN_REVIEW' }, 'author');
+    await service.setVerdict(
+      'R-1',
+      { verdict: 'Ок', status: 'RESOLVED' },
+      'author',
+    );
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
   it('ответ персонала уведомляет автора; собственное обращение — нет', async () => {
     const { prisma, notifications, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
