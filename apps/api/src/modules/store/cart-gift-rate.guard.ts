@@ -82,7 +82,12 @@ export class CartGiftRateGuard implements CanActivate {
         // SET NX EX + INCR + TTL атомарно: ключ без TTL не остаётся.
         multi.set(c.key, '0', 'EX', c.windowSec, 'NX').incr(c.key).ttl(c.key);
       }
-      const results = (await multi.exec()) ?? [];
+      const results = await multi.exec();
+      // fail closed: exec() === null (транзакция отменена) или ошибка любой
+      // команды не считаются нулевым счётчиком.
+      if (!results || results.some(([err]) => err)) {
+        throw new Error('redis multi failed');
+      }
       checks.forEach((c, i) => {
         const count = Number(results[i * 3 + 1]?.[1] ?? 0);
         const ttl = Number(results[i * 3 + 2]?.[1] ?? c.windowSec);

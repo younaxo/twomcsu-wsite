@@ -3,7 +3,9 @@ import { CartGiftRateGuard, CART_GIFT_LIMITS } from './cart-gift-rate.guard';
 import { RedisService } from '../redis/redis.service';
 
 /// Фиксированное окно в памяти вместо Redis: эмулирует multi().set().incr().ttl().
-function fakeRedis(opts: { fail?: boolean } = {}) {
+function fakeRedis(
+  opts: { fail?: boolean; execNull?: boolean; cmdError?: boolean } = {},
+) {
   const counts = new Map<string, number>();
   const client = {
     multi() {
@@ -25,11 +27,15 @@ function fakeRedis(opts: { fail?: boolean } = {}) {
         },
         async exec() {
           if (opts.fail) throw new Error('redis down');
-          const out: [null, unknown][] = [];
+          if (opts.execNull) return null;
+          const out: [Error | null, unknown][] = [];
           for (const op of ops) {
             if (op === 'set') out.push([null, 'OK']);
             else if (op === 'ttl') out.push([null, 42]);
             else out.push([null, Number(op)]);
+          }
+          if (opts.cmdError && out.length > 1) {
+            out[1] = [new Error('ERR command failed'), null];
           }
           return out;
         },
@@ -124,6 +130,20 @@ describe('CartGiftRateGuard (Q81)', () => {
 
   it('Redis недоступен — 503 (fail closed)', async () => {
     const guard = new CartGiftRateGuard(fakeRedis({ fail: true }));
+    expect(await status(guard, ctx({ giftToUsername: 'Bob' }).context)).toBe(
+      503,
+    );
+  });
+
+  it('exec() вернул null — 503, а не счётчик 0', async () => {
+    const guard = new CartGiftRateGuard(fakeRedis({ execNull: true }));
+    expect(await status(guard, ctx({ giftToUsername: 'Bob' }).context)).toBe(
+      503,
+    );
+  });
+
+  it('ошибка одной из команд multi — 503, а не счётчик 0', async () => {
+    const guard = new CartGiftRateGuard(fakeRedis({ cmdError: true }));
     expect(await status(guard, ctx({ giftToUsername: 'Bob' }).context)).toBe(
       503,
     );
