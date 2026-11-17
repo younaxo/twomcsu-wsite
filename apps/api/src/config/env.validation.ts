@@ -1,4 +1,5 @@
 import * as Joi from 'joi';
+import { isStrongMasterSecret } from '../modules/bridge/bridge.constants';
 import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
 
@@ -306,12 +307,13 @@ export const envValidationSchema = Joi.object({
   BRIDGE_MASTER_SECRET: Joi.string()
     .allow('')
     .custom((value: string, helpers) =>
-      value === '' || Buffer.byteLength(value, 'utf8') >= 32
+      value === '' || isStrongMasterSecret(Buffer.from(value, 'utf8'))
         ? value
         : helpers.error('string.min'),
     )
     .messages({
-      'string.min': 'BRIDGE_MASTER_SECRET не короче 32 байт',
+      'string.min':
+        'BRIDGE_MASTER_SECRET: не короче 32 байт и не менее 16 различных байт',
     })
     .optional(),
   BRIDGE_TIMESTAMP_WINDOW_S: Joi.number().integer().min(5).max(300),

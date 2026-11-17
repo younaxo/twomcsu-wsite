@@ -3,7 +3,7 @@ import {
   DEFAULT_KEY_OVERLAP_DAYS,
   DEFAULT_MAX_BODY_BYTES,
   DEFAULT_TIMESTAMP_WINDOW_S,
-  MIN_MASTER_SECRET_BYTES,
+  isStrongMasterSecret,
 } from './bridge.constants';
 
 export const BRIDGE_CONFIG = Symbol('BRIDGE_CONFIG');
@@ -12,7 +12,7 @@ export interface BridgeConfig {
   /// `BRIDGE_ENABLED=true`; пустое и незаданное значение — выключено.
   enabled: boolean;
   /// Байты UTF-8 строки `BRIDGE_MASTER_SECRET`; null, если не задан или
-  /// короче 32 байт (приёмник при этом отвечает 503).
+  /// слабый: короче 32 байт или менее 16 различных байт (приёмник при этом отвечает 503).
   masterSecret: Buffer | null;
   timestampWindowS: number;
   maxBodyBytes: number;
@@ -40,9 +40,7 @@ export function readBridgeConfig(env: EnvReader): BridgeConfig {
   return {
     enabled: toBoolean(env.get('BRIDGE_ENABLED')),
     masterSecret:
-      secret !== null && secret.length >= MIN_MASTER_SECRET_BYTES
-        ? secret
-        : null,
+      secret !== null && isStrongMasterSecret(secret) ? secret : null,
     timestampWindowS: toPositiveInt(
       env.get('BRIDGE_TIMESTAMP_WINDOW_S'),
       DEFAULT_TIMESTAMP_WINDOW_S,

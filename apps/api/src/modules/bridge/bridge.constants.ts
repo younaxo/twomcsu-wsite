@@ -21,6 +21,8 @@ export const HEADER_SIGNATURE = 'x-twomc-signature';
 
 export const PATH_HANDSHAKE = '/bridge/v1/handshake';
 export const PATH_EVENTS = '/bridge/v1/events';
+/// Префикс всех путей приёмника (парсер тела M3).
+export const BRIDGE_PATH_PREFIX = '/bridge/v1';
 
 /// Допустимые пары «метод и путь» среза 1 (сверка `snapshot` — срез 2).
 export const ALLOWED_ROUTES: ReadonlyMap<string, string> = new Map([
@@ -52,6 +54,18 @@ export const DEFAULT_KEY_OVERLAP_DAYS = 7;
 export const DEFAULT_APPLY_LATENCY_LIMIT_MS = 2000;
 /// Минимальная длина мастер-секрета в байтах (UTF-8 строки из окружения).
 export const MIN_MASTER_SECRET_BYTES = 32;
+/// Минимум различных значений байт в секрете (L3): отсекает "aaaa..." и
+/// повторяющиеся шаблоны.
+export const MIN_MASTER_SECRET_DISTINCT_BYTES = 16;
+
+/// Годность мастер-секрета: длина и разнообразие байтов. Значение секрета в
+/// сообщения и логи не попадает.
+export function isStrongMasterSecret(secret: Buffer): boolean {
+  return (
+    secret.length >= MIN_MASTER_SECRET_BYTES &&
+    new Set(secret).size >= MIN_MASTER_SECRET_DISTINCT_BYTES
+  );
+}
 
 /// Закрытый список возможностей сервера (2.4 контракта).
 export const CAPABILITY_KEYS = [

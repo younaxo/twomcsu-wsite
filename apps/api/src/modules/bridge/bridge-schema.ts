@@ -324,6 +324,9 @@ export function parsePunishmentData(
   }
 }
 
+const PLUGIN_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,31}$/;
+const PLATFORM_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+ -]{0,47}$/;
+
 export interface HelloData {
   pluginVersion: string | null;
   platform: string | null;
@@ -335,6 +338,9 @@ export function parseHello(data: Record<string, unknown>): Parsed<HelloData> {
   try {
     const pluginVersion = nullableStr(data.pluginVersion, 32);
     const platform = nullableStr(data.platform, 48);
+    // L4: строгий формат (в БД и админку не попадает произвольный текст).
+    if (pluginVersion !== null && !PLUGIN_VERSION_PATTERN.test(pluginVersion)) fail();
+    if (platform !== null && !PLATFORM_PATTERN.test(platform)) fail();
     if (data.protocol !== undefined && data.protocol !== 1) fail();
     return { ok: true, value: { pluginVersion, platform } };
   } catch (e) {

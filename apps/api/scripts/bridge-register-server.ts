@@ -8,7 +8,8 @@ import {
 /// Регистрация строки `BridgeServer` (F3, 2.4 контракта). Мастер-секрет НЕ
 /// читается и НЕ нужен: команда создаёт только запись сервера, ключ она не
 /// выводит (его печатает отдельная команда владельца `bridge-print-key`).
-/// Пустой или незаданный NODE_ENV считается production и даёт отказ.
+/// Пустой или незаданный NODE_ENV считается production и даёт отказ, если не
+/// заданы оба флага владельца `--production --confirm-owner`.
 ///
 ///   pnpm --filter @twomc/api run bridge:register -- --slug survival --name "Survival" [--capabilities punishments,player-events]
 export interface RegisterArgs {
@@ -62,9 +63,13 @@ export async function registerServer(
   argv: string[],
   nodeEnv: string | undefined,
 ): Promise<{ slug: string; keyGeneration: number }> {
-  if (isProductionLike(nodeEnv)) {
+  // Боевой режим (L5): только владелец и только с обоими явными флагами;
+  // агенты эту команду с флагами не запускают (runbook bridge-server-registration).
+  const ownerProduction =
+    argv.includes('--production') && argv.includes('--confirm-owner');
+  if (isProductionLike(nodeEnv) && !ownerProduction) {
     throw new Error(
-      'Отказ: NODE_ENV пуст или не development/test (production-подобная среда)',
+      'Отказ: NODE_ENV пуст или не development/test (production-подобная среда). Боевую регистрацию выполняет только владелец с флагами --production --confirm-owner',
     );
   }
   const args = parseRegisterArgs(argv);

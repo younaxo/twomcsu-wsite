@@ -457,6 +457,26 @@ describe('BridgeSignatureGuard: счётчик неудачных аутенти
     );
   });
 
+  it('M1: 30 неверных подписей с того же IP не блокируют верно подписанный запрос', async () => {
+    const { guard, redisClient } = setup();
+    const bad = 'f'.repeat(64);
+    for (let i = 0; i < 30; i++) {
+      const r = await run(
+        guard,
+        makeReq({ headers: { 'x-twomc-signature': bad } }),
+      );
+      expect(r.status).toBe(401);
+    }
+    expect(redisClient.keysWithPrefix('bridge:authfail:')).toHaveLength(1);
+    // Счётчик исчерпан, но верный запрос проходит.
+    expect((await run(guard, makeReq())).status).toBe(200);
+    // Неверный запрос с исчерпанным счётчиком - 429.
+    expect(
+      (await run(guard, makeReq({ headers: { 'x-twomc-signature': bad } })))
+        .status,
+    ).toBe(429);
+  });
+
   it('успешные запросы счётчик не увеличивают', async () => {
     const { guard, redisClient } = setup();
     await run(guard, makeReq());

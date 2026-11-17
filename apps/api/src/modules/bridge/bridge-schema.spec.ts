@@ -259,6 +259,12 @@ describe('parseHello и parseOverflow', () => {
       value: { pluginVersion: '1.0', platform: 'x' },
     });
     expect(parseHello({ pluginVersion: 'v'.repeat(33) }).ok).toBe(false);
+    // L4: строгий формат.
+    expect(parseHello({ pluginVersion: '1.2.3-beta+4', platform: 'Paper 1.21' }).ok).toBe(true);
+    for (const bad of ['<b>x</b>', '1.0\n2', ' 1.0', 'a/b', '']) {
+      expect(parseHello({ pluginVersion: bad }).ok).toBe(false);
+      expect(parseHello({ platform: bad }).ok).toBe(false);
+    }
     expect(parseHello({ platform: 'p'.repeat(49) }).ok).toBe(false);
     expect(parseHello({ protocol: 2 }).ok).toBe(false);
     expect(parseHello({ pluginVersion: 5 }).ok).toBe(false);

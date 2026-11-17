@@ -169,6 +169,25 @@ describe('bridge-register-server', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('L5: в production-подобной среде нужны оба флага владельца', async () => {
+    await expect(
+      registerServer(db(false), ['--slug', 'survival', '--production'], 'production'),
+    ).rejects.toThrow(/Отказ/);
+    await expect(
+      registerServer(
+        db(false),
+        ['--slug', 'survival', '--confirm-owner'],
+        'production',
+      ),
+    ).rejects.toThrow(/Отказ/);
+    const r = await registerServer(
+      db(false),
+      ['--slug', 'survival', '--production', '--confirm-owner'],
+      'production',
+    );
+    expect(r.slug).toBe('survival');
+  });
+
   it('создаёт строку в development без мастер-секрета', async () => {
     const saved = process.env.BRIDGE_MASTER_SECRET;
     delete process.env.BRIDGE_MASTER_SECRET;
@@ -243,6 +262,16 @@ describe('bridge-print-key', () => {
     const a = ['--slug', 'survival', '--print-key'];
     expect(() => printKey(a, {})).toThrow();
     expect(() => printKey(a, { BRIDGE_MASTER_SECRET: 'short' })).toThrow();
+    // L3: длина есть, разнообразия байтов нет; значение в сообщении не печатается.
+    const weak = 'ab'.repeat(20);
+    expect(() => printKey(a, { BRIDGE_MASTER_SECRET: weak })).toThrow(
+      /слабый/,
+    );
+    try {
+      printKey(a, { BRIDGE_MASTER_SECRET: weak });
+    } catch (e) {
+      expect((e as Error).message).not.toContain(weak);
+    }
   });
 });
 

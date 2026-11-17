@@ -5,6 +5,8 @@ import {
 import {
   isValidSlug,
   MIN_MASTER_SECRET_BYTES,
+  MIN_MASTER_SECRET_DISTINCT_BYTES,
+  isStrongMasterSecret,
 } from '../src/modules/bridge/bridge.constants';
 
 /// Вывод ключа сервера (F3, 2.4 контракта) - ТОЛЬКО для владельца. Мастер-секрет
@@ -31,9 +33,9 @@ export function printKey(
     throw new Error('--generation: целое от 1 до 999999');
   }
   const secret = env.BRIDGE_MASTER_SECRET ?? '';
-  if (Buffer.byteLength(secret, 'utf8') < MIN_MASTER_SECRET_BYTES) {
+  if (!isStrongMasterSecret(Buffer.from(secret, 'utf8'))) {
     throw new Error(
-      `BRIDGE_MASTER_SECRET не задан или короче ${MIN_MASTER_SECRET_BYTES} байт`,
+      `BRIDGE_MASTER_SECRET не задан или слабый (нужно не менее ${MIN_MASTER_SECRET_BYTES} байт и ${MIN_MASTER_SECRET_DISTINCT_BYTES} различных байт)`,
     );
   }
   const key = deriveServerKey(Buffer.from(secret, 'utf8'), slug, gen);
