@@ -232,7 +232,12 @@ describe('Reports (e2e)', () => {
     reportNumber = res.body.reportNumber;
     createdReportNumbers.push(reportNumber);
     expect(reportNumber).toMatch(/^R-\d{8}-[0-9A-F]{6}$/);
-    expect(res.body.targets[0].userId).toBe(bob.id);
+    // Приватность: игрок не видит userId цели; резолв проверяем по БД.
+    expect(res.body.targets[0]).not.toHaveProperty('userId');
+    const stored = await prisma.reportTarget.findFirst({
+      where: { report: { reportNumber } },
+    });
+    expect(stored?.userId).toBe(bob.id);
     expect(res.body.evidenceLinks).toHaveLength(1);
   });
 
