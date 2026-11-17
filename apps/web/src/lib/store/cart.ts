@@ -85,18 +85,19 @@ export function itemName(item: CartItemView, line: CartLineView | null): string 
 }
 
 /// Тексты по кодам ошибок API корзины. Неизвестный код — запасной путь по тексту.
+/// Список кодов API: STORE_CART_ERROR_CODES в @twomc/shared (api/store-cart.ts).
 const CODE_MESSAGES: Record<string, string> = {
   PROMO_NOT_FOUND: 'Промокод не найден. Проверьте написание.',
   PROMO_EXPIRED: 'Срок действия промокода истёк.',
   PROMO_NOT_STARTED: 'Промокод ещё не начал действовать.',
   PROMO_EXHAUSTED: 'Промокод исчерпан: лимит использований достигнут.',
-  PROMO_ALREADY_USED: 'Вы уже использовали этот промокод.',
+  PROMO_FIRST_PURCHASE_ONLY: 'Промокод действует только на первую покупку.',
   PROMO_MIN_AMOUNT: 'Сумма корзины ниже минимальной для этого промокода.',
   PROMO_NOT_APPLICABLE: 'Промокод не подходит к товарам в корзине.',
   CART_UNIQUE_DUPLICATE: 'Этот товар покупается один раз, он уже лежит в корзине.',
   CART_UNIQUE_ALREADY_OWNED: 'Этот товар у вас уже есть, повторно его купить нельзя.',
-  CART_GIFT_UNAVAILABLE: 'Этот товар нельзя подарить.',
-  CART_GIFT_NOT_ALLOWED: 'Подарок этому игроку невозможен. Проверьте ник получателя.',
+  CART_GIFT_NOT_ALLOWED: 'Этот товар нельзя подарить: он не подарочный или только для себя.',
+  CART_GIFT_UNAVAILABLE: 'Такого игрока нет или ему нельзя подарить. Проверьте ник получателя.',
 };
 
 /// Запасной разбор для старого API без `code`: определяем код по русскому тексту.

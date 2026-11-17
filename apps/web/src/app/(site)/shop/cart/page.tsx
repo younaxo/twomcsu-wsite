@@ -411,7 +411,7 @@ function PromoBlock({
         </div>
         {promoError ? (
           <p
-            role="alert"
+            role="status"
             data-testid="promo-error"
             className="flex items-start gap-1.5 rounded-lg bg-warning-soft px-3 py-2 text-xs font-medium"
           >
@@ -430,6 +430,16 @@ function PromoBlock({
 
   return (
     <form onSubmit={apply} className="flex flex-col gap-2" aria-label="Промокод" noValidate>
+      {promoError ? (
+        <p
+          role="status"
+          data-testid="promo-error"
+          className="flex items-start gap-1.5 rounded-lg bg-warning-soft px-3 py-2 text-xs font-medium"
+        >
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <span>{promoErrorMessage(promoError)} Скидка по промокоду не применяется.</span>
+        </p>
+      ) : null}
       <Field label="Промокод" error={error}>
         <Input
           value={code}

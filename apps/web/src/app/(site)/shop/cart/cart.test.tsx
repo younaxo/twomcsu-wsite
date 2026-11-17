@@ -371,7 +371,8 @@ describe('корзина /shop/cart', () => {
     expect(within(applied).getByTestId('promo-error')).toHaveTextContent('не применяется');
     // Строки скидки по промокоду в итоге нет.
     expect(screen.queryByText('Промокод OLD')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(within(applied).getByTestId('promo-error')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await user.click(within(applied).getByRole('button', { name: 'Убрать промокод OLD' }));
     expect(mocks.del).toHaveBeenCalledWith('/store/cart/promo');
   });
@@ -395,12 +396,31 @@ describe('корзина /shop/cart', () => {
     expect(cartErrorMessage(err('PROMO_MIN_AMOUNT'))).toMatch(/минимальной/);
     expect(cartErrorMessage(err('CART_UNIQUE_DUPLICATE'))).toMatch(/один раз/);
     expect(cartErrorMessage(err('CART_UNIQUE_ALREADY_OWNED'))).toMatch(/уже есть/);
-    expect(cartErrorMessage(err('CART_GIFT_UNAVAILABLE'))).toMatch(/нельзя подарить/);
-    expect(cartErrorMessage(err('CART_GIFT_NOT_ALLOWED'))).toMatch(/невозможен/);
+    // CART_GIFT_NOT_ALLOWED (400): товар не подарочный; CART_GIFT_UNAVAILABLE (404): игрок.
+    expect(cartErrorMessage(err('CART_GIFT_NOT_ALLOWED'))).toMatch(/не подарочный|только для себя/);
+    expect(cartErrorMessage(new ApiError(404, ['x'], { code: 'CART_GIFT_UNAVAILABLE' }))).toMatch(
+      /Такого игрока нет/,
+    );
+    expect(cartErrorMessage(err('PROMO_NOT_STARTED'))).toMatch(/ещё не начал/);
+    expect(cartErrorMessage(err('PROMO_FIRST_PURCHASE_ONLY'))).toMatch(/первую покупку/);
+    // Кода PROMO_ALREADY_USED в API нет — текст сервера.
+    expect(cartErrorMessage(err('PROMO_ALREADY_USED', 'Серверный'))).toBe('Серверный');
     // Лимит на покупку: число берём из текста сервера.
     expect(cartErrorMessage(err('CART_MAX_PER_PURCHASE', 'Максимум 2 шт.'))).toBe('Максимум 2 шт.');
     // Неизвестный код — текст сервера.
     expect(cartErrorMessage(err('SOMETHING_NEW', 'Новая ошибка'))).toBe('Новая ошибка');
+  });
+
+  it('promoError без promoCode не теряется: показывается рядом с формой', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(
+      cart({ promoCode: null, promoError: { code: 'PROMO_EXPIRED', message: 'x' } }),
+    );
+    render(<CartPage />, { wrapper: Providers });
+    const warning = await screen.findByTestId('promo-error');
+    expect(warning).toHaveTextContent('Срок действия промокода истёк');
+    expect(warning).toHaveAttribute('role', 'status');
+    expect(screen.getByRole('textbox', { name: 'Промокод' })).toBeInTheDocument();
   });
 
   it('запасной разбор по тексту (старый API без code)', async () => {
