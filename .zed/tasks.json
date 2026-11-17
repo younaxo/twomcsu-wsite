@@ -1,0 +1,27 @@
+[
+  {
+    "label": "Claude Code — глава TwoMC",
+    "command": "claude",
+    "args": ["--agent", "twomc-chief"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "TwoMC — typecheck",
+    "command": "pnpm",
+    "args": ["typecheck"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "TwoMC — tests",
+    "command": "pnpm",
+    "args": ["test"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  }
+]
