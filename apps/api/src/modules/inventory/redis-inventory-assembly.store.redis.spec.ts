@@ -33,6 +33,11 @@ const suite = URL ? describe : describe.skip;
 
 const GROUPS = ['hotbar', 'storage_a', 'storage_b', 'equipment'] as const;
 const EPOCH = '1763380800000';
+/// capturedAt — свойство СНИМКА, одинаковое во всех его частях (в проде
+/// `part.capturedAt` из заголовка). Не привязывать к `nowMs` вызова: иначе
+/// заголовки частей одного снимка расходятся и Lua (П4.4) верно отклоняет
+/// вторую часть как snapshot_mismatch/header (дефект Q35 был в этом хелпере).
+const CAPTURED_AT_MS = 1763380800000;
 
 function adapter(redis: Redis): InventoryRedisClient {
   return {
@@ -91,7 +96,7 @@ suite('RedisInventoryAssemblyStore: Lua на настоящем Redis', () => {
         group: 'main',
         epoch: EPOCH,
         rev: 1,
-        capturedAtMs: nowMs,
+        capturedAtMs: CAPTURED_AT_MS,
         playerOnline: true,
         uuidHash: 'u'.repeat(32),
       },
