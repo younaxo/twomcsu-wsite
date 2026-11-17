@@ -1,6 +1,12 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, ReportType } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  PermissionService,
+  SanctionRevokeDecision,
+  sanctionRevokeAuditChanges,
+} from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { ArchiveReportDto } from './dto/archive-report.dto';
 import { BanReportsDto } from './dto/ban-reports.dto';
@@ -18,6 +24,8 @@ export class ReportsAdminService {
     private readonly prisma: PrismaService,
     @Inject(REPORT_PRIORITY_PROVIDER)
     private readonly priority: ReportPriorityProvider,
+    private readonly permissions: PermissionService,
+    private readonly audit: AuditService,
   ) {}
 
   async stats() {
@@ -133,11 +141,42 @@ export class ReportsAdminService {
     });
   }
 
-  async unbanUser(userId: string): Promise<void> {
-    await this.prisma.reportBan.updateMany({
+  /// Снятие бана в обращениях (Q48, Q49; ADR-0173). Правило проверяется для
+  /// КАЖДОГО активного бана пользователя (у разных банов разные выдавшие).
+  /// Семантика «всё или ничего»: если хоть один бан снимать нельзя — 403
+  /// `sanction_revoke_forbidden` и ни один бан не снимается; иначе частичное
+  /// снятие оставляло бы пользователя в неопределённом состоянии, а младший
+  /// мог бы «выбрать» чужие баны. На каждый снятый бан — запись в аудит.
+  async unbanUser(userId: string, actorId: string): Promise<void> {
+    const active = await this.prisma.reportBan.findMany({
       where: { userId, isActive: true },
+    });
+    const decisions: SanctionRevokeDecision[] = [];
+    for (const ban of active) {
+      decisions.push(
+        await this.permissions.assertCanRevokeSanction(
+          actorId,
+          ban.bannedBy,
+          userId,
+        ),
+      );
+    }
+    await this.prisma.reportBan.updateMany({
+      where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
       data: { isActive: false },
     });
+    for (const [index, ban] of active.entries()) {
+      await this.audit.log({
+        actorId,
+        action: 'reports.ban.revoke',
+        targetType: 'ReportBan',
+        targetId: ban.id,
+        changes: sanctionRevokeAuditChanges(decisions[index], ban.bannedBy, {
+          userId,
+        }),
+        severity: 'warning',
+      });
+    }
   }
 
   async listDonations(query: ListReportsQueryDto) {
