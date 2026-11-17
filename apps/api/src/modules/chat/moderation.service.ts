@@ -37,6 +37,25 @@ export class ModerationService {
     }
   }
 
+  /// Снятие мута/бана (Q25, ADR-0171): только выдавший или равный/старший по
+  /// приоритету; снять санкцию с себя может только её выдавший. Текст ошибки
+  /// общий, роли не раскрываются.
+  private async assertCanRevoke(
+    actorId: string,
+    targetUserId: string,
+    issuerId: string | null,
+  ): Promise<void> {
+    const allowed =
+      issuerId === actorId ||
+      (actorId !== targetUserId &&
+        (await this.permissions.canRevokeSanction(actorId, issuerId)));
+    if (!allowed) {
+      throw new ForbiddenException(
+        'Недостаточно прав для снятия этого ограничения',
+      );
+    }
+  }
+
   async createChannel(dto: CreateChannelDto) {
     const existing = await this.prisma.chatChannel.findUnique({
       where: { slug: dto.slug },
@@ -89,11 +108,12 @@ export class ModerationService {
     });
   }
 
-  async unmute(id: string): Promise<void> {
+  async unmute(actorId: string, id: string): Promise<void> {
     const mute = await this.prisma.chatMute.findUnique({ where: { id } });
     if (!mute) {
       throw new NotFoundException('Мут не найден');
     }
+    await this.assertCanRevoke(actorId, mute.userId, mute.mutedBy);
     await this.prisma.chatMute.update({
       where: { id },
       data: { isActive: false },
@@ -124,11 +144,12 @@ export class ModerationService {
     });
   }
 
-  async unban(id: string): Promise<void> {
+  async unban(actorId: string, id: string): Promise<void> {
     const ban = await this.prisma.chatBan.findUnique({ where: { id } });
     if (!ban) {
       throw new NotFoundException('Бан не найден');
     }
+    await this.assertCanRevoke(actorId, ban.userId, ban.bannedBy);
     await this.prisma.chatBan.update({
       where: { id },
       data: { isActive: false },

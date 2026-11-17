@@ -638,4 +638,115 @@ describe('Chat (e2e)', () => {
       expect(allowed.content).toBe('теперь можно');
     });
   });
+
+  describe('Q25 (ADR-0171): снятие мута и бана по иерархии приоритетов', () => {
+    let senior: TestUser;
+    let junior: TestUser;
+    let juniorPeer: TestUser;
+    let victim: TestUser;
+    const actors: TestUser[] = [];
+
+    beforeAll(async () => {
+      senior = await createUser('q25senior');
+      junior = await createUser('q25junior');
+      juniorPeer = await createUser('q25peer');
+      victim = await createUser('q25victim');
+      actors.push(senior, junior, juniorPeer, victim);
+
+      const seniorRole = await createRole(`chat-q25-senior-${unique}`, 50);
+      const juniorRole = await createRole(`chat-q25-junior-${unique}`, 5);
+      const keys = ['chat.mutes.delete', 'chat.bans.delete'];
+      await grantPermissions(seniorRole.id, keys);
+      await grantPermissions(juniorRole.id, keys);
+      await grantRole(senior.id, seniorRole.id);
+      await grantRole(junior.id, juniorRole.id);
+      await grantRole(juniorPeer.id, juniorRole.id);
+    }, 30_000);
+
+    afterAll(async () => {
+      const ids = actors.map((u) => u.id);
+      await prisma.chatMute.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.chatBan.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.userRole.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.auditLog.deleteMany({
+        where: { actor: { email: { in: actors.map((u) => u.email) } } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+    }, 15_000);
+
+    const seedMute = (issuer: TestUser) =>
+      prisma.chatMute.create({
+        data: { userId: victim.id, reason: 'SPAM', mutedBy: issuer.id },
+      });
+    const seedBan = (issuer: TestUser) =>
+      prisma.chatBan.create({
+        data: { userId: victim.id, reason: 'e2e', bannedBy: issuer.id },
+      });
+
+    it('мут старшего: младший получает 403 и мут остаётся активным', async () => {
+      const mute = await seedMute(senior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/mutes/${mute.id}`)
+        .set('Authorization', auth(junior))
+        .expect(403);
+      const after = await prisma.chatMute.findUniqueOrThrow({
+        where: { id: mute.id },
+      });
+      expect(after.isActive).toBe(true);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/mutes/${mute.id}`)
+        .set('Authorization', auth(senior))
+        .expect(200);
+    });
+
+    it('мут младшего: старший снимает (200), равный по приоритету снимает (200)', async () => {
+      const bySenior = await seedMute(junior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/mutes/${bySenior.id}`)
+        .set('Authorization', auth(senior))
+        .expect(200);
+      const byPeer = await seedMute(junior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/mutes/${byPeer.id}`)
+        .set('Authorization', auth(juniorPeer))
+        .expect(200);
+      const after = await prisma.chatMute.findUniqueOrThrow({
+        where: { id: byPeer.id },
+      });
+      expect(after.isActive).toBe(false);
+    });
+
+    it('бан старшего: младший получает 403 и бан остаётся активным', async () => {
+      const ban = await seedBan(senior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/bans/${ban.id}`)
+        .set('Authorization', auth(junior))
+        .expect(403);
+      const after = await prisma.chatBan.findUniqueOrThrow({
+        where: { id: ban.id },
+      });
+      expect(after.isActive).toBe(true);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/bans/${ban.id}`)
+        .set('Authorization', auth(senior))
+        .expect(200);
+    });
+
+    it('бан младшего: старший снимает (200), равный по приоритету снимает (200)', async () => {
+      const bySenior = await seedBan(junior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/bans/${bySenior.id}`)
+        .set('Authorization', auth(senior))
+        .expect(200);
+      const byPeer = await seedBan(junior);
+      await request(app.getHttpServer())
+        .delete(`/admin/chat/bans/${byPeer.id}`)
+        .set('Authorization', auth(juniorPeer))
+        .expect(200);
+      const after = await prisma.chatBan.findUniqueOrThrow({
+        where: { id: byPeer.id },
+      });
+      expect(after.isActive).toBe(false);
+    });
+  });
 });

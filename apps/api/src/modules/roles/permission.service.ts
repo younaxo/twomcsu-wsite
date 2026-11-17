@@ -36,7 +36,19 @@ export class PermissionService {
   async getEffectivePermissions(userId: string): Promise<EffectivePermissions> {
     const cached = await this.redis.client.get(cacheKeyUser(userId));
     if (cached) {
-      return JSON.parse(cached) as EffectivePermissions;
+      const parsed = JSON.parse(cached) as Omit<
+        EffectivePermissions,
+        'maxPriority'
+      > & { maxPriority: number | null };
+      // JSON.stringify(-Infinity) даёт null, а null в сравнениях равен 0:
+      // восстанавливаем «нет ролей» как -Infinity (L9, ревью Q25).
+      return {
+        ...parsed,
+        maxPriority:
+          typeof parsed.maxPriority === 'number'
+            ? parsed.maxPriority
+            : Number.NEGATIVE_INFINITY,
+      };
     }
 
     const userRoles = await this.prisma.userRole.findMany({
@@ -127,6 +139,33 @@ export class PermissionService {
       this.getMaxPriority(targetUserId),
     ]);
     return actorPriority > targetPriority;
+  }
+
+  /// Снятие мута/бана чата (Q25, ADR-0171): снять может выдавший или тот, чей
+  /// приоритет >= приоритета выдавшего. Выдавший «неизвестен» (пустой id,
+  /// пользователь не найден или удалён, accountType=SYSTEM): консервативное
+  /// допущение — нужен приоритет >= максимального приоритета среди всех ролей
+  /// (фактически владелец/superuser). Если ролей нет, только superuser.
+  async canRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+  ): Promise<boolean> {
+    if (issuerId && issuerId === actorId) {
+      return true;
+    }
+    const issuer = issuerId
+      ? await this.prisma.user.findUnique({
+          where: { id: issuerId },
+          select: { id: true, accountType: true },
+        })
+      : null;
+    const actorPriority = await this.getMaxPriority(actorId);
+    if (issuer && issuer.accountType !== 'SYSTEM') {
+      return actorPriority >= (await this.getMaxPriority(issuer.id));
+    }
+    const top = await this.prisma.role.aggregate({ _max: { priority: true } });
+    const threshold = top._max.priority ?? Number.POSITIVE_INFINITY;
+    return actorPriority >= threshold;
   }
 
   /// Выдача роли пользователю (Q23, ADR-0170): права выдаваемой роли должны

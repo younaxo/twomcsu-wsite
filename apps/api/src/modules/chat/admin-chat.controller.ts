@@ -9,7 +9,9 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { CreateChannelDto } from './dto/create-channel.dto';
@@ -49,8 +51,11 @@ export class AdminChatController {
 
   @Delete('mutes/:id')
   @RequirePermissions('chat.mutes.delete')
-  async unmute(@Param('id') id: string) {
-    await this.moderation.unmute(id);
+  async unmute(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    await this.moderation.unmute(user.id, id);
     return { success: true };
   }
 
@@ -62,8 +67,8 @@ export class AdminChatController {
 
   @Delete('bans/:id')
   @RequirePermissions('chat.bans.delete')
-  async unban(@Param('id') id: string) {
-    await this.moderation.unban(id);
+  async unban(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.moderation.unban(user.id, id);
     return { success: true };
   }
 

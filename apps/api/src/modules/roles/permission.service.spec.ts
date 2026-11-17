@@ -149,3 +149,183 @@ describe('PermissionService.assertGrantorCoversRole (Q23)', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('PermissionService.canRevokeSanction (Q25)', () => {
+  function buildRevoke(opts: {
+    byUser: Record<string, RoleRow[]>;
+    users: Record<string, 'USER' | 'SYSTEM'>;
+    topPriority: number | null;
+  }) {
+    const prisma = {
+      userRole: {
+        findMany: jest.fn(({ where }: { where: { userId: string } }) =>
+          Promise.resolve(
+            (opts.byUser[where.userId] ?? []).map((role, i) => ({
+              roleId: `${where.userId}-r${i}`,
+              role,
+            })),
+          ),
+        ),
+      },
+      user: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            where.id in opts.users
+              ? { id: where.id, accountType: opts.users[where.id] }
+              : null,
+          ),
+        ),
+      },
+      role: {
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _max: { priority: opts.topPriority } }),
+      },
+    };
+    const redis = {
+      client: {
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue('OK'),
+        sadd: jest.fn().mockResolvedValue(1),
+      },
+    };
+    return new PermissionService(prisma as never, redis as never);
+  }
+  const role = (priority: number, isSuperuser = false): RoleRow => ({
+    isSuperuser,
+    priority,
+    permissions: [],
+  });
+  const base = {
+    byUser: {
+      mod: [role(10)],
+      peer: [role(10)],
+      junior: [role(5)],
+      admin: [role(100)],
+      owner: [role(1000, true)],
+    },
+    users: {
+      mod: 'USER',
+      peer: 'USER',
+      junior: 'USER',
+      admin: 'USER',
+      owner: 'USER',
+      sys: 'SYSTEM',
+    } as Record<string, 'USER' | 'SYSTEM'>,
+    topPriority: 1000,
+  };
+
+  it('выдавший снимает свой, даже с меньшим приоритетом', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('junior', 'junior')).resolves.toBe(true);
+  });
+
+  it('равный и старший могут, младший нет', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('peer', 'mod')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('admin', 'mod')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('junior', 'mod')).resolves.toBe(false);
+  });
+
+  it.each([null, undefined, '', 'deleted-user', 'sys'])(
+    'неизвестный выдавший (%p): только приоритет >= максимума ролей',
+    async (issuer) => {
+      const s = buildRevoke(base);
+      await expect(s.canRevokeSanction('admin', issuer)).resolves.toBe(false);
+      await expect(s.canRevokeSanction('owner', issuer)).resolves.toBe(true);
+    },
+  );
+
+  it('неизвестный выдавший и ролей нет: только superuser', async () => {
+    const s = buildRevoke({ ...base, topPriority: null });
+    await expect(s.canRevokeSanction('admin', null)).resolves.toBe(false);
+    await expect(s.canRevokeSanction('owner', null)).resolves.toBe(true);
+  });
+});
+
+describe('PermissionService: пользователь без ролей через кеш (L9, ревью Q25)', () => {
+  /// Redis-заглушка с реальным round-trip: set сохраняет строку, get отдаёт её.
+  /// Так maxPriority = -Infinity проходит JSON.stringify/parse, как в проде.
+  function buildCached(opts: {
+    byUser: Record<string, number[]>;
+    users: Record<string, 'USER' | 'SYSTEM'>;
+  }) {
+    const store = new Map<string, string>();
+    const prisma = {
+      userRole: {
+        findMany: jest.fn(({ where }: { where: { userId: string } }) =>
+          Promise.resolve(
+            (opts.byUser[where.userId] ?? []).map((priority, i) => ({
+              roleId: `${where.userId}-r${i}`,
+              role: { isSuperuser: false, priority, permissions: [] },
+            })),
+          ),
+        ),
+      },
+      user: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            where.id in opts.users
+              ? { id: where.id, accountType: opts.users[where.id] }
+              : null,
+          ),
+        ),
+      },
+      role: {
+        aggregate: jest.fn().mockResolvedValue({ _max: { priority: 0 } }),
+      },
+    };
+    const redis = {
+      client: {
+        get: jest.fn((key: string) => Promise.resolve(store.get(key) ?? null)),
+        set: jest.fn((key: string, value: string) => {
+          store.set(key, value);
+          return Promise.resolve('OK');
+        }),
+        sadd: jest.fn().mockResolvedValue(1),
+      },
+    };
+    const service = new PermissionService(prisma as never, redis as never);
+    return { service, store };
+  }
+
+  const users = {
+    nobody: 'USER',
+    other: 'USER',
+    lowest: 'USER',
+  } as Record<string, 'USER' | 'SYSTEM'>;
+
+  it('кеш хранит maxPriority без ролей как -Infinity после чтения', async () => {
+    const { service } = buildCached({ byUser: { nobody: [] }, users });
+    await service.getEffectivePermissions('nobody'); // заполняет кеш
+    const cached = await service.getEffectivePermissions('nobody');
+    expect(cached.maxPriority).toBe(Number.NEGATIVE_INFINITY);
+    await expect(service.getMaxPriority('nobody')).resolves.toBe(
+      Number.NEGATIVE_INFINITY,
+    );
+  });
+
+  it('canRevokeSanction: без ролей (из кеша) не снимает санкцию роли с приоритетом 0', async () => {
+    const { service } = buildCached({
+      byUser: { nobody: [], lowest: [0] },
+      users,
+    });
+    await service.getEffectivePermissions('nobody'); // заполняет кеш
+    await expect(service.canRevokeSanction('nobody', 'lowest')).resolves.toBe(
+      false,
+    );
+    // неизвестный выдавший: порог = максимум по ролям (0 в заглушке)
+    await expect(service.canRevokeSanction('nobody', null)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('canActOn: без ролей (из кеша) не имеет власти над пользователем без ролей', async () => {
+    const { service } = buildCached({
+      byUser: { nobody: [], other: [] },
+      users,
+    });
+    await service.getEffectivePermissions('nobody'); // заполняет кеш
+    await expect(service.canActOn('nobody', 'other')).resolves.toBe(false);
+  });
+});
