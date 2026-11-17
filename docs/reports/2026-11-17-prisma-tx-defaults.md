@@ -19,7 +19,7 @@ Prisma по умолчанию: `maxWait` 2000 мс (старт транзакц
 
 Точечные опции:
 - убраны (совпадали с общими): `forms.service.ts` (отправка формы), `orders.service.ts` (вебхук оплаты, только опции, логика не менялась);
-- оставлены: Bridge `TX_OPTIONS` 2000/6000 и зеркало наказаний `APPLY_TX_*` 2000/6000 (быстрый отказ намеренный, R121/F4); инвентарь - только `isolationLevel`.
+- оставлены: Bridge `TX_OPTIONS` 2000/6000 и зеркало наказаний `APPLY_TX_*` 2000/6000 (быстрый отказ намеренный, R121/F4); инвентарь - явные 2000/5000 (прежние умолчания Prisma) и Serializable: при повторе до 4 раз общие 10/10 с дали бы до 80 с.
 
 ## Фильтр ошибок
 
@@ -44,9 +44,9 @@ Prisma по умолчанию: `maxWait` 2000 мс (старт транзакц
 | voting/voting.service.ts:73 | вебхук голосования, advisory lock по игроку | 500 (P2028); P2002 externalId -> 200 duplicate | 503 busy; duplicate сохраняется |
 | forms/forms.service.ts:282 | отправка формы, advisory lock формы | 500; `maxWait` 10 с точечно | 503 busy; общие опции |
 | store/orders.service.ts:348 | вебхук оплаты, PENDING -> COMPLETED + промокод | 500; точечные 10/10 с | 503 busy (провайдер ретраит); общие опции; логика не менялась |
-| bridge/bridge-ingest.service.ts:191 | шаг 1 приёма события, журнал `received` | 500 (рвало ответ приёмника) | 503 `unavailable`, Retry-After 5; 2000/6000 оставлены |
+| bridge/bridge-ingest.service.ts:191 | шаг 1 приёма события, журнал `received` | контроллер (`bridge.controller.ts:106-111`) уже отвечал 503 `unavailable`, `Retry-After: 5` | без изменения для пути контроллера; фильтр даёт ту же форму для кодов Prisma вне контроллера; 2000/6000 оставлены |
 | punishments/prisma-punishment-mirror.store.ts:130 | запись зеркала наказаний | ошибка пробрасывается; опрос/Bridge ретраят | без изменения; 2000/6000 оставлены |
-| inventory/prisma-inventory.store.ts:51 | запись инвентаря, Serializable | P2034/P2002 повтор до 4, затем 500 | после повторов 503 busy |
+| inventory/prisma-inventory.store.ts:51 | запись инвентаря, Serializable | P2034/P2002 повтор до 4, затем 500 | после повторов 503 busy; явные 2000/5000 |
 | moderation/quick-moderation.service.ts:107 | быстрый бан, условный UPDATE + аудит | 500 | 503 busy |
 | moderation/quick-moderation.service.ts:163 | снятие бана + аудит | 500 | 503 busy |
 | profiles/profiles.service.ts:701 | заявка на бейдж медиа, advisory lock | 500 | 503 busy |
@@ -62,7 +62,9 @@ Prisma по умолчанию: `maxWait` 2000 мс (старт транзакц
 
 ## Проверки
 
-См. итог в ответе агента и `docs/implementation/CHANGELOG.md`; значения прогонов e2e - в summary.txt (путь в ответе).
+Юнит-тесты (фильтр, `PrismaService`, хранилище инвентаря, Joi) - в итоге агента и `docs/implementation/CHANGELOG.md`.
+
+e2e исчерпания пула НЕ доказан. Попытка `test/prisma-busy.e2e-spec.ts` падала с pool timeout при старте приложения; файл удалён из ветки. Маппинг кодов в 503 подтверждён только юнит-тестами фильтра. Дизайн повторной попытки (отдельная задача после разрешения владельца на прогон e2e): `pool_timeout=20` как в `bridge.e2e-spec.ts:626`; проверять путь P2028 на транзакционном запросе вебхука голосования или формы; удерживать `POOL_SIZE-1` соединений заложниками; учесть фоновые планировщики. Фоновый e2e «параллельные голоса» (ADR-0121) этой веткой не перепроверялся.
 
 ## Допущения
 

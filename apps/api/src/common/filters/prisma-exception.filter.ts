@@ -32,8 +32,10 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     host: ArgumentsHost,
   ): void {
     if (host.getType() !== 'http') {
+      // Ответить некому: не глотаем ошибку, отдаём её дальше стандартной
+      // обработке Nest для этого транспорта.
       this.logger.error(`Prisma ${exception.code} вне HTTP-контекста`);
-      return;
+      throw exception;
     }
     const http = host.switchToHttp();
     const res = http.getResponse<Response>();
@@ -41,7 +43,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
 
     if (isPrismaBusyCode(exception.code)) {
       const path = (req.originalUrl ?? req.url ?? '').split('?')[0];
-      const bridge = path.startsWith(BRIDGE_PATH_PREFIX);
+      // Express по умолчанию регистронезависим к пути: /BRIDGE/v1 - тот же маршрут.
+      const bridge = path.toLowerCase().startsWith(BRIDGE_PATH_PREFIX);
       const retryAfter = bridge
         ? BRIDGE_RETRY_AFTER_S
         : BUSY_RETRY_AFTER_S[exception.code];

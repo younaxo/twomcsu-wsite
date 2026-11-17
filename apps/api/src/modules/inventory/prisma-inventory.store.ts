@@ -15,6 +15,13 @@ import type { ApplyResult } from './inventory.types';
 /// Число повторов при конфликте сериализации (P2034) или гонке вставки (P2002).
 const MAX_ATTEMPTS = 4;
 
+/// Явные быстрые опции (прежние умолчания Prisma 2000/5000), а не общие
+/// 10 с/10 с из PRISMA_TX_*: при MAX_ATTEMPTS = 4 общие значения дали бы
+/// до 80 с удержания запроса плагина. Транзакция короткая (чтение + upsert),
+/// быстрый отказ предпочтительнее; плагин повторяет отправку сам (ADR-0183).
+export const TX_MAX_WAIT_MS = 2000;
+export const TX_TIMEOUT_MS = 5000;
+
 function isRetryable(error: unknown): boolean {
   return (
     error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -101,7 +108,11 @@ export class PrismaInventoryStore implements InventoryStore {
             });
             return result;
           },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: TX_MAX_WAIT_MS,
+            timeout: TX_TIMEOUT_MS,
+          },
         );
       } catch (error) {
         if (!isRetryable(error)) throw error;

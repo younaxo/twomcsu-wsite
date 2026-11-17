@@ -83,6 +83,19 @@ describe('PrismaExceptionFilter (ADR-0183)', () => {
     expect(out.headers['Retry-After']).toBe('5');
   });
 
+  it('путь /bridge/v1 без учёта регистра', () => {
+    const out = run(prismaError('P2024'), '/BRIDGE/V1/Events?x=1');
+    expect(out.status).toBe(503);
+    expect(out.body).toEqual({ error: 'unavailable' });
+    expect(out.headers['Retry-After']).toBe('5');
+  });
+
+  it('не-http контекст: исключение пробрасывается, а не глотается', () => {
+    const host = { getType: () => 'rpc' } as unknown as ArgumentsHost;
+    const error = prismaError('P2028');
+    expect(() => new PrismaExceptionFilter().catch(error, host)).toThrow(error);
+  });
+
   it('isPrismaBusyCode', () => {
     expect(isPrismaBusyCode('P2028')).toBe(true);
     expect(isPrismaBusyCode('P2002')).toBe(false);
