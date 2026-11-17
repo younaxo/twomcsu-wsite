@@ -10,7 +10,7 @@ import {
   signRequest,
   verifySignature,
 } from './bridge-crypto';
-import { SLUG_PATTERN, isValidSlug } from './bridge.constants';
+import { KEY_ID_PATTERN, SLUG_PATTERN, isValidSlug } from './bridge.constants';
 import { TEST_MASTER } from '../../../test/support/bridge-support';
 
 // Эталонный вектор из раздела 2.2 BRIDGE-CONTRACT.md (тестовый ключ).
@@ -159,6 +159,24 @@ describe('slug и key-id', () => {
       expect(isValidSlug(v)).toBe(false);
     },
   );
+  it('KEY_ID_PATTERN совпадает с форматом slug (2.3, п. 0)', () => {
+    for (const ok of ['survival.1', 'a1.1', '0a.999999', 'lobby-2.12']) {
+      expect(KEY_ID_PATTERN.test(ok)).toBe(true);
+    }
+    for (const bad of [
+      'a.1',
+      '-ab.1',
+      'Ab.1',
+      'a.b.1',
+      `${'a'.repeat(33)}.1`,
+      'survival.0x',
+      'survival.1\n',
+      'survival.1234567',
+    ]) {
+      expect(KEY_ID_PATTERN.test(bad)).toBe(false);
+    }
+  });
+
   it('шаблон не принимает перевод строки в конце', () => {
     expect(SLUG_PATTERN.test('survival\n')).toBe(false);
   });

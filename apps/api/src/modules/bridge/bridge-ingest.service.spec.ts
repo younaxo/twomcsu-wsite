@@ -368,6 +368,8 @@ describe('BridgeIngestService: отказы по событию', () => {
     'player.join',
     'player.quit',
     'player.stats.snapshot',
+    'chat.message',
+    'chat.command',
     'inventory.snapshot',
     'inventory.delta',
     'something.new',

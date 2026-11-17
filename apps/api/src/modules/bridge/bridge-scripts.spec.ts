@@ -184,6 +184,33 @@ describe('bridge-register-server', () => {
     });
   });
 
+  it('Q42: число серверов не ограничено кодом, ключ на сервер уникален', async () => {
+    const slugs = ['survival', 'lobby', 'skyblock', 'creative', 'mini-1', 'x9'];
+    const extra = [...slugs, 'new-server-7', 'new-server-8'];
+    const keys = new Set<string>();
+    for (const slug of extra) {
+      const r = await registerServer(
+        db(false),
+        ['--slug', slug, '--name', slug],
+        'test',
+      );
+      expect(r.slug).toBe(slug);
+      keys.add(deriveServerKey(TEST_MASTER, slug, 1).toString('hex'));
+    }
+    expect(create).toHaveBeenCalledTimes(extra.length);
+    expect(keys.size).toBe(extra.length);
+  });
+
+  it('в коде приёмника нет списка серверов или предела их числа', () => {
+    const dir = __dirname;
+    const src = readdirSync(dir)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
+      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .join('\n');
+    expect(src).not.toMatch(/MAX_SERVERS|SERVER_LIMIT|maxServers/i);
+    expect(src).not.toMatch(/\.bridgeServer\.(count|findMany)\(/);
+  });
+
   it('неверный slug, дубликат и неизвестная возможность отклоняются', async () => {
     for (const s of ['A', 'a', 'bad.slug', '-x', 'x'.repeat(33)]) {
       expect(() => parseRegisterArgs(['--slug', s])).toThrow();

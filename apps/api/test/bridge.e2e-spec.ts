@@ -4,7 +4,10 @@ import { createHash, createHmac, randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
-import { BRIDGE_CONFIG } from '../src/modules/bridge/bridge.config';
+import {
+  BRIDGE_CONFIG,
+  readBridgeConfig,
+} from '../src/modules/bridge/bridge.config';
 import {
   BridgePunishmentSource,
   BridgeSourceEvent,
@@ -74,11 +77,12 @@ describe('Bridge receiver (e2e)', () => {
   ) {
     const headers = signedHeaders({ slug, body, master: MASTER, ...over });
     sentSecrets.push(headers['x-twomc-signature'], headers['x-twomc-nonce']);
+    // Строка, а не Buffer: superagent сериализует Buffer в JSON как {type,data}.
     return http()
       .post('/bridge/v1/events')
       .set(headers)
       .set('Content-Type', 'application/json')
-      .send(body);
+      .send(body.toString('utf8'));
   }
 
   const one = (slug: string, type: string, data: Record<string, unknown>) =>
@@ -106,9 +110,17 @@ describe('Bridge receiver (e2e)', () => {
           }),
       );
     }
+    // ConfigModule.forRoot выполняется при импорте AppModule (до beforeAll) и
+    // кэширует провалидированный env: BRIDGE_ENABLED фиксируется как false
+    // (Joi default). Поэтому конфигурация Bridge читается из process.env
+    // здесь, уже после задания синтетических значений. Продуктовый код не
+    // меняется: подменяется только провайдер, readBridgeConfig - боевой.
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(BRIDGE_CONFIG)
+      .useValue(readBridgeConfig({ get: (k: string) => process.env[k] as never }))
+      .compile();
     app = moduleFixture.createNestApplication(APP_CREATE_OPTIONS);
     configureApp(app);
     await app.init();
@@ -127,6 +139,22 @@ describe('Bridge receiver (e2e)', () => {
         new Date(),
       );
     });
+
+    // Подписчик открывает вложенную транзакцию, пока транзакция приёмника
+    // держит соединение. На «холодном» пуле первые такие запросы упираются в
+    // maxWait=2000 мс (P2028 -> 503). Прогреваем пул тем же вложенным
+    // шаблоном до первого теста.
+    await Promise.all(
+      Array.from({ length: 4 }, () => prisma.$queryRaw`SELECT 1`),
+    );
+    for (let i = 0; i < 3; i++) {
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT 1`;
+        await prisma.$transaction(async (tx2) => {
+          await tx2.$queryRaw`SELECT 1`;
+        });
+      });
+    }
 
     await prisma.bridgeServer.createMany({
       data: [
@@ -258,7 +286,7 @@ describe('Bridge receiver (e2e)', () => {
         .post('/bridge/v1/events')
         .set(headers)
         .set('Content-Type', 'application/json')
-        .send(body)
+        .send(body.toString('utf8'))
         .expect(401);
     });
 
@@ -298,7 +326,7 @@ describe('Bridge receiver (e2e)', () => {
           .post('/bridge/v1/events')
           .set(headers)
           .set('Content-Type', 'application/json')
-          .send(body)
+          .send(body.toString('utf8'))
           .expect(503);
         expect(res.body).toEqual({ error: 'unavailable' });
       } finally {
@@ -460,11 +488,69 @@ describe('Bridge receiver (e2e)', () => {
       expect(res.body.results[0].status).toBe('accepted');
       expect((await mirrorRow(sid))?.reason).toBe('Вторая причина');
     });
+
+    it('removed: зеркало получает статус REMOVED и данные снятия', async () => {
+      const sid = nextSourceId();
+      const now = Date.now();
+      const created = one(
+        slugMain,
+        'punishment.created',
+        punishmentData({ sourceId: sid }),
+      );
+      created.occurredAt = new Date(now - 30_000).toISOString();
+      await send(slugMain, batchBody([created])).expect(200);
+      expect((await mirrorRow(sid))?.status).toBe('ACTIVE');
+
+      const removed = one(
+        slugMain,
+        'punishment.removed',
+        punishmentData({
+          sourceId: sid,
+          removal: {
+            by: { uuid: null, name: null, console: true },
+            reason: 'Снято в e2e',
+            at: new Date(now - 5_000).toISOString(),
+          },
+        }),
+      );
+      removed.occurredAt = new Date(now - 5_000).toISOString();
+      const res = await send(slugMain, batchBody([removed])).expect(200);
+      expect(res.body.results[0].status).toBe('accepted');
+      const row = await mirrorRow(sid);
+      expect(row?.status).toBe('REMOVED');
+      expect(row?.removedReason).toBe('Снято в e2e');
+      expect(row?.removedAt).not.toBeNull();
+    });
+
+    it('deleted: событие уходит источнику (kind, sourceId), в журнале запись', async () => {
+      const sid = nextSourceId();
+      const before = published.length;
+      const deleted = one(slugMain, 'punishment.deleted', {
+        kind: 'BAN',
+        sourceId: sid,
+      });
+      const res = await send(slugMain, batchBody([deleted])).expect(200);
+      expect(res.body.results[0].status).toBe('accepted');
+      const got = published
+        .slice(before)
+        .filter((p) => p.type === 'deleted');
+      expect(got).toHaveLength(1);
+      expect(got[0]).toMatchObject({
+        type: 'deleted',
+        kind: 'BAN',
+        sourceId: sid,
+        serverSlug: slugMain,
+      });
+      const rows = await logRows(slugMain);
+      expect(rows.some((r) => r.type === 'punishment.deleted')).toBe(true);
+    });
   });
 
   describe('логи и журнал', () => {
     it('нет секретов, подписей, нонсов, IP и данных событий', async () => {
       const text = logLines.join('\n');
+      // Перехват Logger действует (иначе проверка ниже пуста).
+      expect(logLines.length).toBeGreaterThan(0);
       expect(text).not.toContain(MASTER_SECRET);
       for (const s of sentSecrets) expect(text).not.toContain(s);
       expect(text).not.toContain(marker);

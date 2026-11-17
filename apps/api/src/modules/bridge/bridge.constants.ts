@@ -29,7 +29,7 @@ export const ALLOWED_ROUTES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /// Формат заголовков проверяется до любых обращений к Redis и БД (2.3, п. 0).
-export const KEY_ID_PATTERN = /^[a-z0-9-]{1,32}\.[0-9]{1,6}$/;
+export const KEY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}\.[0-9]{1,6}$/;
 export const TIMESTAMP_PATTERN = /^[0-9]{10}$/;
 export const NONCE_PATTERN = /^[A-Za-z0-9_-]{22,43}$/;
 export const SIGNATURE_PATTERN = /^[0-9a-fA-F]{64}$/;
