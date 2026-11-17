@@ -77,8 +77,12 @@ describe('Store admin products (e2e)', () => {
   let admin: TestUser;
   let viewer: TestUser;
   let nobody: TestUser;
+  let varOnly: TestUser;
+  let delOnly: TestUser;
   let categoryId: string;
 
+  const allUserIds = () =>
+    [admin, viewer, nobody, varOnly, delOnly].map((u) => u.id);
   const slug = (name: string) => `e2e-${unique}-${name}`;
   const auth = (user: TestUser) => `Bearer ${user.accessToken}`;
   const CDN = 'https://cdn-files.twomc.su/store/products/e2e.webp';
@@ -113,6 +117,8 @@ describe('Store admin products (e2e)', () => {
     admin = await createUser('admin');
     viewer = await createUser('viewer');
     nobody = await createUser('nobody');
+    varOnly = await createUser('varonly');
+    delOnly = await createUser('delonly');
     await createStaff(admin, `sap-admin-${unique}`, 20, [
       'store.products.view',
       'store.products.create',
@@ -123,6 +129,14 @@ describe('Store admin products (e2e)', () => {
     await createStaff(viewer, `sap-viewer-${unique}`, 10, [
       'store.products.view',
     ]);
+    await createStaff(varOnly, `sap-varonly-${unique}`, 10, [
+      'store.products.view',
+      'store.products.variants',
+    ]);
+    await createStaff(delOnly, `sap-delonly-${unique}`, 10, [
+      'store.products.view',
+      'store.products.delete',
+    ]);
     const category = await prisma.category.create({
       data: { name: 'E2E SAP', slug: slug('category') },
     });
@@ -132,6 +146,9 @@ describe('Store admin products (e2e)', () => {
   afterAll(async () => {
     await prisma.order.deleteMany({
       where: { orderNumber: { startsWith: `E2E${unique}` } },
+    });
+    await prisma.bundle.deleteMany({
+      where: { slug: { startsWith: `e2e-${unique}` } },
     });
     await prisma.product.deleteMany({
       where: { slug: { startsWith: `e2e-${unique}` } },
@@ -147,10 +164,10 @@ describe('Store admin products (e2e)', () => {
     });
     await prisma.role.deleteMany({ where: { slug: { in: cleanupRoleSlugs } } });
     await prisma.auditLog.deleteMany({
-      where: { actorId: { in: [admin.id, viewer.id, nobody.id] } },
+      where: { actorId: { in: allUserIds() } },
     });
     await prisma.user.deleteMany({
-      where: { id: { in: [admin.id, viewer.id, nobody.id] } },
+      where: { id: { in: allUserIds() } },
     });
     await app.close();
   }, 20_000);
@@ -445,5 +462,112 @@ describe('Store admin products (e2e)', () => {
     expect(await prisma.product.count({ where: { id: noOrder.body.id } })).toBe(
       0,
     );
+  });
+
+  it('удаление: товар и вариант в наборе — 409 PRODUCT_IN_BUNDLE / VARIANT_IN_BUNDLE, данные целы', async () => {
+    const created = await post(admin, productBody('inbundle')).expect(201);
+    const productId: string = created.body.id;
+    const firstVariantId: string = created.body.variants[0].id;
+    const second = await request(app.getHttpServer())
+      .post(`/admin/store/products/${productId}/variants`)
+      .set('Authorization', auth(admin))
+      .send({ duration: 'FOREVER', price: '500.00' })
+      .expect(201);
+    const bundle = await prisma.bundle.create({
+      data: {
+        name: 'E2E bundle',
+        slug: slug('bundle'),
+        totalPrice: '80.00',
+        originalPrice: '100.00',
+        items: {
+          create: [{ productId, variantId: second.body.id, quantity: 1 }],
+        },
+      },
+    });
+
+    const delVariant = await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}/variants/${second.body.id}`)
+      .set('Authorization', auth(admin))
+      .expect(409);
+    expect(delVariant.body.code).toBe('VARIANT_IN_BUNDLE');
+    expect(
+      await prisma.productVariant.count({ where: { id: second.body.id } }),
+    ).toBe(1);
+
+    const delProduct = await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(admin))
+      .expect(409);
+    expect(delProduct.body.code).toBe('PRODUCT_IN_BUNDLE');
+    expect(await prisma.product.count({ where: { id: productId } })).toBe(1);
+    expect(
+      await prisma.bundleItem.count({ where: { bundleId: bundle.id } }),
+    ).toBe(1);
+
+    // Вариант, не входящий в набор, удаляется как обычно.
+    await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}/variants/${firstVariantId}`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+
+    // После снятия из набора товар удаляется.
+    await prisma.bundle.delete({ where: { id: bundle.id } });
+    await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(admin))
+      .expect(200);
+    expect(await prisma.product.count({ where: { id: productId } })).toBe(0);
+  });
+
+  it('права: variants и delete — отдельные права (403 без права, успех с правом)', async () => {
+    const created = await post(admin, productBody('permsplit')).expect(201);
+    const productId: string = created.body.id;
+
+    // Только variants: варианты можно, удалять товар — нельзя.
+    const variant = await request(app.getHttpServer())
+      .post(`/admin/store/products/${productId}/variants`)
+      .set('Authorization', auth(varOnly))
+      .send({ duration: 'FOREVER', price: '300.00' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/admin/store/products/${productId}/variants/${variant.body.id}`)
+      .set('Authorization', auth(varOnly))
+      .send({ order: 2 })
+      .expect(200);
+    await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(varOnly))
+      .expect(403);
+    expect(await prisma.product.count({ where: { id: productId } })).toBe(1);
+
+    // Только delete: вариантами управлять нельзя, товар удалить можно.
+    await request(app.getHttpServer())
+      .post(`/admin/store/products/${productId}/variants`)
+      .set('Authorization', auth(delOnly))
+      .send({ duration: 'MONTH_3', price: '1.00' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch(`/admin/store/products/${productId}/variants/${variant.body.id}`)
+      .set('Authorization', auth(delOnly))
+      .send({ order: 3 })
+      .expect(403);
+    await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}/variants/${variant.body.id}`)
+      .set('Authorization', auth(delOnly))
+      .expect(403);
+    expect(
+      await prisma.productVariant.count({ where: { id: variant.body.id } }),
+    ).toBe(1);
+
+    // Вариант удаляет тот, у кого variants; товар — тот, у кого delete.
+    await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}/variants/${variant.body.id}`)
+      .set('Authorization', auth(varOnly))
+      .expect(200);
+    const del = await request(app.getHttpServer())
+      .delete(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(delOnly))
+      .expect(200);
+    expect(del.body.mode).toBe('deleted');
   });
 });

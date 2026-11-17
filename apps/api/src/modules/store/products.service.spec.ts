@@ -54,8 +54,13 @@ function setup(type = 'PRIVILEGE', isActive = false) {
     bundleItem: { count: jest.fn().mockResolvedValue(0) },
     cartItem: { deleteMany: jest.fn().mockReturnValue('cart') },
     wishlistItem: { deleteMany: jest.fn().mockReturnValue('wish') },
-    $transaction: jest.fn().mockResolvedValue([]),
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    $transaction: jest.fn(),
   };
+  // Интерактивная транзакция: коллбэк получает тот же мок-клиент.
+  prisma.$transaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+    cb(prisma),
+  );
   const service = new ProductsService(prisma as never, audit as never);
   return { service, prisma, audit };
 }
@@ -140,16 +145,42 @@ describe('ProductsService (админка)', () => {
     await expect(service.remove('p1', 'admin1')).resolves.toEqual({
       mode: 'deleted',
     });
-    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Блокировка строки до проверок, удаление — внутри той же транзакции.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.cartItem.deleteMany).toHaveBeenCalled();
+    expect(prisma.wishlistItem.deleteMany).toHaveBeenCalled();
+    expect(prisma.product.delete).toHaveBeenCalled();
   });
 
-  it('remove: товар в наборе — 409', async () => {
+  it('remove: проверка заказов внутри транзакции (не через прямой клиент)', async () => {
+    const { service, prisma } = setup();
+    (prisma.$transaction as jest.Mock).mockImplementation(
+      (cb: (tx: unknown) => unknown) =>
+        cb({
+          ...prisma,
+          orderItem: { count: jest.fn().mockResolvedValue(1) },
+          product: { update: jest.fn(), delete: jest.fn() },
+        }),
+    );
+    await expect(service.remove('p1', 'admin1')).resolves.toEqual({
+      mode: 'deactivated',
+    });
+    expect(prisma.orderItem.count).not.toHaveBeenCalled();
+    expect(prisma.product.update).not.toHaveBeenCalled();
+  });
+
+  it('remove: товар в наборе — 409 PRODUCT_IN_BUNDLE, ничего не удалено', async () => {
     const { service, prisma } = setup();
     (prisma.bundleItem.count as jest.Mock).mockResolvedValue(1);
+    await expect(service.remove('p1', 'admin1')).rejects.toMatchObject({
+      response: { code: 'PRODUCT_IN_BUNDLE' },
+    });
     await expect(service.remove('p1', 'admin1')).rejects.toBeInstanceOf(
       ConflictException,
     );
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.product.delete).not.toHaveBeenCalled();
+    expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
   });
 
   it('updateVariant: изменение цены — аудит было → стало', async () => {
@@ -194,5 +225,34 @@ describe('ProductsService (админка)', () => {
       mode: 'deactivated',
     });
     expect(prisma.productVariant.delete).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('removeVariant: вариант в наборе (BundleItem.variantId без FK) — 409 VARIANT_IN_BUNDLE', async () => {
+    const { service, prisma } = setup();
+    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      variantRow('100'),
+    );
+    (prisma.bundleItem.count as jest.Mock).mockResolvedValue(1);
+    await expect(
+      service.removeVariant('p1', 'v1', 'admin1'),
+    ).rejects.toMatchObject({ response: { code: 'VARIANT_IN_BUNDLE' } });
+    expect(prisma.bundleItem.count).toHaveBeenCalledWith({
+      where: { variantId: 'v1' },
+    });
+    expect(prisma.productVariant.delete).not.toHaveBeenCalled();
+    expect(prisma.cartItem.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('removeVariant: без заказов и наборов — удаление в транзакции', async () => {
+    const { service, prisma } = setup();
+    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      variantRow('100'),
+    );
+    await expect(service.removeVariant('p1', 'v1', 'admin1')).resolves.toEqual({
+      mode: 'deleted',
+    });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.productVariant.delete).toHaveBeenCalled();
   });
 });

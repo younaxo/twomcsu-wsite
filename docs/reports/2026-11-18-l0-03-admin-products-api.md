@@ -38,3 +38,21 @@
 ## К переносу
 
 В основной ветке после слияния: (1) обновить `docs/technical/API-REFERENCE` по админке товаров (Decimal-строки, `mode` в DELETE, 422/409-коды, новые action аудита); (2) при появлении настройки `store.sellableTypes` заменить `DEFAULT_SELLABLE_TYPES` (TODO(0.11)); (3) решить Р1: серверная проверка типа в корзине/заказе; (4) `packages/shared`: типы DTO цены уже `DecimalString`, правок не потребовалось; (5) шаг 2 (UI админки) должен слать цену строкой и не слать `isActive`/`gameCommands` при создании, и показывать `mode` после удаления.
+
+## Правки по независимому ревью (дополнительный коммит)
+
+- Medium-1: `remove` и `removeVariant` — проверки заказов/наборов и удаление в одной интерактивной транзакции; перед проверками блокируется строка (`SELECT ... FOR UPDATE` по `products`/`product_variants`). Вставка `OrderItem` по FK берёт `FOR KEY SHARE` и ждёт конца транзакции, поэтому параллельный заказ не может «обнулить» `productId`/`variantId` через SET NULL. Аудит пишется после коммита.
+- Medium-2: `removeVariant` проверяет `BundleItem.variantId` (FK нет) — 409 `VARIANT_IN_BUNDLE`; юнит и e2e.
+- Low-1: e2e прав `store.products.variants` / `store.products.delete` (403 без права, успех с правом; два отдельных пользователя) и `admin_2fa_required` для мутаций товаров/вариантов — в `two-factor.e2e-spec.ts` (флаг `requireAdmin2fa` глобальный, набор идёт отдельно и по очереди).
+- Low-2: e2e на 409 `PRODUCT_IN_BUNDLE` (реальный набор в БД).
+- Проверки: tsc apps/api чисто; eslint по 4 файлам чисто; Jest `src/modules/store` 8 suites, 112 tests; e2e (одноразовая БД) store-admin-products 11/11, two-factor 7/7.
+
+### Допущения и долг после ревью
+
+1. Low-3 и Info не сделаны: `oldPrice: null` (сброс старой цены) и очистка `image` через `null` в DTO типизированы как `string`; сделать явную семантику null (тип `string | null`, e2e) — отдельной правкой вместе с UI админки (шаг 2).
+2. Блокировка `FOR UPDATE` берётся по строке товара/варианта; создание заказа, которое уже держит `KEY SHARE`, заставит удаление подождать (короткая задержка, без дедлока: порядок блокировок единый).
+3. `VARIANT_IN_BUNDLE` — по образцу `PRODUCT_IN_BUNDLE`; деактивация варианта с набором не выполняется (только 409), как и для товара без заказов.
+
+### К переносу (дополнение)
+
+В API-REFERENCE добавить код 409 `VARIANT_IN_BUNDLE` для DELETE варианта и пояснение про атомарность проверок.

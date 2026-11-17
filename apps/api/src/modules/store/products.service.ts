@@ -245,41 +245,47 @@ export class ProductsService {
     actorId: string,
   ): Promise<{ mode: 'deleted' | 'deactivated' }> {
     const product = await this.getAdminById(id);
-    const orderItems = await this.prisma.orderItem.count({
-      where: { productId: id },
-    });
-    if (orderItems > 0) {
-      await this.prisma.product.update({
-        where: { id },
-        data: { isActive: false },
+    // Проверки и удаление — в одной транзакции. Блокировка строки товара
+    // (FOR UPDATE) конфликтует с FOR KEY SHARE, который берёт вставка
+    // OrderItem по FK: параллельный заказ дождётся конца транзакции и не
+    // сможет «обнулить» productId через ON DELETE SET NULL.
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM products WHERE id = ${id} FOR UPDATE`;
+      const orderItems = await tx.orderItem.count({
+        where: { productId: id },
       });
+      if (orderItems > 0) {
+        await tx.product.update({ where: { id }, data: { isActive: false } });
+        return { mode: 'deactivated' as const, orderItems };
+      }
+      const bundleItems = await tx.bundleItem.count({
+        where: { productId: id },
+      });
+      if (bundleItems > 0) {
+        throw new ConflictException({
+          code: 'PRODUCT_IN_BUNDLE',
+          message:
+            'Товар входит в набор: уберите его из наборов или деактивируйте товар',
+        });
+      }
+      await tx.cartItem.deleteMany({ where: { productId: id } });
+      await tx.wishlistItem.deleteMany({ where: { productId: id } });
+      await tx.product.delete({ where: { id } });
+      return { mode: 'deleted' as const, orderItems: 0 };
+    });
+    if (result.mode === 'deactivated') {
       await this.auditEvent(
         actorId,
         'store.product.deactivated_instead_of_delete',
         id,
         {
           reason: 'has_orders',
-          orderItems,
+          orderItems: result.orderItems,
           wasActive: product.isActive,
         },
       );
       return { mode: 'deactivated' };
     }
-    const bundleItems = await this.prisma.bundleItem.count({
-      where: { productId: id },
-    });
-    if (bundleItems > 0) {
-      throw new ConflictException({
-        code: 'PRODUCT_IN_BUNDLE',
-        message:
-          'Товар входит в набор: уберите его из наборов или деактивируйте товар',
-      });
-    }
-    await this.prisma.$transaction([
-      this.prisma.cartItem.deleteMany({ where: { productId: id } }),
-      this.prisma.wishlistItem.deleteMany({ where: { productId: id } }),
-      this.prisma.product.delete({ where: { id } }),
-    ]);
     await this.auditEvent(actorId, 'store.product.deleted', id, {
       slug: product.slug,
       type: product.type,
@@ -375,26 +381,43 @@ export class ProductsService {
     actorId: string,
   ): Promise<{ mode: 'deleted' | 'deactivated' }> {
     const variant = await this.requireVariant(productId, variantId);
-    const orderItems = await this.prisma.orderItem.count({
-      where: { variantId },
+    // См. remove: блокировка строки варианта + проверки и удаление в одной
+    // транзакции. У BundleItem.variantId нет FK, поэтому набор проверяем явно.
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM product_variants WHERE id = ${variantId} FOR UPDATE`;
+      const orderItems = await tx.orderItem.count({ where: { variantId } });
+      if (orderItems > 0) {
+        await tx.productVariant.update({
+          where: { id: variantId },
+          data: { isActive: false },
+        });
+        return { mode: 'deactivated' as const, orderItems };
+      }
+      const bundleItems = await tx.bundleItem.count({ where: { variantId } });
+      if (bundleItems > 0) {
+        throw new ConflictException({
+          code: 'VARIANT_IN_BUNDLE',
+          message:
+            'Вариант входит в набор: уберите его из наборов или деактивируйте вариант',
+        });
+      }
+      await tx.cartItem.deleteMany({ where: { variantId } });
+      await tx.productVariant.delete({ where: { id: variantId } });
+      return { mode: 'deleted' as const, orderItems: 0 };
     });
-    if (orderItems > 0) {
-      await this.prisma.productVariant.update({
-        where: { id: variantId },
-        data: { isActive: false },
-      });
+    if (result.mode === 'deactivated') {
       await this.auditEvent(
         actorId,
         'store.product.variant_deactivated_instead_of_delete',
         productId,
-        { variantId, duration: variant.duration, orderItems },
+        {
+          variantId,
+          duration: variant.duration,
+          orderItems: result.orderItems,
+        },
       );
       return { mode: 'deactivated' };
     }
-    await this.prisma.$transaction([
-      this.prisma.cartItem.deleteMany({ where: { variantId } }),
-      this.prisma.productVariant.delete({ where: { id: variantId } }),
-    ]);
     await this.auditEvent(actorId, 'store.product.variant_deleted', productId, {
       variantId,
       duration: variant.duration,
