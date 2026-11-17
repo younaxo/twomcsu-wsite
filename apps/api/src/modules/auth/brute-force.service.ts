@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { normalizeIp } from '../../config/trust-proxy';
 import { RedisService } from '../redis/redis.service';
 
 const CAPTCHA_AFTER_ATTEMPTS = 3;
@@ -11,11 +12,11 @@ export class BruteForceService {
   constructor(private readonly redis: RedisService) {}
 
   private counterKey(ip: string): string {
-    return `bruteforce:login:${ip}`;
+    return `bruteforce:login:${normalizeIp(ip)}`;
   }
 
   private blockedKey(ip: string): string {
-    return `bruteforce:blocked:${ip}`;
+    return `bruteforce:blocked:${normalizeIp(ip)}`;
   }
 
   async isBlocked(ip: string): Promise<boolean> {

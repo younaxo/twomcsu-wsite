@@ -29,7 +29,7 @@
 - Ключи: `bruteforce:login:{ip}` (счётчик, TTL 900 с), `bruteforce:blocked:{ip}` (блок, TTL 900 с).
 - `CAPTCHA_AFTER_ATTEMPTS = 3`: после 3 неудач с IP ответ `{ requiresCaptcha: true }`, пока не передан `captchaToken`.
 - `BLOCK_AFTER_ATTEMPTS = 10`: IP блокируется на 15 минут (HTTP 429). Успешный вход сбрасывает счётчики.
-- Счётчик привязан к **IP**, не к аккаунту; IP берётся из `req.ip`, а `trust proxy` в `main.ts` не включён (за reverse proxy все клиенты окажутся с одним IP — см. 29-SECURITY.md).
+- Счётчик привязан к **IP**, не к аккаунту. IP — `req.ip` по политике `TRUST_PROXY` (ADR-0155): пусто — адрес TCP-соединения, `1` — один доверенный proxy (nginx), также `loopback`/CIDR; `true`/`*`/`-1` запрещены при старте. Адрес нормализуется (`::ffff:1.2.3.4` → `1.2.3.4`) в `configureApp` и в ключах; тот же IP идёт в throttler, `lastLoginIp`, сессии, audit, captcha и регистрацию. Подделка `X-Forwarded-For` не работает при корректном числе hop-ов и когда nginx добавляет/перезаписывает заголовок: берётся адрес справа до первого недоверенного hop-а. Если `N` больше реального числа прокси, клиентские (подделанные) элементы цепочки начинают учитываться, поэтому `N` должно точно совпадать с топологией. CIDR шире IPv4 /8 и IPv6 /16 (в т.ч. `0.0.0.0/0`, `::/0`) запрещены при старте.
 
 ## Captcha (`CaptchaService`)
 Cloudflare Turnstile `https://challenges.cloudflare.com/turnstile/v0/siteverify` (ADR-0059), таймаут 5 с, `TURNSTILE_SECRET_KEY`; `TURNSTILE_DISABLED=true` только для CI e2e. Frontend ключ: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (dev — тестовый ключ Cloudflare).
