@@ -206,10 +206,12 @@ describe('карточка /shop/[slug]', () => {
     render(<ProductPage />, { wrapper: Providers });
     await screen.findByRole('heading', { level: 1 });
     const qty = screen.getByRole('spinbutton', { name: 'Количество' });
-    expect(qty).toHaveAttribute('max', '5');
+    expect(qty).toHaveAttribute('aria-valuemax', '5');
+    expect(qty).toHaveAttribute('type', 'text');
+    expect(qty).toHaveAttribute('inputmode', 'numeric');
     await user.clear(qty);
     await user.type(qty, '99');
-    expect(qty).toHaveValue(5);
+    expect(qty).toHaveValue('5');
     const plus = screen.getByRole('button', { name: 'Увеличить количество' });
     expect(plus).toHaveAttribute('aria-disabled', 'true');
     expect(plus).not.toBeDisabled();
@@ -229,15 +231,15 @@ describe('карточка /shop/[slug]', () => {
     const qty = screen.getByRole('spinbutton', { name: 'Количество' });
     await user.clear(qty);
     await user.type(qty, '3');
-    expect(qty).toHaveValue(3);
+    expect(qty).toHaveValue('3');
     await user.clear(qty);
-    expect(qty).toHaveValue(null);
+    expect(qty).toHaveValue('');
     await user.tab();
-    expect(qty).toHaveValue(3);
+    expect(qty).toHaveValue('3');
     await user.clear(qty);
     await user.type(qty, '0');
     await user.tab();
-    expect(qty).toHaveValue(1);
+    expect(qty).toHaveValue('1');
   });
 
   it('кнопки +/- через aria-disabled: клик на пределе игнорируется, фокус не теряется, лимит озвучивается', async () => {
@@ -250,16 +252,16 @@ describe('карточка /shop/[slug]', () => {
     const plus = screen.getByRole('button', { name: 'Увеличить количество' });
     expect(minus).toHaveAttribute('aria-disabled', 'true');
     await user.click(minus);
-    expect(qty).toHaveValue(1);
+    expect(qty).toHaveValue('1');
 
     await user.click(plus);
-    expect(qty).toHaveValue(2);
+    expect(qty).toHaveValue('2');
     expect(minus).toHaveAttribute('aria-disabled', 'false');
     await user.clear(qty);
     await user.type(qty, '5');
     plus.focus();
     await user.keyboard('{Enter}');
-    expect(qty).toHaveValue(5);
+    expect(qty).toHaveValue('5');
     expect(plus).toHaveFocus();
     expect(screen.getByTestId('quantity-note')).toHaveTextContent('Достигнут предел: не больше 5');
   });

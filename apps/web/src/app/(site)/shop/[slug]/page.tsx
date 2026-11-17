@@ -227,16 +227,28 @@ function QuantityField({
         </IconButton>
         <input
           id={id}
-          type="number"
+          // Не числовой type: у него нативные стрелки браузера (ADR-0087).
+          type="text"
+          role="spinbutton"
           inputMode="numeric"
-          min={1}
-          max={max}
+          pattern="[0-9]*"
+          autoComplete="off"
+          aria-valuemin={1}
+          aria-valuemax={max}
+          aria-valuenow={value}
           value={text}
           aria-describedby={hint ? hintId : undefined}
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            commit(value + (event.key === 'ArrowUp' ? 1 : -1));
+          }}
           onChange={(event) => {
             const raw = event.target.value;
+            // Только цифры: прочие символы игнорируются.
+            if (!/^\d*$/.test(raw)) return;
             setText(raw);
-            const parsed = event.target.valueAsNumber;
+            const parsed = raw === '' ? Number.NaN : Number(raw);
             if (raw === '' || !Number.isFinite(parsed)) return;
             if (parsed > max) {
               commit(parsed);
