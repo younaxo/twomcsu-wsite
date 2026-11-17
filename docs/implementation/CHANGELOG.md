@@ -1379,3 +1379,12 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
 - Миграция `20261117000000_user_banned_by` (`users.bannedById TEXT NULL`, без FK и индекса, не применялась). Старые баны без выдавшего снимает только владелец.
 - Аудит на каждое снятие (`chat.mute.revoke`, `chat.ban.revoke`, `user.unban`, `reports.ban.revoke`) с `issuerId`, `ownerOverride`, `self`; `@SkipAudit()` на трёх хендлерах против дублей.
 - Тесты: unit api 517 в 53 наборах, PASS; e2e `unban-hierarchy.e2e-spec.ts` написан статически, не запускался. Новые риски R41-R43.
+
+## 2026-11-17 — Этап 04, срез 2: ядро инвентаря на сайте (ADR-0179, ветка feature/stage-04-s2-inventory, не смержено, миграция не применена, e2e не запускалась)
+
+- Модели `PlayerInventory` (последнее состояние на пользователя, сервер и группу `main`/`ender`) и `InventoryPrivacy`; миграция `20261117030000_inventory_core` (только добавление, написана вручную, ждёт ревью Q28, на БД не применялась).
+- Модуль `apps/api/src/modules/inventory`: нормализация предметов (лимит 600 байт, Q35 а), безопасный текст (Q38 а), применение снимков и дельт (приёмника Bridge пока нет), чтение своего инвентаря, приватность по умолчанию «приватно» (Q34 а), очистка 90 суток (Q36 а, выключена), точка расширения донат-прав (`default`), fail-closed guard `BRIDGE_ENABLED`.
+- API: `GET /inventory/me`, `GET|PATCH /inventory/me/privacy`; без `BRIDGE_ENABLED=true` ответ 503 `inventory_unavailable`.
+- Контракт: `packages/shared/src/api/inventory.ts` и локальное зеркало в `apps/api`. Сборщик частей снимка (Lua-атомарность, ADR-0179 п. 9-12) и заголовок частей (ADR-0179, риск R101).
+- Проверки: `tsc --noEmit` api и shared 0 ошибок; jest `--runInBand src/modules/inventory src/modules/punishments src/modules/roles` 34 набора passed, 1 skipped, 979 тестов passed, 6 skipped (проверка 2026-11-17; модуль inventory отдельно: 242 passed, 6 skipped, redis-набор без `INVENTORY_REDIS_TEST_URL` пропускается; прежние числа раунда 1 - 10 наборов, 199 тестов - устарели); eslint и prettier на изменённых файлах чисто. Lua-тест на реальном Redis 7 запущен 2026-11-17: 6/6 (+2 юнит-регресса, 8/8) (R93). e2e `apps/api/test/inventory.e2e-spec.ts`, миграция на БД и полный jest не запускались.
+- Риски R70–R79 (срез 2), R93–R99 и R101 (сборщик и заголовок частей). Отчёт: `docs/reports/2026-11-17-04-s2-inventory-core.md`.
