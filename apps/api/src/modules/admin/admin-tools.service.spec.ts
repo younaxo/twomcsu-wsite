@@ -107,4 +107,44 @@ describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
     });
     expect(await service.listSuspiciousActivity()).toEqual([]);
   });
+
+  describe('пачки MGET по 100 ключей', () => {
+    function storeFor(count: number): Record<string, string> {
+      const store: Record<string, string> = {};
+      for (let i = 0; i < count; i += 1) {
+        const key = `198.51.100.${i}`;
+        store[`bruteforce:login:${key}`] = '3';
+        // lastip есть у всех, кроме каждого 7-го: проверка соответствия индексов.
+        if (i % 7 !== 0) store[`bruteforce:lastip:${key}`] = `full-${i}`;
+      }
+      return store;
+    }
+
+    function mgetSizes(service: AdminToolsService): number[] {
+      const redis = (
+        service as unknown as {
+          redis: { client: { mget: jest.Mock } };
+        }
+      ).redis;
+      return redis.client.mget.mock.calls.map((c: [string[]]) => c[0].length);
+    }
+
+    it.each([
+      [100, [100]],
+      [101, [100, 1]],
+      [250, [100, 100, 50]],
+    ])(
+      '%i ключей подсетей -> размеры пачек %j, lastIp соответствует ключу',
+      async (count, sizes) => {
+        const service = makeService(storeFor(count));
+        const result = await service.listSuspiciousActivity();
+        expect(mgetSizes(service)).toEqual(sizes);
+        expect(result).toHaveLength(count);
+        for (const row of result) {
+          const i = Number(row.ip.split('.')[3]);
+          expect(row.lastIp).toBe(i % 7 === 0 ? null : `full-${i}`);
+        }
+      },
+    );
+  });
 });

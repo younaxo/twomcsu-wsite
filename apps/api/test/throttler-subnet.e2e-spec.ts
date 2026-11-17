@@ -78,10 +78,20 @@ describe('Global throttler: ключ по /64 (e2e)', () => {
     await hit('2001:db8:a:1:ffff:ffff:ffff:ffff').expect(429);
   });
 
-  it('другая /64 и IPv4 лимит этой подсети не делят', async () => {
-    const other = await hit('2001:db8:a:2::1');
+  it('другая /64 и IPv4 лимит исчерпанной подсети не делят', async () => {
+    // Исчерпываем лимит отдельной /64 (2001:db8:a:3::/64) до 429.
+    for (let i = 0; i < LIMIT; i += 1) {
+      await hit(`2001:db8:a:3::${i + 1}`);
+    }
+    await hit('2001:db8:a:3::ffff').expect(429);
+
+    // Уже после этого соседние /64 и IPv4 не получают 429: изоляция доказана
+    // именно на исчерпанном лимите, а не на «пустой» корзине.
+    const other = await hit('2001:db8:a:4::1');
     expect(other.status).not.toBe(429);
     const v4 = await hit('203.0.113.44');
     expect(v4.status).not.toBe(429);
+    // Исчерпанная /64 по-прежнему блокируется.
+    await hit('2001:db8:a:3::1234').expect(429);
   });
 });

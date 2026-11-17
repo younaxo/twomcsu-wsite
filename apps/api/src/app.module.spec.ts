@@ -3,6 +3,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { IpSubnetThrottlerGuard } from './common/guards/ip-subnet-throttler.guard';
 
+// multer не объявлен в package.json api (только @types/multer; Q55) и под строгим
+// pnpm недоступен из apps/api, а files.controller импортирует его при загрузке
+// AppModule. Тест проверяет только метаданные модуля, поэтому multer подменяется
+// виртуальным моком (не требует установленного пакета). Зависимости не менялись.
+jest.mock('multer', () => ({ memoryStorage: jest.fn() }), { virtual: true });
+
 // ConfigModule.forRoot валидирует env при загрузке app.module, поэтому на время
 // импорта подставляются заведомо фиктивные значения (БД и Redis не нужны:
 // модуль только читается через метаданные, приложение не создаётся).
