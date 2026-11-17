@@ -58,12 +58,31 @@
 ## Владельцу: миграция и права обращений (Q26, Q27, ADR-0172)
 
 1. Применить на production миграцию `20261017000000_report_status_changed` (`ALTER TYPE "NotificationType" ADD VALUE 'REPORT_STATUS_CHANGED'`) до деплоя кода, который шлёт этот тип. Миграции на production применяет только владелец.
-2. Запустить seed синхронизации каталога прав (таблица `permissions` получит `reports.notes.edit` и `reports.notes.unpin`).
-3. В админке выдать нужным ролям `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`). Без этого персонал не сможет править чужие заметки и откреплять.
+2. Применить миграцию `20261117010000_reports_notes_permissions_backfill` (Q50, ADR-0174): она создаёт права `reports.notes.edit` и `reports.notes.unpin` (если их ещё нет) и выдаёт их ролям, у которых есть старое право с effect ALLOW (`reports.delete` -> `reports.notes.edit`, `reports.notes.pin` -> `reports.notes.unpin`). Только добавление, идемпотентна. Применяет владелец.
+3. Запустить seed синхронизации каталога прав (upsert по `key`; после миграции дублей не будет).
+4. Выдача прав ролям теперь делается миграцией, вручную остаётся только проверка (запросы ниже). Права, выданные в админке вручную раньше, миграция не ломает (конфликт по ключу, строка не меняется). Роли, которым нужны права без старых, настраиваются в админке как обычно.
 
-### Порядок выкладки и проверки (Q26, Q27, ADR-0172)
+### Порядок выкладки и проверки (Q26, Q27, Q50, ADR-0172, ADR-0174)
 
-Порядок строго такой: миграция -> seed каталога прав -> выдача прав ролям -> деплой кода.
+Порядок строго такой: миграция -> seed каталога прав -> проверка выдачи прав (выдаёт миграция) -> деплой кода.
+
+Проверка после миграции и seed (только чтение). Первый запрос должен вернуть 2 строки; второй и третий — пустой результат (роль со старым правом ALLOW без нового):
+
+```sql
+SELECT "key" FROM permissions WHERE "key" IN ('reports.notes.edit', 'reports.notes.unpin');
+
+SELECT rp."roleId" FROM role_permissions rp JOIN permissions p ON p.id = rp."permissionId"
+WHERE p."key" = 'reports.delete' AND rp.effect = 'ALLOW'
+  AND NOT EXISTS (SELECT 1 FROM role_permissions n JOIN permissions np ON np.id = n."permissionId"
+                  WHERE n."roleId" = rp."roleId" AND np."key" = 'reports.notes.edit');
+
+SELECT rp."roleId" FROM role_permissions rp JOIN permissions p ON p.id = rp."permissionId"
+WHERE p."key" = 'reports.notes.pin' AND rp.effect = 'ALLOW'
+  AND NOT EXISTS (SELECT 1 FROM role_permissions n JOIN permissions np ON np.id = n."permissionId"
+                  WHERE n."roleId" = rp."roleId" AND np."key" = 'reports.notes.unpin');
+```
+
+Непустой результат второго или третьего запроса допустим только если у роли новое право явно стоит с effect DENY (миграция DENY не перезаписывает).
 
 - Если код выложен до миграции, смена статуса не падает, но уведомление `REPORT_STATUS_CHANGED` автору теряется молча (ошибка ловится и пишется предупреждением в лог).
 - После деплоя проверить логи api на строку «Не удалось отправить уведомление»: её появление означает, что уведомления не доходят (миграция не применена или иная ошибка записи).
