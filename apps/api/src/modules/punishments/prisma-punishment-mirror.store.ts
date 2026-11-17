@@ -115,6 +115,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     rows: NormalizedPunishment[],
     cursorId: bigint | null,
     now: Date,
+    sourceScope: string = SOURCE_SCOPE,
   ): Promise<MirrorChange[]> {
     // Проверки ДО транзакции: Invalid Date не должен ронять её посередине.
     if (!validDate(now) || now === null) {
@@ -132,7 +133,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
         for (const row of valid) {
           const result = await tx.$queryRaw<
             Array<{ inserted: boolean; rev: number }>
-          >(this.upsertSql(source, row, now));
+          >(this.upsertSql(source, row, now, sourceScope));
           if (result.length > 0) {
             changes.push({
               kind: row.kind,
@@ -172,6 +173,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     source: string,
     row: NormalizedPunishment,
     now: Date,
+    sourceScope: string,
   ): Prisma.Sql {
     const executor = actorColumns(row.executor);
     const removedBy = actorColumns(row.removal?.by ?? null);
@@ -185,7 +187,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
         "template", "rowHash", "rev", "firstSeenAt", "lastSeenAt",
         "lastChangedAt"
       ) VALUES (
-        ${randomUUID()}, ${source}, ${SOURCE_SCOPE},
+        ${randomUUID()}, ${source}, ${sourceScope},
         ${row.kind}::"MinecraftPunishmentKind", ${BigInt(row.sourceId)},
         ${row.subjectUuid}, ${row.subjectName}, ${row.ipBan}, ${row.reason},
         ${executor.uuid}, ${executor.name}, ${executor.isConsole},
@@ -320,6 +322,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     ids: bigint[],
     now: Date,
     beforeGroup?: () => Promise<void>,
+    sourceScope: string = SOURCE_SCOPE,
   ): Promise<MirrorChange[]> {
     if (ids.length === 0) return [];
     const out: MirrorChange[] = [];
@@ -332,7 +335,7 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
         UPDATE "minecraft_punishments"
         SET "status" = 'DELETED_AT_SOURCE', "deletedAtSource" = ${ts(now)},
             "rev" = "rev" + 1, "lastChangedAt" = ${ts(now)}
-        WHERE "source" = ${source} AND "sourceScope" = ${SOURCE_SCOPE}
+        WHERE "source" = ${source} AND "sourceScope" = ${sourceScope}
           AND "kind" = ${kind}::"MinecraftPunishmentKind"
           AND "sourceId" IN (${Prisma.join(part)})
           AND "status" <> 'DELETED_AT_SOURCE'

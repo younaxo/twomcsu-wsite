@@ -1,0 +1,74 @@
+{
+  "name": "punishments-lifecycle",
+  "streamId": "punish-0001",
+  "steps": [
+    {
+      "type": "punishment.created",
+      "data": {
+        "kind": "BAN",
+        "sourceId": "9001",
+        "subjectUuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "subjectName": "TestPlayer001",
+        "ipBan": false,
+        "reason": "Синтетическая причина",
+        "executor": { "uuid": null, "name": null, "console": true },
+        "startedAt": "$now",
+        "until": null,
+        "status": "ACTIVE",
+        "removal": null,
+        "scope": "*",
+        "origin": "sim",
+        "silent": false,
+        "template": null
+      }
+    },
+    {
+      "type": "punishment.updated",
+      "data": {
+        "kind": "BAN",
+        "sourceId": "9001",
+        "subjectUuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "subjectName": "TestPlayer001",
+        "ipBan": false,
+        "reason": "Синтетическая причина (правка)",
+        "executor": { "uuid": null, "name": null, "console": true },
+        "startedAt": "$now",
+        "until": null,
+        "status": "ACTIVE",
+        "removal": null,
+        "scope": "*",
+        "origin": "sim",
+        "silent": false,
+        "template": null
+      }
+    },
+    {
+      "type": "punishment.removed",
+      "data": {
+        "kind": "BAN",
+        "sourceId": "9001",
+        "subjectUuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "subjectName": "TestPlayer001",
+        "ipBan": false,
+        "reason": "Синтетическая причина",
+        "executor": { "uuid": null, "name": null, "console": true },
+        "startedAt": "$now",
+        "until": null,
+        "status": "REMOVED",
+        "removal": {
+          "by": { "uuid": null, "name": null, "console": true },
+          "reason": "снято",
+          "at": "$now"
+        },
+        "scope": "*",
+        "origin": "sim",
+        "silent": false,
+        "template": null
+      }
+    },
+    {
+      "type": "punishment.deleted",
+      "data": { "kind": "BAN", "sourceId": "9001" }
+    }
+  ]
+}

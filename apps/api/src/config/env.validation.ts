@@ -1,4 +1,5 @@
 import * as Joi from 'joi';
+import { isStrongMasterSecret } from '../modules/bridge/bridge.constants';
 import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
 
@@ -296,4 +297,36 @@ export const envValidationSchema = Joi.object({
   LITEBANS_RECONCILE_INTERVAL_MIN: Joi.number().integer().min(5).max(1440),
   LITEBANS_DB_CONNECT_TIMEOUT_MS: Joi.number().integer().min(500).max(60_000),
   LITEBANS_DB_QUERY_TIMEOUT_MS: Joi.number().integer().min(500).max(60_000),
+
+  /// Приёмник Bridge (этап 03, ADR-0182). Без `BRIDGE_ENABLED=true` и
+  /// `BRIDGE_MASTER_SECRET` все пути `/bridge/v1/*` отвечают 503 (fail-closed).
+  /// Секрет не короче 32 байт (UTF-8); задаёт только владелец, значение в
+  /// репозиторий и логи не попадает. Флаг общий с разделом инвентаря (ADR-0168):
+  /// секрет НЕ обязателен при включённом флаге, чтобы не ронять запуск.
+  BRIDGE_ENABLED: Joi.boolean().default(false),
+  BRIDGE_MASTER_SECRET: Joi.string()
+    .allow('')
+    .custom((value: string, helpers) =>
+      value === '' || isStrongMasterSecret(Buffer.from(value, 'utf8'))
+        ? value
+        : helpers.error('string.min'),
+    )
+    .messages({
+      'string.min':
+        'BRIDGE_MASTER_SECRET: не короче 32 байт и не менее 16 различных байт',
+    })
+    .optional(),
+  BRIDGE_TIMESTAMP_WINDOW_S: Joi.number().integer().min(5).max(300),
+  BRIDGE_MAX_BODY_BYTES: Joi.number().integer().min(1024).max(1_048_576),
+  BRIDGE_KEY_OVERLAP_DAYS: Joi.number().integer().min(1).max(30),
+  BRIDGE_APPLY_LATENCY_LIMIT_MS: Joi.number().integer().min(100).max(30_000),
+  /// Дедлайн чтения тела запроса /bridge/v1 (по умолчанию 10000 мс).
+  BRIDGE_BODY_READ_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30_000)
+    .default(10_000),
+  /// Хранение журнала дедупликации: не меньше 7 суток (F5), иначе старт отклоняется.
+  BRIDGE_LOG_RETENTION_DAYS: Joi.number().integer().min(7).max(365),
+  BRIDGE_LOG_CLEANUP_ENABLED: Joi.boolean(),
 }).unknown(true);

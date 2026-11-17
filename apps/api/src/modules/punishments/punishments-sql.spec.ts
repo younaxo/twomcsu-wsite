@@ -30,7 +30,7 @@ describe('buildListQuery', () => {
       },
       cursor: { t: 5, i: "i'd" },
     });
-    expect(query.sql).not.toMatch(/DROP|Ab|123e|i'd/i);
+    expect(query.sql).not.toMatch(/DROP|Ab|123e|i'd/i);
     expect(query.values).toContain("ab'; drop table x;--%");
     expect(query.values).toContain('123e4567-e89b-12d3-a456-426614174000');
     expect(query.values).toContain("i'd");

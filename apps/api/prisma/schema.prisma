@@ -3462,3 +3462,51 @@ model InventoryPrivacy {
 
   @@map("inventory_privacy")
 }
+
+/// Статус сервера-источника Bridge (ADR-0182). `REVOKED` отклоняет все ключи сразу.
+enum BridgeServerStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// Сервер Minecraft, которому разрешено слать события в приёмник Bridge (ADR-0182).
+/// Секретов не хранит: ключ выводится HKDF от `BRIDGE_MASTER_SECRET` по `slug` и
+/// `keyGeneration` (контракт 2.4). Связи с `servers` нет намеренно: `slug` - строка
+/// того же вида, что `serverSlug` в `player_inventories` и зеркале наказаний.
+model BridgeServer {
+  id                   String             @id @default(cuid())
+  slug                 String             @unique @db.VarChar(32)
+  displayName          String             @db.VarChar(64)
+  status               BridgeServerStatus @default(ACTIVE)
+  keyGeneration        Int                @default(1)
+  /// Окно перекрытия: пока `now` меньше значения, предыдущее поколение принимается.
+  previousGenValidTill DateTime?
+  lastSeenAt           DateTime?
+  lastProtocol         Int?
+  pluginVersion        String?            @db.VarChar(32)
+  platform             String?            @db.VarChar(48)
+  clockSkewMs          Int?
+  /// Возможности сервера: `punishments`, позже `punishments-authoritative`, `player-events`.
+  capabilities         Json?
+  /// Область идентификаторов наказаний этого сервера (ключ зеркала этапа 02).
+  sourceScope          String             @default("default") @db.VarChar(32)
+  createdAt            DateTime           @default(now())
+
+  @@map("bridge_servers")
+}
+
+/// Журнал дедупликации событий `punishment.*` (ADR-0182). Не хранит `data`: только
+/// хэш содержимого для обнаружения `conflict`. Чистится по `receivedAt` старше 7 суток.
+model BridgeEventLog {
+  id          String   @id @default(cuid())
+  serverSlug  String   @db.VarChar(32)
+  eventId     String   @db.VarChar(64)
+  type        String   @db.VarChar(48)
+  status      String   @db.VarChar(16)
+  payloadHash String   @db.VarChar(64)
+  receivedAt  DateTime @default(now())
+
+  @@unique([serverSlug, eventId])
+  @@index([receivedAt])
+  @@map("bridge_event_log")
+}

@@ -68,8 +68,10 @@ function statusExpr(status: StaffStatus, now: Date): Prisma.Sql {
 export function buildConditions(spec: ListQuerySpec): Prisma.Sql[] {
   const { filters: f, now } = spec;
   const where: Prisma.Sql[] = [
-    Prisma.sql`"source" = 'litebans'`,
-    Prisma.sql`"sourceScope" = 'default'`,
+    // LiteBans (область default) плюс события Bridge от серверов, которым
+    // владелец включил punishments-authoritative (контракт 2.4). Подзапрос по
+    // маленькой таблице bridge_servers; без таких серверов выборка прежняя.
+    Prisma.sql`(("source" = 'litebans' AND "sourceScope" = 'default') OR ("source" = 'bridge' AND "sourceScope" IN (SELECT "sourceScope" FROM "bridge_servers" WHERE "status" = 'ACTIVE' AND "capabilities" @> '{"punishments-authoritative": true}'::jsonb)))`,
   ];
 
   if (spec.publicOnly) {

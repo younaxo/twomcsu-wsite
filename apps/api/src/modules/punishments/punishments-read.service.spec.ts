@@ -315,7 +315,7 @@ describe('listPublic: курсор, SQL, кэш (п.11, 13, 17, 18)', () => {
     expect(sql.sql).toContain(`"status" <> 'DELETED_AT_SOURCE'`);
     expect(sql.sql).toContain(`"silent" = false`);
     // Значение поиска идёт параметром, а не в тексте запроса.
-    expect(sql.sql).not.toMatch(/ab/i);
+    expect(sql.sql).not.toMatch(/ab/i);
     expect(sql.values).toContain('ab\\_\\%%');
   });
 

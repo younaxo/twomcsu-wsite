@@ -7,6 +7,12 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { resolve } from 'path';
 import { allowedOrigins, corsOrigin } from './config/cors';
 import { normalizeIp, resolveTrustProxy } from './config/trust-proxy';
+import { createBridgeBodyParser } from './modules/bridge/bridge-body-parser';
+import {
+  BRIDGE_CONFIG,
+  BridgeConfig,
+  readBridgeConfig,
+} from './modules/bridge/bridge.config';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Опции создания приложения для main.ts и e2e (`createNestApplication`):
@@ -39,6 +45,15 @@ export function configureApp(app: INestApplication): void {
   });
 
   app.use(helmet());
+  // Парсер тела /bridge/v1 со своим лимитом (M3) - до глобальных парсеров Nest.
+  // Конфигурация - тот же провайдер, что у guard (единый источник значений).
+  let bridgeConfig: BridgeConfig;
+  try {
+    bridgeConfig = app.get<BridgeConfig>(BRIDGE_CONFIG, { strict: false });
+  } catch {
+    bridgeConfig = readBridgeConfig(config);
+  }
+  app.use(createBridgeBodyParser(bridgeConfig));
   app.use(cookieParser());
   // Явный allowlist origin'ов сайта (ADR-0104), без «*»; тот же — у Socket.IO.
   app.enableCors({
