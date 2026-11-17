@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Исправления по ревью Q48 (ветка fix/q48-unban-hierarchy-all, не смержено)
+
+- Бан в обращениях: замена действующего бана = снятие, правило проверяется для каждого заменяемого бана («всё или ничего», 403 `sanction_revoke_forbidden`), плюс иерархия к цели (`canActOn`) при выдаче; так же при бане аккаунта через `QuickModerationService.ban`. Допущение chief, ADR-0173, R41.
+- Снятие и выдача бана аккаунта условны по состоянию (`updateMany`, 409 при гонке); снятие бана аккаунта и бана в обращениях пишет аудит в той же транзакции (`AuditService.logInTx`), ошибка аудита откатывает снятие.
+- `issuerKnown` для владельца отражает факт; R42 и чек-лист исправлены: без миграции падает чтение любого пользователя. e2e дописаны статически, не запускались.
+
 ### Исправления по ревью Q26/Q27 (ветка feature/q26-q27-report-status-notification, не смержено)
 
 - `PATCH /moderation/reports/:reportNumber/notes/:noteId/pin` только закрепляет: `pinned:false` даёт 400; открепление только `DELETE .../pin` под `reports.notes.unpin` (иначе держатель pin обходил право unpin). Web должен перейти на DELETE. Unit-тесты добавлены; e2e дописаны статически, не запускались.
@@ -1306,3 +1312,11 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
 - Новые права `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`); закрепление остаётся `reports.notes.pin`. Каталог `packages/shared/src/permissions.ts`, API, web.
 - e2e `reports-support.e2e-spec.ts` обновлён статически, не запускался. ADR-0172, R40.
 - Для владельца: применить миграцию на production и выдать права ролям (`docs/runbooks/production-env-checklist.md`).
+
+## 2026-11-17 — Q48 и Q49: единое правило снятия санкции для всех путей (ADR-0173)
+
+- `PermissionService.canRevokeSanction(actorId, issuerId, targetUserId?)` и `assertCanRevokeSanction`: владелец всегда (в т.ч. с себя); неизвестный выдавший — только владелец; с себя чужую санкцию не-владелец снять не может; выдавший может; иначе приоритет действующего не ниже приоритета выдавшего. Отказ — 403 `sanction_revoke_forbidden`.
+- Применено к мутам и банам чата, бану аккаунта, массовому снятию (`PATCH /admin/users/bulk`, `UNBAN`; отказ в `failed` с `code`) и бану в обращениях (для каждого активного бана, «всё или ничего»). Закрыт R38.
+- Миграция `20261117000000_user_banned_by` (`users.bannedById TEXT NULL`, без FK и индекса, не применялась). Старые баны без выдавшего снимает только владелец.
+- Аудит на каждое снятие (`chat.mute.revoke`, `chat.ban.revoke`, `user.unban`, `reports.ban.revoke`) с `issuerId`, `ownerOverride`, `self`; `@SkipAudit()` на трёх хендлерах против дублей.
+- Тесты: unit api 517 в 53 наборах, PASS; e2e `unban-hierarchy.e2e-spec.ts` написан статически, не запускался. Новые риски R41-R43.

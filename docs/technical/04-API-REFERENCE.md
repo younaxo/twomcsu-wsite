@@ -399,7 +399,7 @@
 - Min RoleGroup: `ADMIN`; Proposed permission: `users.bulk.edit`
 - Body DTO: `BulkUsersDto`
 - Service call: `users.bulkUpdate()`
-- Response type: не аннотирован; см. сервис
+- Response type: не аннотирован; см. сервис. Q48/ADR-0173: при `UNBAN` для каждого пользователя действует единое правило снятия санкции; отказ — запись в `failed` с `code: "sanction_revoke_forbidden"`.
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
 ### GET `/admin/users/:id/full`
@@ -3782,7 +3782,7 @@
 - Min RoleGroup: `ADMIN`; Proposed permission: `reports.ban`
 - Path params: `userId`
 - Service call: `reports.unbanUser()`
-- Response type: `Promise<void>`
+- Response type: `Promise<void>`. Q48/ADR-0173: правило снятия санкции проверяется для каждого активного бана; отказ — 403 `sanction_revoke_forbidden`, ничего не снимается.
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
 ### POST `/support/donation-problem`

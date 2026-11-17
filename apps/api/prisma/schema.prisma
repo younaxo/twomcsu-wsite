@@ -299,6 +299,9 @@ model User {
   isBanned    Boolean   @default(false)
   banReason   String?
   bannedUntil DateTime?
+  /// Кто выдал бан аккаунта (Q48, ADR-0173). Без FK (как ChatBan.bannedBy);
+  /// NULL — старый бан или выдавший удалён: снять может только владелец.
+  bannedById  String?
 
   lastLoginAt    DateTime?
   lastLoginIp    String?
