@@ -3339,6 +3339,15 @@ enum MinecraftPunishmentStatus {
 /// (`reason`, имена) сохраняются УЖЕ очищенными от IP и контактов (Q31).
 /// `sourceId` — id строки источника; ключ `(source, sourceScope, kind, sourceId)`.
 /// Запись выполняет только сервис синхронизации (upsert по `rowHash`).
+/// Исключение: колонки `issuerHidden*` пишет только действие персонала
+/// (скрытие выдавшего, ADR-0180, Q63 п.3); синхронизация их не трогает и в
+/// `rowHash` они не входят.
+/// Индексы, которых Prisma не выражает, заданы вручную в миграции
+/// `20261117040000_punishments_public_indexes` и здесь НЕ объявлены:
+/// `minecraft_punishments_subjectName_lower_idx` (lower("subjectName")
+/// text_pattern_ops), `minecraft_punishments_public_startedAt_id_idx`
+/// (частичный, публичный предикат) и `minecraft_punishments_startedAt_id_idx`.
+/// Следующие миграции пишутся вручную: автогенерация могла бы удалить их.
 model MinecraftPunishment {
   id                 String                    @id @default(cuid())
   source             String                    @default("litebans") @db.VarChar(16)
@@ -3371,6 +3380,12 @@ model MinecraftPunishment {
   isHidden           Boolean                   @default(false)
   hiddenById         String?
   hiddenReason       String?
+  /// Выдавший принудительно скрыт публично и от игрока (ADR-0180, 4.2).
+  issuerHidden       Boolean                   @default(false)
+  /// Id пользователя сайта, скрывшего выдавшего; без внешнего ключа, как `hiddenById`.
+  issuerHiddenById   String?
+  issuerHiddenAt     DateTime?
+  issuerHiddenReason String?                   @db.VarChar(200)
   firstSeenAt        DateTime                  @default(now())
   /// Обновляется только при изменении записи (неизменённые строки не пишутся).
   lastSeenAt         DateTime                  @default(now())

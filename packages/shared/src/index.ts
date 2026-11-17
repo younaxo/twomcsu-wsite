@@ -25,4 +25,5 @@ export * from './api/system';
 export * from './api/account';
 export * from './api/wallet';
 export * from './api/notifications';
+export * from './api/punishments';
 export * from './privacy';
