@@ -6,7 +6,13 @@ import {
 } from '@/lib/admin/reports';
 import { ApiError } from '@/lib/api/errors';
 import { describeSupportError } from './errors';
-import { REPORT_TYPES, replyBlockReason } from './hooks';
+import {
+  REPORT_TYPES,
+  historyItemTitle,
+  parseStatusFilter,
+  parseTypeFilter,
+  replyBlockReason,
+} from './hooks';
 
 describe('lib/support', () => {
   it('все 6 типов обращений описаны; цели нужны только жалобам', () => {
@@ -73,5 +79,23 @@ describe('lib/admin/reports', () => {
     expect(formatHistoryChanges({ a: 'y'.repeat(300) })).toHaveLength(
       `a: ${'y'.repeat(200)}…`.length,
     );
+  });
+});
+
+describe('lib/support: история и фильтры', () => {
+  it('historyItemTitle: статус в заголовке, неизвестные значения не падают', () => {
+    expect(historyItemTitle({ kind: 'CREATED', status: null })).toBe('Обращение создано');
+    expect(historyItemTitle({ kind: 'STATUS_CHANGED', status: 'CLOSED' })).toBe(
+      'Статус изменён: Закрыто',
+    );
+    expect(historyItemTitle({ kind: 'WAT' as never, status: null })).toBe('Событие');
+  });
+
+  it('parseStatusFilter/parseTypeFilter: только значения enum', () => {
+    expect(parseStatusFilter('RESOLVED')).toBe('RESOLVED');
+    expect(parseStatusFilter('constructor')).toBeUndefined();
+    expect(parseStatusFilter(null)).toBeUndefined();
+    expect(parseTypeFilter('OTHER')).toBe('OTHER');
+    expect(parseTypeFilter('x')).toBeUndefined();
   });
 });

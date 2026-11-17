@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { REPORT_MESSAGE_LIMIT } from '../src/modules/reports/report-constants';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -116,6 +117,11 @@ describe('Reports support (e2e)', () => {
   let alice: TestUser;
   let bob: TestUser;
   let outsider: TestUser;
+  let senior: TestUser;
+  let viewerOnly: TestUser;
+  let msgSpammer: TestUser;
+  let filterUser: TestUser;
+  let typeFilterUser: TestUser;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -132,6 +138,11 @@ describe('Reports support (e2e)', () => {
     alice = await createUser('alice');
     bob = await createUser('bob');
     outsider = await createUser('out');
+    senior = await createUser('sen');
+    viewerOnly = await createUser('view');
+    msgSpammer = await createUser('msp');
+    filterUser = await createUser('flt');
+    typeFilterUser = await createUser('typ');
 
     const role = await createRole(`support-mod-${unique}`, 10);
     await grantRole(moderator.id, role.id);
@@ -144,6 +155,18 @@ describe('Reports support (e2e)', () => {
       'reports.messages',
       'reports.notes',
     ]);
+    // Срез 2: «старший» (правка чужих заметок, pin) и сотрудник только с view.
+    const seniorRole = await createRole(`support-senior-${unique}`, 20);
+    await grantRole(senior.id, seniorRole.id);
+    await grantPermissions(seniorRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.pin',
+      'reports.delete',
+    ]);
+    const viewRole = await createRole(`support-view-${unique}`, 5);
+    await grantRole(viewerOnly.id, viewRole.id);
+    await grantPermissions(viewRole.id, ['reports.view']);
   }, 30_000);
 
   afterAll(async () => {
@@ -166,6 +189,11 @@ describe('Reports support (e2e)', () => {
       alice.email,
       bob.email,
       outsider.email,
+      senior.email,
+      viewerOnly.email,
+      msgSpammer.email,
+      filterUser.email,
+      typeFilterUser.email,
     ];
     await prisma.auditLog.deleteMany({
       where: { actor: { email: { in: emails } } },
@@ -577,5 +605,370 @@ describe('Reports support (e2e)', () => {
     const again = await createAppeal(alice, punishmentId);
     expect(again.status).toBe(201);
     createdReportNumbers.push(again.body.reportNumber);
+  });
+
+  // ---------- Срез 2 ----------
+
+  async function createReportAs(
+    user: TestUser,
+    type = 'TECHNICAL_ISSUE',
+    description = 'Срез 2: тестовое обращение',
+  ): Promise<{ id: string; reportNumber: string }> {
+    const res = await request(app.getHttpServer())
+      .post('/reports')
+      .set('Authorization', auth(user))
+      .send({ type, description })
+      .expect(201);
+    createdReportNumbers.push(res.body.reportNumber);
+    return { id: res.body.id, reportNumber: res.body.reportNumber };
+  }
+
+  it('лимит сообщений игрока: 21-е за минуту — 429, персонал не ограничен', async () => {
+    const report = await createReportAs(msgSpammer);
+    for (let i = 0; i < REPORT_MESSAGE_LIMIT; i += 1) {
+      await request(app.getHttpServer())
+        .post(`/reports/${report.reportNumber}/messages`)
+        .set('Authorization', auth(msgSpammer))
+        .send({ content: `Сообщение ${i}` })
+        .expect(201);
+    }
+    await request(app.getHttpServer())
+      .post(`/reports/${report.reportNumber}/messages`)
+      .set('Authorization', auth(msgSpammer))
+      .send({ content: 'Сообщение сверх лимита' })
+      .expect(429);
+    // Сообщения персонала в лимит игрока не входят и сами не ограничены.
+    for (let i = 0; i < 3; i += 1) {
+      await request(app.getHttpServer())
+        .post(`/moderation/reports/${report.reportNumber}/messages`)
+        .set('Authorization', auth(moderator))
+        .send({ content: `Ответ персонала ${i}` })
+        .expect(201);
+    }
+  });
+
+  it('assignable-staff: права, фильтр q, лимит, только публичные поля', async () => {
+    // Игрок и сотрудник без reports.assign — 403.
+    await request(app.getHttpServer())
+      .get('/moderation/reports/assignable-staff')
+      .set('Authorization', auth(alice))
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/moderation/reports/assignable-staff')
+      .set('Authorization', auth(viewerOnly))
+      .expect(403);
+
+    const res = await request(app.getHttpServer())
+      .get(`/moderation/reports/assignable-staff?q=${unique}&limit=50`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+    const items: Array<Record<string, unknown>> = res.body.items;
+    const ids = items.map((i) => i.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        moderator.id,
+        otherModerator.id,
+        senior.id,
+        viewerOnly.id,
+      ]),
+    );
+    // Без reports.view (игроки) — не попадают.
+    expect(ids).not.toContain(alice.id);
+    expect(ids).not.toContain(outsider.id);
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'avatar',
+        'id',
+        'tag',
+        'username',
+      ]);
+    }
+    expect(JSON.stringify(res.body)).not.toContain('@example.com');
+
+    // Заблокированный исключается.
+    await prisma.user.update({
+      where: { id: otherModerator.id },
+      data: { isBanned: true },
+    });
+    try {
+      const banned = await request(app.getHttpServer())
+        .get(`/moderation/reports/assignable-staff?q=${unique}`)
+        .set('Authorization', auth(moderator))
+        .expect(200);
+      expect(banned.body.items.map((i: { id: string }) => i.id)).not.toContain(
+        otherModerator.id,
+      );
+    } finally {
+      await prisma.user.update({
+        where: { id: otherModerator.id },
+        data: { isBanned: false },
+      });
+    }
+
+    // Фильтр q по нику без учёта регистра, ограничение limit.
+    const byQ = await request(app.getHttpServer())
+      .get(
+        `/moderation/reports/assignable-staff?q=${viewerOnly.username.toUpperCase()}`,
+      )
+      .set('Authorization', auth(moderator))
+      .expect(200);
+    expect(byQ.body.items.map((i: { id: string }) => i.id)).toEqual([
+      viewerOnly.id,
+    ]);
+    const limited = await request(app.getHttpServer())
+      .get(`/moderation/reports/assignable-staff?q=${unique}&limit=2`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+    expect(limited.body.items).toHaveLength(2);
+    await request(app.getHttpServer())
+      .get('/moderation/reports/assignable-staff?limit=51')
+      .set('Authorization', auth(moderator))
+      .expect(400);
+  });
+
+  it('заметки: чужую без reports.delete править нельзя (403), автор и reports.delete — 200; pin/unpin и порядок', async () => {
+    const report = await createReportAs(filterUser);
+    const base = `/moderation/reports/${report.reportNumber}`;
+    const first = await request(app.getHttpServer())
+      .post(`${base}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Первая заметка' })
+      .expect(201);
+    const noteId: string = first.body.moderatorNotes[0].id;
+    const second = await request(app.getHttpServer())
+      .post(`${base}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Вторая заметка' })
+      .expect(201);
+    expect(second.body.moderatorNotes).toHaveLength(2);
+
+    // Другой сотрудник с reports.notes, но без reports.delete.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}`)
+      .set('Authorization', auth(otherModerator))
+      .send({ content: 'Чужая правка' })
+      .expect(403);
+    // Игрок — 403 на уровне права.
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}`)
+      .set('Authorization', auth(alice))
+      .send({ content: 'Игрок' })
+      .expect(403);
+    expect(
+      (
+        await prisma.reportModeratorNote.findUniqueOrThrow({
+          where: { id: noteId },
+        })
+      ).content,
+    ).toBe('Первая заметка');
+
+    // Автор.
+    const byAuthor = await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Правка автора' })
+      .expect(200);
+    expect(
+      byAuthor.body.moderatorNotes.find((n: { id: string }) => n.id === noteId)
+        .content,
+    ).toBe('Правка автора');
+    // Актёр с reports.delete.
+    const bySenior = await request(app.getHttpServer())
+      .patch(`${base}/notes/${noteId}`)
+      .set('Authorization', auth(senior))
+      .send({ content: 'Правка старшего' })
+      .expect(200);
+    expect(
+      bySenior.body.moderatorNotes.find((n: { id: string }) => n.id === noteId)
+        .content,
+    ).toBe('Правка старшего');
+
+    // Закрепление: reports.notes.pin у senior; закреплённая — первой.
+    const secondId: string = second.body.moderatorNotes[1].id;
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(otherModerator))
+      .expect(403);
+    const pinned = await request(app.getHttpServer())
+      .patch(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(senior))
+      .expect(200);
+    expect(pinned.body.moderatorNotes.map((n: { id: string }) => n.id)).toEqual(
+      [secondId, noteId],
+    );
+    const unpinned = await request(app.getHttpServer())
+      .delete(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(senior))
+      .expect(200);
+    expect(
+      unpinned.body.moderatorNotes.map((n: { id: string }) => n.id),
+    ).toEqual([noteId, secondId]);
+    const viaBody = await request(app.getHttpServer())
+      .patch(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(senior))
+      .send({ pinned: false })
+      .expect(200);
+    expect(
+      viaBody.body.moderatorNotes.every(
+        (n: { isPinned: boolean }) => n.isPinned === false,
+      ),
+    ).toBe(true);
+
+    // Ответ GET для персонала тоже отсортирован (закреплённые первыми).
+    await request(app.getHttpServer())
+      .patch(`${base}/notes/${secondId}/pin`)
+      .set('Authorization', auth(senior))
+      .expect(200);
+    const view = await request(app.getHttpServer())
+      .get(`/reports/${report.reportNumber}`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+    expect(view.body.moderatorNotes[0].id).toBe(secondId);
+  });
+
+  it('приватность: игрок не видит authorId сообщений персонала, свои сохраняются', async () => {
+    const report = await createReportAs(filterUser);
+    await request(app.getHttpServer())
+      .post(`/moderation/reports/${report.reportNumber}/messages`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Ответ сотрудника' })
+      .expect(201);
+    const posted = await request(app.getHttpServer())
+      .post(`/reports/${report.reportNumber}/messages`)
+      .set('Authorization', auth(filterUser))
+      .send({ content: 'Ответ игрока' })
+      .expect(201);
+
+    for (const body of [
+      posted.body,
+      (
+        await request(app.getHttpServer())
+          .get(`/reports/${report.reportNumber}`)
+          .set('Authorization', auth(filterUser))
+          .expect(200)
+      ).body,
+    ]) {
+      const messages: Array<{
+        isStaff: boolean;
+        authorId: string | null;
+        content: string;
+      }> = body.messages;
+      const staffMsg = messages.find((m) => m.isStaff)!;
+      const ownMsg = messages.find((m) => m.content === 'Ответ игрока')!;
+      expect(staffMsg.authorId).toBeNull();
+      expect(ownMsg.authorId).toBe(filterUser.id);
+      expect(JSON.stringify(body)).not.toContain(moderator.id);
+    }
+    // Персонал видит authorId.
+    const staffView = await request(app.getHttpServer())
+      .get(`/reports/${report.reportNumber}`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+    expect(
+      staffView.body.messages.find((m: { isStaff: boolean }) => m.isStaff)
+        .authorId,
+    ).toBe(moderator.id);
+  });
+
+  it('история для игрока: санитизированная лента автора; чужой игрок — 403', async () => {
+    const report = await createReportAs(filterUser);
+    await request(app.getHttpServer())
+      .patch(`/moderation/reports/${report.reportNumber}/status`)
+      .set('Authorization', auth(moderator))
+      .send({ status: 'IN_REVIEW' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/moderation/reports/${report.reportNumber}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Закрытая заметка истории' })
+      .expect(201);
+    await waitFor(
+      async () =>
+        (await prisma.auditLog.count({
+          where: {
+            targetId: report.id,
+            action: { in: ['reports.status', 'reports.notes'] },
+          },
+        })) >= 2,
+      'записи аудита reports.status и reports.notes',
+    );
+
+    const res = await request(app.getHttpServer())
+      .get(`/reports/${report.reportNumber}/history`)
+      .set('Authorization', auth(filterUser))
+      .expect(200);
+    const items: Array<Record<string, unknown>> = res.body.items;
+    expect(items.map((i) => i.kind)).toEqual(['STATUS_CHANGED', 'CREATED']);
+    expect(items[0].status).toBe('IN_REVIEW');
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual([
+        'createdAt',
+        'id',
+        'kind',
+        'status',
+      ]);
+    }
+    const text = JSON.stringify(res.body);
+    expect(text).not.toContain(moderator.id);
+    expect(text).not.toContain('Закрытая заметка истории');
+    for (const forbidden of ['actor', 'ipAddress', 'userAgent', 'changes']) {
+      expect(text).not.toContain(`"${forbidden}"`);
+    }
+    expect(res.body).toMatchObject({ total: 2, page: 1, limit: 30 });
+
+    await request(app.getHttpServer())
+      .get(`/reports/${report.reportNumber}/history`)
+      .set('Authorization', auth(alice))
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/reports/R-00000000-NOPE00/history')
+      .set('Authorization', auth(filterUser))
+      .expect(404);
+    await request(app.getHttpServer())
+      .get(`/reports/${report.reportNumber}/history?page=10001`)
+      .set('Authorization', auth(filterUser))
+      .expect(400);
+  });
+
+  it('GET /reports: фильтры status и type, неверное значение — 400', async () => {
+    const other = await createReportAs(typeFilterUser, 'OTHER', 'Тип OTHER');
+    const tech = await createReportAs(
+      typeFilterUser,
+      'TECHNICAL_ISSUE',
+      'Тип TECHNICAL_ISSUE',
+    );
+    await prisma.report.update({
+      where: { id: tech.id },
+      data: { status: 'IN_REVIEW' },
+    });
+    const numbersOf = (body: { items: Array<{ reportNumber: string }> }) =>
+      body.items.map((r) => r.reportNumber).sort();
+    const get = (qs: string) =>
+      request(app.getHttpServer())
+        .get(`/reports${qs}`)
+        .set('Authorization', auth(typeFilterUser));
+
+    expect(numbersOf((await get('').expect(200)).body)).toEqual(
+      [other.reportNumber, tech.reportNumber].sort(),
+    );
+    expect(
+      numbersOf((await get('?status=IN_REVIEW').expect(200)).body),
+    ).toEqual([tech.reportNumber]);
+    expect(numbersOf((await get('?status=PENDING').expect(200)).body)).toEqual([
+      other.reportNumber,
+    ]);
+    expect(numbersOf((await get('?type=OTHER').expect(200)).body)).toEqual([
+      other.reportNumber,
+    ]);
+    const both = await get('?type=TECHNICAL_ISSUE&status=IN_REVIEW').expect(
+      200,
+    );
+    expect(numbersOf(both.body)).toEqual([tech.reportNumber]);
+    expect(both.body.total).toBe(1);
+    expect(
+      (await get('?type=OTHER&status=IN_REVIEW').expect(200)).body.total,
+    ).toBe(0);
+    await get('?status=NOPE').expect(400);
+    await get('?type=NOPE').expect(400);
   });
 });

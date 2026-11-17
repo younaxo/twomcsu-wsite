@@ -15,11 +15,13 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
+import { AssignableStaffQueryDto } from './dto/assignable-staff-query.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
 import { CreateModeratorNoteDto } from './dto/create-moderator-note.dto';
 import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
+import { PinModeratorNoteDto } from './dto/pin-moderator-note.dto';
 import { LockReportDto } from './dto/lock-report.dto';
 import { SetVerdictDto } from './dto/set-verdict.dto';
 import { SoftDeleteMessageDto } from './dto/soft-delete-message.dto';
@@ -38,6 +40,12 @@ export class ReportsModerationController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.moderation.listModeration(query, user.id);
+  }
+
+  @Get('assignable-staff')
+  @RequirePermissions('reports.assign')
+  async assignableStaff(@Query() query: AssignableStaffQueryDto) {
+    return this.moderation.assignableStaff(query);
   }
 
   @Get(':reportNumber/history')
@@ -141,8 +149,14 @@ export class ReportsModerationController {
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
     @Body() dto: UpdateModeratorNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.updateModeratorNote(reportNumber, noteId, dto);
+    return this.moderation.updateModeratorNote(
+      reportNumber,
+      noteId,
+      dto,
+      user.id,
+    );
   }
 
   @Delete(':reportNumber/notes/:noteId')
@@ -159,8 +173,23 @@ export class ReportsModerationController {
   async pinNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
+    @Body() dto: PinModeratorNoteDto,
   ) {
-    return this.moderation.pinModeratorNote(reportNumber, noteId, true);
+    return this.moderation.pinModeratorNote(
+      reportNumber,
+      noteId,
+      dto.pinned ?? true,
+    );
+  }
+
+  /// Открепление заметки (то же право `reports.notes.pin`).
+  @Delete(':reportNumber/notes/:noteId/pin')
+  @RequirePermissions('reports.notes.pin')
+  async unpinNote(
+    @Param('reportNumber') reportNumber: string,
+    @Param('noteId') noteId: string,
+  ) {
+    return this.moderation.pinModeratorNote(reportNumber, noteId, false);
   }
 
   @Post(':reportNumber/lock')

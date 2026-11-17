@@ -16,10 +16,12 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
 import { CreateDonationProblemDto } from './dto/create-donation-problem.dto';
 import { CreateReportDto } from './dto/create-report.dto';
+import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 import { UpdateOwnReportMessageDto } from './dto/update-own-report-message.dto';
 import {
   CLOSED_REPORT_STATUSES,
+  MODERATOR_NOTES_ORDER,
   REPORT_CREATE_LIMIT,
   REPORT_CREATE_WINDOW_MS,
   REPORT_MESSAGE_LIMIT,
@@ -77,6 +79,30 @@ const PLAYER_ATTACHMENT_OMIT = {
 const PLAYER_MESSAGE_ATTACHMENT_OMIT = {
   uploadedBy: true,
 } satisfies Prisma.ReportMessageAttachmentOmit;
+
+/// Белый список audit-действий для истории автора -> вид события.
+const PLAYER_HISTORY_KIND: Record<string, 'STATUS_CHANGED' | 'VERDICT'> = {
+  'reports.status': 'STATUS_CHANGED',
+  'reports.verdict': 'VERDICT',
+};
+
+export interface PlayerHistoryItem {
+  id: string;
+  kind: 'CREATED' | 'STATUS_CHANGED' | 'VERDICT';
+  status: ReportStatus | null;
+  createdAt: Date;
+}
+
+function extractStatus(changes: Prisma.JsonValue): ReportStatus | null {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) {
+    return null;
+  }
+  const status = (changes as Record<string, unknown>).status;
+  return typeof status === 'string' &&
+    (Object.values(ReportStatus) as string[]).includes(status)
+    ? (status as ReportStatus)
+    : null;
+}
 
 @Injectable()
 export class ReportsService {
@@ -237,7 +263,7 @@ export class ReportsService {
         // Персоналу — автор и исполнитель (публичные поля, ADR-0128) и заметки.
         ...(isStaff
           ? {
-              moderatorNotes: true,
+              moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER },
               author: { select: PUBLIC_USER_SELECT },
               assignedTo: { select: PUBLIC_USER_SELECT },
             }
@@ -257,7 +283,63 @@ export class ReportsService {
         priority: await this.priority.resolve(report),
       };
     }
-    return report;
+    // Приватность: игрок не видит id сотрудников в сообщениях персонала.
+    return {
+      ...report,
+      messages: report.messages.map((message) =>
+        message.isStaff ? { ...message, authorId: null } : message,
+      ),
+    };
+  }
+
+  /// История для автора: только санитизированные вехи (создано, смена
+  /// статуса, вердикт) без сотрудника, IP/UA, тел запросов, заметок и
+  /// внутренних полей. Из AuditLog берутся действия по белому списку; статус —
+  /// из `changes.status`, если он валидный ReportStatus. Событие «создано»
+  /// синтетическое (по `createdAt` обращения) и стоит самым старым — на
+  /// последней странице.
+  async historyForAuthor(
+    reportNumber: string,
+    viewerId: string,
+    query: ReportHistoryQueryDto,
+  ) {
+    const report = await this.requireReport(reportNumber);
+    if (report.authorId !== viewerId) {
+      throw new ForbiddenException('Это обращение вам не принадлежит');
+    }
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const skip = (page - 1) * limit;
+    const where = {
+      targetId: report.id,
+      targetType: { in: ['reports', 'report'] },
+      action: { in: Object.keys(PLAYER_HISTORY_KIND) },
+    };
+    const [rows, auditTotal] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        select: { id: true, action: true, changes: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+    const items: PlayerHistoryItem[] = rows.map((row) => ({
+      id: row.id,
+      kind: PLAYER_HISTORY_KIND[row.action],
+      status: extractStatus(row.changes),
+      createdAt: row.createdAt,
+    }));
+    if (skip <= auditTotal && items.length < limit) {
+      items.push({
+        id: `created-${report.id}`,
+        kind: 'CREATED',
+        status: null,
+        createdAt: report.createdAt,
+      });
+    }
+    return { items, total: auditTotal + 1, page, limit };
   }
 
   async createReport(authorId: string, dto: CreateReportDto) {

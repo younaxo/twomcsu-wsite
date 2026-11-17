@@ -130,6 +130,36 @@ export function useStaffReport(number: string) {
 
 export const REPORT_HISTORY_LIMIT = 20;
 
+/// Кандидат на назначение (`GET /moderation/reports/assignable-staff`, `reports.assign`).
+export interface AssignableStaffMember {
+  id: string;
+  username: string;
+  tag: string | null;
+  avatar: string | null;
+}
+
+export const ASSIGNABLE_STAFF_LIMIT = 20;
+
+/// Список сотрудников для выбора исполнителя; `q === null` — запрос не отправляется
+/// (список ещё не открывали). Ошибки: 403 нет `reports.assign`, 400 неверные параметры.
+export function useAssignableStaff(q: string | null) {
+  return useQuery({
+    queryKey: ['admin', 'reports', 'assignable-staff', q] as const,
+    queryFn: () =>
+      api.get<{ items: AssignableStaffMember[] }>('/moderation/reports/assignable-staff', {
+        query: { q: (q ?? '').trim().slice(0, REPORT_SEARCH_MAX), limit: ASSIGNABLE_STAFF_LIMIT },
+      }),
+    enabled: q !== null,
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/// Закреплённые заметки — первыми (сервер уже так сортирует; порядок внутри групп сохраняется).
+export function sortNotesPinnedFirst(notes: StaffReportNote[]): StaffReportNote[] {
+  return [...notes].sort((a, b) => Number(b.isPinned) - Number(a.isPinned));
+}
+
 /// История действий по обращению (`reports.view`).
 export function useReportHistory(number: string, page: number, enabled: boolean) {
   return useQuery({
@@ -182,6 +212,18 @@ export function useStaffReportActions(number: string) {
     mutationFn: (content: string) => api.post(`${base}/notes`, { content }),
     onSuccess,
   });
+  /// 403 — править можно только свои заметки (или при `reports.delete`).
+  const editNote = useMutation({
+    mutationFn: ({ noteId, content }: { noteId: string; content: string }) =>
+      api.patch(`${base}/notes/${encodeURIComponent(noteId)}`, { content }),
+    onSuccess,
+  });
+  /// Закрепление/открепление — право `reports.notes.pin`.
+  const pinNote = useMutation({
+    mutationFn: ({ noteId, pinned }: { noteId: string; pinned: boolean }) =>
+      api.patch(`${base}/notes/${encodeURIComponent(noteId)}/pin`, { pinned }),
+    onSuccess,
+  });
   const lock = useMutation({
     mutationFn: (body: { locked: boolean; reason?: string }) => api.post(`${base}/lock`, body),
     onSuccess,
@@ -217,6 +259,8 @@ export function useStaffReportActions(number: string) {
     verdict,
     message,
     note,
+    editNote,
+    pinNote,
     lock,
     hideMessage,
     pinMessage,

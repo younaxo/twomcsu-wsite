@@ -1,4 +1,4 @@
-import { ReportStatus } from '@prisma/client';
+import { Prisma, ReportStatus } from '@prisma/client';
 
 /// Статусы, в которых обращение считается завершённым: автор не может
 /// писать/править сообщения, по наказанию можно подать новое обращение.
@@ -26,3 +26,9 @@ export const REPORT_CREATE_LIMIT = 5;
 export const REPORT_CREATE_WINDOW_MS = 10 * 60 * 1000;
 export const REPORT_MESSAGE_LIMIT = 20;
 export const REPORT_MESSAGE_WINDOW_MS = 60 * 1000;
+
+/// Заметки: закреплённые первыми, внутри групп — по времени создания.
+export const MODERATOR_NOTES_ORDER = [
+  { isPinned: 'desc' },
+  { createdAt: 'asc' },
+] satisfies Prisma.ReportModeratorNoteOrderByWithRelationInput[];

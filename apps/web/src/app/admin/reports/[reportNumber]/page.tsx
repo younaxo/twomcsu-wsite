@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, History, LifeBuoy, Lock, Pin } from 'lucide-react';
+import { ArrowLeft, History, LifeBuoy, Lock, Pencil, Pin, PinOff } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/admin/page-header';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input, Textarea, inputClassName } from '@/components/ui/input';
@@ -21,10 +22,13 @@ import {
   REPORT_PRIORITY_TONE,
   STAFF_REPORT_TYPE_LABEL,
   formatHistoryChanges,
+  sortNotesPinnedFirst,
+  useAssignableStaff,
   useReportHistory,
   useStaffReport,
   useStaffReportActions,
   type StaffReportDetails,
+  type StaffReportNote,
 } from '@/lib/admin/reports';
 import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
@@ -79,6 +83,9 @@ function Composer({
   );
 }
 
+/// Сервер отклоняет `q` длиннее 32 символов (400).
+const STAFF_QUERY_MAX = 32;
+
 function Actions({ report }: { report: StaffReportDetails }) {
   const { can } = usePermissions();
   const meId = useAuthStore((state) => state.user?.id ?? null);
@@ -87,6 +94,8 @@ function Actions({ report }: { report: StaffReportDetails }) {
   const [lockReason, setLockReason] = useState('');
   const [banReason, setBanReason] = useState('');
   const [transferId, setTransferId] = useState('');
+  const [staffQuery, setStaffQuery] = useState<string | null>(null);
+  const staff = useAssignableStaff(can('reports.assign') ? staffQuery : null);
   return (
     <aside
       className="flex flex-col gap-4 rounded-xl bg-surface p-4 shadow-sm"
@@ -117,38 +126,46 @@ function Actions({ report }: { report: StaffReportDetails }) {
               Снять исполнителя
             </Button>
           ) : null}
-          <form
-            className="flex flex-col gap-1.5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const id = transferId.trim();
-              if (!id) return;
-              actions.assign.mutate(id, {
-                onSuccess: () => {
-                  setTransferId('');
-                  toast.success('Обращение передано');
-                },
-                onError,
-              });
-            }}
-          >
-            <Input
-              aria-label="ID исполнителя для передачи"
-              placeholder="ID сотрудника"
-              maxLength={64}
-              value={transferId}
-              onChange={(event) => setTransferId(event.target.value)}
+          <div className="flex flex-col gap-1.5" data-testid="transfer-block">
+            <Combobox
+              aria-label="Исполнитель для передачи"
+              size="sm"
+              value={transferId || null}
+              onValueChange={(value) => setTransferId(value ?? '')}
+              placeholder="Выберите сотрудника"
+              searchPlaceholder="Поиск по нику…"
+              emptyText="Сотрудники не найдены"
+              loading={staff.isFetching}
+              onSearch={(query) => setStaffQuery(query.trim().slice(0, STAFF_QUERY_MAX))}
+              options={(staff.data?.items ?? []).map((member) => ({
+                value: member.id,
+                label: member.username,
+                ...(member.tag ? { description: member.tag } : {}),
+              }))}
             />
+            {staff.isError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {describeSupportError(staff.error)}
+              </p>
+            ) : null}
             <Button
               size="sm"
               variant="secondary"
-              type="submit"
-              disabled={!transferId.trim()}
+              disabled={!transferId}
               loading={actions.assign.isPending}
+              onClick={() =>
+                actions.assign.mutate(transferId, {
+                  onSuccess: () => {
+                    setTransferId('');
+                    toast.success('Обращение передано');
+                  },
+                  onError,
+                })
+              }
             >
               Передать
             </Button>
-          </form>
+          </div>
         </div>
       ) : null}
       {can('reports.status') ? (
@@ -337,6 +354,105 @@ function HistoryTab({ number }: { number: string }) {
   );
 }
 
+type ReportActions = ReturnType<typeof useStaffReportActions>;
+
+/// Заметка персонала: закрепление (`reports.notes.pin`) и правка (автор или
+/// `reports.delete`; иное сервер отклонит 403, ошибка показывается тостом).
+function NoteItem({ note, actions }: { note: StaffReportNote; actions: ReportActions }) {
+  const { can } = usePermissions();
+  const meId = useAuthStore((state) => state.user?.id ?? null);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(note.content);
+  const canEdit = can('reports.notes') && (note.authorId === meId || can('reports.delete'));
+  const canPin = can('reports.notes') && can('reports.notes.pin');
+  const pinning = actions.pinNote.isPending && actions.pinNote.variables?.noteId === note.id;
+  return (
+    <li className="rounded-lg bg-surface-sunken px-3 py-2 text-sm" data-testid={`note-${note.id}`}>
+      <p className="text-xs text-muted-foreground">
+        {note.isPinned ? (
+          <Pin role="img" aria-label="Закреплено" className="mr-1 inline size-3" />
+        ) : null}
+        {formatDateTime(note.createdAt)}
+        {note.updatedAt && note.updatedAt !== note.createdAt ? ' · изменено' : ''}
+      </p>
+      {editing ? (
+        <form
+          className="mt-1 flex flex-col gap-2"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            const content = text.trim();
+            if (!content) return;
+            actions.editNote.mutate(
+              { noteId: note.id, content },
+              { onSuccess: () => setEditing(false), onError },
+            );
+          }}
+        >
+          <Textarea
+            aria-label="Текст заметки"
+            value={text}
+            rows={3}
+            onChange={(event) => setText(event.target.value)}
+          />
+          <div className="flex justify-end gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setText(note.content);
+                setEditing(false);
+              }}
+            >
+              Отмена
+            </Button>
+            <Button
+              size="sm"
+              type="submit"
+              loading={actions.editNote.isPending}
+              disabled={!text.trim()}
+            >
+              Сохранить
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <p className="whitespace-pre-wrap break-words">{note.content}</p>
+          <div className="mt-1 flex gap-1">
+            {canEdit ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setText(note.content);
+                  setEditing(true);
+                }}
+              >
+                <Pencil aria-hidden />
+                Изменить
+              </Button>
+            ) : null}
+            {canPin ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={pinning}
+                onClick={() =>
+                  actions.pinNote.mutate({ noteId: note.id, pinned: !note.isPinned }, { onError })
+                }
+              >
+                {note.isPinned ? <PinOff aria-hidden /> : <Pin aria-hidden />}
+                {note.isPinned ? 'Открепить заметку' : 'Закрепить заметку'}
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+    </li>
+  );
+}
+
 function Card({ number }: { number: string }) {
   const { can } = usePermissions();
   const report = useStaffReport(number);
@@ -439,7 +555,7 @@ function Card({ number }: { number: string }) {
                       {message.isSystem ? 'Система' : message.isStaff ? 'Персонал' : 'Автор'} ·{' '}
                       {formatDateTime(message.createdAt)}
                       {message.isPinned ? (
-                        <Pin aria-label="Закреплено" className="ml-1 inline size-3" />
+                        <Pin role="img" aria-label="Закреплено" className="ml-1 inline size-3" />
                       ) : null}
                     </p>
                     <p
@@ -503,13 +619,8 @@ function Card({ number }: { number: string }) {
               <p className="text-xs text-muted-foreground">Автор обращения их не видит.</p>
               {data.moderatorNotes.length > 0 ? (
                 <ul className="flex flex-col gap-2">
-                  {data.moderatorNotes.map((note) => (
-                    <li key={note.id} className="rounded-lg bg-surface-sunken px-3 py-2 text-sm">
-                      <p className="text-xs text-muted-foreground">
-                        {formatDateTime(note.createdAt)}
-                      </p>
-                      <p className="whitespace-pre-wrap break-words">{note.content}</p>
-                    </li>
+                  {sortNotesPinnedFirst(data.moderatorNotes).map((note) => (
+                    <NoteItem key={note.id} note={note} actions={actions} />
                   ))}
                 </ul>
               ) : null}

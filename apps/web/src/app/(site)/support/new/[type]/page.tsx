@@ -2,8 +2,8 @@
 
 import type { CreateReportRequest } from '@twomc/shared';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState, type FormEvent } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { RequireSession } from '@/components/auth/require-session';
 import { Button } from '@/components/ui/button';
@@ -41,7 +41,12 @@ function ReportForm({ type }: { type: ReportType }) {
   const punishments = useMyPunishments(isAppeal);
   const appealable = (punishments.data ?? []).filter((item) => item.isAppealable !== false);
   const [target, setTarget] = useState('');
-  const [punishmentId, setPunishmentId] = useState('');
+  // `?punishment=ID` подставляет наказание; неизвестный или необжалуемый ID игнорируется.
+  const wanted = useSearchParams().get('punishment') ?? '';
+  const [chosenId, setChosenId] = useState<string | null>(null);
+  const wantedValid = appealable.some((item) => item.id === wanted);
+  const punishmentId = chosenId ?? (wantedValid ? wanted : '');
+  const setPunishmentId = setChosenId;
   const [server, setServer] = useState('');
   const [description, setDescription] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
@@ -117,7 +122,16 @@ function ReportForm({ type }: { type: ReportType }) {
             </Link>
           </p>
         ) : (
-          <Field label="Наказание" required error={errors.punishment}>
+          <Field
+            label="Наказание"
+            required
+            error={errors.punishment}
+            hint={
+              wanted && !wantedValid
+                ? 'Наказание из ссылки не найдено или не подлежит обжалованию — выберите из списка.'
+                : undefined
+            }
+          >
             <select
               className={inputClassName}
               value={punishmentId}
@@ -210,7 +224,9 @@ export default function NewReportPage() {
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-8 md:px-6">
       <PageHeader title={meta.label} description={meta.description} />
       <RequireSession>
-        <ReportForm type={type} />
+        <Suspense>
+          <ReportForm type={type} />
+        </Suspense>
       </RequireSession>
     </div>
   );
