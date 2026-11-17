@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { REPORT_MESSAGE_LIMIT } from '../src/modules/reports/report-constants';
 
@@ -81,6 +82,7 @@ describe('Reports support (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 

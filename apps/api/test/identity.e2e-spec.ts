@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 jest.setTimeout(20_000);
@@ -82,6 +83,7 @@ describe('Identity: login alias, access level (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 

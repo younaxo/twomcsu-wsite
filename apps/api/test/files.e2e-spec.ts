@@ -8,6 +8,7 @@ import { configureApp } from './../src/configure-app';
 import { FilesService } from '../src/modules/files/files.service';
 import { StorageService } from '../src/modules/files/storage.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 jest.setTimeout(30_000);
@@ -97,6 +98,7 @@ describe('Files / CDN (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: editor.id, roleId: role.id },
     });
+    await markStaffTwoFactorEnabled(prisma, editor.id);
     await permissions.invalidateRole(role.id);
     await permissions.invalidateUser(editor.id);
   });
