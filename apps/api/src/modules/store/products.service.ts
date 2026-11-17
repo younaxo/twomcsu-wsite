@@ -11,11 +11,7 @@ import { ListAdminProductsQueryDto } from './dto/list-admin-products-query.dto';
 import { ListProductsQueryDto } from './dto/list-products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
-
-const PUBLIC_INCLUDE = {
-  category: true,
-  variants: { where: { isActive: true }, orderBy: { price: 'asc' } },
-} satisfies Prisma.ProductInclude;
+import { PUBLIC_PRODUCT_SELECT } from './public-product';
 
 @Injectable()
 export class ProductsService {
@@ -35,7 +31,7 @@ export class ProductsService {
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: PUBLIC_INCLUDE,
+        select: PUBLIC_PRODUCT_SELECT,
         orderBy: [{ order: 'asc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
@@ -67,7 +63,7 @@ export class ProductsService {
   async getBySlug(slug: string, viewerId: string | null) {
     const product = await this.prisma.product.findUnique({
       where: { slug },
-      include: PUBLIC_INCLUDE,
+      select: { ...PUBLIC_PRODUCT_SELECT, isActive: true },
     });
     if (!product || !product.isActive) {
       throw new NotFoundException('Товар не найден');
@@ -79,14 +75,18 @@ export class ProductsService {
       });
       inWishlist = item !== null;
     }
-    return { ...product, inWishlist };
+    const { isActive: _isActive, ...publicProduct } = product;
+    return { ...publicProduct, inWishlist };
   }
 
   /// Реальная аналитика по совместным покупкам — агрегация OrderItem по
   /// завершённым заказам, где встречается данный товар; не моковые данные.
   async getBoughtTogether(slug: string): Promise<unknown[]> {
-    const product = await this.prisma.product.findUnique({ where: { slug } });
-    if (!product) {
+    const product = await this.prisma.product.findUnique({
+      where: { slug },
+      select: { id: true, isActive: true },
+    });
+    if (!product || !product.isActive) {
       throw new NotFoundException('Товар не найден');
     }
     const coOrderItems = await this.prisma.orderItem.findMany({
@@ -113,7 +113,7 @@ export class ProductsService {
     }
     const products = await this.prisma.product.findMany({
       where: { id: { in: topIds }, isActive: true },
-      include: PUBLIC_INCLUDE,
+      select: PUBLIC_PRODUCT_SELECT,
     });
     const order = new Map(topIds.map((id, index) => [id, index]));
     return products.sort(

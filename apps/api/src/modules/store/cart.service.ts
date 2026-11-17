@@ -8,9 +8,16 @@ import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { CalculateCartDto } from './dto/calculate-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertCartLimits, CartLimitLine } from './cart-limits';
 import { PricingService } from './pricing.service';
+import {
+  badRequest,
+  notFound,
+  StoreCartError,
+  toPromoError,
+} from './store-errors';
 
-const CART_ITEM_INCLUDE = {
+export const CART_ITEM_INCLUDE = {
   product: {
     select: {
       id: true,
@@ -18,12 +25,68 @@ const CART_ITEM_INCLUDE = {
       isGiftable: true,
       isSelfOnly: true,
       isUnique: true,
+      maxPerPurchase: true,
       name: true,
     },
   },
   variant: { select: { id: true, price: true } },
   bundle: { select: { id: true, totalPrice: true, name: true } },
 } as const;
+
+/// Публичные поля промокода в ответе корзины (N2): без лимитов, счётчиков и
+/// условий (maxUses/usedCount/minOrderAmount/firstPurchaseOnly и т.п.).
+function toPublicPromo(
+  promo: {
+    code: string;
+    description: string | null;
+    discountType: string;
+    discountValue: Prisma.Decimal;
+  } | null,
+) {
+  return promo
+    ? {
+        code: promo.code,
+        description: promo.description,
+        discountType: promo.discountType,
+        discountValue: promo.discountValue,
+      }
+    : null;
+}
+
+const LOCKED_ITEM_INCLUDE = {
+  product: {
+    select: { id: true, name: true, isUnique: true, maxPerPurchase: true },
+  },
+} as const;
+
+type LockedItem = Prisma.CartItemGetPayload<{
+  include: typeof LOCKED_ITEM_INCLUDE;
+}>;
+
+function limitLine(item: LockedItem): CartLimitLine {
+  return {
+    productId: item.productId,
+    productName: item.product?.name ?? '',
+    quantity: item.quantity,
+    isUnique: item.product?.isUnique ?? false,
+    maxPerPurchase: item.product?.maxPerPurchase ?? null,
+  };
+}
+
+interface LineKey {
+  variantId: string | null;
+  bundleId: string | null;
+  giftToUserId: string | null;
+}
+
+/// Одинаковая позиция: тот же вариант/набор и тот же получатель подарка.
+function sameLine(a: LineKey, b: LineKey): boolean {
+  return (
+    a.variantId === b.variantId &&
+    a.bundleId === b.bundleId &&
+    a.giftToUserId === b.giftToUserId
+  );
+}
 
 @Injectable()
 export class CartService {
@@ -41,36 +104,76 @@ export class CartService {
     });
   }
 
-  async getCart(userId: string) {
-    const cart = await this.requireCart(userId);
+  /// Ответ корзины: расчёт + публичные поля. Сохранённый промокод, который
+  /// перестал действовать, не роняет ответ: скидки нет, причина — в promoError
+  /// (код остаётся привязанным, пользователь может снять его или вернуть
+  /// условия — например, добавить товары до минимальной суммы).
+  private async buildCartView(
+    userId: string,
+    cart: Awaited<ReturnType<CartService['requireCart']>>,
+    previewCode?: string,
+  ) {
     const totals = await this.pricing.computeTotals(
       cart.items,
       userId,
-      cart.promoCode?.code ?? null,
+      previewCode ?? cart.promoCode?.code ?? null,
+      { softPromo: !previewCode },
     );
-    return { ...cart, ...totals };
+    return {
+      ...cart,
+      promoCode: toPublicPromo(cart.promoCode),
+      ...totals,
+    };
   }
 
+  async getCart(userId: string) {
+    const cart = await this.requireCart(userId);
+    return this.buildCartView(userId, cart);
+  }
+
+  /// Блокировка строки корзины до конца транзакции: сериализует параллельные
+  /// add/patch одной корзины (уникального индекса на строки нет — миграций не
+  /// делаем, ревью Q28).
+  private async lockCart(tx: Prisma.TransactionClient, cartId: string) {
+    await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} FOR UPDATE`;
+  }
+
+  /// Получатель подарка. Один и тот же ответ (404 CART_GIFT_UNAVAILABLE) для
+  /// «нет такого игрока» и «подарить ему нельзя» (самому себе) — это лишь
+  /// убирает различие между этими двумя отказами. Перебор ников НЕ исключён:
+  /// успех (201) для существующего игрока отличим от 404, поэтому защита —
+  /// строгий лимит операций с подарком (CartGiftRateGuard: 10/мин и 60/час на
+  /// пользователя, мягче на IP; допущение владельца Q81). Отказ по самому
+  /// товару (не подарочный) от получателя не зависит и проверяется до поиска.
   private async resolveGiftTarget(
-    username: string | undefined,
+    senderId: string,
+    username: string | undefined | null,
     product: { isGiftable: boolean; isSelfOnly: boolean } | null,
   ) {
     if (!username) {
       return null;
     }
-    if (product?.isSelfOnly) {
-      throw new BadRequestException(
-        'Этот товар нельзя подарить — только для себя',
+    if (product && (product.isSelfOnly || !product.isGiftable)) {
+      throw badRequest(
+        StoreCartError.CART_GIFT_NOT_ALLOWED,
+        product.isSelfOnly
+          ? 'Этот товар нельзя подарить — только для себя'
+          : 'Этот товар нельзя подарить',
       );
     }
-    if (product && !product.isGiftable) {
-      throw new BadRequestException('Этот товар нельзя подарить');
-    }
-    const target = await this.prisma.user.findFirst({
-      where: { username: { equals: username, mode: 'insensitive' } },
-    });
-    if (!target) {
-      throw new NotFoundException('Получатель подарка не найден');
+    // Без ILIKE: Prisma insensitive = ILIKE, где `_` — подстановка (a_b нашёл бы
+    // aXb). Сравнение lower() = lower($1) с параметром, точное совпадение
+    // регистра — первым (username unique различает регистр).
+    const [target] = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM users
+      WHERE lower(username) = lower(${username})
+      ORDER BY (username = ${username}) DESC, id
+      LIMIT 1`;
+    if (!target || target.id === senderId) {
+      throw notFound(
+        StoreCartError.CART_GIFT_UNAVAILABLE,
+        'Подарок этому получателю оформить нельзя',
+      );
     }
     return target.id;
   }
@@ -87,6 +190,10 @@ export class CartService {
     const cart = await this.requireCart(userId);
     const quantity = dto.quantity ?? 1;
 
+    let target: LineKey & {
+      productId: string | null;
+      limit: Omit<CartLimitLine, 'quantity'>;
+    };
     if (dto.variantId) {
       const variant = await this.prisma.productVariant.findUnique({
         where: { id: dto.variantId },
@@ -95,28 +202,23 @@ export class CartService {
       if (!variant || !variant.isActive || !variant.product.isActive) {
         throw new NotFoundException('Вариант товара не найден');
       }
-      if (
-        variant.product.maxPerPurchase &&
-        quantity > variant.product.maxPerPurchase
-      ) {
-        throw new BadRequestException(
-          `Максимум ${variant.product.maxPerPurchase} шт. этого товара за покупку`,
-        );
-      }
       const giftToUserId = await this.resolveGiftTarget(
+        userId,
         dto.giftToUsername,
         variant.product,
       );
-      await this.prisma.cartItem.create({
-        data: {
-          cartId: cart.id,
+      target = {
+        variantId: variant.id,
+        bundleId: null,
+        giftToUserId,
+        productId: variant.productId,
+        limit: {
           productId: variant.productId,
-          variantId: variant.id,
-          quantity,
-          giftToUserId,
-          giftMessage: dto.giftMessage,
+          productName: variant.product.name,
+          isUnique: variant.product.isUnique,
+          maxPerPurchase: variant.product.maxPerPurchase,
         },
-      });
+      };
     } else {
       const bundle = await this.prisma.bundle.findUnique({
         where: { id: dto.bundleId },
@@ -124,15 +226,62 @@ export class CartService {
       if (!bundle || !bundle.isActive) {
         throw new NotFoundException('Набор не найден');
       }
-      await this.prisma.cartItem.create({
-        data: {
-          cartId: cart.id,
-          bundleId: bundle.id,
-          quantity,
-          giftMessage: dto.giftMessage,
+      target = {
+        variantId: null,
+        bundleId: bundle.id,
+        giftToUserId: null,
+        productId: null,
+        limit: {
+          productId: null,
+          productName: bundle.name,
+          isUnique: false,
+          maxPerPurchase: null,
         },
-      });
+      };
     }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockCart(tx, cart.id);
+      const items = await tx.cartItem.findMany({
+        where: { cartId: cart.id },
+        include: LOCKED_ITEM_INCLUDE,
+      });
+      const existing = items.find((i) => sameLine(i, target));
+      const projected = items.map((i) =>
+        i.id === existing?.id
+          ? { ...limitLine(i), quantity: i.quantity + quantity }
+          : limitLine(i),
+      );
+      if (!existing) {
+        projected.push({ ...target.limit, quantity });
+      }
+      assertCartLimits(projected, target.productId);
+
+      if (existing) {
+        // Тот же вариант (и получатель) — одна строка, количество суммируется.
+        await tx.cartItem.update({
+          where: { id: existing.id },
+          data: {
+            quantity: { increment: quantity },
+            ...(dto.giftMessage !== undefined
+              ? { giftMessage: dto.giftMessage }
+              : {}),
+          },
+        });
+      } else {
+        await tx.cartItem.create({
+          data: {
+            cartId: cart.id,
+            productId: target.productId,
+            variantId: target.variantId,
+            bundleId: target.bundleId,
+            quantity,
+            giftToUserId: target.giftToUserId,
+            giftMessage: dto.giftMessage,
+          },
+        });
+      }
+    });
 
     return this.getCart(userId);
   }
@@ -157,17 +306,60 @@ export class CartService {
             where: { id: item.productId },
           })
         : null;
-      giftToUserId = await this.resolveGiftTarget(dto.giftToUsername, product);
+      giftToUserId = await this.resolveGiftTarget(
+        userId,
+        dto.giftToUsername,
+        product,
+      );
     }
-    await this.prisma.cartItem.update({
-      where: { id: itemId },
-      data: {
-        ...(dto.quantity !== undefined ? { quantity: dto.quantity } : {}),
-        ...(dto.giftToUsername !== undefined ? { giftToUserId } : {}),
-        ...(dto.giftMessage !== undefined
-          ? { giftMessage: dto.giftMessage }
-          : {}),
-      },
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockCart(tx, item.cartId);
+      const items = await tx.cartItem.findMany({
+        where: { cartId: item.cartId },
+        include: LOCKED_ITEM_INCLUDE,
+      });
+      const current = items.find((i) => i.id === itemId);
+      if (!current) {
+        throw new NotFoundException('Позиция корзины не найдена');
+      }
+      const quantity = dto.quantity ?? current.quantity;
+      // Смена получателя могла сделать строку такой же, как другая — сливаем.
+      const twin = items.find(
+        (i) => i.id !== itemId && sameLine(i, { ...current, giftToUserId }),
+      );
+
+      const projected = items
+        .filter((i) => i.id !== itemId && i.id !== twin?.id)
+        .map(limitLine);
+      if (twin) {
+        projected.push({
+          ...limitLine(twin),
+          quantity: twin.quantity + quantity,
+        });
+      } else {
+        projected.push({ ...limitLine(current), quantity });
+      }
+      assertCartLimits(projected, current.productId);
+
+      const message =
+        dto.giftMessage !== undefined ? { giftMessage: dto.giftMessage } : {};
+      if (twin) {
+        await tx.cartItem.update({
+          where: { id: twin.id },
+          data: { quantity: { increment: quantity }, ...message },
+        });
+        await tx.cartItem.delete({ where: { id: itemId } });
+      } else {
+        await tx.cartItem.update({
+          where: { id: itemId },
+          data: {
+            quantity,
+            ...(dto.giftToUsername !== undefined ? { giftToUserId } : {}),
+            ...message,
+          },
+        });
+      }
     });
     return this.getCart(userId);
   }
@@ -197,8 +389,14 @@ export class CartService {
       (sum, l) => sum.plus(l.lineTotal),
       new Prisma.Decimal(0),
     );
+    // Та же база, что в computeTotals (после скидки лояльности): иначе
+    // промокод применился бы, а при расчёте тут же получил PROMO_MIN_AMOUNT.
+    const loyaltyPercent = await this.pricing.getLoyaltyDiscountPercent(userId);
+    const afterLoyalty = subtotalAfterBulk.minus(
+      subtotalAfterBulk.times(loyaltyPercent).dividedBy(100),
+    );
     const promo = await this.pricing.requireValidPromoCode(code, userId, {
-      subtotalAfterBulk,
+      subtotalAfterBulk: afterLoyalty,
       productTypes,
     });
     await this.prisma.cart.update({
@@ -217,15 +415,11 @@ export class CartService {
     return this.getCart(userId);
   }
 
+  /// Превью с явным кодом — отказ промокода это 4xx с кодом PROMO_*; без кода
+  /// считается сохранённый (мягко, как в GET /store/cart).
   async calculate(userId: string, dto: CalculateCartDto) {
     const cart = await this.requireCart(userId);
-    const promoCode = dto.promoCode ?? cart.promoCode?.code ?? null;
-    const totals = await this.pricing.computeTotals(
-      cart.items,
-      userId,
-      promoCode,
-    );
-    return { ...cart, ...totals };
+    return this.buildCartView(userId, cart, dto.promoCode);
   }
 
   async validatePromo(userId: string | null, code: string) {
@@ -237,7 +431,12 @@ export class CartService {
         discountValue: promo.discountValue,
       };
     } catch (error) {
-      return { valid: false, reason: (error as Error).message };
+      const known = toPromoError(error);
+      return {
+        valid: false,
+        reason: (error as Error).message,
+        ...(known ? { code: known.code } : {}),
+      };
     }
   }
 }
