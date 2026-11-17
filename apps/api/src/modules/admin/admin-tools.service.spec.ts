@@ -73,7 +73,7 @@ describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
     const redis = {
       client: {
         scan: jest.fn((_cursor: string, _m: string, pattern: string) => {
-          const prefix = pattern.replace('*', '');
+          const prefix = pattern.split('*').join('');
           return Promise.resolve([
             '0',
             Object.keys(store).filter((k) => k.startsWith(prefix)),
