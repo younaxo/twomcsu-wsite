@@ -559,3 +559,100 @@ describe('sanitizeReason: признак маскировки (Q59, допуще
     expect(publicReason(null)).toBeNull();
   });
 });
+
+describe('sanitizeReason: склонения и описательные формы платформ (N1)', () => {
+  const cases: Array<[string, string]> = [
+    ['ник в дискорде: vasya', 'vasya'],
+    ['my discord is vasya', 'vasya'],
+    ['discord→vasya', 'vasya'],
+    ['discord -> vasya', 'vasya'],
+    ['пиши в телеге vasya', 'vasya'],
+    ['мой телеграм: vasya', 'vasya'],
+    ['в телеграмме vasya', 'vasya'],
+    ['в телеграмме: vasya', 'vasya'],
+    ['пиши в инсте vasya', 'vasya'],
+    ['инста это vasya', 'vasya'],
+    ['в инстаграме: vasya', 'vasya'],
+    ['в ватсапе vasya', 'vasya'],
+    ['ватсап: vasya', 'vasya'],
+    ['в вацапе vasya', 'vasya'],
+    ['в скайпе vasya', 'vasya'],
+    ['скайп - vasya', 'vasya'],
+    ['в вк vasya', 'vasya'],
+    ['вк→vasya', 'vasya'],
+    ['в вайбере vasya', 'vasya'],
+    ['через дискорд vasya', 'vasya'],
+    ['на дискорду vasya', 'vasya'],
+    ['tg→vasya', 'vasya'],
+    ['in discord vasya', 'vasya'],
+    ['telegram is vasya', 'vasya'],
+    ['tiktok: vasya', 'vasya'],
+    ['в тиктоке vasya', 'vasya'],
+    ['в вконтакте vasya', 'vasya'],
+  ];
+  it.each(cases)('%s: идентификатор скрыт', (input, leak) => {
+    expectHidden(input, [leak]);
+  });
+
+  it('идентификатор скрыт и в середине текста, остальное сохраняется', () => {
+    const out =
+      sanitizeReason('Оскорбления, писал в дискорде: vasya, бан') ?? '';
+    expect(out).not.toContain('vasya');
+    expect(out.startsWith('Оскорбления')).toBe(true);
+    expect(out.endsWith('бан')).toBe(true);
+  });
+
+  it('обычные слова без платформы не затрагиваются', () => {
+    expect(sanitizeReason('институт и инструкция')).toBe(
+      'институт и инструкция',
+    );
+    expect(sanitizeReason('телевизор и телефонная связь')).not.toContain(
+      REDACTED,
+    );
+  });
+});
+
+describe('sanitizeReason: секреты в причине (N5)', () => {
+  const cases: Array<[string, string]> = [
+    ['password: hunter2', 'hunter2'],
+    ['Password=Qwerty!1', 'Qwerty'],
+    ['passwd - secretvalue', 'secretvalue'],
+    ['пароль: vasya123', 'vasya123'],
+    ['пароль это qwerty', 'qwerty'],
+    ['password is hunter2', 'hunter2'],
+    ['пароль vasya123', 'vasya123'],
+    ['его пароль vasya_pass!', 'vasya_pass'],
+    ['pass: zzzz', 'zzzz'],
+    ['pin=4821', '4821'],
+    ['token: abc', 'abc'],
+    ['токен: abcdef', 'abcdef'],
+    ['api key: AbCdEf12', 'AbCdEf12'],
+    ['Authorization: Bearer abcdefgh12345678', 'abcdefgh12345678'],
+    ['Basic dXNlcjpwYXNzd29yZA==', 'dXNlcjpwYXNzd29yZA'],
+    [`ghp_${'a1B2'.repeat(9)}`, 'a1B2a1B2'],
+    ['github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuv', 'ABCDEFG0'],
+    [`sk-${'Ab3'.repeat(10)}`, 'Ab3Ab3'],
+    ['xoxb-1234567890-abcdefghij', '1234567890'],
+    ['AKIAIOSFODNN7EXAMPLE', 'AKIAIOSFODNN7'],
+    ['eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4', 'eyJhbGci'],
+    ['d41d8cd98f00b204e9800998ecf8427e', 'd41d8cd98f'],
+    [`ключ ${'Zx9'.repeat(14)}=`, 'Zx9Zx9Zx9'],
+  ];
+  it.each(cases)('%s: секрет скрыт', (input, leak) => {
+    expectHidden(input, [leak]);
+  });
+
+  it('длинная строка без цифр (одного регистра) секретом не считается', () => {
+    const word = 'а'.repeat(40);
+    expect(sanitizeReason(word)).toBe(word);
+    const latin = 'abcdefghijklmnopqrstuvwxyzabcdefghij';
+    expect(sanitizeReason(latin)).toBe(latin);
+  });
+
+  it('обычные слова pass/пароль без значения не скрываются', () => {
+    expect(sanitizeReason('украл пароль у игрока')).toBe(
+      'украл пароль у игрока',
+    );
+    expect(sanitizeReason('pass the ball')).toBe('pass the ball');
+  });
+});

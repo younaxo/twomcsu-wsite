@@ -294,11 +294,13 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     kind: PunishmentKind,
     ids: bigint[],
     now: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]> {
     if (ids.length === 0) return [];
     const out: MirrorChange[] = [];
     // Группы по SQL_ID_CHUNK id: лимит параметров запроса PostgreSQL.
     for (const part of chunk(ids, SQL_ID_CHUNK)) {
+      if (beforeGroup) await beforeGroup();
       const rows = await this.prisma.$queryRaw<ChangeRow[]>(Prisma.sql`
         UPDATE "minecraft_punishments"
         SET "status" = 'ACTIVE', "rev" = "rev" + 1, "lastChangedAt" = ${ts(now)}
@@ -317,12 +319,15 @@ export class PrismaPunishmentMirrorStore implements PunishmentMirrorStore {
     kind: PunishmentKind,
     ids: bigint[],
     now: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]> {
     if (ids.length === 0) return [];
     const out: MirrorChange[] = [];
     // Группы по SQL_ID_CHUNK id: при частичном откате источника пропавших
     // строк может быть десятки тысяч, а лимит параметров PostgreSQL — 32767.
     for (const part of chunk(ids, SQL_ID_CHUNK)) {
+      // Токен лидера проверяется перед КАЖДОЙ группой (долгая пометка).
+      if (beforeGroup) await beforeGroup();
       const rows = await this.prisma.$queryRaw<ChangeRow[]>(Prisma.sql`
         UPDATE "minecraft_punishments"
         SET "status" = 'DELETED_AT_SOURCE', "deletedAtSource" = ${ts(now)},

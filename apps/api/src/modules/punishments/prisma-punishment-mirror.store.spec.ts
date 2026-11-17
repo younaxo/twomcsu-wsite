@@ -102,6 +102,40 @@ describe('PrismaPunishmentMirrorStore: пометка удалений груп�
     expect(fake.paramCounts).toHaveLength(3);
   });
 
+  it('beforeGroup вызывается перед каждой группой; отказ останавливает запись', async () => {
+    const fake = fakePrisma();
+    const ids = Array.from({ length: 2500 }, (_, i) => BigInt(i + 1));
+    let calls = 0;
+    await storeWith(fake).markDeletedAtSource(
+      'litebans',
+      'BAN',
+      ids,
+      new Date(),
+      async () => {
+        calls += 1;
+      },
+    );
+    expect(calls).toBe(3);
+    expect(fake.paramCounts).toHaveLength(3);
+
+    const stopped = fakePrisma();
+    let granted = 0;
+    await expect(
+      storeWith(stopped).markDeletedAtSource(
+        'litebans',
+        'BAN',
+        ids,
+        new Date(),
+        async () => {
+          granted += 1;
+          if (granted > 1) throw new Error('токен утрачен');
+        },
+      ),
+    ).rejects.toThrow('токен утрачен');
+    // Записана только первая группа, остальные не уходят в БД.
+    expect(stopped.paramCounts).toHaveLength(1);
+  });
+
   it('пустой список не делает запросов', async () => {
     const fake = fakePrisma();
     expect(

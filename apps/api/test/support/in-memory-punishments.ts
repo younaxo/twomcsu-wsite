@@ -17,6 +17,8 @@ export class InMemorySource implements PunishmentSource {
   readonly id = 'test' as const;
   rows = new Map<PunishmentKind, Map<string, NormalizedPunishment>>();
   serverTimeMs = 0;
+  /// Результат health(): false имитирует недоступный источник (ok: false).
+  healthOk = true;
   failWith: Error | null = null;
   /// Ошибка только для fetchBatch указанного типа.
   failBatchWith = new Map<PunishmentKind, Error>();
@@ -49,7 +51,7 @@ export class InMemorySource implements PunishmentSource {
   }
   async health(): Promise<SourceHealth> {
     this.check();
-    return { ok: true, serverTimeMs: this.serverTimeMs };
+    return { ok: this.healthOk, serverTimeMs: this.serverTimeMs };
   }
   async fetchBatch(
     kind: PunishmentKind,
@@ -112,6 +114,10 @@ export class InMemoryMirrorStore implements PunishmentMirrorStore {
   mirror = new Map<string, MirrorRow>();
   states = new Map<string, SyncStateSnapshot>();
   writes = 0;
+  /// Размер группы пометки/возврата (в Prisma-хранилище — SQL_ID_CHUNK).
+  groupSize = Number.POSITIVE_INFINITY;
+  /// Сколько групп реально записано markDeletedAtSource (для тестов).
+  markedGroups = 0;
 
   private key(kind: PunishmentKind, id: string | bigint): string {
     return `${kind}:${id.toString()}`;
@@ -156,8 +162,27 @@ export class InMemoryMirrorStore implements PunishmentMirrorStore {
     _source: string,
     kind: PunishmentKind,
     ids: bigint[],
+    _now?: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]> {
     const out: MirrorChange[] = [];
+    for (const part of this.groups(ids)) {
+      if (beforeGroup) await beforeGroup();
+      this.reactivatePart(kind, part, out);
+    }
+    return out;
+  }
+  private groups(ids: bigint[]): bigint[][] {
+    const size = Math.max(1, Math.min(this.groupSize, ids.length || 1));
+    const out: bigint[][] = [];
+    for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+    return out;
+  }
+  private reactivatePart(
+    kind: PunishmentKind,
+    ids: bigint[],
+    out: MirrorChange[],
+  ): void {
     for (const id of ids) {
       const m = this.mirror.get(this.key(kind, id));
       if (!m || m.status !== 'EXPIRED') continue;
@@ -171,7 +196,6 @@ export class InMemoryMirrorStore implements PunishmentMirrorStore {
         status: 'ACTIVE',
       });
     }
-    return out;
   }
   async applyBatch(
     source: string,
@@ -239,20 +263,27 @@ export class InMemoryMirrorStore implements PunishmentMirrorStore {
     _source: string,
     kind: PunishmentKind,
     ids: bigint[],
+    _now?: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]> {
     const out: MirrorChange[] = [];
-    for (const id of ids) {
-      const m = this.mirror.get(this.key(kind, id));
-      if (!m || m.status === 'DELETED_AT_SOURCE') continue;
-      m.status = 'DELETED_AT_SOURCE';
-      m.rev += 1;
-      out.push({
-        kind,
-        sourceId: id.toString(),
-        inserted: false,
-        rev: m.rev,
-        status: 'DELETED_AT_SOURCE',
-      });
+    for (const part of this.groups(ids)) {
+      // Как в Prisma-хранилище: проверка токена лидера перед каждой группой.
+      if (beforeGroup) await beforeGroup();
+      this.markedGroups += 1;
+      for (const id of part) {
+        const m = this.mirror.get(this.key(kind, id));
+        if (!m || m.status === 'DELETED_AT_SOURCE') continue;
+        m.status = 'DELETED_AT_SOURCE';
+        m.rev += 1;
+        out.push({
+          kind,
+          sourceId: id.toString(),
+          inserted: false,
+          rev: m.rev,
+          status: 'DELETED_AT_SOURCE',
+        });
+      }
     }
     return out;
   }

@@ -115,13 +115,18 @@ export interface PunishmentMirrorStore {
     kind: PunishmentKind,
     ids: bigint[],
     now: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]>;
   /// Пометить строки как исчезнувшие в источнике (мягко, данные остаются).
+  /// Запись идёт группами; `beforeGroup` вызывается перед КАЖДОЙ группой и
+  /// может бросить исключение (токен лидера утрачен), тогда остальные группы
+  /// не пишутся.
   markDeletedAtSource(
     source: string,
     kind: PunishmentKind,
     ids: bigint[],
     now: Date,
+    beforeGroup?: () => Promise<void>,
   ): Promise<MirrorChange[]>;
   /// ACTIVE -> EXPIRED для строк с `until <= now` (слой T).
   expireDue(source: string, now: Date): Promise<MirrorChange[]>;

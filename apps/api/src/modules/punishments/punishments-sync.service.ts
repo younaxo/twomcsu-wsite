@@ -155,6 +155,9 @@ export class PunishmentsSyncService {
   private readonly halted = new Map<PunishmentKind | '*', string>();
   private clockOffsetMs = 0;
   private clockSkewed = false;
+  /// Часы источника хотя бы раз сверены (успешный health с временем).
+  /// До этого слой T (истечение по часам сайта) не работает.
+  private clockVerified = false;
   private lastClockCheckAt = 0;
   private backoffUntil = 0;
   private failures = 0;
@@ -192,7 +195,7 @@ export class PunishmentsSyncService {
       await this.refreshClock(source, nowReal);
       if (this.clockSkewed) {
         // Пауза: без достоверного времени «истёк» считать нельзя.
-        await this.flagClockSkew(source);
+        await this.flagClockSkew(source, heartbeat);
         return;
       }
       const nowSource = nowReal + this.clockOffsetMs;
@@ -201,29 +204,39 @@ export class PunishmentsSyncService {
       const plans: KindPlan[] = [];
       for (const kind of PUNISHMENT_KINDS) {
         if (this.halted.has(kind)) continue;
-        await this.guardKind(kind, async () => {
-          plans.push(
-            await this.syncKind(source, kind, nowReal, nowSource, heartbeat),
-          );
-        });
+        await this.guardKind(
+          kind,
+          async () => {
+            plans.push(
+              await this.syncKind(source, kind, nowReal, nowSource, heartbeat),
+            );
+          },
+          heartbeat,
+        );
       }
       // Фаза 2: полная сверка (слой 3).
       for (const plan of plans) {
         if (this.halted.has(plan.kind)) continue;
-        await this.guardKind(plan.kind, () =>
-          this.reconcileKind(source, plan, heartbeat),
+        await this.guardKind(
+          plan.kind,
+          () => this.reconcileKind(source, plan, heartbeat),
+          heartbeat,
         );
       }
-      await this.beat(heartbeat);
-      const expired = await this.store.expireDue(
-        source.id,
-        new Date(nowSource),
-      );
-      this.emit(expired, 'expired');
+      // Слой T: только при сверенных часах (иначе истечение по часам сайта
+      // могло бы завершить действующее наказание досрочно).
+      if (this.clockVerified) {
+        await this.beat(heartbeat);
+        const expired = await this.store.expireDue(
+          source.id,
+          new Date(nowSource),
+        );
+        this.emit(expired, 'expired');
+      }
       this.failures = 0;
     } catch (error) {
       if (error instanceof LeadershipLost) return;
-      await this.handleFailure(error, nowReal);
+      await this.handleFailure(error, nowReal, heartbeat);
     }
   }
 
@@ -231,13 +244,14 @@ export class PunishmentsSyncService {
   private async guardKind(
     kind: PunishmentKind,
     fn: () => Promise<void>,
+    heartbeat: Heartbeat | undefined,
   ): Promise<void> {
     try {
       await fn();
     } catch (error) {
       if (error instanceof SourceSchemaMismatch) {
         this.halted.set(kind, error.code);
-        await this.safePatch(kind, { lastErrorCode: error.code });
+        await this.safePatch(kind, { lastErrorCode: error.code }, heartbeat);
         this.logger.error(`Опрос ${kind} остановлен: ${error.code}`);
         return;
       }
@@ -304,7 +318,8 @@ export class PunishmentsSyncService {
       return;
     }
     const health = await source.health();
-    if (health.ok && Number.isFinite(health.serverTimeMs)) {
+    const usable = health.ok && Number.isFinite(health.serverTimeMs);
+    if (usable) {
       const offset = health.serverTimeMs - nowReal;
       if (Math.abs(offset) > CLOCK_TOLERANCE_MS) {
         if (!this.clockSkewed) {
@@ -320,23 +335,33 @@ export class PunishmentsSyncService {
           );
         }
         this.clockSkewed = false;
+        this.clockVerified = true;
         this.clockOffsetMs = offset;
       }
     }
-    this.lastClockCheckAt = nowReal;
+    // Пока часы ни разу не сверены (первый health с ok=false), проверка
+    // повторяется на каждом проходе, а не раз в минуту.
+    if (usable || this.clockVerified) this.lastClockCheckAt = nowReal;
   }
 
   /// Тревога расхождения часов: код пишется, кроме типов с флагом сверки.
-  private async flagClockSkew(source: PunishmentSource): Promise<void> {
+  private async flagClockSkew(
+    source: PunishmentSource,
+    heartbeat: Heartbeat | undefined,
+  ): Promise<void> {
     for (const kind of PUNISHMENT_KINDS) {
       try {
         const prev = (await this.store.getState(source.id, kind)).lastErrorCode;
         if (!isSticky(prev)) {
+          // Токен лидера проверяется перед записью тревоги; утрата прерывает
+          // проход (не глотается блоком catch ниже).
+          await this.beat(heartbeat);
           await this.store.patchState(source.id, kind, {
             lastErrorCode: CLOCK_SKEW,
           });
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof LeadershipLost) throw error;
         // Состояние не записалось: следующий проход повторит.
       }
     }
@@ -367,7 +392,7 @@ export class PunishmentsSyncService {
       forceReconcile = true;
       rollbackMaxId = maxId;
       if (state.lastErrorCode !== NEEDS_RECONCILE && !approved) {
-        await this.store.patchState(sourceId, kind, {
+        await this.patch(heartbeat, sourceId, kind, {
           lastErrorCode: NEEDS_RECONCILE,
         });
       }
@@ -382,7 +407,7 @@ export class PunishmentsSyncService {
       );
       if (!initialDone && reachedEnd) {
         initialDone = true;
-        await this.store.patchState(sourceId, kind, {
+        await this.patch(heartbeat, sourceId, kind, {
           initialSyncDoneAt: date,
         });
       }
@@ -398,7 +423,7 @@ export class PunishmentsSyncService {
       )
     ) {
       alarm = await this.activeCheck(source, kind, date, nowSource, heartbeat);
-      await this.store.patchState(sourceId, kind, {
+      await this.patch(heartbeat, sourceId, kind, {
         lastActiveCheckAt: date,
       });
     }
@@ -415,7 +440,7 @@ export class PunishmentsSyncService {
     // Коды «требует сверки», «источник пуст» и тревоги сверки снимаются
     // только сверкой (фаза 2); прочие коды сбоев — любым успешным проходом.
     const keepError = forceReconcile || isSticky(state.lastErrorCode);
-    await this.store.patchState(sourceId, kind, {
+    await this.patch(heartbeat, sourceId, kind, {
       lastPollAt: date,
       lastSuccessAt: date,
       consecutiveFailures: 0,
@@ -452,7 +477,7 @@ export class PunishmentsSyncService {
       heartbeat,
       plan.ignoreMassGuard,
     );
-    await this.store.patchState(source.id, plan.kind, {
+    await this.patch(heartbeat, source.id, plan.kind, {
       lastFullReconcileAt: plan.date,
       lastErrorCode: result.ok ? null : result.code,
     });
@@ -581,9 +606,10 @@ export class PunishmentsSyncService {
     this.emitChanges(
       await this.store.applyBatch(source.id, kind, found, null, date),
     );
-    await this.beat(heartbeat);
     this.emit(
-      await this.store.reactivate(source.id, kind, restore, date),
+      await this.store.reactivate(source.id, kind, restore, date, () =>
+        this.beat(heartbeat),
+      ),
       'updated',
     );
   }
@@ -612,9 +638,11 @@ export class PunishmentsSyncService {
       );
       return MASS_DELETE_SUSPECTED;
     }
-    await this.beat(heartbeat);
+    // Токен проверяется перед каждой группой пометки (долгая запись).
     this.emit(
-      await this.store.markDeletedAtSource(source.id, kind, missing, date),
+      await this.store.markDeletedAtSource(source.id, kind, missing, date, () =>
+        this.beat(heartbeat),
+      ),
       'deleted',
     );
     return null;
@@ -692,6 +720,18 @@ export class PunishmentsSyncService {
     if (heartbeat && !(await heartbeat())) throw new LeadershipLost();
   }
 
+  /// Запись состояния синхронизации с проверкой токена лидера: устаревший
+  /// лидер не должен ни ставить, ни снимать тревоги и счётчики.
+  private async patch(
+    heartbeat: Heartbeat | undefined,
+    source: string,
+    kind: PunishmentKind,
+    patch: Parameters<PunishmentMirrorStore['patchState']>[2],
+  ): Promise<void> {
+    await this.beat(heartbeat);
+    await this.store.patchState(source, kind, patch);
+  }
+
   private isDue(
     last: Date | null,
     intervalMs: number,
@@ -741,8 +781,11 @@ export class PunishmentsSyncService {
   private async safePatch(
     kind: PunishmentKind,
     patch: Parameters<PunishmentMirrorStore['patchState']>[2],
+    heartbeat: Heartbeat | undefined,
   ): Promise<void> {
     if (this.source === null) return;
+    // Утрата лидерства не глотается: пробрасывается вызывающему.
+    await this.beat(heartbeat);
     try {
       await this.store.patchState(this.source.id, kind, patch);
     } catch {
@@ -753,7 +796,24 @@ export class PunishmentsSyncService {
   /// Сбой: SourceAuthFailed не повторяется (тревога); остальное — пауза
   /// 1..30 с с джиттером и счётчик сбоев. Тексты не содержат секретов:
   /// в журнал пишется только код и имя класса ошибки.
-  private async handleFailure(error: unknown, nowReal: number): Promise<void> {
+  private async handleFailure(
+    error: unknown,
+    nowReal: number,
+    heartbeat: Heartbeat | undefined,
+  ): Promise<void> {
+    try {
+      await this.recordFailure(error, nowReal, heartbeat);
+    } catch (inner) {
+      // Лидерство потеряно при записи состояния: тихо выходим.
+      if (!(inner instanceof LeadershipLost)) throw inner;
+    }
+  }
+
+  private async recordFailure(
+    error: unknown,
+    nowReal: number,
+    heartbeat: Heartbeat | undefined,
+  ): Promise<void> {
     const code =
       error instanceof SourceError ? error.code : 'SYNC_INTERNAL_ERROR';
     if (error instanceof SourceAuthFailed) {
@@ -785,11 +845,15 @@ export class PunishmentsSyncService {
           keepFlag = true;
         }
       }
-      await this.safePatch(kind, {
-        ...(keepFlag ? {} : { lastErrorCode: code }),
-        consecutiveFailures: this.failures,
-        lastPollAt: new Date(nowReal),
-      });
+      await this.safePatch(
+        kind,
+        {
+          ...(keepFlag ? {} : { lastErrorCode: code }),
+          consecutiveFailures: this.failures,
+          lastPollAt: new Date(nowReal),
+        },
+        heartbeat,
+      );
     }
   }
 }

@@ -8,6 +8,7 @@ import {
   NEEDS_RECONCILE,
   PunishmentChangeEvent,
   RECONCILE_APPROVED,
+  RECONCILE_STALLED,
   PunishmentsSyncService,
   SOURCE_EMPTY,
 } from './punishments-sync.service';
@@ -571,5 +572,295 @@ describe('PunishmentsSyncService: устаревание независимо о
       state: 'ok',
       stale: true,
     });
+  });
+});
+
+describe('PunishmentsSyncService: токен лидера между группами пометки (M1)', () => {
+  it('потеря токена после первой группы: остальные группы не пишутся', async () => {
+    const { service, source, store, advance } = setupMany(20);
+    store.groupSize = 2;
+    await service.runOnce();
+    advance(16_000);
+    for (let i = 16; i <= 20; i++) source.remove('BAN', String(i)); // 5 из 20
+    // Токен действует, пока не записана первая группа (2 строки).
+    await service.runOnce(async () => store.markedGroups < 1);
+    expect(store.markedGroups).toBe(1);
+    const deleted = [...store.mirror.values()].filter(
+      (m) => m.status === 'DELETED_AT_SOURCE',
+    );
+    expect(deleted).toHaveLength(2);
+    // Контроль: действующий токен доводит пометку до конца (3 группы всего).
+    advance(16_000);
+    await service.runOnce(async () => true);
+    expect(
+      [...store.mirror.values()].filter(
+        (m) => m.status === 'DELETED_AT_SOURCE',
+      ),
+    ).toHaveLength(5);
+  });
+
+  it('возврат ошибочно истёкших тоже проверяет токен перед каждой группой', async () => {
+    const { service, source, store, advance } = setup();
+    store.groupSize = 1;
+    for (let i = 1; i <= 3; i++) {
+      source.set(mk(i, { until: new Date(T0 + 3_600_000) }));
+    }
+    await service.runOnce();
+    for (const m of store.mirror.values()) m.status = 'EXPIRED';
+    advance(16_000);
+    let groups = 0;
+    const orig = store.reactivate.bind(store);
+    store.reactivate = async (src, kind, ids, now, before) => {
+      return orig(src, kind, ids, now, async () => {
+        await before?.();
+        groups += 1; // считаются только группы, прошедшие проверку токена
+      });
+    };
+    await service.runOnce(async () => groups < 1);
+    expect(groups).toBe(1);
+    expect(
+      [...store.mirror.values()].filter((m) => m.status === 'ACTIVE'),
+    ).toHaveLength(1);
+  });
+});
+
+describe('PunishmentsSyncService: состояние не пишется без токена (M2)', () => {
+  it('токен утрачен после записи пачки: состояние опроса не пишется', async () => {
+    const { service, source, store } = setup();
+    source.set(mk(1));
+    let stale = false;
+    const orig = store.applyBatch.bind(store);
+    store.applyBatch = async (...args: Parameters<typeof orig>) => {
+      const result = await orig(...args);
+      stale = true;
+      return result;
+    };
+    await service.runOnce(async () => !stale);
+    const state = await store.getState('test', 'BAN');
+    expect(store.mirror.size).toBe(1);
+    expect(state.initialSyncDoneAt).toBeNull();
+    expect(state.lastSuccessAt).toBeNull();
+    expect(state.lastPollAt).toBeNull();
+  });
+
+  it('устаревший лидер не ставит тревогу CLOCK_SKEW', async () => {
+    const { service, source, store, advance } = setup();
+    source.set(mk(1));
+    await service.runOnce();
+    advance(61_000);
+    source.serverTimeMs += 3_600_000;
+    await service.runOnce(async () => false);
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBeNull();
+    // Контроль: действующий лидер тревогу ставит.
+    advance(1500);
+    await service.runOnce(async () => true);
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      CLOCK_SKEW,
+    );
+  });
+
+  it('устаревший лидер не снимает NEEDS_RECONCILE и не фиксирует сверку', async () => {
+    const { service, source, store, advance } = setup();
+    for (let i = 1; i <= 3; i++) source.set(mk(i));
+    await service.runOnce();
+    await store.patchState('test', 'BAN', { lastErrorCode: NEEDS_RECONCILE });
+    advance(2000);
+    let stale = false;
+    const orig = store.listMirroredIds.bind(store);
+    store.listMirroredIds = async (...args: Parameters<typeof orig>) => {
+      const result = await orig(...args);
+      stale = true; // токен утрачен посреди сверки
+      return result;
+    };
+    await service.runOnce(async () => !stale);
+    const state = await store.getState('test', 'BAN');
+    expect(state.lastErrorCode).toBe(NEEDS_RECONCILE);
+    expect(state.lastFullReconcileAt).toEqual(new Date(T0));
+  });
+
+  it('устаревший лидер не пишет счётчики сбоя', async () => {
+    const { service, source, store } = setup();
+    source.failWith = new SourceUnavailable();
+    await service.runOnce(async () => false);
+    const state = await store.getState('test', 'BAN');
+    expect(state.consecutiveFailures).toBe(0);
+    expect(state.lastErrorCode).toBeNull();
+    // Контроль: действующий лидер счётчик пишет.
+    const control = setup();
+    control.source.failWith = new SourceUnavailable();
+    await control.service.runOnce(async () => true);
+    expect(
+      (await control.store.getState('test', 'BAN')).consecutiveFailures,
+    ).toBe(1);
+  });
+
+  it('SchemaMismatch устаревшего лидера не записывает код остановки', async () => {
+    const { service, source, store } = setup();
+    source.failBatchWith.set('BAN', new SourceSchemaMismatch());
+    // Токен есть до первого чтения (первый вызов), дальше утрачен.
+    let calls = 0;
+    await service.runOnce(async () => {
+      calls += 1;
+      return calls < 2;
+    });
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBeNull();
+  });
+});
+
+describe('PunishmentsSyncService: часы при недоступном health на первом тике (M3)', () => {
+  it('пока часы не сверены, слой T не истекает строки; после первого health — истекает', async () => {
+    const { service, source, store, advance } = setup();
+    source.healthOk = false;
+    source.set(mk(1, { until: new Date(T0 + 5000) }));
+    await service.runOnce();
+    advance(10_000);
+    await service.runOnce();
+    expect(store.mirror.get('BAN:1')?.status).toBe('ACTIVE');
+    source.healthOk = true;
+    advance(1500);
+    await service.runOnce();
+    expect(store.mirror.get('BAN:1')?.status).toBe('EXPIRED');
+  });
+
+  it('расхождение часов обнаруживается на первом успешном health, а не через минуту', async () => {
+    const { service, source, store, advance } = setup();
+    source.healthOk = false;
+    source.set(mk(1, { until: new Date(T0 + 5000) }));
+    await service.runOnce();
+    source.healthOk = true;
+    source.serverTimeMs += 3_600_000; // часы источника на час впереди
+    advance(1500); // меньше интервала проверки в минуту
+    source.fetchBatchCalls.length = 0;
+    await service.runOnce();
+    expect(source.fetchBatchCalls).toHaveLength(0);
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      CLOCK_SKEW,
+    );
+    expect(store.mirror.get('BAN:1')?.status).toBe('ACTIVE');
+  });
+});
+
+describe('PunishmentsSyncService: границы порога массовой пометки (F2)', () => {
+  it('зеркало из 9 строк порогом не защищено: 5 из 9 помечаются', async () => {
+    const { service, source, store, advance } = setupMany(9);
+    await service.runOnce();
+    advance(16_000);
+    for (let i = 1; i <= 5; i++) source.remove('BAN', String(i));
+    await service.runOnce();
+    expect(
+      [...store.mirror.values()].filter(
+        (m) => m.status === 'DELETED_AT_SOURCE',
+      ),
+    ).toHaveLength(5);
+  });
+
+  it('зеркало из 10 строк: 6 пропавших (> 0.5) не помечаются', async () => {
+    const { service, source, store, advance } = setupMany(10);
+    await service.runOnce();
+    advance(16_000);
+    for (let i = 1; i <= 6; i++) source.remove('BAN', String(i));
+    await service.runOnce();
+    expect(
+      [...store.mirror.values()].some((m) => m.status === 'DELETED_AT_SOURCE'),
+    ).toBe(false);
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      MASS_DELETE_SUSPECTED,
+    );
+  });
+
+  it('зеркало из 10 строк: ровно 0.5 (5 из 10) помечаются', async () => {
+    const { service, source, store, advance } = setupMany(10);
+    await service.runOnce();
+    advance(16_000);
+    for (let i = 1; i <= 5; i++) source.remove('BAN', String(i));
+    await service.runOnce();
+    expect(
+      [...store.mirror.values()].filter(
+        (m) => m.status === 'DELETED_AT_SOURCE',
+      ),
+    ).toHaveLength(5);
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBeNull();
+  });
+
+  it('плановая сверка после возврата строк снимает MASS_DELETE_SUSPECTED', async () => {
+    const { service, source, store, advance } = setupMany(20);
+    await service.runOnce();
+    advance(2000);
+    for (let i = 6; i <= 20; i++) source.remove('BAN', String(i));
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      MASS_DELETE_SUSPECTED,
+    );
+    for (let i = 6; i <= 20; i++) source.set(mk(i)); // источник восстановлен
+    advance(3_700_000);
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBeNull();
+    expect((await service.getStatus()).state).toBe('ok');
+  });
+});
+
+describe('PunishmentsSyncService: границы допуска часов (F3)', () => {
+  async function skewState(skewMs: number) {
+    const ctx = setup();
+    ctx.source.set(mk(1));
+    await ctx.service.runOnce();
+    ctx.advance(61_000);
+    ctx.source.serverTimeMs += skewMs;
+    await ctx.service.runOnce();
+    return (await ctx.store.getState('test', 'BAN')).lastErrorCode;
+  }
+
+  it('ровно 5 с: допуск, тревоги нет', async () => {
+    expect(await skewState(5000)).toBeNull();
+  });
+
+  it('5.001 с: тревога CLOCK_SKEW', async () => {
+    expect(await skewState(5001)).toBe(CLOCK_SKEW);
+  });
+
+  it('минус 5 с — допуск, минус 5.001 с — тревога', async () => {
+    expect(await skewState(-5000)).toBeNull();
+    expect(await skewState(-5001)).toBe(CLOCK_SKEW);
+  });
+});
+
+describe('PunishmentsSyncService: пропущенные строки в опросе (F5)', () => {
+  it('пачка из невалидных строк считается полной: чтение продолжается', async () => {
+    const { service, source, store } = setup();
+    // batchSize = 2: первая пачка целиком невалидна (raw = 2, valid = 0).
+    source.invalidIds.add('1');
+    source.invalidIds.add('2');
+    source.set(mk(1));
+    source.set(mk(2));
+    source.set(mk(3));
+    await service.runOnce();
+    expect(store.mirror.has('BAN:3')).toBe(true);
+    expect(store.mirror.has('BAN:1')).toBe(false);
+    const state = await store.getState('test', 'BAN');
+    expect(state.initialSyncDoneAt).not.toBeNull();
+    expect(state.cursorId).toBe(3n);
+  });
+});
+
+describe('PunishmentsSyncService: сверка не продвигается (RECONCILE_STALLED)', () => {
+  it('полная пачка без роста максимума id даёт тревогу и не помечает строки', async () => {
+    const { service, source, store, advance } = setup();
+    for (let i = 1; i <= 3; i++) source.set(mk(i));
+    await service.runOnce();
+    const orig = source.fetchBatch.bind(source);
+    // Сверка читает с id 0: источник «залипает» и отдаёт полную пачку с id 0.
+    source.fetchBatch = async (kind, afterId, limit) =>
+      kind === 'BAN' && afterId === 0n
+        ? [mk(0), mk(0, { rowHash: 'hash-0-v2' })]
+        : orig(kind, afterId, limit);
+    advance(3_700_000);
+    await service.runOnce();
+    expect((await store.getState('test', 'BAN')).lastErrorCode).toBe(
+      RECONCILE_STALLED,
+    );
+    expect([...store.mirror.values()].every((m) => m.status === 'ACTIVE')).toBe(
+      true,
+    );
+    expect((await service.getStatus()).state).toBe('needs_reconcile');
   });
 });

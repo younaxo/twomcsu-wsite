@@ -560,7 +560,7 @@ const CONTACT_FILLERS =
 const SHORT_LABELS = 'ds|дс|tg|тг|vk|вк|ig|wa|snap|insta';
 /// Метка платформы с разделителем (`:`, `=`, `-`, `@`) и идентификатором.
 const CONTACT_SEP_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})(?:\\s+(?:${CONTACT_FILLERS}))?\\s*[:=\\-–—@]+\\s*[^\\s,;]{2,64}`,
+  `(?<![\\p{L}\\p{N}])(?:${CONTACT_LABELS})(?:\\s+(?:${CONTACT_FILLERS}))?\\s*[:=\\-–—@>→⇒➔➜➡]+\\s*[^\\s,;]{2,64}`,
   'giu',
 );
 /// Метка платформы, пробел и токен, похожий на идентификатор (цифра, `_`,
@@ -580,6 +580,74 @@ const CONTACT_SHORT_RE = new RegExp(
   `(?<![\\p{L}\\p{N}])(?<!\\d\\s?)(?:${SHORT_LABELS})[^\\S\\n]+[^\\s,;]{2,64}`,
   'giu',
 );
+/// Основы названий платформ, которые склоняются или пишутся описательно
+/// (`в дискорде`, `в телеге`, `инсте`, `ватсапе`). Суффикс до 3 букв.
+const INFLECTED_STEMS =
+  'discord|дискорд|telegram|телеграмм?|телег|вконтакт|инстаграм|инст|insta|whatsapp|ватсап|вацап|skype|скайп|viber|вайбер|snapchat|tiktok|тикток|icq';
+const PLATFORM_WORD = `(?:${INFLECTED_STEMS})\\p{L}{0,3}(?![\\p{L}\\p{N}])`;
+/// Разделители «метка -> идентификатор», включая стрелки.
+const DESC_SEP = '(?:\\s*[:=\\-–—@>→⇒➔➜➡]+\\s*|\\s+(?:is|это|будет)\\s+)';
+/// Любая форма названия платформы + разделитель или «is/это» + идентификатор:
+/// `ник в дискорде: vasya`, `my discord is vasya`, `discord→vasya`.
+const CONTACT_DESC_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])${PLATFORM_WORD}(?:\\s+(?:${CONTACT_FILLERS}))?${DESC_SEP}[^\\s,;]{2,64}`,
+  'giu',
+);
+/// Предлог + любая форма платформы + слово: `пиши в телеге vasya`
+/// (слово после «в телеге» скрывается всегда, fail-closed).
+const CONTACT_PREP_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}])(?:в|во|на|по|через|у|in|on|via|at|from)\\s+${PLATFORM_WORD}[^\\S\\n]+[^\\s,;]{2,64}`,
+  'giu',
+);
+
+/// Секреты в причине (пароли, токены, ключи API).
+const SECRET_WORDS =
+  'password|passwd|passphrase|pwd|парол\\p{L}{1,3}|token|токен\\p{L}{0,3}|secret|секрет\\p{L}{0,3}|api[ _-]?key|apikey';
+/// `password: x`, `пароль=x`, `token -> x`.
+const SECRET_SEP_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${SECRET_WORDS})[^\\S\\n]*[:=\\-–—→>]+[^\\S\\n]*\\S{1,256}`,
+  'giu',
+);
+/// `password is x`, `пароль это x`.
+const SECRET_IS_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${SECRET_WORDS})[^\\S\\n]+(?:is|это|был|будет)[^\\S\\n]+\\S{1,256}`,
+  'giu',
+);
+/// `пароль vasya123`: слово без разделителя, только если следующий токен
+/// похож на секрет (цифра или спецсимвол).
+const SECRET_SPACE_RE = new RegExp(
+  `(?<![\\p{L}\\p{N}_])(?:${SECRET_WORDS})[^\\S\\n]+(?=\\S*[\\d_!@#$%^&*])\\S{3,256}`,
+  'giu',
+);
+/// Короткие слова (`pass`, `pin`) двусмысленны: только с `:` или `=`.
+const SECRET_WEAK_RE =
+  /(?<![\p{L}\p{N}_])(?:pass|пасс|пин|pin)[^\S\n]*[:=][^\S\n]*\S{1,256}/giu;
+const BEARER_RE =
+  /(?<![\p{L}\p{N}_])(?:bearer|basic)[^\S\n]+[A-Za-z0-9._~+/=-]{8,}/giu;
+/// Токены известных форматов: GitHub, OpenAI-подобные `sk-`, Slack, AWS, JWT.
+const KNOWN_TOKEN_RE =
+  /(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|(?:sk|pk|rk)[-_][A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*)/g;
+/// Длинные base64/hex-строки: не короче 32 знаков и с цифрой, либо от 48
+/// со смесью регистров (сплошная строка одной буквы секретом не считается).
+const LONG_BLOB_RE =
+  /(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_-]{32,}={0,2}(?![A-Za-z0-9+/_=-])/g;
+
+function redactSecrets(s: string): string {
+  let out = s;
+  out = out.replace(KNOWN_TOKEN_RE, REDACTED);
+  out = out.replace(BEARER_RE, REDACTED);
+  out = out.replace(SECRET_SEP_RE, REDACTED);
+  out = out.replace(SECRET_IS_RE, REDACTED);
+  out = out.replace(SECRET_SPACE_RE, REDACTED);
+  out = out.replace(SECRET_WEAK_RE, REDACTED);
+  out = out.replace(LONG_BLOB_RE, (m) =>
+    /\d/.test(m) || (m.length >= 48 && /[a-z]/.test(m) && /[A-Z]/.test(m))
+      ? REDACTED
+      : m,
+  );
+  return out;
+}
+
 /// Старый тег Discord `name#1234`.
 const DISCORD_TAG_RE = /(?<![\p{L}\p{N}_.])[\p{L}\p{N}_.]{2,32}#\d{4}(?!\d)/gu;
 /// Путь после домена, в том числе с пробелами вокруг `/`: `t . me / user`.
@@ -625,6 +693,7 @@ function looksLikeIpv6(candidate: string): boolean {
 function redactContacts(s: string): string {
   let out = s;
   out = out.replace(URL_RE, REDACTED);
+  out = redactSecrets(out);
   out = out.replace(EMAIL_RE, REDACTED);
   out = out.replace(EMAIL_NODOT_RE, REDACTED);
   out = out.replace(IPV6_CANDIDATE_RE, (m) =>
@@ -635,6 +704,8 @@ function redactContacts(s: string): string {
   out = out.replace(IPV4_SEP_RE, redactSeparatedIpv4);
   out = out.replace(IPV4_WILDCARD_RE, REDACTED);
   out = out.replace(CONTACT_SEP_RE, REDACTED);
+  out = out.replace(CONTACT_DESC_RE, REDACTED);
+  out = out.replace(CONTACT_PREP_RE, REDACTED);
   out = out.replace(CONTACT_SPACE_RE, REDACTED);
   out = out.replace(CONTACT_FILLER_RE, REDACTED);
   out = out.replace(CONTACT_SHORT_RE, REDACTED);
