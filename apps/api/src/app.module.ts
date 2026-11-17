@@ -30,6 +30,7 @@ import { MinecraftModule } from './modules/minecraft/minecraft.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LinkPreviewModule } from './modules/link-preview/link-preview.module';
+import { PunishmentsModule } from './modules/punishments/punishments.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { SkinsModule } from './modules/skins/skins.module';
@@ -87,6 +88,7 @@ import { VotingModule } from './modules/voting/voting.module';
     ReportsModule,
     StoreModule,
     MinecraftModule,
+    PunishmentsModule,
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,
