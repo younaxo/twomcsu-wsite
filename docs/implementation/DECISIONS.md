@@ -3870,6 +3870,9 @@ rate limit и audit видели IP nginx вместо IP клиента. ADR-01
 **Consequences.**
 
 - Администратор с узким набором прав больше не выдаёт роли с более широким набором. Роли, уже выданные ранее, не пересматриваются (data risk: миграции данных нет).
+- Исправления по ревью (L4): сверка прав в `roles.controller.ts` (строка ~185, `actorEffective.permissions.includes(key)`) и `role-bulk.service.ts` (строка ~90, `actor.permissions.includes(key)`) идёт через `includes(key)` без учёта `*`, а `assertGrantorCoversRole` `*` учитывает. Это строже и безопасно: `*` сейчас никому не выдаётся. Выравнивание отложено до появления `*`.
+- Исправления по ревью (L5): в `assign` проверка (`assertGrantorCoversRole`) и `userRole.upsert` выполняются не в одной транзакции (транзакция охватывает только upsert и запись в `roleAssignmentLog`). Возможно узкое окно: права роли расширили между проверкой и записью. Принятый остаточный риск; код не менялся.
+- Исправления по ревью (L6): DENY-эффекты не учитываются ни в `getEffectivePermissions` (берутся только ALLOW, см. комментарий со ссылкой на ADR-0004), ни в новой проверке (`rolePermission.findMany` с `effect: 'ALLOW'`). Это согласовано с текущей моделью.
 - Клиент (web) получает 403 с `code` и `missing`; текст `message` перечисляет недостающие права. UI-обработка кода не менялась.
 - Чтение прав роли добавляет один запрос `rolePermission.findMany` на выдачу (низкая частота).
 - Тесты: unit `permission.service.spec.ts`, `user-roles.controller.spec.ts`; e2e-кейс в `apps/api/test/roles.e2e-spec.ts` написан статически, не запускался.
