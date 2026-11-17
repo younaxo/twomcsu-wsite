@@ -26,6 +26,7 @@ import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import { cn } from '@/lib/cn';
 import { formatMoney } from '@/lib/format';
+import { cartErrorMessage, useCartMutations, useCartView } from '@/lib/store/cart';
 import {
   activeVariants,
   durationLabel,
@@ -284,10 +285,49 @@ function ProductDetails({ product }: { product: StoreProduct }) {
   const [variantId, setVariantId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const hintId = useId();
+  const cart = useCartView();
+  const mutations = useCartMutations();
+  const [feedback, setFeedback] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
   const selected = variants.find((variant) => variant.id === variantId) ?? variants[0] ?? null;
   const unique = product.isUnique === true;
   const max = quantityLimit(product);
+
+  // Уже лежит в корзине: по товару (для уникальных и лимита за покупку) и по варианту (слияние).
+  const inCart = (cart.data?.items ?? []).filter((item) => item.productId === product.id);
+  const inCartTotal = inCart.reduce((sum, item) => sum + item.quantity, 0);
+  const sameVariant = selected ? inCart.find((item) => item.variantId === selected.id) : undefined;
+  const blockedByUnique = unique && (inCart.length > 0 || product.alreadyPurchased === true);
+  const canAdd = signedIn && selected !== null && !blockedByUnique;
+
+  const addToCart = async () => {
+    if (!selected || !canAdd || mutations.add.isPending || mutations.setQuantity.isPending) return;
+    const amount = unique ? 1 : quantity;
+    setFeedback(null);
+    if (!unique && inCartTotal + amount > max) {
+      setFeedback({
+        kind: 'error',
+        text: `В корзине уже ${inCartTotal} шт., за одну покупку — не больше ${max}.`,
+      });
+      return;
+    }
+    try {
+      if (sameVariant) {
+        await mutations.setQuantity.mutateAsync({
+          id: sameVariant.id,
+          quantity: sameVariant.quantity + amount,
+        });
+      } else {
+        await mutations.add.mutateAsync({ variantId: selected.id, quantity: amount });
+      }
+      setFeedback({ kind: 'ok', text: `«${product.name}» добавлен в корзину.` });
+    } catch (error) {
+      setFeedback({
+        kind: 'error',
+        text: cartErrorMessage(error, 'Не удалось добавить в корзину.'),
+      });
+    }
+  };
 
   return (
     <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -349,12 +389,18 @@ function ProductDetails({ product }: { product: StoreProduct }) {
                 <Button
                   type="button"
                   size="lg"
-                  aria-disabled="true"
+                  aria-disabled={canAdd ? undefined : 'true'}
                   aria-describedby={hintId}
-                  onClick={(event) => event.preventDefault()}
+                  loading={mutations.add.isPending || mutations.setQuantity.isPending}
+                  onClick={() => void addToCart()}
                 >
                   <ShoppingCart />В корзину
                 </Button>
+                {signedIn ? (
+                  <Button asChild variant="secondary" size="lg">
+                    <Link href="/shop/cart">Перейти в корзину</Link>
+                  </Button>
+                ) : null}
                 {!signedIn ? (
                   <Button asChild variant="secondary" size="lg">
                     <Link href={`/login?next=${encodeURIComponent(`/shop/${product.slug}`)}`}>
@@ -365,9 +411,31 @@ function ProductDetails({ product }: { product: StoreProduct }) {
                 ) : null}
               </div>
               <p id={hintId} className="text-xs text-muted-foreground">
-                Корзина и оформление заказа появятся в ближайшем обновлении.
-                {!signedIn ? ' Для покупок понадобится вход в аккаунт.' : ''}
+                {!signedIn
+                  ? 'Для покупок понадобится вход в аккаунт.'
+                  : blockedByUnique
+                    ? product.alreadyPurchased
+                      ? 'Этот товар уже куплен — повторно он не продаётся.'
+                      : 'Уникальный товар уже в корзине.'
+                    : sameVariant
+                      ? `В корзине уже ${sameVariant.quantity} шт. этого варианта — количество увеличится.`
+                      : 'Оплата заказа появится в ближайшем обновлении.'}
               </p>
+              {signedIn ? (
+                <div aria-live="polite" role="status" data-testid="cart-feedback">
+                  {feedback?.kind === 'ok' ? (
+                    <p className="flex items-center gap-2 text-sm font-medium text-success">
+                      <Check aria-hidden className="size-4" />
+                      {feedback.text}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {feedback?.kind === 'error' ? (
+                <p role="alert" className="text-sm font-medium text-destructive">
+                  {feedback.text}
+                </p>
+              ) : null}
             </div>
           </>
         ) : (

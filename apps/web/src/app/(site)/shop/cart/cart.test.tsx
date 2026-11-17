@@ -1,0 +1,428 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api/errors';
+import { useAuthStore } from '@/lib/auth/store';
+import type { CartView } from '@/lib/store/cart';
+import type { StoreProduct } from '@/lib/store/catalog';
+import ProductPage from '../[slug]/page';
+import CartPage from './page';
+
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  patch: vi.fn(),
+  del: vi.fn(),
+}));
+
+vi.mock('@/lib/api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/client')>()),
+  api: { get: mocks.get, post: mocks.post, patch: mocks.patch, delete: mocks.del },
+}));
+vi.mock('next/navigation', () => ({
+  useParams: () => ({ slug: 'ares' }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/shop/cart',
+}));
+vi.mock('@/lib/site/status', () => ({
+  useModuleAvailability: () => ({ reason: null, bypass: false, maintenance: null }),
+}));
+
+// Фикстуры формы ответа API. Суммы нарочно «не сходятся» с позициями там, где это
+// проверяет, что итог берётся у сервера, а не считается на клиенте.
+function line(over: Record<string, unknown> = {}) {
+  return {
+    productId: 'p1',
+    variantId: 'v1',
+    bundleId: null,
+    productType: 'PRIVILEGE',
+    quantity: 2,
+    unitPrice: '100.00',
+    lineSubtotal: '200.00',
+    bulkDiscount: '0',
+    lineTotal: '200.00',
+    giftToUserId: null,
+    giftMessage: null,
+    isGiftable: true,
+    isSelfOnly: false,
+    isUnique: false,
+    name: 'Тестовая привилегия',
+    ...over,
+  };
+}
+
+function item(over: Record<string, unknown> = {}) {
+  return {
+    id: 'i1',
+    quantity: 2,
+    productId: 'p1',
+    variantId: 'v1',
+    bundleId: null,
+    product: { id: 'p1', name: 'Тестовая привилегия' },
+    ...over,
+  };
+}
+
+function cart(over: Record<string, unknown> = {}): CartView {
+  return {
+    id: 'cart1',
+    items: [item()],
+    promoCode: null,
+    lines: [line()],
+    subtotal: '200.00',
+    bulkDiscountTotal: '0',
+    loyaltyDiscountPercent: '0',
+    loyaltyDiscountTotal: '0',
+    promoDiscountTotal: '0',
+    discountAmount: '0',
+    total: '200.00',
+    ...over,
+  } as unknown as CartView;
+}
+
+const EMPTY = cart({ items: [], lines: [], subtotal: '0', total: '0' });
+
+function Providers({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      {children}
+    </QueryClientProvider>
+  );
+}
+
+function signIn() {
+  useAuthStore.setState({ status: 'authenticated', user: { id: 'u1' } } as never);
+}
+
+beforeEach(() => {
+  for (const fn of Object.values(mocks)) fn.mockReset();
+  useAuthStore.setState({ status: 'anonymous', user: null } as never);
+});
+
+describe('корзина /shop/cart', () => {
+  it('аноним: приглашение войти, запросов корзины нет', () => {
+    render(<CartPage />, { wrapper: Providers });
+    expect(screen.getByText('Войдите, чтобы собрать корзину')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Войти' })).toHaveAttribute(
+      'href',
+      '/login?next=%2Fshop%2Fcart',
+    );
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it('пустая корзина: пояснение и ссылка в магазин', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(EMPTY);
+    render(<CartPage />, { wrapper: Providers });
+    expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'В магазин' })).toHaveAttribute('href', '/shop');
+  });
+
+  it('итог — ровно ответ сервера, клиент не пересчитывает позиции', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(cart({ subtotal: '200.00', total: '777.00' }));
+    render(<CartPage />, { wrapper: Providers });
+    const total = await screen.findByTestId('cart-total');
+    expect(total).toHaveAttribute('aria-live', 'polite');
+    expect(total.textContent).toMatch(/777/);
+    expect(total.textContent).not.toMatch(/\b200\b/);
+    expect(mocks.get).toHaveBeenCalledWith('/store/cart');
+  });
+
+  it('разбор скидок: объём, лояльность, промокод — суммы сервера', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(
+      cart({
+        lines: [line({ bulkDiscount: '20.00', lineTotal: '180.00' })],
+        bulkDiscountTotal: '20.00',
+        loyaltyDiscountPercent: '5.00',
+        loyaltyDiscountTotal: '9.00',
+        promoDiscountTotal: '31.00',
+        discountAmount: '60.00',
+        promoCode: { code: 'SPRING', description: 'Весенняя акция' },
+        total: '140.00',
+      }),
+    );
+    render(<CartPage />, { wrapper: Providers });
+    await screen.findByTestId('cart-total');
+    const summary = screen.getByRole('region', { name: 'Итог заказа' });
+    expect(within(summary).getByText('Скидка за объём').nextSibling?.textContent).toMatch(/−.*20/);
+    expect(within(summary).getByText(/Скидка лояльности, 5%/).nextSibling?.textContent).toMatch(
+      /−.*9/,
+    );
+    expect(within(summary).getByText('Промокод SPRING').nextSibling?.textContent).toMatch(/−.*31/);
+    expect(within(summary).getByTestId('promo-applied')).toHaveTextContent('Весенняя акция');
+    expect(within(summary).getByTestId('cart-total').textContent).toMatch(/140/);
+    expect(screen.getByTestId('cart-item').textContent).toMatch(/Скидка за объём −.*20/);
+  });
+
+  it('«Оформить» неактивна с пояснением (оплата — следующий этап)', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    render(<CartPage />, { wrapper: Providers });
+    const button = await screen.findByRole('button', { name: /Оформить заказ/ });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAccessibleDescription(/Оплата появится/);
+  });
+
+  it('количество: «+» шлёт PATCH, показывается ответ сервера', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.patch.mockResolvedValue(
+      cart({
+        items: [item({ quantity: 3 })],
+        lines: [line({ quantity: 3, lineSubtotal: '300.00', lineTotal: '300.00' })],
+        subtotal: '300.00',
+        total: '290.00',
+      }),
+    );
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(
+      await screen.findByRole('button', { name: 'Увеличить количество: Тестовая привилегия' }),
+    );
+    expect(mocks.patch).toHaveBeenCalledWith('/store/cart/items/i1', { quantity: 3 });
+    await waitFor(() => expect(screen.getByTestId('cart-total').textContent).toMatch(/290/));
+    expect(screen.getByTestId('cart-quantity')).toHaveTextContent('3');
+  });
+
+  it('ошибка сервера по количеству (maxPerPurchase) показывается понятным текстом', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.patch.mockRejectedValue(new ApiError(400, ['Максимум 2 шт. этого товара за покупку']));
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(
+      await screen.findByRole('button', { name: 'Увеличить количество: Тестовая привилегия' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Максимум 2 шт.');
+  });
+
+  it('удаление позиции: DELETE и объявление для скринридера', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockResolvedValue(EMPTY);
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Удалить: Тестовая привилегия' }));
+    expect(mocks.del).toHaveBeenCalledWith('/store/cart/items/i1');
+    expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+    expect(screen.getByTestId('cart-announce')).toHaveTextContent('удалён из корзины');
+  });
+
+  it('очистка требует подтверждения: отмена ничего не удаляет, подтверждение — DELETE /store/cart', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockResolvedValue(EMPTY);
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: /Очистить/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Очистить корзину?');
+    expect(mocks.del).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(mocks.del).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Очистить/ }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Очистить' }),
+    );
+    await waitFor(() => expect(mocks.del).toHaveBeenCalledWith('/store/cart'));
+    expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+  });
+
+  it('промокод: ошибка сервера у поля, успех — код и описание', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.post.mockRejectedValueOnce(new ApiError(404, ['Промокод не найден']));
+    render(<CartPage />, { wrapper: Providers });
+    const input = await screen.findByRole('textbox', { name: 'Промокод' });
+    await user.type(input, 'BAD');
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Промокод не найден');
+    expect(mocks.post).toHaveBeenCalledWith('/store/cart/apply-promo', { code: 'BAD' });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    mocks.post.mockResolvedValueOnce(
+      cart({
+        promoCode: { code: 'GOOD', description: 'Скидка новичкам' },
+        promoDiscountTotal: '20.00',
+        total: '180.00',
+      }),
+    );
+    await user.clear(input);
+    await user.type(input, 'good');
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+    expect(await screen.findByTestId('promo-applied')).toHaveTextContent('GOOD');
+    expect(screen.getByTestId('promo-applied')).toHaveTextContent('Скидка новичкам');
+    expect(screen.getByTestId('cart-total').textContent).toMatch(/180/);
+  });
+
+  it('пустой промокод не отправляется', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Применить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Введите промокод');
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('сохранённый промокод стал недействителен (GET отдаёт 400) — его можно убрать', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockRejectedValueOnce(new ApiError(400, ['Срок действия промокода истёк']));
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockResolvedValue(cart());
+    render(<CartPage />, { wrapper: Providers });
+    const problem = await screen.findByTestId('cart-promo-problem');
+    expect(problem).toHaveTextContent('Срок действия промокода истёк');
+    await user.click(within(problem).getByRole('button', { name: 'Убрать промокод' }));
+    expect(mocks.del).toHaveBeenCalledWith('/store/cart/promo');
+    expect(await screen.findByTestId('cart-total')).toBeInTheDocument();
+  });
+
+  it('подарок: ник и сообщение уходят в PATCH', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.patch.mockResolvedValue(
+      cart({ lines: [line({ giftToUserId: 'u2', giftMessage: 'С праздником' })] }),
+    );
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Подарить' }));
+    await user.type(screen.getByLabelText(/Ник получателя/), 'Friend');
+    await user.type(screen.getByLabelText('Сообщение'), 'С праздником');
+    await user.click(screen.getByRole('button', { name: 'Подарить' }));
+    expect(mocks.patch).toHaveBeenCalledWith('/store/cart/items/i1', {
+      giftToUsername: 'Friend',
+      giftMessage: 'С праздником',
+    });
+    expect(await screen.findByText('Подарок для Friend')).toBeInTheDocument();
+  });
+
+  it('товар «только для себя» не предлагает подарок', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(cart({ lines: [line({ isSelfOnly: true })] }));
+    render(<CartPage />, { wrapper: Providers });
+    await screen.findByTestId('cart-item');
+    expect(screen.queryByRole('button', { name: 'Подарить' })).not.toBeInTheDocument();
+  });
+
+  it('в исходниках нет хардкода цен, расчётов и glass/blur', () => {
+    for (const file of ['page.tsx', '../../../../lib/store/cart.ts']) {
+      const source = readFileSync(join(__dirname, file), 'utf8');
+      expect(source, file).not.toMatch(/backdrop-blur|\bblur-|glass/i);
+      expect(source, file).not.toMatch(/['"`]\d+[.,]\d{2}['"`]/);
+      expect(source, file).not.toMatch(/₽\s?\d|\d\s?₽/);
+      expect(source, file).not.toMatch(
+        /unitPrice\)?\s*\*|lineTotal\)?\s*[+*]|Number\(\w+\.total\)/,
+      );
+    }
+  });
+});
+
+const PRODUCT: StoreProduct = {
+  id: 'p1',
+  name: 'Тестовая привилегия',
+  slug: 'ares',
+  description: 'Описание',
+  image: null,
+  isUnique: false,
+  maxPerPurchase: 3,
+  variants: [{ id: 'v1', duration: 'MONTH_1', price: '150.00' }],
+};
+
+function productRoutes(product: StoreProduct, current: CartView = EMPTY) {
+  mocks.get.mockImplementation((path: string) => {
+    if (path === '/store/products/ares') return Promise.resolve(product);
+    if (path === '/store/products/ares/bought-together') return Promise.resolve([]);
+    if (path === '/store/cart') return Promise.resolve(current);
+    return Promise.reject(new ApiError(404, ['Not found']));
+  });
+}
+
+describe('«В корзину» на /shop/[slug]', () => {
+  it('добавляет выбранный вариант через API и сообщает об успехе', async () => {
+    const user = userEvent.setup();
+    signIn();
+    productRoutes(PRODUCT);
+    mocks.post.mockResolvedValue(cart());
+    render(<ProductPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: /В корзину/ }));
+    expect(mocks.post).toHaveBeenCalledWith('/store/cart/items', { variantId: 'v1', quantity: 1 });
+    expect(await screen.findByTestId('cart-feedback')).toHaveTextContent('добавлен в корзину');
+    expect(screen.getByRole('link', { name: 'Перейти в корзину' })).toHaveAttribute(
+      'href',
+      '/shop/cart',
+    );
+  });
+
+  it('тот же вариант уже в корзине: увеличивает количество вместо дубля', async () => {
+    const user = userEvent.setup();
+    signIn();
+    productRoutes(PRODUCT, cart());
+    mocks.patch.mockResolvedValue(cart());
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText(/В корзине уже 2 шт\. этого варианта/);
+    await user.click(screen.getByRole('button', { name: /В корзину/ }));
+    // в корзине 2, лимит за покупку 3: ещё одна штука допустима
+    expect(mocks.patch).toHaveBeenCalledWith('/store/cart/items/i1', { quantity: 3 });
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('maxPerPurchase: сверх лимита с учётом корзины не отправляется', async () => {
+    const user = userEvent.setup();
+    signIn();
+    productRoutes(PRODUCT, cart({ items: [item({ quantity: 3 })] }));
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText(/В корзине уже 3 шт\. этого варианта/);
+    await user.click(screen.getByRole('button', { name: /В корзину/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('не больше 3');
+    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(mocks.post).not.toHaveBeenCalled();
+  });
+
+  it('ошибка API при добавлении показывается текстом сервера', async () => {
+    const user = userEvent.setup();
+    signIn();
+    productRoutes(PRODUCT);
+    mocks.post.mockRejectedValue(new ApiError(404, ['Вариант товара не найден']));
+    render(<ProductPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: /В корзину/ }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Вариант товара не найден');
+  });
+
+  it('уникальный товар, уже лежащий в корзине, повторно не добавляется', async () => {
+    const user = userEvent.setup();
+    signIn();
+    productRoutes({ ...PRODUCT, isUnique: true }, cart({ items: [item({ quantity: 1 })] }));
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText('Уникальный товар уже в корзине.');
+    const button = screen.getByRole('button', { name: /В корзину/ });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    await user.click(button);
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it('аноним: кнопка неактивна, запросов корзины нет', async () => {
+    const user = userEvent.setup();
+    productRoutes(PRODUCT);
+    render(<ProductPage />, { wrapper: Providers });
+    const button = await screen.findByRole('button', { name: /В корзину/ });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    await user.click(button);
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalledWith('/store/cart');
+  });
+});
