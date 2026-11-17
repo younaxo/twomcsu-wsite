@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 jest.setTimeout(20_000);
@@ -89,6 +90,7 @@ describe('Roles bulk permissions (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: manager.id, roleId: managerRole.id },
     });
+    await markStaffTwoFactorEnabled(prisma, manager.id);
     await permissions.invalidateUser(manager.id);
   });
 

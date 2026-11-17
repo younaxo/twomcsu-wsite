@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { IpSubnetThrottlerGuard } from './common/guards/ip-subnet-throttler.guard';
 import { envValidationSchema } from './config/env.validation';
 import { AchievementsModule } from './modules/achievements/achievements.module';
 import { ActivityModule } from './modules/activity/activity.module';
@@ -11,6 +12,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
+import { BridgeModule } from './modules/bridge/bridge.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
@@ -23,12 +25,14 @@ import { FilesModule } from './modules/files/files.module';
 import { FormsModule } from './modules/forms/forms.module';
 import { FriendsModule } from './modules/friends/friends.module';
 import { HealthModule } from './modules/health/health.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { LeaderboardsModule } from './modules/leaderboards/leaderboards.module';
 import { NewsModule } from './modules/news/news.module';
 import { MinecraftModule } from './modules/minecraft/minecraft.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { LinkPreviewModule } from './modules/link-preview/link-preview.module';
+import { PunishmentsModule } from './modules/punishments/punishments.module';
 import { PositionsModule } from './modules/positions/positions.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { SkinsModule } from './modules/skins/skins.module';
@@ -86,6 +90,9 @@ import { VotingModule } from './modules/voting/voting.module';
     ReportsModule,
     StoreModule,
     MinecraftModule,
+    PunishmentsModule,
+    InventoryModule,
+    BridgeModule,
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,
@@ -96,7 +103,7 @@ import { VotingModule } from './modules/voting/voting.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: IpSubnetThrottlerGuard,
     },
   ],
 })

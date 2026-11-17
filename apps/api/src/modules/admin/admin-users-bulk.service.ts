@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 import { QuickModerationService } from '../moderation/quick-moderation.service';
 import { PermissionService } from '../roles/permission.service';
 import { AuditService } from '../audit/audit.service';
@@ -6,7 +6,7 @@ import { BulkUserAction, BulkUsersDto } from './dto/bulk-users.dto';
 
 export interface BulkUsersResult {
   succeeded: string[];
-  failed: { userId: string; reason: string }[];
+  failed: { userId: string; reason: string; code?: string }[];
 }
 
 @Injectable()
@@ -30,7 +30,14 @@ export class AdminUsersBulkService {
 
     for (const userId of dto.userIds) {
       try {
-        const canAct = await this.permissions.canActOn(actorId, userId);
+        // Владелец может снять санкцию с себя в любом случае (Q49): иерархия
+        // canActOn для него на самого себя не применяется только при UNBAN.
+        const ownerSelfUnban =
+          dto.action === BulkUserAction.UNBAN &&
+          userId === actorId &&
+          (await this.permissions.isSuperuser(actorId));
+        const canAct =
+          ownerSelfUnban || (await this.permissions.canActOn(actorId, userId));
         if (!canAct) {
           result.failed.push({
             userId,
@@ -53,17 +60,22 @@ export class AdminUsersBulkService {
             severity: 'warning',
           });
         } else {
-          await this.moderation.unban(userId);
-          await this.audit.log({
-            actorId,
-            action: 'user.unban',
-            targetType: 'User',
-            targetId: userId,
-          });
+          // Правило Q48/Q49 и запись аудита `user.unban` (с issuerId,
+          // ownerOverride, self) — внутри QuickModerationService.unban.
+          await this.moderation.unban(userId, actorId);
         }
         result.succeeded.push(userId);
       } catch (error) {
-        result.failed.push({ userId, reason: (error as Error).message });
+        const code = (error as HttpException).getResponse?.();
+        result.failed.push({
+          userId,
+          reason: (error as Error).message,
+          ...(typeof code === 'object' &&
+          code !== null &&
+          typeof (code as { code?: unknown }).code === 'string'
+            ? { code: (code as { code: string }).code }
+            : {}),
+        });
       }
     }
 

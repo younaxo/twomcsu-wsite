@@ -1,6 +1,18 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, ReportType } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  PermissionService,
+  SanctionRevokeDecision,
+  sanctionRevokeAuditChanges,
+} from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { ArchiveReportDto } from './dto/archive-report.dto';
 import { BanReportsDto } from './dto/ban-reports.dto';
@@ -18,6 +30,8 @@ export class ReportsAdminService {
     private readonly prisma: PrismaService,
     @Inject(REPORT_PRIORITY_PROVIDER)
     private readonly priority: ReportPriorityProvider,
+    private readonly permissions: PermissionService,
+    private readonly audit: AuditService,
   ) {}
 
   async stats() {
@@ -118,25 +132,118 @@ export class ReportsAdminService {
     await this.prisma.reportMessage.delete({ where: { id: messageId } });
   }
 
+  /// Выдача бана в обращениях (Q48; ADR-0173). 1) иерархия к цели (canActOn):
+  /// банить старшего или равного нельзя; 2) новый бан ЗАМЕНЯЕТ действующие, а
+  /// замена = снятие: правило снятия проверяется для каждого заменяемого бана
+  /// («всё или ничего», 403 `sanction_revoke_forbidden`), иначе младший мог бы
+  /// перебить бан старшего; 3) деактивация, создание и аудит снятий — в одной
+  /// транзакции с условием по id проверенных банов (409 при гонке).
   async banUser(userId: string, bannedBy: string, dto: BanReportsDto) {
-    await this.prisma.reportBan.updateMany({
+    if (!(await this.permissions.canActOn(bannedBy, userId))) {
+      throw new ForbiddenException(
+        'Недостаточно прав для действия над этим пользователем',
+      );
+    }
+    const active = await this.prisma.reportBan.findMany({
       where: { userId, isActive: true },
-      data: { isActive: false },
     });
-    return this.prisma.reportBan.create({
-      data: {
-        userId,
-        reason: dto.reason,
-        bannedBy,
-        bannedUntil: dto.bannedUntil ? new Date(dto.bannedUntil) : undefined,
-      },
+    const decisions: SanctionRevokeDecision[] = [];
+    for (const ban of active) {
+      decisions.push(
+        await this.permissions.assertCanRevokeSanction(
+          bannedBy,
+          ban.bannedBy,
+          userId,
+        ),
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (active.length > 0) {
+        const replaced = await tx.reportBan.updateMany({
+          where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
+          data: { isActive: false },
+        });
+        if (replaced.count !== active.length) {
+          throw new ConflictException(
+            'Состояние банов изменилось, повторите действие',
+          );
+        }
+        for (const [index, ban] of active.entries()) {
+          await this.audit.logInTx(tx, {
+            actorId: bannedBy,
+            action: 'reports.ban.revoke',
+            targetType: 'ReportBan',
+            targetId: ban.id,
+            changes: sanctionRevokeAuditChanges(
+              decisions[index],
+              ban.bannedBy,
+              {
+                userId,
+                replacedByNewBan: true,
+              },
+            ),
+            severity: 'warning',
+          });
+        }
+      }
+      return tx.reportBan.create({
+        data: {
+          userId,
+          reason: dto.reason,
+          bannedBy,
+          bannedUntil: dto.bannedUntil ? new Date(dto.bannedUntil) : undefined,
+        },
+      });
     });
   }
 
-  async unbanUser(userId: string): Promise<void> {
-    await this.prisma.reportBan.updateMany({
+  /// Снятие бана в обращениях (Q48, Q49; ADR-0173). Правило проверяется для
+  /// КАЖДОГО активного бана пользователя (у разных банов разные выдавшие).
+  /// Семантика «всё или ничего»: если хоть один бан снимать нельзя — 403
+  /// `sanction_revoke_forbidden` и ни один бан не снимается; иначе частичное
+  /// снятие оставляло бы пользователя в неопределённом состоянии, а младший
+  /// мог бы «выбрать» чужие баны. На каждый снятый бан — запись в аудит.
+  async unbanUser(userId: string, actorId: string): Promise<void> {
+    const active = await this.prisma.reportBan.findMany({
       where: { userId, isActive: true },
-      data: { isActive: false },
+    });
+    const decisions: SanctionRevokeDecision[] = [];
+    for (const ban of active) {
+      decisions.push(
+        await this.permissions.assertCanRevokeSanction(
+          actorId,
+          ban.bannedBy,
+          userId,
+        ),
+      );
+    }
+    if (active.length === 0) {
+      return;
+    }
+    // L-2/L-3: деактивация условна по id проверенных банов, аудит — в той же
+    // транзакции (ошибка аудита откатывает снятие, ничего не теряется тихо).
+    await this.prisma.$transaction(async (tx) => {
+      const released = await tx.reportBan.updateMany({
+        where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
+        data: { isActive: false },
+      });
+      if (released.count !== active.length) {
+        throw new ConflictException(
+          'Состояние банов изменилось, повторите действие',
+        );
+      }
+      for (const [index, ban] of active.entries()) {
+        await this.audit.logInTx(tx, {
+          actorId,
+          action: 'reports.ban.revoke',
+          targetType: 'ReportBan',
+          targetId: ban.id,
+          changes: sanctionRevokeAuditChanges(decisions[index], ban.bannedBy, {
+            userId,
+          }),
+          severity: 'warning',
+        });
+      }
     });
   }
 

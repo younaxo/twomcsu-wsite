@@ -64,3 +64,49 @@ describe('ChatService.deleteMessage и beforeModerate (ADR-0156)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+describe('ChatService.sendMessage и beforeStaffAction (ADR-0169)', () => {
+  function buildSend(canPostReadonly: boolean, readOnly: boolean) {
+    const create = jest.fn().mockRejectedValue(new Error('stop-after-guard'));
+    const prisma = {
+      chatMessage: { create },
+    } as unknown as PrismaService;
+    const permissions = {
+      hasPermission: jest.fn().mockResolvedValue(canPostReadonly),
+    } as unknown as PermissionService;
+    const service = new ChatService(
+      prisma,
+      {} as never,
+      permissions,
+      {} as never,
+      {} as never,
+    );
+    const internals = service as unknown as Record<string, unknown>;
+    internals.requireActiveChannel = jest
+      .fn()
+      .mockResolvedValue({ id: 'c1', isReadOnly: readOnly });
+    internals.requireNotChatBanned = jest.fn().mockResolvedValue(undefined);
+    internals.requireNotMuted = jest.fn().mockResolvedValue(undefined);
+    internals.requireNotFlooding = jest.fn().mockResolvedValue(undefined);
+    return { service, create };
+  }
+
+  it('read-only канал, право есть — beforeStaffAction вызывается; отказ блокирует отправку', async () => {
+    const { service, create } = buildSend(true, true);
+    const guard = jest.fn().mockRejectedValue(new Error('admin_2fa_required'));
+    await expect(
+      service.sendMessage('mod', 'c1', { content: 'hi' }, guard),
+    ).rejects.toThrow('admin_2fa_required');
+    expect(guard).toHaveBeenCalledTimes(1);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('обычный канал — beforeStaffAction не вызывается', async () => {
+    const { service } = buildSend(false, false);
+    const guard = jest.fn();
+    await expect(
+      service.sendMessage('user', 'c1', { content: 'hi' }, guard),
+    ).rejects.toThrow('stop-after-guard');
+    expect(guard).not.toHaveBeenCalled();
+  });
+});

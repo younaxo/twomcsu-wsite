@@ -356,15 +356,17 @@ function HistoryTab({ number }: { number: string }) {
 
 type ReportActions = ReturnType<typeof useStaffReportActions>;
 
-/// Заметка персонала: закрепление (`reports.notes.pin`) и правка (автор или
-/// `reports.delete`; иное сервер отклонит 403, ошибка показывается тостом).
+/// Заметка персонала: правка (автор или `reports.notes.edit`), закрепление
+/// (`reports.notes.pin`) и открепление (`reports.notes.unpin`); иное сервер
+/// отклонит 403, ошибка показывается тостом.
 function NoteItem({ note, actions }: { note: StaffReportNote; actions: ReportActions }) {
   const { can } = usePermissions();
   const meId = useAuthStore((state) => state.user?.id ?? null);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(note.content);
-  const canEdit = can('reports.notes') && (note.authorId === meId || can('reports.delete'));
-  const canPin = can('reports.notes') && can('reports.notes.pin');
+  const canEdit = can('reports.notes') && (note.authorId === meId || can('reports.notes.edit'));
+  const canPin =
+    can('reports.notes') && can(note.isPinned ? 'reports.notes.unpin' : 'reports.notes.pin');
   const pinning = actions.pinNote.isPending && actions.pinNote.variables?.noteId === note.id;
   return (
     <li className="rounded-lg bg-surface-sunken px-3 py-2 text-sm" data-testid={`note-${note.id}`}>

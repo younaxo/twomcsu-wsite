@@ -19,7 +19,6 @@ import {
   assertAdmin2fa,
   PermissionsGuard,
 } from '../roles/guards/permissions.guard';
-import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../roles/permission.service';
 import { CommunicationsService } from './communications.service';
 import {
@@ -37,7 +36,6 @@ export class CommunicationsController {
   constructor(
     private readonly communications: CommunicationsService,
     private readonly permissions: PermissionService,
-    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
@@ -56,7 +54,7 @@ export class CommunicationsController {
       throw new ForbiddenException('Недостаточно прав');
     }
     // Нет @RequirePermissions (любое из двух прав) — admin-2FA проверяем явно.
-    await assertAdmin2fa(actor, this.prisma, this.config);
+    assertAdmin2fa(actor, this.config);
     return this.communications.searchRecipients(query.q);
   }
 

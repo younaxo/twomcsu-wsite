@@ -61,7 +61,7 @@ export class FilesController {
     if (!file) {
       throw new BadRequestException('Поле file обязательно');
     }
-    await this.files.assertCanUpload(type, user?.id ?? null);
+    await this.files.assertCanUpload(type, user?.id ?? null, user);
     return this.files.upload(type, file.buffer, {
       uploaderId: user?.id ?? null,
       ownerId,

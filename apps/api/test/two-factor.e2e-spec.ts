@@ -9,7 +9,6 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { BruteForceService } from '../src/modules/auth/brute-force.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
-import { resetAdmin2faCache } from '../src/modules/roles/guards/permissions.guard';
 import {
   base32Decode,
   hotp,
@@ -65,10 +64,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     await app.init();
     await app.listen(0);
     prisma = app.get(PrismaService);
-    // requireAdmin2fa живёт в SiteSettings: при одиночном запуске строки ещё нет.
-    if (!(await prisma.siteSettings.findFirst())) {
-      await prisma.siteSettings.create({ data: {} });
-    }
     await http()
       .post('/auth/register')
       .send({ email, username, password })
@@ -78,16 +73,7 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     userId = (await prisma.user.findUniqueOrThrow({ where: { email } })).id;
   });
 
-  // Глобальный флаг и кэш сбрасываются при любом исходе теста — упавший expect
-  // не должен оставлять requireAdmin2fa=true для остальных наборов.
-  afterEach(async () => {
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
-    resetAdmin2faCache();
-  });
-
   afterAll(async () => {
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
-    resetAdmin2faCache();
     await prisma.refreshToken.deleteMany({ where: { userId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.role.deleteMany({ where: { slug: roleSlug } });
@@ -254,11 +240,12 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     await resetBruteForce();
   });
 
-  // requireAdmin2fa — глобальный флаг SiteSettings (guard кэширует его 15 с):
-  // пока он включён, любое действие персонала без 2FA в других наборах тоже
-  // получает 403. Поэтому `test:e2e` гоняет этот набор отдельно, после
-  // остальных (apps/api/package.json), — параллельно он ронял чужие тесты.
-  it('requireAdmin2fa: персонал без 2FA получает 403 admin_2fa_required, с 2FA — доступ', async () => {
+  // 2FA персонала обязательна всегда (Q22), флага нет: guard смотрит на
+  // twoFactorEnabled пользователя в БД. Набор требует заданного
+  // TWO_FACTOR_ENCRYPTION_KEY; `test:e2e` гоняет его отдельно и последовательно
+  // (apps/api/package.json), так как он сам включает/выключает 2FA у своего
+  // пользователя и использует общий счётчик brute-force по IP.
+  it('2FA персонала обязательна всегда: без 2FA 403 admin_2fa_required, с 2FA доступ', async () => {
     const role = await prisma.role.create({
       data: {
         name: roleSlug,
@@ -277,8 +264,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     });
     await prisma.userRole.create({ data: { userId, roleId: role.id } });
     await app.get(PermissionService).invalidateUser(userId);
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
-    resetAdmin2faCache();
     const auth = `Bearer ${token}`;
 
     // С включённой 2FA — пускает.
@@ -295,14 +280,12 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .expect(403);
     expect(denied.body.code).toBe('admin_2fa_required');
 
-    // Требование выключено — снова пускает.
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
-    resetAdmin2faCache();
-    await http().get('/admin/dashboard').set('Authorization', auth).expect(200);
+    // 2FA снова включена — снова пускает.
     await prisma.user.update({
       where: { id: userId },
       data: { twoFactorEnabled: true },
     });
+    await http().get('/admin/dashboard').set('Authorization', auth).expect(200);
   });
 
   it('ADR-0156: поиск получателей и WS mute_user/ban_user требуют 2FA персонала', async () => {
@@ -351,8 +334,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       where: { id: userId },
       data: { twoFactorEnabled: false },
     });
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
-    resetAdmin2faCache();
 
     const denied = await http()
       .get('/admin/communications/recipients')
@@ -383,9 +364,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .query({ q: username })
       .set('Authorization', auth)
       .expect(200);
-
-    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
-    resetAdmin2faCache();
   });
 
   it('админка товаров: мутации без 2FA — 403 admin_2fa_required, с 2FA — доступ', async () => {

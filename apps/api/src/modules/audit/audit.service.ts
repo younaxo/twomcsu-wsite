@@ -69,6 +69,28 @@ export class AuditService {
     }
   }
 
+  /// Запись аудита в переданной транзакции: ошибка НЕ глотается и откатывает
+  /// всю транзакцию (действие и его аудит атомарны). Для действий, чей аудит
+  /// терять нельзя (снятие санкций, Q48). `log()` не меняется.
+  async logInTx(
+    tx: Prisma.TransactionClient,
+    input: AuditLogInput,
+  ): Promise<void> {
+    await tx.auditLog.create({
+      data: {
+        actorId: input.actorId,
+        action: input.action,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        changes: input.changes,
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+        severity: input.severity ?? 'info',
+        duration: input.duration,
+      },
+    });
+  }
+
   async list(query: ListAuditLogQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;

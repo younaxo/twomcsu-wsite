@@ -38,9 +38,10 @@ import { buildStaffReportWhere } from './report-staff-filters';
 /// (из результата хендлера); `report` — для явных вызовов AuditService.log.
 const REPORT_AUDIT_TARGET_TYPES = ['reports', 'report'];
 
-/// Право, дающее править чужие заметки (допущение: существующее «старшее»
-/// право обращений; отдельного права на это в каталоге нет).
-const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.delete';
+/// Право, дающее править чужие заметки (Q27, ADR-0172; автор всегда правит
+/// свои).
+const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.notes.edit';
+const FOREIGN_NOTE_UNPIN_PERMISSION = 'reports.notes.unpin';
 
 @Injectable()
 export class ReportsModerationService {
@@ -56,6 +57,10 @@ export class ReportsModerationService {
 
   /// Уведомление автору — побочный эффект: его сбой не должен ломать
   /// действие персонала. Себе (автор == исполнитель действия) не шлём.
+  /// Приватность (Q51, ADR-0175): отправитель — система. fromUserId и любые
+  /// данные сотрудника в уведомление автору не передаются (ни в payload, ни
+  /// в push/WS/email: текст — только статус/номер); actorId нужен лишь для
+  /// проверки «себе».
   private async notifyAuthor(
     report: Pick<Report, 'authorId' | 'reportNumber'>,
     actorId: string,
@@ -73,7 +78,6 @@ export class ReportsModerationService {
         title,
         message,
         link: `/support/${report.reportNumber}`,
-        fromUserId: actorId,
         metadata: { reportNumber: report.reportNumber },
       });
     } catch (error) {
@@ -223,7 +227,7 @@ export class ReportsModerationService {
       await this.notifyAuthor(
         report,
         actorId,
-        NotificationType.REPORT_VERDICT,
+        NotificationType.REPORT_STATUS_CHANGED,
         `Статус обращения ${report.reportNumber} изменён`,
         REPORT_STATUS_LABEL_RU[dto.status as ReportStatus],
       );
@@ -400,7 +404,7 @@ export class ReportsModerationService {
   ) {
     const report = await this.requireReport(reportNumber);
     const note = await this.requireNote(report.id, noteId);
-    // Править может автор заметки или актёр с reports.delete.
+    // Править может автор заметки или актёр с reports.notes.edit.
     if (
       note.authorId !== actorId &&
       !(await this.permissions.hasPermission(
@@ -420,9 +424,37 @@ export class ReportsModerationService {
     });
   }
 
-  async deleteModeratorNote(reportNumber: string, noteId: string) {
+  /// Своя заметка удаляется автором. Чужая — только с reports.notes.edit;
+  /// чужая закреплённая — только с reports.notes.edit И reports.notes.unpin
+  /// (решение владельца Q52, ADR-0176).
+  async deleteModeratorNote(
+    reportNumber: string,
+    noteId: string,
+    actorId: string,
+  ) {
     const report = await this.requireReport(reportNumber);
-    await this.requireNote(report.id, noteId);
+    const note = await this.requireNote(report.id, noteId);
+    if (note.authorId !== actorId) {
+      if (
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_EDIT_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException('Удалять можно только свои заметки');
+      }
+      if (
+        note.isPinned &&
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_UNPIN_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException(
+          'Удалить чужую закреплённую заметку можно только с правом открепления',
+        );
+      }
+    }
     await this.prisma.reportModeratorNote.delete({ where: { id: noteId } });
     return this.prisma.report.findUnique({
       where: { id: report.id },

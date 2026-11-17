@@ -20,6 +20,7 @@ function setup() {
     reportModeratorNote: {
       findUnique: jest.fn(),
       update: jest.fn().mockResolvedValue({}),
+      delete: jest.fn().mockResolvedValue({}),
     },
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -203,7 +204,7 @@ describe('ReportsModerationService: уведомления автору', () => 
       expect.objectContaining({
         userId: 'author',
         link: '/support/R-1',
-        type: 'REPORT_VERDICT',
+        type: 'REPORT_STATUS_CHANGED',
       }),
     );
   });
@@ -224,6 +225,18 @@ describe('ReportsModerationService: уведомления автору', () => 
     ).resolves.toMatchObject({ verdict: 'Ок' });
   });
 
+  it('автор = актор: смена статуса и вердикт не шлют уведомление себе', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    await service.changeStatus('R-1', { status: 'IN_REVIEW' }, 'author');
+    await service.setVerdict(
+      'R-1',
+      { verdict: 'Ок', status: 'RESOLVED' },
+      'author',
+    );
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
   it('ответ персонала уведомляет автора; собственное обращение — нет', async () => {
     const { prisma, notifications, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
@@ -233,6 +246,55 @@ describe('ReportsModerationService: уведомления автору', () => 
     notifications.create.mockClear();
     await service.addMessage('R-1', 'author', { content: 'сам себе' });
     expect(notifications.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportsModerationService: приватность уведомлений автору (Q51)', () => {
+  /// Ни одного поля сотрудника: ни fromUserId, ни имя/аватар/роль.
+  function expectNoStaffData(call: Record<string, unknown>) {
+    expect(call).not.toHaveProperty('fromUserId');
+    expect(call).not.toHaveProperty('fromUser');
+    expect(call).not.toHaveProperty('imageUrl');
+    const serialized = JSON.stringify(call);
+    expect(serialized).not.toContain('m1');
+    expect(serialized).not.toContain('moder-name');
+    expect(Object.keys(call).sort()).toEqual(
+      ['link', 'metadata', 'title', 'type', 'userId']
+        .concat('message' in call ? ['message'] : [])
+        .sort(),
+    );
+  }
+
+  it('смена статуса, вердикт и ответ: payload без данных модератора', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    await service.changeStatus('R-1', { status: 'IN_REVIEW' }, 'm1');
+    await service.setVerdict(
+      'R-1',
+      { verdict: 'Ок', status: 'RESOLVED' },
+      'm1',
+    );
+    await service.addMessage('R-1', 'm1', { content: 'ответ' });
+    expect(notifications.create).toHaveBeenCalledTimes(3);
+    for (const [input] of notifications.create.mock.calls) {
+      expect(input.userId).toBe('author');
+      expectNoStaffData(input);
+    }
+  });
+
+  it('уведомление персоналу (назначение) не изменилось: fromUserId сохраняется', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.user.findUnique.mockResolvedValue({ id: 'm2', isBanned: false });
+    await service.assign('R-1', { assignedToId: 'm2' }, 'm1');
+    expect(notifications.create).toHaveBeenCalledWith({
+      userId: 'm2',
+      type: 'REPORT_ASSIGNED',
+      title: expect.any(String),
+      link: '/admin/reports/R-1',
+      fromUserId: 'm1',
+      metadata: { reportNumber: 'R-1' },
+    });
   });
 });
 
@@ -311,6 +373,117 @@ describe('ReportsModerationService.assignableStaff', () => {
   });
 });
 
+describe('ReportsModerationService.deleteModeratorNote: права (Q52)', () => {
+  const note = {
+    id: 'n1',
+    reportId: 'r1',
+    authorId: 'author-mod',
+    isPinned: false,
+  };
+  const pinned = { ...note, isPinned: true };
+  const grant = (
+    permissions: { hasPermission: jest.Mock },
+    keys: string[],
+  ): void => {
+    permissions.hasPermission.mockImplementation(
+      async (_id: string, key: string) => keys.includes(key),
+    );
+  };
+
+  it('несуществующая заметка — 404, без записи', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(null);
+    await expect(
+      service.deleteModeratorNote('R-1', 'nope', 'senior'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('заметка другого обращения — 404, без записи', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue({
+      ...note,
+      reportId: 'other-report',
+    });
+    await expect(
+      service.deleteModeratorNote('R-1', 'n1', 'author-mod'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('несуществующее обращение — 404, заметка не ищется', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(null);
+    await expect(
+      service.deleteModeratorNote('R-404', 'n1', 'senior'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.findUnique).not.toHaveBeenCalled();
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('своя заметка (в т.ч. закреплённая) удаляется без проверки прав', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(pinned);
+    await service.deleteModeratorNote('R-1', 'n1', 'author-mod');
+    expect(permissions.hasPermission).not.toHaveBeenCalled();
+    expect(prisma.reportModeratorNote.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('чужая без reports.notes.edit — 403, без записи', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    grant(permissions, []);
+    await expect(
+      service.deleteModeratorNote('R-1', 'n1', 'other'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('чужая с reports.notes.edit — удаляется', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
+    grant(permissions, ['reports.notes.edit']);
+    await service.deleteModeratorNote('R-1', 'n1', 'senior');
+    expect(prisma.reportModeratorNote.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('чужая закреплённая с edit без unpin — 403, без записи', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(pinned);
+    grant(permissions, ['reports.notes.edit']);
+    await expect(
+      service.deleteModeratorNote('R-1', 'n1', 'senior'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('чужая закреплённая только с unpin (без edit) — 403', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(pinned);
+    grant(permissions, ['reports.notes.unpin']);
+    await expect(
+      service.deleteModeratorNote('R-1', 'n1', 'senior'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('чужая закреплённая с edit и unpin — удаляется', async () => {
+    const { prisma, permissions, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(pinned);
+    grant(permissions, ['reports.notes.edit', 'reports.notes.unpin']);
+    await service.deleteModeratorNote('R-1', 'n1', 'senior');
+    expect(prisma.reportModeratorNote.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ReportsModerationService.updateModeratorNote: права', () => {
   const note = { id: 'n1', reportId: 'r1', authorId: 'author-mod' };
 
@@ -328,7 +501,7 @@ describe('ReportsModerationService.updateModeratorNote: права', () => {
     expect(prisma.reportModeratorNote.update).toHaveBeenCalledTimes(1);
   });
 
-  it('чужая заметка без reports.delete — 403, без записи', async () => {
+  it('чужая заметка без reports.notes.edit — 403, без записи', async () => {
     const { prisma, permissions, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
     prisma.reportModeratorNote.findUnique.mockResolvedValue(note);
@@ -338,12 +511,12 @@ describe('ReportsModerationService.updateModeratorNote: права', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(permissions.hasPermission).toHaveBeenCalledWith(
       'other',
-      'reports.delete',
+      'reports.notes.edit',
     );
     expect(prisma.reportModeratorNote.update).not.toHaveBeenCalled();
   });
 
-  it('чужая заметка с reports.delete — правится', async () => {
+  it('чужая заметка с reports.notes.edit — правится', async () => {
     const { prisma, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());
     prisma.reportModeratorNote.findUnique.mockResolvedValue(note);

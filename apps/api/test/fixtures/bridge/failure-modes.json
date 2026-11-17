@@ -1,0 +1,38 @@
+{
+  "name": "failure-modes",
+  "streamId": "fail-0001",
+  "modes": [
+    "bad-signature",
+    "stale-time",
+    "future-time",
+    "replay-nonce",
+    "replay-batch",
+    "reverse-order",
+    "seq-gap",
+    "batch-101",
+    "oversize",
+    "foreign-server",
+    "future-type"
+  ],
+  "steps": [
+    {
+      "type": "bridge.hello",
+      "data": {
+        "pluginVersion": "0.0.0-sim",
+        "platform": "simulator",
+        "protocol": 1,
+        "punishmentSource": "none"
+      }
+    },
+    {
+      "type": "player.join",
+      "data": {
+        "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "name": "TestPlayer001",
+        "sessionId": "sess-0002",
+        "onlineMode": true,
+        "proxy": null
+      }
+    }
+  ]
+}

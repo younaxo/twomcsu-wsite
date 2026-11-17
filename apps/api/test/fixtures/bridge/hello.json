@@ -1,0 +1,17 @@
+{
+  "name": "hello",
+  "streamId": "boot-0001",
+  "steps": [
+    {
+      "type": "bridge.hello",
+      "data": {
+        "pluginVersion": "0.0.0-sim",
+        "platform": "simulator",
+        "platformVersion": "0",
+        "protocol": 1,
+        "punishmentSource": "none",
+        "punishmentSourceVersion": null
+      }
+    }
+  ]
+}

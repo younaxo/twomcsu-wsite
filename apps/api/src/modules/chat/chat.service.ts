@@ -171,7 +171,14 @@ export class ChatService {
     }
   }
 
-  async sendMessage(userId: string, channelId: string, dto: SendMessageDto) {
+  /// `beforeStaffAction` — admin-2FA (ADR-0169): вызывается только если
+  /// отправка в read-only канал разрешена правом персонала.
+  async sendMessage(
+    userId: string,
+    channelId: string,
+    dto: SendMessageDto,
+    beforeStaffAction?: () => Promise<void>,
+  ) {
     const channel = await this.requireActiveChannel(channelId);
     await this.requireNotChatBanned(userId);
     await this.requireNotMuted(userId, channelId);
@@ -185,6 +192,7 @@ export class ChatService {
       if (!canPostReadonly) {
         throw new ForbiddenException('Канал доступен только для чтения');
       }
+      await beforeStaffAction?.();
     }
 
     if (dto.parentId) {
