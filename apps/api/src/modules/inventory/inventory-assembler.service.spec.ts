@@ -181,6 +181,26 @@ describe('InventoryAssemblerService: Q35, обязательные сценар�
     expect(rows.rows.size).toBe(0);
   });
 
+  it('M-3: после истечения сборки (TTL) все 4 части пришли заново — снимок применён', async () => {
+    const { clock, redis, rows, send } = await ready();
+    const all = mainSet();
+    for (const p of all.slice(0, 3)) {
+      expect((await send(p)).status).toBe('buffered');
+    }
+    clock.t += 121_000; // сборка истекла (T = 120 с), возраст снимка 131 с < 150 с
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+    const again: AssembleResult[] = [];
+    for (const p of all) again.push(await send(p));
+    expect(statuses(again)).toEqual([
+      'buffered',
+      'buffered',
+      'buffered',
+      'applied',
+    ]);
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+    expect(rows.get(USER, SERVER, 'main')?.slotCount).toBe(5);
+  });
+
   it('первая часть новой сборки старше 150 с: resync_required, сборка не создаётся', async () => {
     const { clock, redis, rows, send } = await ready();
     const all = mainSet();
@@ -725,6 +745,18 @@ describe('InventoryAssemblerService: лимиты', () => {
       await send(part(1, 'hotbar', { snapshotId: snap(1) }), 'e1', 'one'),
     ).toMatchObject({ code: 'resync_required', reason: 'ceiling_server' });
     expect(redis.assemblyCount('one')).toBe(0);
+  });
+
+  it('L-3: отказ по ceiling_servers не регистрирует сервер в учёте g', async () => {
+    const { clock, redis, send } = await ready({ maxServers: 2 });
+    redis.seedGlobal('other-a', 10, clock.t);
+    redis.seedGlobal('other-b', 10, clock.t);
+    expect(redis.globalEntries()).toBe(2);
+    expect(
+      await send(part(1, 'hotbar', { snapshotId: snap(1) }), 'e1', 'third'),
+    ).toMatchObject({ code: 'resync_required', reason: 'ceiling_servers' });
+    expect(redis.globalEntries()).toBe(2);
+    expect(redis.assemblyCount('third')).toBe(0);
   });
 
   it('M-1: сервер, доля которого сократилась после создания сборки, не раздувает её дальше доли', async () => {

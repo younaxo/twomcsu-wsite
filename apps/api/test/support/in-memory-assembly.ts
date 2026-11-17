@@ -183,7 +183,10 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
     this.expire(s, now);
     this.cleanup(s, now, c);
     const result = this.offerInner(input, s, now);
-    this.recompute(input.serverId, s, now, c);
+    // L-3: отказ по ceiling_servers не регистрирует сервер в `g` (зеркало Lua).
+    const refusedByServers =
+      result.kind === 'rejected' && result.reason === 'ceiling_servers';
+    if (!refusedByServers) this.recompute(input.serverId, s, now, c);
     return Promise.resolve(result);
   }
 

@@ -290,7 +290,11 @@ end
 
 cleanup()
 local result = main()
-recompute()
+-- L-3: отказ по ceiling_servers не регистрирует сервер в g (иначе отклонённый
+-- сервер занял бы место в учёте и искажал долю L(N) остальных).
+if not (result[1] == 'rejected' and result[3] == 'ceiling_servers') then
+  recompute()
+end
 return result
 `;
 
