@@ -1,0 +1,35 @@
+# 0.4 web: заказы, промокоды, скидки в админке (2026-11-18)
+
+Ветка `feature/l0-04-admin-orders`. Контракт API — коммит 1709b416 (`docs/reports/2026-11-18-l0-04-admin-orders-api.md`).
+
+## Сделано
+
+- `/admin/store/orders`: фильтры (статус, ник, номер, даты, FormField/FormErrorSummary/useFocusFirstInvalid), пагинация, экспорт CSV (`POST /admin/orders/export`, право `orders.export`).
+- `/admin/store/orders/[id]`: позиции, суммы, сводка оплаты, отмена только PENDING через Dialog (фокус-ловушка, Esc, возврат фокуса на кнопку, 409 понятной ошибкой). Кнопки возврата нет (флаг `ORDER_REFUND_UI_ENABLED = false`).
+- `/admin/store/promocodes` (`/admin/promocodes`) и `/admin/store/discounts` (за объём и за лояльность): CRUD, Decimal-строки, процент 0–100, даты; без нативных числовых полей (ADR-0087).
+- Ссылки на заказы из `admin/finance` (номер в таблице и карточка быстрого просмотра, при `orders.view`).
+- Навигация: заказы, промокоды, скидки — подразделы пункта «Товары магазина»; число пунктов не выросло (лимит 21 в dashboard-overview.test).
+- Право `store.discounts.view` и поля `orderNumber`/`nickname` в `ListAdminOrdersQuery` (packages/shared, добавочно).
+- Доработка: возврат фокуса на кнопку в диалоге отмены (Radix без Trigger его теряет; запоминаем `document.activeElement`).
+
+## Проверки
+
+- `tsc --noEmit` apps/web: 0 ошибок.
+- `vitest run` apps/web: 112/112 файлов, 728/728 тестов (новые: orders.test.tsx 10, promocodes.test.tsx 7, discounts.test.tsx 4).
+- eslint и prettier по изменённым файлам: без замечаний.
+- Тесты packages/shared не запускались (вывод пустой).
+
+## Допущения и риски
+
+- Экспорт: API (ExportOrdersDto) знает только status/userId/dateFrom/dateTo; ник и номер в выгрузку не попадают, на экране это указано.
+- API не позволяет снять уже заданные даты/лимиты/порог суммы (PATCH игнорирует пусто): форма запрещает очистку с пояснением.
+- Журнала событий вебхука в БД нет: в карточке итог проверки (провайдер, ID платежа, время оплаты и проверки).
+- Права `store.discounts.bulk/loyalty.*` и `promocodes.*` должны быть выданы ролям отдельно (seed не запускался).
+- Ручной проверки в браузере и e2e не было.
+
+## К переносу
+
+- `packages/shared`: `permissions.ts` (`store.discounts.view`), `api/admin.ts` (`orderNumber`, `nickname`). Нужны вместе с API-веткой feature/l0-04-admin-orders-api (проверить совпадение при слиянии, оба меняют shared).
+- Выдача `store.discounts.view` ролям (seed/миграция прав) — на владельце.
+- Навигация `lib/admin/navigation.ts` может конфликтовать с другими ветками админки (раздел «Магазин»).
+- Подэтап 0.9 (возврат): включить флаг и добавить кнопку по решению владельца.
