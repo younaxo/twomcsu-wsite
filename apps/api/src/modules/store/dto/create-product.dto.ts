@@ -14,7 +14,10 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { IsProductImageUrl } from '../product-image-url';
+import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
 import { CreateVariantDto } from './create-variant.dto';
 
 export class CreateProductDto {
@@ -44,12 +47,14 @@ export class CreateProductDto {
   type!: ProductType;
 
   @IsOptional()
+  @NormalizeProductImageUrl()
   @IsProductImageUrl()
   image?: string;
 
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(10)
+  @NormalizeProductImageUrl()
   @IsProductImageUrl({ each: true })
   images?: string[];
 

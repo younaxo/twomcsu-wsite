@@ -17,6 +17,12 @@ export interface AuditLogInput {
   userAgent?: string;
   severity?: AuditLogSeverity;
   duration?: number;
+  /// Транзакционный клиент: запись аудита входит в ту же транзакцию, что и
+  /// изменение (откат изменения откатывает и аудит, и наоборот).
+  tx?: Prisma.TransactionClient;
+  /// Ошибка записи не глотается ни при какой severity. Для денежных и
+  /// аудит-критичных изменений: нет записи — нет операции.
+  strict?: boolean;
 }
 
 /// Единая точка записи audit-событий (см. docs/technical/25-AUDIT-LOG.md).
@@ -40,7 +46,7 @@ export class AuditService {
   async log(input: AuditLogInput): Promise<void> {
     const severity = input.severity ?? 'info';
     try {
-      await this.prisma.auditLog.create({
+      await (input.tx ?? this.prisma).auditLog.create({
         data: {
           actorId: input.actorId,
           action: input.action,
@@ -57,7 +63,7 @@ export class AuditService {
       this.logger.warn(
         `Не удалось записать audit log (action=${input.action}): ${(error as Error).message}`,
       );
-      if (severity === 'critical') {
+      if (severity === 'critical' || input.strict === true) {
         throw error;
       }
     }

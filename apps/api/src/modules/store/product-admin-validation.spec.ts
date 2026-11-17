@@ -4,7 +4,12 @@ import { validate } from 'class-validator';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { PRICE_STRING } from './dto/price-string';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { isAllowedProductImageUrl } from './product-image-url';
+import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
+import {
+  isAllowedProductImageUrl,
+  normalizeProductImageUrl,
+} from './product-image-url';
 import { DEFAULT_SELLABLE_TYPES, isSellableType } from './sellable-types';
 
 describe('isAllowedProductImageUrl (S2)', () => {
@@ -125,4 +130,47 @@ describe('закрытый список продаваемых типов (ADR-0
   ])('%s не продаётся', (type) => {
     expect(isSellableType(type)).toBe(false);
   });
+});
+
+describe('нормализация ссылок и категории (A2, A6)', () => {
+  it('normalizeProductImageUrl сохраняет url.href (регистр хоста)', () => {
+    expect(normalizeProductImageUrl('https://CDN-Files.twomc.su/a b.png')).toBe(
+      'https://cdn-files.twomc.su/a%20b.png',
+    );
+    expect(normalizeProductImageUrl('http://evil.com/a.png')).toBe(
+      'http://evil.com/a.png',
+    );
+    expect(normalizeProductImageUrl(['https://MC-HEADS.net/x'])).toEqual([
+      'https://mc-heads.net/x',
+    ]);
+  });
+
+  it('DTO товара: в instance попадает нормализованный href', async () => {
+    const dto = plainToInstance(UpdateProductDto, {
+      image: 'https://CDN-Files.twomc.su/a.png',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.image).toBe('https://cdn-files.twomc.su/a.png');
+  });
+
+  it.each([CreateCategoryDto, UpdateCategoryDto])(
+    '%p: image и icon — тот же белый список',
+    async (Dto) => {
+      const bad = plainToInstance(Dto, {
+        name: 'n',
+        slug: 's',
+        image: 'https://evil.example.com/a.png',
+        icon: 'http://cdn-files.twomc.su/i.png',
+      });
+      const props = (await validate(bad)).map((e) => e.property);
+      expect(props).toEqual(expect.arrayContaining(['image', 'icon']));
+      const ok = plainToInstance(Dto, {
+        name: 'n',
+        slug: 's',
+        image: 'https://cdn-files.twomc.su/a.png',
+        icon: 'https://minotar.net/helm/Steve',
+      });
+      expect(await validate(ok)).toHaveLength(0);
+    },
+  );
 });

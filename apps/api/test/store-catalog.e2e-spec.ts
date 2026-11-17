@@ -425,6 +425,6 @@ describe('Store catalog (e2e)', () => {
     await request(app.getHttpServer())
       .delete(`/admin/store/categories/${categoryId}`)
       .set('Authorization', auth(admin))
-      .expect(400);
+      .expect(409);
   });
 });

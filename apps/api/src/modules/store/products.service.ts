@@ -26,12 +26,16 @@ export class ProductsService {
   /// Явные события каталога поверх общего AuditInterceptor: он пишет только
   /// тело запроса, а для денег нужно «было → стало». Без секретов: только
   /// цены, флаги и идентификаторы.
+  /// Для изменений цены/активности/удаления запись идёт в ТОЙ ЖЕ транзакции
+  /// (tx) и в строгом режиме: сбой записи аудита откатывает изменение, а не
+  /// теряется молча (AuditService.log иначе глотает ошибки при severity < critical).
   private async auditEvent(
     actorId: string,
     action: string,
     targetId: string,
     changes: Prisma.InputJsonValue,
     severity: 'info' | 'warning' = 'warning',
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
     await this.audit.log({
       actorId,
@@ -40,6 +44,8 @@ export class ProductsService {
       targetId,
       changes,
       severity,
+      tx,
+      strict: tx !== undefined,
     });
   }
 
@@ -222,18 +228,24 @@ export class ProductsService {
         message: `Товар типа ${before.type} нельзя активировать: тип не входит в список продаваемых`,
       });
     }
-    const updated = await this.prisma.product.update({
-      where: { id },
-      data: dto,
-      include: { category: true, variants: true },
-    });
-    if (dto.isActive !== undefined && dto.isActive !== before.isActive) {
-      await this.auditEvent(actorId, 'store.product.activation_changed', id, {
-        from: before.isActive,
-        to: dto.isActive,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({
+        where: { id },
+        data: dto,
+        include: { category: true, variants: true },
       });
-    }
-    return updated;
+      if (dto.isActive !== undefined && dto.isActive !== before.isActive) {
+        await this.auditEvent(
+          actorId,
+          'store.product.activation_changed',
+          id,
+          { from: before.isActive, to: dto.isActive },
+          'warning',
+          tx,
+        );
+      }
+      return updated;
+    });
   }
 
   /// Мягкое удаление, если товар есть в заказах (история покупок не должна
@@ -256,7 +268,19 @@ export class ProductsService {
       });
       if (orderItems > 0) {
         await tx.product.update({ where: { id }, data: { isActive: false } });
-        return { mode: 'deactivated' as const, orderItems };
+        await this.auditEvent(
+          actorId,
+          'store.product.deactivated_instead_of_delete',
+          id,
+          {
+            reason: 'has_orders',
+            orderItems,
+            wasActive: product.isActive,
+          },
+          'warning',
+          tx,
+        );
+        return { mode: 'deactivated' as const };
       }
       const bundleItems = await tx.bundleItem.count({
         where: { productId: id },
@@ -271,26 +295,17 @@ export class ProductsService {
       await tx.cartItem.deleteMany({ where: { productId: id } });
       await tx.wishlistItem.deleteMany({ where: { productId: id } });
       await tx.product.delete({ where: { id } });
-      return { mode: 'deleted' as const, orderItems: 0 };
-    });
-    if (result.mode === 'deactivated') {
       await this.auditEvent(
         actorId,
-        'store.product.deactivated_instead_of_delete',
+        'store.product.deleted',
         id,
-        {
-          reason: 'has_orders',
-          orderItems: result.orderItems,
-          wasActive: product.isActive,
-        },
+        { slug: product.slug, type: product.type },
+        'warning',
+        tx,
       );
-      return { mode: 'deactivated' };
-    }
-    await this.auditEvent(actorId, 'store.product.deleted', id, {
-      slug: product.slug,
-      type: product.type,
+      return { mode: 'deleted' as const };
     });
-    return { mode: 'deleted' };
+    return result;
   }
 
   async createVariant(
@@ -336,41 +351,47 @@ export class ProductsService {
     actorId: string,
   ) {
     const before = await this.requireVariant(productId, variantId);
-    const updated = await this.prisma.productVariant.update({
-      where: { id: variantId },
-      data: dto,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.productVariant.update({
+        where: { id: variantId },
+        data: dto,
+      });
+      const priceBefore = this.money(before.price);
+      const priceAfter = this.money(updated.price);
+      const oldBefore = this.money(before.oldPrice);
+      const oldAfter = this.money(updated.oldPrice);
+      if (priceBefore !== priceAfter || oldBefore !== oldAfter) {
+        await this.auditEvent(
+          actorId,
+          'store.product.variant_price_changed',
+          productId,
+          {
+            variantId,
+            duration: before.duration,
+            price: { from: priceBefore, to: priceAfter },
+            oldPrice: { from: oldBefore, to: oldAfter },
+          },
+          'warning',
+          tx,
+        );
+      }
+      if (before.isActive !== updated.isActive) {
+        await this.auditEvent(
+          actorId,
+          'store.product.variant_activation_changed',
+          productId,
+          {
+            variantId,
+            duration: before.duration,
+            from: before.isActive,
+            to: updated.isActive,
+          },
+          'warning',
+          tx,
+        );
+      }
+      return updated;
     });
-    const priceBefore = this.money(before.price);
-    const priceAfter = this.money(updated.price);
-    const oldBefore = this.money(before.oldPrice);
-    const oldAfter = this.money(updated.oldPrice);
-    if (priceBefore !== priceAfter || oldBefore !== oldAfter) {
-      await this.auditEvent(
-        actorId,
-        'store.product.variant_price_changed',
-        productId,
-        {
-          variantId,
-          duration: before.duration,
-          price: { from: priceBefore, to: priceAfter },
-          oldPrice: { from: oldBefore, to: oldAfter },
-        },
-      );
-    }
-    if (before.isActive !== updated.isActive) {
-      await this.auditEvent(
-        actorId,
-        'store.product.variant_activation_changed',
-        productId,
-        {
-          variantId,
-          duration: before.duration,
-          from: before.isActive,
-          to: updated.isActive,
-        },
-      );
-    }
-    return updated;
   }
 
   /// Вариант с заказами не удаляется (история) — деактивируется; без заказов
@@ -391,7 +412,15 @@ export class ProductsService {
           where: { id: variantId },
           data: { isActive: false },
         });
-        return { mode: 'deactivated' as const, orderItems };
+        await this.auditEvent(
+          actorId,
+          'store.product.variant_deactivated_instead_of_delete',
+          productId,
+          { variantId, duration: variant.duration, orderItems },
+          'warning',
+          tx,
+        );
+        return { mode: 'deactivated' as const };
       }
       const bundleItems = await tx.bundleItem.count({ where: { variantId } });
       if (bundleItems > 0) {
@@ -403,26 +432,20 @@ export class ProductsService {
       }
       await tx.cartItem.deleteMany({ where: { variantId } });
       await tx.productVariant.delete({ where: { id: variantId } });
-      return { mode: 'deleted' as const, orderItems: 0 };
-    });
-    if (result.mode === 'deactivated') {
       await this.auditEvent(
         actorId,
-        'store.product.variant_deactivated_instead_of_delete',
+        'store.product.variant_deleted',
         productId,
         {
           variantId,
           duration: variant.duration,
-          orderItems: result.orderItems,
+          price: this.money(variant.price),
         },
+        'warning',
+        tx,
       );
-      return { mode: 'deactivated' };
-    }
-    await this.auditEvent(actorId, 'store.product.variant_deleted', productId, {
-      variantId,
-      duration: variant.duration,
-      price: this.money(variant.price),
+      return { mode: 'deleted' as const };
     });
-    return { mode: 'deleted' };
+    return result;
   }
 }

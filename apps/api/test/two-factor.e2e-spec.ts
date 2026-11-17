@@ -401,6 +401,10 @@ describe('Двухфакторная аутентификация (e2e)', () => 
             'store.products.edit',
             'store.products.delete',
             'store.products.variants',
+            'store.categories.view',
+            'store.categories.create',
+            'store.categories.edit',
+            'store.categories.delete',
           ],
         },
       },
@@ -434,12 +438,24 @@ describe('Двухфакторная аутентификация (e2e)', () => 
         .post('/admin/store/products/any/variants')
         .send({ duration: 'MONTH_1', price: '1.00' }),
       http().delete('/admin/store/products/any/variants/any'),
+      http()
+        .patch('/admin/store/products/any/variants/any')
+        .send({ price: '2.00' }),
+      http().get('/admin/store/categories'),
+      http()
+        .post('/admin/store/categories')
+        .send({ name: 'E2E 2FA cat', slug: 'e2e-2fa-cat' }),
+      http().patch('/admin/store/categories/any').send({ name: 'x' }),
+      http().delete('/admin/store/categories/any'),
     ];
     for (const req of denials) {
       const denied = await req.set('Authorization', auth).expect(403);
       expect(denied.body.code).toBe('admin_2fa_required');
     }
     expect(await prisma.product.count({ where: { slug: body.slug } })).toBe(0);
+    expect(
+      await prisma.category.count({ where: { slug: 'e2e-2fa-cat' } }),
+    ).toBe(0);
 
     // С включённой 2FA guard пропускает: список доступен.
     await prisma.user.update({

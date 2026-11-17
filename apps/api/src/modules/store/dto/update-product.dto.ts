@@ -1,5 +1,8 @@
 import { CurrencyType } from '@prisma/client';
-import { IsProductImageUrl } from '../product-image-url';
+import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
 import {
   ArrayMaxSize,
   IsArray,
@@ -31,12 +34,14 @@ export class UpdateProductDto {
   fullDescription?: string;
 
   @IsOptional()
+  @NormalizeProductImageUrl()
   @IsProductImageUrl()
   image?: string;
 
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(10)
+  @NormalizeProductImageUrl()
   @IsProductImageUrl({ each: true })
   images?: string[];
 

@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { ValidationOptions, ValidateBy } from 'class-validator';
 
 /// Хосты картинок товара — ровно remotePatterns из apps/web/next.config.mjs
@@ -46,4 +47,23 @@ export function IsProductImageUrl(
     },
     validationOptions,
   );
+}
+
+/// Нормализованная форма ссылки (url.href): регистр хоста, дефолтный порт,
+/// путь — в одном виде. Невалидное значение возвращается как есть, чтобы
+/// его отклонил IsProductImageUrl (с понятным сообщением).
+export function normalizeProductImageUrl(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeProductImageUrl(item));
+  }
+  if (!isAllowedProductImageUrl(value)) {
+    return value;
+  }
+  return new URL(value as string).href;
+}
+
+/// Преобразует значение поля DTO в нормализованную ссылку до валидации
+/// (ValidationPipe работает с transform: true), так что в БД попадает href.
+export function NormalizeProductImageUrl(): PropertyDecorator {
+  return Transform(({ value }) => normalizeProductImageUrl(value));
 }

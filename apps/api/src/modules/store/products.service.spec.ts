@@ -256,3 +256,48 @@ describe('ProductsService (админка)', () => {
     expect(prisma.productVariant.delete).toHaveBeenCalled();
   });
 });
+
+describe('ProductsService: надёжность аудита (A1)', () => {
+  it('updateVariant: аудит пишется в той же транзакции в строгом режиме', async () => {
+    const { service, prisma, audit } = setup();
+    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      variantRow('100'),
+    );
+    (prisma.productVariant.update as jest.Mock).mockResolvedValue(
+      variantRow('50'),
+    );
+    await service.updateVariant('p1', 'v1', { price: '50' }, 'admin1');
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ strict: true, tx: prisma }),
+    );
+  });
+
+  it('updateVariant: сбой записи аудита — ошибка наружу, не тихая потеря', async () => {
+    const { service, prisma, audit } = setup();
+    (prisma.productVariant.findUnique as jest.Mock).mockResolvedValue(
+      variantRow('100'),
+    );
+    (prisma.productVariant.update as jest.Mock).mockResolvedValue(
+      variantRow('50'),
+    );
+    audit.log.mockRejectedValue(new Error('audit down'));
+    await expect(
+      service.updateVariant('p1', 'v1', { price: '50' }, 'admin1'),
+    ).rejects.toThrow('audit down');
+  });
+
+  it('update: сбой аудита активации — ошибка (транзакция откатится)', async () => {
+    const { service, audit } = setup();
+    audit.log.mockRejectedValue(new Error('audit down'));
+    await expect(
+      service.update('p1', { isActive: true }, 'admin1'),
+    ).rejects.toThrow('audit down');
+  });
+
+  it('remove: сбой аудита удаления — ошибка из транзакции', async () => {
+    const { service, audit } = setup();
+    audit.log.mockRejectedValue(new Error('audit down'));
+    await expect(service.remove('p1', 'admin1')).rejects.toThrow('audit down');
+  });
+});

@@ -6,6 +6,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { AuditService } from '../src/modules/audit/audit.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -120,6 +121,10 @@ describe('Store admin products (e2e)', () => {
     varOnly = await createUser('varonly');
     delOnly = await createUser('delonly');
     await createStaff(admin, `sap-admin-${unique}`, 20, [
+      'store.categories.view',
+      'store.categories.create',
+      'store.categories.edit',
+      'store.categories.delete',
       'store.products.view',
       'store.products.create',
       'store.products.edit',
@@ -375,6 +380,68 @@ describe('Store admin products (e2e)', () => {
         },
       }),
     ).toBe(1);
+  });
+
+  it('аудит надёжен: сбой записи аудита откатывает изменение цены', async () => {
+    const created = await post(admin, productBody('auditfail')).expect(201);
+    const variantId = created.body.variants[0].id;
+    const original = AuditService.prototype.log;
+    const spy = jest
+      .spyOn(AuditService.prototype, 'log')
+      .mockImplementation(function (this: AuditService, input) {
+        if (input.action === 'store.product.variant_price_changed') {
+          // Реальная запись через tx упала бы так же: ошибка из log().
+          return Promise.reject(new Error('audit write failed'));
+        }
+        return original.call(this, input);
+      });
+    try {
+      const res = await request(app.getHttpServer())
+        .patch(`/admin/store/products/${created.body.id}/variants/${variantId}`)
+        .set('Authorization', auth(admin))
+        .send({ price: '1.00' });
+      expect(res.status).toBeGreaterThanOrEqual(500);
+    } finally {
+      spy.mockRestore();
+    }
+    const row = await prisma.productVariant.findUniqueOrThrow({
+      where: { id: variantId },
+    });
+    expect(row.price.toFixed(2)).toBe('100.00');
+  });
+
+  it('категории: image/icon — белый список; удаление с дочерними — 409', async () => {
+    const parent = await request(app.getHttpServer())
+      .post('/admin/store/categories')
+      .set('Authorization', auth(admin))
+      .send({ name: 'E2E parent', slug: slug('cat-parent') })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/admin/store/categories')
+      .set('Authorization', auth(admin))
+      .send({
+        name: 'E2E bad',
+        slug: slug('cat-bad'),
+        image: 'https://evil.example.com/a.png',
+      })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/admin/store/categories')
+      .set('Authorization', auth(admin))
+      .send({
+        name: 'E2E child',
+        slug: slug('cat-child'),
+        parentId: parent.body.id,
+        icon: 'https://CDN-Files.twomc.su/i.png',
+      })
+      .expect(201)
+      .expect((r) =>
+        expect(r.body.icon).toBe('https://cdn-files.twomc.su/i.png'),
+      );
+    await request(app.getHttpServer())
+      .delete(`/admin/store/categories/${parent.body.id}`)
+      .set('Authorization', auth(admin))
+      .expect(409);
   });
 
   it('удаление: с заказами — деактивация (товар и позиции заказа целы), без заказов — удаление', async () => {
