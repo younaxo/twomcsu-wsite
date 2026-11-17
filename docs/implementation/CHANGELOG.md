@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Контракт этапа 03: TwoMC Bridge (только документ)
+
+- Добавлен проект контракта Bridge v1 (плагин → сайт, HTTPS + HMAC, идемпотентность, симулятор и записка для разработчика плагина): `docs/stage-03/BRIDGE-CONTRACT.md` и ADR-0167 (Proposed). Код, плагин, миграции и ключи не создавались.
+
+### Дизайн этапа 02: наказания LiteBans (только документ)
+
+- Добавлен проект интеграции с LiteBans: `docs/stage-02/LITEBANS-INTEGRATION-DESIGN.md` и ADR-0166 (Proposed). Код, миграции и зависимости не менялись; реализация ждёт решений владельца.
+
 - Обращения, срез 2 (ADR-0165, ветка feature/support-slice-2 от fix/q11-staff-hierarchy-node-env, не смержено): выбор исполнителя списком (`GET /moderation/reports/assignable-staff`), правка и закрепление заметок (`PATCH` заметки, `PATCH`/`DELETE .../pin`), игроку у сообщений персонала `authorId=null` и `isStaff=true` (бейдж «Сотрудник»), `GET /reports/:reportNumber/history` для автора, в web `?punishment=ID`, фильтры status/type и блок «История». Не сделано: тип уведомления `REPORT_STATUS_CHANGED` (нужна миграция, решение владельца), вложения (R3, заглушка). e2e написаны, не запускались (ОЗУ).
 
 - Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный NODE_ENV = production, схема env принимает только development/test/production или пусто (staging и прочее роняют старт); хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; `start:dev` и `start:debug` api через `scripts/with-node-env.mjs development`; `start` NODE_ENV не задаёт. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
