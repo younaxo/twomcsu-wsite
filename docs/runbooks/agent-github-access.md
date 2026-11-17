@@ -30,3 +30,15 @@ Remove-Item "$env:USERPROFILE\.twomc\secrets\bot-token.txt"
 ## Откат
 
 Отозвать токен бота и удалить его из collaborators; удалить remote `agent`.
+
+## Фактическая схема доступа (решение владельца Q76, 2026-11-17)
+
+Машинный аккаунт не создаётся (решение владельца по Q76). Агент работает fine-grained токеном владельца, выпущенным только на репозиторий `twomcsu-wsite` (Contents RW, Pull requests RW, Actions/Checks/Statuses read; без Administration и Workflows), подключённым через отдельный каталог `GH_CONFIG_DIR=/c/Users/younaxo/.config/gh-agent`. Конфигурация `gh` по умолчанию (admin-токен) агентом не используется.
+
+Принятый риск (RISKS, Q76): токен действует от учётной записи с ролью Admin, поэтому rulesets для него обходятся — `all-branches-integrity` и `tags-protection` (bypass «always»: сервер не запрещает force-push и удаление веток и тегов), `main-protection` (bypass «pull_requests_only»: прямой push в `main` запрещён, но PR можно слить без обязательных проверок). Защита держится на стороне агента:
+
+1. Deny-правила `.claude/settings.json`: запрещены force-push, удаление веток, `--mirror`/`--all`, refspec с `:` и `+`, push в `main`, `gh pr merge` под учётной записью по умолчанию и с `--admin`, `gh api` с методом DELETE; запреты на `reset --hard`, `clean`, `rebase`, локальный `merge`, секреты, миграции и seed не меняются.
+2. Обёртка push (`agent-push.sh`): одна ветка, не `main`, без флагов, только fast-forward относительно сервера, токен агента.
+3. Обёртка слияния (`agent-merge.sh`): PR открыт, не черновик, `mergeStateStatus = CLEAN`, три обязательные проверки (`Lint, typecheck, test, build`, `Analyze (javascript-typescript)`, `gitleaks`) на текущем коммите — `success`; слияние методом merge с `--match-head-commit`, без `--admin`.
+
+Запрещено этим токеном всегда: force-push, удаление веток и тегов, слияние без трёх зелёных проверок и состояния CLEAN, изменение rulesets и настроек репозитория, `.github/workflows`.
