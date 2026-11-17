@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -51,6 +52,7 @@ export class AdminChatController {
 
   @Delete('mutes/:id')
   @RequirePermissions('chat.mutes.delete')
+  @SkipAudit() // ModerationService пишет обогащённую запись chat.mute.revoke (Q48)
   async unmute(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -67,6 +69,7 @@ export class AdminChatController {
 
   @Delete('bans/:id')
   @RequirePermissions('chat.bans.delete')
+  @SkipAudit() // ModerationService пишет обогащённую запись chat.ban.revoke (Q48)
   async unban(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     await this.moderation.unban(user.id, id);
     return { success: true };

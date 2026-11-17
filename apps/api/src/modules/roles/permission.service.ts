@@ -12,6 +12,33 @@ export interface EffectivePermissions {
   maxPriority: number;
 }
 
+export interface SanctionRevokeDecision {
+  allowed: boolean;
+  /// Владелец снял санкцию, выданную не им (или без известного выдавшего).
+  ownerOverride: boolean;
+  /// Цель снятия — сам действующий.
+  self: boolean;
+  /// Выдавший известен (запись есть, пользователь существует, не SYSTEM).
+  issuerKnown: boolean;
+}
+
+export const SANCTION_REVOKE_FORBIDDEN_CODE = 'sanction_revoke_forbidden';
+
+/// Metadata записи аудита при снятии санкции (Q48/Q49): кто выдал (или
+/// «нет записи»), владельческое переопределение, снятие с себя.
+export function sanctionRevokeAuditChanges(
+  decision: SanctionRevokeDecision,
+  issuerId: string | null | undefined,
+  extra: Record<string, string | number | boolean | null> = {},
+): Record<string, string | number | boolean | null> {
+  return {
+    ...extra,
+    issuerId: issuerId || 'нет записи',
+    ownerOverride: decision.ownerOverride,
+    self: decision.self,
+  };
+}
+
 const CACHE_TTL_SECONDS = 300;
 
 function cacheKeyUser(userId: string): string {
@@ -141,17 +168,29 @@ export class PermissionService {
     return actorPriority > targetPriority;
   }
 
-  /// Снятие мута/бана чата (Q25, ADR-0171): снять может выдавший или тот, чей
-  /// приоритет >= приоритета выдавшего. Выдавший «неизвестен» (пустой id,
-  /// пользователь не найден или удалён, accountType=SYSTEM): консервативное
-  /// допущение — нужен приоритет >= максимального приоритета среди всех ролей
-  /// (фактически владелец/superuser). Если ролей нет, только superuser.
-  async canRevokeSanction(
+  /// Единое правило снятия санкции — мут/бан чата, бан аккаунта, бан в
+  /// обращениях, массовое снятие (Q25, Q48, Q49; ADR-0173). Порядок:
+  /// 1) действующий — владелец (isSuperuser): разрешено всегда, в т.ч. с себя;
+  /// 2) выдавший неизвестен (нет записи, пользователь удалён, SYSTEM): только
+  ///    владелец;
+  /// 3) цель — сам действующий, а выдал не он: запрещено (Q49);
+  /// 4) действующий — сам выдавший: разрешено;
+  /// 5) иначе — приоритет действующего >= приоритета выдавшего.
+  /// `ownerOverride` — владелец снял санкцию, выданную не им самим (или без
+  /// известного выдавшего); `self` — цель совпадает с действующим.
+  async evaluateSanctionRevoke(
     actorId: string,
     issuerId: string | null | undefined,
-  ): Promise<boolean> {
-    if (issuerId && issuerId === actorId) {
-      return true;
+    targetUserId?: string,
+  ): Promise<SanctionRevokeDecision> {
+    const self = targetUserId !== undefined && targetUserId === actorId;
+    if (await this.isSuperuser(actorId)) {
+      return {
+        allowed: true,
+        ownerOverride: !issuerId || issuerId !== actorId,
+        self,
+        issuerKnown: Boolean(issuerId),
+      };
     }
     const issuer = issuerId
       ? await this.prisma.user.findUnique({
@@ -159,13 +198,57 @@ export class PermissionService {
           select: { id: true, accountType: true },
         })
       : null;
-    const actorPriority = await this.getMaxPriority(actorId);
-    if (issuer && issuer.accountType !== 'SYSTEM') {
-      return actorPriority >= (await this.getMaxPriority(issuer.id));
+    const issuerKnown = Boolean(issuer) && issuer?.accountType !== 'SYSTEM';
+    const deny = {
+      allowed: false,
+      ownerOverride: false,
+      self,
+      issuerKnown,
+    };
+    if (!issuer || issuer.accountType === 'SYSTEM') {
+      return deny;
     }
-    const top = await this.prisma.role.aggregate({ _max: { priority: true } });
-    const threshold = top._max.priority ?? Number.POSITIVE_INFINITY;
-    return actorPriority >= threshold;
+    if (self && issuer.id !== actorId) {
+      return deny;
+    }
+    if (issuer.id === actorId) {
+      return { ...deny, allowed: true };
+    }
+    const [actorPriority, issuerPriority] = await Promise.all([
+      this.getMaxPriority(actorId),
+      this.getMaxPriority(issuer.id),
+    ]);
+    return { ...deny, allowed: actorPriority >= issuerPriority };
+  }
+
+  /// Как evaluateSanctionRevoke, но при отказе бросает 403
+  /// `sanction_revoke_forbidden` (текст общий, роли не раскрываются).
+  async assertCanRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+    targetUserId?: string,
+  ): Promise<SanctionRevokeDecision> {
+    const decision = await this.evaluateSanctionRevoke(
+      actorId,
+      issuerId,
+      targetUserId,
+    );
+    if (!decision.allowed) {
+      throw new ForbiddenException({
+        code: SANCTION_REVOKE_FORBIDDEN_CODE,
+        message: 'Недостаточно прав для снятия этого ограничения',
+      });
+    }
+    return decision;
+  }
+
+  async canRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+    targetUserId?: string,
+  ): Promise<boolean> {
+    return (await this.evaluateSanctionRevoke(actorId, issuerId, targetUserId))
+      .allowed;
   }
 
   /// Выдача роли пользователю (Q23, ADR-0170): права выдаваемой роли должны

@@ -150,7 +150,7 @@ describe('PermissionService.assertGrantorCoversRole (Q23)', () => {
   });
 });
 
-describe('PermissionService.canRevokeSanction (Q25)', () => {
+describe('PermissionService.canRevokeSanction (Q25, Q48, Q49)', () => {
   function buildRevoke(opts: {
     byUser: Record<string, RoleRow[]>;
     users: Record<string, 'USER' | 'SYSTEM'>;
@@ -218,28 +218,96 @@ describe('PermissionService.canRevokeSanction (Q25)', () => {
   it('выдавший снимает свой, даже с меньшим приоритетом', async () => {
     const s = buildRevoke(base);
     await expect(s.canRevokeSanction('junior', 'junior')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('junior', 'junior', 'peer')).resolves.toBe(
+      true,
+    );
   });
 
   it('равный и старший могут, младший нет', async () => {
     const s = buildRevoke(base);
-    await expect(s.canRevokeSanction('peer', 'mod')).resolves.toBe(true);
-    await expect(s.canRevokeSanction('admin', 'mod')).resolves.toBe(true);
-    await expect(s.canRevokeSanction('junior', 'mod')).resolves.toBe(false);
+    await expect(s.canRevokeSanction('peer', 'mod', 'x')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('admin', 'mod', 'x')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('junior', 'mod', 'x')).resolves.toBe(
+      false,
+    );
+  });
+
+  it('владелец снимает всегда: чужую, равную и без выдавшего', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('owner', 'admin', 'x')).resolves.toBe(
+      true,
+    );
+    const d = await s.evaluateSanctionRevoke('owner', 'admin', 'x');
+    expect(d).toEqual({
+      allowed: true,
+      ownerOverride: true,
+      self: false,
+      issuerKnown: true,
+    });
+  });
+
+  it('владелец снимает с себя чужую санкцию (Q49), ownerOverride и self', async () => {
+    const s = buildRevoke(base);
+    const d = await s.evaluateSanctionRevoke('owner', 'admin', 'owner');
+    expect(d).toMatchObject({
+      allowed: true,
+      ownerOverride: true,
+      self: true,
+    });
+  });
+
+  it('владелец снимает свою же санкцию: без ownerOverride', async () => {
+    const s = buildRevoke(base);
+    const d = await s.evaluateSanctionRevoke('owner', 'owner', 'x');
+    expect(d).toMatchObject({ allowed: true, ownerOverride: false });
   });
 
   it.each([null, undefined, '', 'deleted-user', 'sys'])(
-    'неизвестный выдавший (%p): только приоритет >= максимума ролей',
+    'неизвестный выдавший (%p): только владелец',
     async (issuer) => {
       const s = buildRevoke(base);
-      await expect(s.canRevokeSanction('admin', issuer)).resolves.toBe(false);
-      await expect(s.canRevokeSanction('owner', issuer)).resolves.toBe(true);
+      await expect(s.canRevokeSanction('admin', issuer, 'x')).resolves.toBe(
+        false,
+      );
+      await expect(s.canRevokeSanction('owner', issuer, 'x')).resolves.toBe(
+        true,
+      );
+      const d = await s.evaluateSanctionRevoke('owner', issuer, 'x');
+      expect(d.ownerOverride).toBe(true);
+      expect(d.issuerKnown).toBe(Boolean(issuer));
     },
   );
 
-  it('неизвестный выдавший и ролей нет: только superuser', async () => {
-    const s = buildRevoke({ ...base, topPriority: null });
-    await expect(s.canRevokeSanction('admin', null)).resolves.toBe(false);
-    await expect(s.canRevokeSanction('owner', null)).resolves.toBe(true);
+  it('не-владелец не снимает с себя санкцию, выданную другим, даже старшему', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('admin', 'mod', 'admin')).resolves.toBe(
+      false,
+    );
+    await expect(s.canRevokeSanction('admin', null, 'admin')).resolves.toBe(
+      false,
+    );
+    await expect(
+      s.canRevokeSanction('junior', 'admin', 'junior'),
+    ).resolves.toBe(false);
+  });
+
+  it('не-владелец с себя свою (самовыданную) санкцию снимает', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('admin', 'admin', 'admin')).resolves.toBe(
+      true,
+    );
+  });
+
+  it('assertCanRevokeSanction: отказ -> 403 sanction_revoke_forbidden', async () => {
+    const s = buildRevoke(base);
+    await expect(
+      s.assertCanRevokeSanction('junior', 'mod', 'x'),
+    ).rejects.toMatchObject({
+      response: { code: 'sanction_revoke_forbidden' },
+    });
+    await expect(
+      s.assertCanRevokeSanction('admin', 'mod', 'x'),
+    ).resolves.toMatchObject({ allowed: true, ownerOverride: false });
   });
 });
 

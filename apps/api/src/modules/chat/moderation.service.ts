@@ -6,7 +6,12 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../roles/permission.service';
+import { AuditService } from '../audit/audit.service';
+import {
+  PermissionService,
+  SanctionRevokeDecision,
+  sanctionRevokeAuditChanges,
+} from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { BanUserDto } from './dto/ban-user.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
@@ -18,6 +23,7 @@ export class ModerationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionService,
+    private readonly audit: AuditService,
   ) {}
 
   /// Иерархия: нельзя применять мут/бан к себе, SYSTEM-аккаунту и цели с
@@ -37,23 +43,35 @@ export class ModerationService {
     }
   }
 
-  /// Снятие мута/бана (Q25, ADR-0171): только выдавший или равный/старший по
-  /// приоритету; снять санкцию с себя может только её выдавший. Текст ошибки
-  /// общий, роли не раскрываются.
-  private async assertCanRevoke(
+  /// Снятие мута/бана (Q25, Q48, Q49; ADR-0171, ADR-0173): единое правило
+  /// PermissionService.assertCanRevokeSanction (владелец всегда; неизвестный
+  /// выдавший — только владелец; с себя чужую — нельзя; выдавший; равный или
+  /// старший). Каждое снятие пишется в журнал аудита.
+  private assertCanRevoke(
     actorId: string,
     targetUserId: string,
     issuerId: string | null,
+  ): Promise<SanctionRevokeDecision> {
+    return this.permissions.assertCanRevokeSanction(
+      actorId,
+      issuerId,
+      targetUserId,
+    );
+  }
+
+  private async auditRevoke(
+    actorId: string,
+    decision: SanctionRevokeDecision,
+    issuerId: string | null,
+    entry: { action: string; targetType: string; targetId: string },
+    userId: string,
   ): Promise<void> {
-    const allowed =
-      issuerId === actorId ||
-      (actorId !== targetUserId &&
-        (await this.permissions.canRevokeSanction(actorId, issuerId)));
-    if (!allowed) {
-      throw new ForbiddenException(
-        'Недостаточно прав для снятия этого ограничения',
-      );
-    }
+    await this.audit.log({
+      actorId,
+      ...entry,
+      changes: sanctionRevokeAuditChanges(decision, issuerId, { userId }),
+      severity: 'warning',
+    });
   }
 
   async createChannel(dto: CreateChannelDto) {
@@ -113,11 +131,22 @@ export class ModerationService {
     if (!mute) {
       throw new NotFoundException('Мут не найден');
     }
-    await this.assertCanRevoke(actorId, mute.userId, mute.mutedBy);
+    const decision = await this.assertCanRevoke(
+      actorId,
+      mute.userId,
+      mute.mutedBy,
+    );
     await this.prisma.chatMute.update({
       where: { id },
       data: { isActive: false },
     });
+    await this.auditRevoke(
+      actorId,
+      decision,
+      mute.mutedBy,
+      { action: 'chat.mute.revoke', targetType: 'ChatMute', targetId: id },
+      mute.userId,
+    );
   }
 
   async banUser(bannedBy: string, dto: BanUserDto) {
@@ -149,11 +178,22 @@ export class ModerationService {
     if (!ban) {
       throw new NotFoundException('Бан не найден');
     }
-    await this.assertCanRevoke(actorId, ban.userId, ban.bannedBy);
+    const decision = await this.assertCanRevoke(
+      actorId,
+      ban.userId,
+      ban.bannedBy,
+    );
     await this.prisma.chatBan.update({
       where: { id },
       data: { isActive: false },
     });
+    await this.auditRevoke(
+      actorId,
+      decision,
+      ban.bannedBy,
+      { action: 'chat.ban.revoke', targetType: 'ChatBan', targetId: id },
+      ban.userId,
+    );
   }
 
   async searchMessages(query: string, page: number, limit: number) {
