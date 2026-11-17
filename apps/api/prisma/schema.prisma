@@ -3315,3 +3315,90 @@ model TwoFactorBackupCode {
   @@index([userId])
   @@map("two_factor_backup_codes")
 }
+
+// =========================================================================
+// Наказания Minecraft: зеркало источника (этап 02, ADR-0166, ADR-0178)
+// =========================================================================
+
+enum MinecraftPunishmentKind {
+  BAN
+  MUTE
+  WARN
+  KICK
+}
+
+enum MinecraftPunishmentStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+  DELETED_AT_SOURCE
+}
+
+/// Зеркало записи об игровом наказании из внешнего источника (LiteBans, позже
+/// Bridge). Только чтение источника: сайт ничего в него не пишет. Тексты
+/// (`reason`, имена) сохраняются УЖЕ очищенными от IP и контактов (Q31).
+/// `sourceId` — id строки источника; ключ `(source, sourceScope, kind, sourceId)`.
+/// Запись выполняет только сервис синхронизации (upsert по `rowHash`).
+model MinecraftPunishment {
+  id                 String                    @id @default(cuid())
+  source             String                    @default("litebans") @db.VarChar(16)
+  sourceScope        String                    @default("default") @db.VarChar(32)
+  kind               MinecraftPunishmentKind
+  sourceId           BigInt
+  subjectUuid        String?                   @db.VarChar(36)
+  subjectName        String?                   @db.VarChar(64)
+  ipBan              Boolean                   @default(false)
+  reason             String?
+  executorUuid       String?                   @db.VarChar(36)
+  executorName       String?                   @db.VarChar(128)
+  executorIsConsole  Boolean                   @default(false)
+  removedByUuid      String?                   @db.VarChar(36)
+  removedByName      String?                   @db.VarChar(128)
+  removedByIsConsole Boolean                   @default(false)
+  removedReason      String?
+  removedAt          DateTime?
+  startedAt          DateTime
+  until              DateTime?
+  status             MinecraftPunishmentStatus
+  serverScope        String?                   @db.VarChar(128)
+  serverOrigin       String?                   @db.VarChar(128)
+  silent             Boolean                   @default(false)
+  template           Int?
+  /// SHA-256 нормализованных полей: дедупликация и обнаружение правок.
+  rowHash            String                    @db.VarChar(64)
+  /// Растёт при каждом изменении; клиент отбрасывает события с `rev` не выше известного.
+  rev                Int                       @default(1)
+  isHidden           Boolean                   @default(false)
+  hiddenById         String?
+  hiddenReason       String?
+  firstSeenAt        DateTime                  @default(now())
+  /// Обновляется только при изменении записи (неизменённые строки не пишутся).
+  lastSeenAt         DateTime                  @default(now())
+  lastChangedAt      DateTime                  @default(now())
+  deletedAtSource    DateTime?
+
+  @@unique([source, sourceScope, kind, sourceId])
+  @@index([subjectUuid, startedAt])
+  @@index([status, startedAt])
+  @@index([kind, status, isHidden, startedAt])
+  @@map("minecraft_punishments")
+}
+
+/// Водяной знак и состояние синхронизации по паре (источник, тип).
+/// Курсор фиксируется в той же транзакции, что и upsert пачки.
+model PunishmentSyncState {
+  id                  String                  @id @default(cuid())
+  source              String                  @db.VarChar(16)
+  kind                MinecraftPunishmentKind
+  cursorId            BigInt                  @default(0)
+  lastPollAt          DateTime?
+  lastSuccessAt       DateTime?
+  lastActiveCheckAt   DateTime?
+  lastFullReconcileAt DateTime?
+  consecutiveFailures Int                     @default(0)
+  lastErrorCode       String?                 @db.VarChar(32)
+  initialSyncDoneAt   DateTime?
+
+  @@unique([source, kind])
+  @@map("punishment_sync_state")
+}
