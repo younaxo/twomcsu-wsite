@@ -352,6 +352,100 @@ describe('корзина /shop/cart', () => {
     expect(await screen.findByTestId('cart-total')).toBeInTheDocument();
   });
 
+  it('promoError при 200: предупреждение рядом с кодом, скидка не показывается, код можно убрать', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(
+      cart({
+        promoCode: { code: 'OLD', description: 'Старая акция' },
+        promoError: { code: 'PROMO_EXPIRED', message: 'Серверный текст' },
+        promoDiscountTotal: '0',
+      }),
+    );
+    mocks.del.mockResolvedValue(cart());
+    render(<CartPage />, { wrapper: Providers });
+    const applied = await screen.findByTestId('promo-applied');
+    expect(within(applied).getByTestId('promo-error')).toHaveTextContent(
+      'Срок действия промокода истёк',
+    );
+    expect(within(applied).getByTestId('promo-error')).toHaveTextContent('не применяется');
+    // Строки скидки по промокоду в итоге нет.
+    expect(screen.queryByText('Промокод OLD')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    await user.click(within(applied).getByRole('button', { name: 'Убрать промокод OLD' }));
+    expect(mocks.del).toHaveBeenCalledWith('/store/cart/promo');
+  });
+
+  it('promoError с неизвестным кодом показывает текст сервера', async () => {
+    signIn();
+    mocks.get.mockResolvedValue(
+      cart({
+        promoCode: { code: 'X1' },
+        promoError: { code: 'PROMO_NEW_RULE', message: 'Новое правило промокода' },
+      }),
+    );
+    render(<CartPage />, { wrapper: Providers });
+    expect(await screen.findByTestId('promo-error')).toHaveTextContent('Новое правило промокода');
+  });
+
+  it('ошибки по коду: PROMO_*, CART_UNIQUE_*, CART_GIFT_* — русские тексты', async () => {
+    const { cartErrorMessage } = await import('@/lib/store/cart');
+    const err = (code: string, message = 'text') => new ApiError(400, [message], { code });
+    expect(cartErrorMessage(err('PROMO_EXHAUSTED'))).toMatch(/исчерпан/);
+    expect(cartErrorMessage(err('PROMO_MIN_AMOUNT'))).toMatch(/минимальной/);
+    expect(cartErrorMessage(err('CART_UNIQUE_DUPLICATE'))).toMatch(/один раз/);
+    expect(cartErrorMessage(err('CART_UNIQUE_ALREADY_OWNED'))).toMatch(/уже есть/);
+    expect(cartErrorMessage(err('CART_GIFT_UNAVAILABLE'))).toMatch(/нельзя подарить/);
+    expect(cartErrorMessage(err('CART_GIFT_NOT_ALLOWED'))).toMatch(/невозможен/);
+    // Лимит на покупку: число берём из текста сервера.
+    expect(cartErrorMessage(err('CART_MAX_PER_PURCHASE', 'Максимум 2 шт.'))).toBe('Максимум 2 шт.');
+    // Неизвестный код — текст сервера.
+    expect(cartErrorMessage(err('SOMETHING_NEW', 'Новая ошибка'))).toBe('Новая ошибка');
+  });
+
+  it('запасной разбор по тексту (старый API без code)', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.post.mockRejectedValueOnce(new ApiError(400, ['Срок действия промокода истёк']));
+    render(<CartPage />, { wrapper: Providers });
+    await user.type(await screen.findByRole('textbox', { name: 'Промокод' }), 'OLD');
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Срок действия промокода истёк.');
+    const { cartErrorMessage } = await import('@/lib/store/cart');
+    expect(cartErrorMessage(new ApiError(400, ['Сумма ниже минимальной']))).toMatch(
+      /минимальной для этого промокода/,
+    );
+    expect(cartErrorMessage(new ApiError(400, ['Что-то своё']))).toBe('Что-то своё');
+  });
+
+  it('429 на подарок: понятное сообщение с Retry-After', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    const limited = new ApiError(429, ['Лимит'], {
+      code: 'CART_GIFT_RATE_LIMITED',
+      body: { statusCode: 429, code: 'CART_GIFT_RATE_LIMITED', message: 'Лимит', retryAfter: 45 },
+    });
+    limited.retryAfterSeconds = 45;
+    mocks.patch.mockRejectedValue(limited);
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Подарить' }));
+    await user.type(screen.getByLabelText(/Ник получателя/), 'Friend');
+    await user.click(screen.getByRole('button', { name: 'Подарить' }));
+    expect(await screen.findByText(/Повторите через 45 сек\./)).toBeInTheDocument();
+  });
+
+  it('429: секунды берутся из тела, если заголовка нет', async () => {
+    const { cartErrorMessage } = await import('@/lib/store/cart');
+    const error = new ApiError(429, ['x'], {
+      code: 'CART_GIFT_RATE_LIMITED',
+      body: { retryAfter: 120 },
+    });
+    expect(cartErrorMessage(error)).toMatch(/Повторите через 2 мин\./);
+    expect(cartErrorMessage(new ApiError(429, ['x']))).toMatch(/чуть позже/);
+  });
+
   it('подарок: ник и сообщение уходят в PATCH', async () => {
     const user = userEvent.setup();
     signIn();

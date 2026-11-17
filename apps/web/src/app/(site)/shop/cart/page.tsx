@@ -9,6 +9,7 @@ import {
   ShoppingCart,
   Tag,
   Trash2,
+  TriangleAlert,
   UserRound,
   X,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
   isPromoProblem,
   itemName,
   lineFor,
+  promoErrorMessage,
   useCartMutations,
   useCartView,
   type CartItemView,
@@ -349,6 +351,7 @@ function PromoBlock({
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const applied = cart.promoCode ?? null;
+  const promoError = cart.promoError ?? null;
 
   const apply = async (event: FormEvent) => {
     event.preventDefault();
@@ -379,10 +382,15 @@ function PromoBlock({
   if (applied) {
     return (
       <div data-testid="promo-applied" className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2 rounded-lg bg-success-soft px-3 py-2">
+        <div
+          className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${promoError ? 'bg-warning-soft' : 'bg-success-soft'}`}
+        >
           <div className="flex min-w-0 flex-col">
             <span className="flex items-center gap-1.5 text-sm font-semibold">
-              <Tag aria-hidden className="size-4 text-success" />
+              <Tag
+                aria-hidden
+                className={`size-4 ${promoError ? 'text-muted-foreground' : 'text-success'}`}
+              />
               <span className="break-all">{applied.code}</span>
             </span>
             {applied.description ? (
@@ -401,6 +409,16 @@ function PromoBlock({
             Убрать
           </Button>
         </div>
+        {promoError ? (
+          <p
+            role="alert"
+            data-testid="promo-error"
+            className="flex items-start gap-1.5 rounded-lg bg-warning-soft px-3 py-2 text-xs font-medium"
+          >
+            <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+            <span>{promoErrorMessage(promoError)} Скидка по промокоду не применяется.</span>
+          </p>
+        ) : null}
         {error ? (
           <p role="alert" className="text-xs text-destructive">
             {error}
@@ -475,7 +493,7 @@ function Summary({
               tone="discount"
             />
           ) : null}
-          {cart.promoCode ? (
+          {cart.promoCode && !cart.promoError ? (
             <SummaryRow
               label={`Промокод ${cart.promoCode.code}`}
               value={

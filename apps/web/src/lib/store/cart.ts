@@ -46,8 +46,16 @@ export interface CartPromoView {
   description?: string | null;
 }
 
+/// Ошибка сохранённого промокода в ответе корзины (200). Локальный необязательный
+/// тип: заменить на @twomc/shared после публикации API. Старый API поля не отдаёт.
+export interface CartPromoError {
+  code: string;
+  message: string;
+}
+
 export interface CartView {
   id: string;
+  promoError?: CartPromoError | null;
   items: CartItemView[];
   promoCode?: CartPromoView | null;
   lines: CartLineView[];
@@ -76,15 +84,73 @@ export function itemName(item: CartItemView, line: CartLineView | null): string 
   return item.product?.name ?? item.bundle?.name ?? line?.name ?? 'Товар';
 }
 
-/// Понятный текст ошибки: сообщения API по корзине и промокодам уже русские
-/// (cart.service / pricing.service). 404 «Промокод не найден» и пр. — как есть.
+/// Тексты по кодам ошибок API корзины. Неизвестный код — запасной путь по тексту.
+const CODE_MESSAGES: Record<string, string> = {
+  PROMO_NOT_FOUND: 'Промокод не найден. Проверьте написание.',
+  PROMO_EXPIRED: 'Срок действия промокода истёк.',
+  PROMO_NOT_STARTED: 'Промокод ещё не начал действовать.',
+  PROMO_EXHAUSTED: 'Промокод исчерпан: лимит использований достигнут.',
+  PROMO_ALREADY_USED: 'Вы уже использовали этот промокод.',
+  PROMO_MIN_AMOUNT: 'Сумма корзины ниже минимальной для этого промокода.',
+  PROMO_NOT_APPLICABLE: 'Промокод не подходит к товарам в корзине.',
+  CART_UNIQUE_DUPLICATE: 'Этот товар покупается один раз, он уже лежит в корзине.',
+  CART_UNIQUE_ALREADY_OWNED: 'Этот товар у вас уже есть, повторно его купить нельзя.',
+  CART_GIFT_UNAVAILABLE: 'Этот товар нельзя подарить.',
+  CART_GIFT_NOT_ALLOWED: 'Подарок этому игроку невозможен. Проверьте ник получателя.',
+};
+
+/// Запасной разбор для старого API без `code`: определяем код по русскому тексту.
+const TEXT_CODES: Array<[RegExp, string]> = [
+  [/промокод не найден/i, 'PROMO_NOT_FOUND'],
+  [/срок действия промокода|промокод.*истёк/i, 'PROMO_EXPIRED'],
+  [/промокод.*(исчерпан|лимит)/i, 'PROMO_EXHAUSTED'],
+  [/минимальн/i, 'PROMO_MIN_AMOUNT'],
+  [/максимум \d+ шт/i, 'CART_MAX_PER_PURCHASE'],
+];
+
+function resolveCode(error: ApiError): string | undefined {
+  if (error.code) return error.code;
+  const text = error.messages.join(' ');
+  return TEXT_CODES.find(([pattern]) => pattern.test(text))?.[1];
+}
+
+/// Секунды из `Retry-After` (клиент) либо из тела 429 (`retryAfter`).
+function retryAfterOf(error: ApiError): number | undefined {
+  if (error.retryAfterSeconds) return error.retryAfterSeconds;
+  const body = error.body as { retryAfter?: unknown } | null | undefined;
+  const value = Number(body?.retryAfter);
+  return Number.isFinite(value) && value > 0 ? Math.ceil(value) : undefined;
+}
+
+function waitPhrase(seconds: number | undefined): string {
+  if (!seconds) return 'Попробуйте чуть позже.';
+  if (seconds < 60) return `Повторите через ${seconds} сек.`;
+  return `Повторите через ${Math.ceil(seconds / 60)} мин.`;
+}
+
+/// Понятный текст ошибки: сначала по `error.code`, затем по тексту сообщения
+/// (сообщения API по корзине и промокодам русские — отдаются как есть).
 export function cartErrorMessage(error: unknown, fallback = 'Не удалось выполнить действие.') {
-  if (error instanceof ApiError) {
-    if (error.status === 429) return 'Слишком много запросов. Попробуйте чуть позже.';
-    if (error.status >= 500) return 'Сервер временно недоступен. Попробуйте позже.';
-    return error.messages[0] ?? fallback;
+  if (!(error instanceof ApiError)) return fallback;
+  if (error.code === 'CART_GIFT_RATE_LIMITED') {
+    return `Слишком много попыток сменить получателя подарка. ${waitPhrase(retryAfterOf(error))}`;
   }
-  return fallback;
+  if (error.status === 429) {
+    return `Слишком много запросов. ${waitPhrase(retryAfterOf(error))}`;
+  }
+  if (error.status >= 500) return 'Сервер временно недоступен. Попробуйте позже.';
+  const code = resolveCode(error);
+  // Для лимита на покупку сервер указывает число: берём его текст.
+  if (code && code !== 'CART_MAX_PER_PURCHASE' && CODE_MESSAGES[code]) return CODE_MESSAGES[code];
+  if (code === 'CART_MAX_PER_PURCHASE') {
+    return error.messages[0] ?? 'Достигнут максимум количества этого товара за покупку.';
+  }
+  return error.messages[0] ?? fallback;
+}
+
+/// Текст предупреждения о сохранённом промокоде из `promoError` (200-ответ).
+export function promoErrorMessage(promoError: CartPromoError): string {
+  return CODE_MESSAGES[promoError.code] ?? promoError.message;
 }
 
 /// Ошибка GET корзины, после которой помогает сброс промокода: сервер при
