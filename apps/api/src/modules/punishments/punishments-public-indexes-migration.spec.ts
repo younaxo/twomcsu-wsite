@@ -83,6 +83,11 @@ describe('миграция punishments_public_indexes (ADR-0180, 2.6)', () => {
     }
   });
 
+  it('M1: три CREATE INDEX идут ПЕРЕД четырьмя ADD COLUMN (ACCESS EXCLUSIVE берётся в конце транзакции)', () => {
+    const kinds = statements.map((s) => (s.startsWith('CREATE INDEX') ? 'I' : 'C'));
+    expect(kinds.join('')).toBe('IIICCCC');
+  });
+
   it('очиститель комментариев и литералов не даёт ложных срабатываний', () => {
     const cleaned = codeOf(
       "-- DROP TABLE x\n/* DELETE FROM y */\nSELECT 'DROP' ;",
