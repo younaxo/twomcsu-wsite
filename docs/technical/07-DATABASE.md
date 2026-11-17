@@ -328,6 +328,7 @@ Purpose: _нет комментария в schema.prisma; назначение �
 | `isBanned` | `Boolean` | no | `@default(false)` |  |
 | `banReason` | `String` | yes | `` |  |
 | `bannedUntil` | `DateTime` | yes | `` |  |
+| `bannedById` | `String` | yes | `` | Кто выдал бан аккаунта (Q48, ADR-0173); без FK; NULL — снимает только владелец |
 | `lastLoginAt` | `DateTime` | yes | `` |  |
 | `lastLoginIp` | `String` | yes | `` |  |
 | `lastActivityAt` | `DateTime` | yes | `` | Updated on authenticated API activity |
