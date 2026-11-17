@@ -3629,15 +3629,17 @@ age или gpg и сроку хранения не приняты, сервер�
 
 ## ADR-0160 — Cloudflare real_ip и закрытие origin (P3-02b)
 
-**Status:** Proposed (допущение по D9; утверждается владельцем).
+**Status:** Accepted как подготовка (владелец, Q4 и Q14, 2026-11-17): схема на сегодня не меняется, включение Cloudflare отложено до переноса DNS.
 
 **Context.** ADR-0155 оставил топологию production открытой (nginx → api либо Cloudflare → nginx → api).
-Владелец (ответ на Q4) попросил подготовить схему Cloudflare. Схема прокси владельцем не выбрана, сервера нет (R8).
+Владелец (ответ на Q4) попросил подготовить схему Cloudflare. Ответ на Q14 (2026-11-17): сейчас «nginx → api», DNS в Beget, Cloudflare не используется, `TRUST_PROXY=1`; Cloudflare планируется позже. Сервера пока нет (R8).
 
 **Decision.**
 
-- Допущение: production остаётся «nginx → api»; блок `set_real_ip_from` в
-  `infrastructure/nginx.twomc.su.conf.example` остаётся закомментированным, в пример добавлена только ссылка на runbook.
+- Решение владельца (Q14): production остаётся «nginx → api» (DNS в Beget, без Cloudflare); блок `set_real_ip_from` в
+  `infrastructure/nginx.twomc.su.conf.example` и инструкция по файрволу остаются закомментированными до переноса DNS; в пример добавлены только комментарии и ссылка на runbook.
+- Игровой адрес и порт Minecraft через Cloudflare не проксируются: отдельная DNS-запись DNS only (при необходимости SRV); проксируется только HTTP(S) сайта.
+- Порядок включения при переносе DNS: файрвол origin (только диапазоны Cloudflare), затем раскомментировать `real_ip`, проверка `X-Forwarded-For`, Authenticated Origin Pulls (рекомендуется).
 - Подготовлен `docs/runbooks/cloudflare-real-ip.md`: диапазоны Cloudflare (снимок 2026-11-16 из ips-v4 и ips-v6),
   `real_ip_header CF-Connecting-IP`, процедура обновления диапазонов, файрвол origin (ufw с `default deny incoming` и `IPV6=yes`, nftables; 80/443 только
   с Cloudflare), ограничение SSH, Authenticated Origin Pulls, проверки и откат. Authenticated Origin Pulls с общим
