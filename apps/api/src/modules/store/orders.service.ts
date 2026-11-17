@@ -22,9 +22,40 @@ import {
   PaymentWebhookEvent,
 } from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
+import { assertCartLimits, CartLimitLine } from './cart-limits';
+import { CART_ITEM_INCLUDE } from './cart.service';
 import { PricedLine, PricingService } from './pricing.service';
+import {
+  PUBLIC_PRODUCT_BRIEF_SELECT,
+  PUBLIC_VARIANT_SELECT,
+} from './public-product';
+import { badRequest, StoreCartError } from './store-errors';
 
+function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
+  return lines.map((l) => ({
+    productId: l.productId,
+    productName: l.name,
+    quantity: l.quantity,
+    isUnique: l.isUnique,
+    maxPerPurchase: l.maxPerPurchase,
+  }));
+}
+
+/// Заказ для покупателя: товар — по белому списку (без gameCommands и прочих
+/// служебных полей), получатель подарка — только публичные поля (ADR-0107).
 const ORDER_INCLUDE = {
+  items: {
+    include: {
+      product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
+      variant: { select: PUBLIC_VARIANT_SELECT },
+      bundle: true,
+      giftToUser: { select: PUBLIC_USER_SELECT },
+    },
+  },
+} as const;
+
+/// Админский список заказов сохраняет прежний состав include.
+const ADMIN_ORDER_INCLUDE = {
   items: {
     include: { product: true, variant: true, bundle: true, giftToUser: true },
   },
@@ -76,7 +107,8 @@ export class OrdersService {
       },
     });
     if (owned) {
-      throw new BadRequestException(
+      throw badRequest(
+        StoreCartError.CART_UNIQUE_ALREADY_OWNED,
         'Один из товаров уже куплен и недоступен для повторной покупки',
       );
     }
@@ -148,20 +180,8 @@ export class OrdersService {
       include: {
         promoCode: true,
         items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                type: true,
-                isGiftable: true,
-                isSelfOnly: true,
-                isUnique: true,
-                name: true,
-              },
-            },
-            variant: { select: { id: true, price: true } },
-            bundle: { select: { id: true, totalPrice: true, name: true } },
-          },
+          include: CART_ITEM_INCLUDE,
+          orderBy: { addedAt: 'asc' },
         },
       },
     });
@@ -169,11 +189,16 @@ export class OrdersService {
       throw new BadRequestException('Корзина пуста');
     }
 
+    // Недействительный сохранённый промокод здесь — 4xx с кодом PROMO_*, а не
+    // молчаливое повышение суммы (в корзине причина видна в promoError).
     const totals = await this.pricing.computeTotals(
       cart.items,
       userId,
       cart.promoCode?.code ?? null,
     );
+    // Лимиты товара (isUnique/maxPerPurchase) — по строкам корзины целиком,
+    // даже если дубли появились в обход API корзины.
+    assertCartLimits(limitLinesOf(totals.lines));
     const result = await this.createOrderFromLines(
       userId,
       dto.targetMinecraftNick ?? null,
@@ -200,14 +225,6 @@ export class OrdersService {
       throw new NotFoundException('Вариант товара не найден');
     }
     const quantity = dto.quantity ?? 1;
-    if (
-      variant.product.maxPerPurchase &&
-      quantity > variant.product.maxPerPurchase
-    ) {
-      throw new BadRequestException(
-        `Максимум ${variant.product.maxPerPurchase} шт. этого товара за покупку`,
-      );
-    }
 
     const fakeCartItem = {
       id: 'quick-buy',
@@ -225,12 +242,19 @@ export class OrdersService {
         isGiftable: variant.product.isGiftable,
         isSelfOnly: variant.product.isSelfOnly,
         isUnique: variant.product.isUnique,
+        maxPerPurchase: variant.product.maxPerPurchase,
         name: variant.product.name,
       },
       variant: { id: variant.id, price: variant.price },
       bundle: null,
     };
-    const totals = await this.pricing.computeTotals([fakeCartItem], null, null);
+    const priced = await this.pricing.computeTotals([fakeCartItem], null, null);
+    // Без корзины строки нет: cartItemId = null (CartLineRef).
+    const totals = {
+      ...priced,
+      lines: priced.lines.map((l) => ({ ...l, cartItemId: null })),
+    };
+    assertCartLimits(limitLinesOf(totals.lines));
     return this.createOrderFromLines(
       null,
       dto.guestMinecraftNick,
@@ -432,7 +456,7 @@ export class OrdersService {
         where,
         // Финансам — публичные поля покупателя и email (ADR-0133), без IP и прочего.
         include: {
-          ...ORDER_INCLUDE,
+          ...ADMIN_ORDER_INCLUDE,
           user: { select: { ...PUBLIC_USER_SELECT, email: true } },
         },
         orderBy: { createdAt: 'desc' },

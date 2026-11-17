@@ -52,7 +52,7 @@ function setup() {
 }
 
 describe('FormsService.submitResponse (ADR-0162)', () => {
-  it('транзакция отправки: maxWait и timeout 10 с, блокировка берётся внутри', async () => {
+  it('транзакция отправки: maxWait и timeout 5 с, блокировка берётся внутри', async () => {
     const { service, prisma, tx, response } = setup();
 
     const result = await service.submitResponse(
@@ -66,8 +66,8 @@ describe('FormsService.submitResponse (ADR-0162)', () => {
     expect(result).toBe(response);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-      maxWait: 10_000,
-      timeout: 10_000,
+      maxWait: 5_000,
+      timeout: 5_000,
     });
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.form.update).toHaveBeenCalledWith({
@@ -127,10 +127,13 @@ describe('FormsService.canView и 2FA персонала (Q22, ADR-0169)', () =>
     );
   });
 
-  it('без ключа в production: fail closed, видимость игрока', async () => {
-    const { service } = visibilitySetup({ nodeEnv: 'production' });
-    expect(await service.canView(FormVisibility.ADMIN_ONLY, { id: 'u1' })).toBe(
-      false,
-    );
-  });
+  it.each(['production', '', undefined, 'staging'])(
+    'без ключа, NODE_ENV=%p: fail closed, видимость игрока',
+    async (nodeEnv) => {
+      const { service } = visibilitySetup({ nodeEnv });
+      expect(
+        await service.canView(FormVisibility.ADMIN_ONLY, { id: 'u1' }),
+      ).toBe(false);
+    },
+  );
 });
