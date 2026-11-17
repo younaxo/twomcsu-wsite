@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -9,6 +10,7 @@ import {
 import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { maskNickname } from '../../common/privacy.util';
+import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
@@ -54,12 +56,64 @@ const ORDER_INCLUDE = {
   },
 } as const;
 
-/// Админский список заказов сохраняет прежний состав include.
+/// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
+/// Скалярные поля позиции сохранены (контракт AdminOrderDto); товар, вариант и
+/// набор — по белому списку (без gameCommands, server, цен закупки и прочих
+/// служебных полей); получатель подарка — публичные поля (ADR-0107).
+const ADMIN_ORDER_ITEM_SELECT = {
+  id: true,
+  orderId: true,
+  productId: true,
+  variantId: true,
+  bundleId: true,
+  quantity: true,
+  unitPrice: true,
+  totalPrice: true,
+  giftToUserId: true,
+  giftMessage: true,
+  isDelivered: true,
+  deliveredAt: true,
+  product: { select: { id: true, name: true, slug: true, type: true } },
+  variant: { select: { id: true, duration: true, price: true } },
+  bundle: { select: { id: true, name: true, slug: true } },
+  giftToUser: { select: PUBLIC_USER_SELECT },
+} satisfies Prisma.OrderItemSelect;
+
+/// Покупатель для админки: публичные поля и email (ADR-0133), без IP и прочего.
+const ADMIN_ORDER_USER_SELECT = {
+  ...PUBLIC_USER_SELECT,
+  email: true,
+} satisfies Prisma.UserSelect;
+
 const ADMIN_ORDER_INCLUDE = {
-  items: {
-    include: { product: true, variant: true, bundle: true, giftToUser: true },
+  items: { select: ADMIN_ORDER_ITEM_SELECT, orderBy: { id: 'asc' } },
+  user: { select: ADMIN_ORDER_USER_SELECT },
+} satisfies Prisma.OrderInclude;
+
+/// Карточка заказа: к списочному составу добавляется промокод (без служебных
+/// счётчиков использований).
+const ADMIN_ORDER_CARD_INCLUDE = {
+  ...ADMIN_ORDER_INCLUDE,
+  promoCode: {
+    select: {
+      id: true,
+      code: true,
+      discountType: true,
+      discountValue: true,
+    },
   },
-} as const;
+} satisfies Prisma.OrderInclude;
+
+const MAX_SEARCH_LENGTH = 100;
+
+/// Дата без времени ("2026-11-18") в `dateTo` означает конец этих суток, иначе
+/// фильтр «по 18 ноября» отрезал бы весь день.
+function dateToUpperBound(value: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T23:59:59.999Z`);
+  }
+  return new Date(value);
+}
 
 @Injectable()
 export class OrdersService {
@@ -70,6 +124,7 @@ export class OrdersService {
     private readonly pricing: PricingService,
     private readonly payments: PaymentProviderRegistry,
     private readonly storage: StorageService,
+    private readonly audit: AuditService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -421,31 +476,56 @@ export class OrdersService {
   async listAdmin(query: ListAdminOrdersQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;
+    if (query.dateFrom && query.dateTo) {
+      if (new Date(query.dateFrom) > dateToUpperBound(query.dateTo)) {
+        throw new BadRequestException('dateFrom не может быть позже dateTo');
+      }
+    }
+    const search = query.search?.trim().slice(0, MAX_SEARCH_LENGTH);
+    const orderNumber = query.orderNumber?.trim();
+    const nickname = query.nickname?.trim();
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.userId ? { userId: query.userId } : {}),
+      ...(orderNumber
+        ? { orderNumber: { contains: orderNumber, mode: 'insensitive' } }
+        : {}),
+      ...(nickname
+        ? {
+            OR: [
+              {
+                guestMinecraftNick: { contains: nickname, mode: 'insensitive' },
+              },
+              { user: { username: { contains: nickname, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
       ...(query.dateFrom || query.dateTo
         ? {
             createdAt: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lte: dateToUpperBound(query.dateTo) } : {}),
             },
           }
         : {}),
-      ...(query.search
+      ...(search
         ? {
-            OR: [
-              { orderNumber: { contains: query.search, mode: 'insensitive' } },
+            AND: [
               {
-                guestMinecraftNick: {
-                  contains: query.search,
-                  mode: 'insensitive',
-                },
-              },
-              {
-                user: {
-                  username: { contains: query.search, mode: 'insensitive' },
-                },
+                OR: [
+                  { orderNumber: { contains: search, mode: 'insensitive' } },
+                  {
+                    guestMinecraftNick: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                  {
+                    user: {
+                      username: { contains: search, mode: 'insensitive' },
+                    },
+                  },
+                ],
               },
             ],
           }
@@ -454,18 +534,39 @@ export class OrdersService {
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
-        // Финансам — публичные поля покупателя и email (ADR-0133), без IP и прочего.
-        include: {
-          ...ADMIN_ORDER_INCLUDE,
-          user: { select: { ...PUBLIC_USER_SELECT, email: true } },
-        },
-        orderBy: { createdAt: 'desc' },
+        include: ADMIN_ORDER_INCLUDE,
+        // Второй ключ — стабильная пагинация при одинаковом createdAt.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.order.count({ where }),
     ]);
     return { items, total, page, limit };
+  }
+
+  /// Карточка заказа для админки: по id или по номеру заказа. Событий вебхука
+  /// в БД нет (хранится только итог: `paymentWebhookVerifiedAt`, `paidAt`,
+  /// `paymentId`, `paymentProvider`), поэтому секция `payment` — это сводка по
+  /// этим полям; подпись и тело вебхука не хранятся и не отдаются.
+  async getAdminCard(idOrNumber: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { OR: [{ id: idOrNumber }, { orderNumber: idOrNumber }] },
+      include: ADMIN_ORDER_CARD_INCLUDE,
+    });
+    if (!order) {
+      throw new NotFoundException('Заказ не найден');
+    }
+    return {
+      ...order,
+      payment: {
+        provider: order.paymentProvider,
+        paymentId: order.paymentId,
+        isPaid: order.status === OrderStatus.COMPLETED && !!order.paidAt,
+        paidAt: order.paidAt,
+        webhookVerifiedAt: order.paymentWebhookVerifiedAt,
+      },
+    };
   }
 
   async stats() {
@@ -492,21 +593,58 @@ export class OrdersService {
     return order;
   }
 
-  async cancel(id: string, dto: CancelOrderDto) {
-    const order = await this.requireOrder(id);
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException(
-        'Отменить можно только заказ в статусе PENDING',
-      );
+  /// Отмена только PENDING (0.4). Статус перечитывается под блокировкой строки
+  /// (FOR UPDATE): параллельный вебхук оплаты не пройдёт между проверкой и
+  /// записью. Оплаченный/завершённый/возвращённый/неуспешный заказ — 409.
+  /// Аудит — в той же транзакции и строгий: сбой записи откатывает отмену.
+  /// Причина хранится в `Order.cancelReason` и в аудите.
+  async cancel(id: string, dto: CancelOrderDto, actorId: string) {
+    const reason = dto.reason.trim();
+    if (!reason) {
+      throw new BadRequestException('Причина отмены обязательна');
     }
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.CANCELLED,
-        cancelledAt: new Date(),
-        cancelReason: dto.reason,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id = ${id} FOR UPDATE`;
+        if (locked.length === 0) {
+          throw new NotFoundException('Заказ не найден');
+        }
+        const order = await tx.order.findUniqueOrThrow({ where: { id } });
+        if (order.status !== OrderStatus.PENDING) {
+          throw new ConflictException({
+            code: 'ORDER_NOT_CANCELLABLE',
+            message: `Отменить можно только заказ в статусе PENDING, текущий статус: ${order.status}`,
+          });
+        }
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelReason: reason,
+          },
+        });
+        await this.audit.log({
+          actorId,
+          action: 'orders.order.cancelled',
+          targetType: 'order',
+          targetId: id,
+          changes: {
+            orderNumber: order.orderNumber,
+            from: order.status,
+            to: OrderStatus.CANCELLED,
+            total: order.total.toFixed(2),
+            reason,
+          },
+          severity: 'warning',
+          tx,
+          strict: true,
+        });
+        return updated;
       },
-    });
+      { maxWait: 10_000, timeout: 10_000 },
+    );
   }
 
   async refund(id: string, dto: RefundOrderDto) {

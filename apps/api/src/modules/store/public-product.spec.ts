@@ -191,6 +191,7 @@ describe('заказ покупателя: без служебных полей'
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     await service.listMine('u1');
     const item = findMany.mock.calls[0][0].include.items.include;
@@ -198,6 +199,40 @@ describe('заказ покупателя: без служебных полей'
     expect(item.variant.select).toBe(PUBLIC_VARIANT_SELECT);
     expect(Object.keys(item.giftToUser.select).sort()).toEqual([
       'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
+  });
+
+  it('админский список: позиции по белому списку, без gameCommands и целых сущностей', async () => {
+    const { OrdersService } = await import('./orders.service');
+    const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
+    const service = new OrdersService(
+      { order: { findMany, count } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await service.listAdmin({});
+    const include = findMany.mock.calls[0][0].include;
+    expect(include.items.include).toBeUndefined();
+    const select = include.items.select;
+    for (const key of ['product', 'variant', 'bundle', 'giftToUser']) {
+      expect(select[key].select).toBeDefined();
+    }
+    expect(JSON.stringify(select)).not.toContain('gameCommands');
+    expect(Object.keys(select.giftToUser.select).sort()).toEqual([
+      'avatar',
+      'id',
+      'tag',
+      'username',
+    ]);
+    expect(Object.keys(include.user.select).sort()).toEqual([
+      'avatar',
+      'email',
       'id',
       'tag',
       'username',
