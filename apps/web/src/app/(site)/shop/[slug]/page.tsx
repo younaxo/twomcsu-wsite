@@ -1,6 +1,15 @@
 'use client';
 
-import { Gift, Minus, PackageX, Plus, ShoppingBag, ShoppingCart, UserRound } from 'lucide-react';
+import {
+  Check,
+  Gift,
+  Minus,
+  PackageX,
+  Plus,
+  ShoppingBag,
+  ShoppingCart,
+  UserRound,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useId, useState } from 'react';
@@ -31,10 +40,11 @@ import { ProductCard } from '../_components/product-card';
 function ProductSkeleton() {
   return (
     <div
-      aria-hidden
+      role="status"
       data-testid="product-skeleton"
       className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
     >
+      <span className="sr-only">Загрузка товара…</span>
       <Skeleton className="aspect-[4/3] w-full rounded-lg" />
       <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-2/3" />
@@ -78,7 +88,7 @@ function Gallery({ product }: { product: StoreProduct }) {
                 aria-pressed={i === index}
                 onClick={() => setIndex(i)}
                 className={cn(
-                  'size-16 overflow-hidden rounded border-2 bg-surface-sunken',
+                  'relative size-16 overflow-hidden rounded border-2 bg-surface-sunken',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                   i === index ? 'border-primary' : 'border-border-subtle',
                 )}
@@ -90,6 +100,15 @@ function Gallery({ product }: { product: StoreProduct }) {
                   height={64}
                   className="h-full w-full object-cover"
                 />
+                {i === index ? (
+                  <span
+                    aria-hidden
+                    data-testid="thumb-selected"
+                    className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                  >
+                    <Check className="size-3.5" />
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}
@@ -116,36 +135,44 @@ function VariantPicker({
         {variants.map((variant) => {
           const checked = variant.id === value;
           return (
-            <label
-              key={variant.id}
-              className={cn(
-                'flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 transition-colors',
-                'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background',
-                checked
-                  ? 'border-primary bg-primary-soft'
-                  : 'border-border bg-surface hover:bg-muted',
-              )}
-            >
+            <label key={variant.id} className="relative block cursor-pointer">
               <input
                 type="radio"
                 name={name}
                 value={variant.id}
                 checked={checked}
                 onChange={() => onChange(variant.id)}
-                className="sr-only"
+                className="peer sr-only"
               />
-              <span className="text-sm font-medium">
-                {variant.name ?? durationLabel(variant.duration)}
-              </span>
-              <span className="font-display text-lg font-bold tabular">
-                {formatMoney(variant.price)}
-              </span>
-              {variant.oldPrice && Number(variant.oldPrice) > Number(variant.price) ? (
-                <span className="text-xs text-muted-foreground">
-                  <span className="sr-only">Старая цена: </span>
-                  <s>{formatMoney(variant.oldPrice)}</s>
+              <span
+                className={cn(
+                  'flex flex-col gap-0.5 rounded-lg border p-3 pr-9 transition-colors',
+                  'peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+                  checked
+                    ? 'border-primary bg-primary-soft'
+                    : 'border-border bg-surface hover:bg-muted',
+                )}
+              >
+                {checked ? (
+                  <span
+                    aria-hidden
+                    data-testid="variant-selected"
+                    className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                  >
+                    <Check className="size-3.5" />
+                  </span>
+                ) : null}
+                <span className="text-sm font-medium">{durationLabel(variant.duration)}</span>
+                <span className="font-display text-lg font-bold tabular">
+                  {formatMoney(variant.price)}
                 </span>
-              ) : null}
+                {variant.oldPrice && Number(variant.oldPrice) > Number(variant.price) ? (
+                  <span className="text-xs text-muted-foreground">
+                    <span className="sr-only">Старая цена: </span>
+                    <s>{formatMoney(variant.oldPrice)}</s>
+                  </span>
+                ) : null}
+              </span>
             </label>
           );
         })}
@@ -157,14 +184,30 @@ function VariantPicker({
 function QuantityField({
   value,
   max,
+  hint,
   onChange,
 }: {
   value: number;
   max: number;
+  hint?: string;
   onChange: (next: number) => void;
 }) {
   const id = useId();
+  const hintId = useId();
+  // Строка поля хранится отдельно: пустое поле при вводе не сбрасывается в 1,
+  // значение приводится к допустимому на blur.
+  const [text, setText] = useState(String(value));
+  const [note, setNote] = useState('');
+  const limitNote = `Достигнут предел: не больше ${max}.`;
   const clamp = (n: number) => Math.min(max, Math.max(1, Number.isFinite(n) ? Math.trunc(n) : 1));
+  const commit = (next: number) => {
+    const clamped = clamp(next);
+    setText(String(clamped));
+    onChange(clamped);
+    setNote(next > max ? limitNote : '');
+  };
+  const atMin = value <= 1;
+  const atMax = value >= max;
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-semibold">
@@ -175,8 +218,10 @@ function QuantityField({
           type="button"
           variant="secondary"
           aria-label="Уменьшить количество"
-          disabled={value <= 1}
-          onClick={() => onChange(clamp(value - 1))}
+          aria-disabled={atMin}
+          onClick={() => {
+            if (!atMin) commit(value - 1);
+          }}
         >
           <Minus />
         </IconButton>
@@ -186,20 +231,49 @@ function QuantityField({
           inputMode="numeric"
           min={1}
           max={max}
-          value={value}
-          onChange={(event) => onChange(clamp(event.target.valueAsNumber))}
-          className="h-control w-20 rounded border border-border-subtle bg-background-subtle px-2 text-center text-sm tabular focus-visible:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20"
+          value={text}
+          aria-describedby={hint ? hintId : undefined}
+          onChange={(event) => {
+            const raw = event.target.value;
+            setText(raw);
+            const parsed = event.target.valueAsNumber;
+            if (raw === '' || !Number.isFinite(parsed)) return;
+            if (parsed > max) {
+              commit(parsed);
+            } else if (parsed >= 1) {
+              setNote('');
+              onChange(Math.trunc(parsed));
+            }
+          }}
+          onBlur={() => {
+            commit(text.trim() === '' ? value : Number(text));
+          }}
+          className="h-control w-20 rounded border border-border-subtle bg-background-subtle px-2 text-center text-sm tabular focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         />
         <IconButton
           type="button"
           variant="secondary"
           aria-label="Увеличить количество"
-          disabled={value >= max}
-          onClick={() => onChange(clamp(value + 1))}
+          aria-disabled={atMax}
+          onClick={() => {
+            if (atMax) {
+              setNote(limitNote);
+            } else {
+              commit(value + 1);
+            }
+          }}
         >
           <Plus />
         </IconButton>
       </div>
+      {hint ? (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
+      <p role="status" data-testid="quantity-note" className="sr-only">
+        {note}
+      </p>
     </div>
   );
 }
@@ -238,8 +312,9 @@ function ProductDetails({ product }: { product: StoreProduct }) {
           <p
             data-testid="already-purchased"
             role="status"
-            className="rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-success"
+            className="flex items-center gap-2 rounded-lg bg-success-soft px-3 py-2 text-sm font-medium text-foreground"
           >
+            <Check aria-hidden className="size-4 text-success" />
             Вы уже купили этот товар — повторно он не продаётся.
           </p>
         ) : null}
@@ -257,12 +332,16 @@ function ProductDetails({ product }: { product: StoreProduct }) {
               </p>
             ) : (
               <>
-                <QuantityField value={quantity} max={max} onChange={setQuantity} />
-                {product.maxPerPurchase ? (
-                  <p className="-mt-3 text-xs text-muted-foreground">
-                    Не больше {product.maxPerPurchase} за одну покупку.
-                  </p>
-                ) : null}
+                <QuantityField
+                  value={quantity}
+                  max={max}
+                  hint={
+                    product.maxPerPurchase
+                      ? `Не больше ${product.maxPerPurchase} за одну покупку.`
+                      : undefined
+                  }
+                  onChange={setQuantity}
+                />
               </>
             )}
             <div className="flex flex-col gap-2 border-t border-border-subtle pt-4">
@@ -295,9 +374,9 @@ function ProductDetails({ product }: { product: StoreProduct }) {
           <p
             role="status"
             data-testid="unavailable"
-            className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm font-medium text-warning"
+            className="flex items-center gap-2 rounded-lg bg-warning-soft px-3 py-2 text-sm font-medium text-foreground"
           >
-            <PackageX aria-hidden className="size-4" />
+            <PackageX aria-hidden className="size-4 text-warning" />
             Нет в наличии: у товара нет доступных вариантов.
           </p>
         )}
@@ -330,7 +409,7 @@ function BoughtTogether({ slug }: { slug: string }) {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
       >
         {items.map((item) => (
-          <ProductCard key={item.id} product={item} />
+          <ProductCard key={item.id} product={item} headingLevel={3} />
         ))}
       </ul>
     </section>
@@ -374,15 +453,9 @@ function ProductPageContent() {
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-8 px-4 py-8 md:px-6">
       <Breadcrumbs
-        items={[
-          { label: 'Магазин', href: '/shop' },
-          ...(product?.category ? [{ label: product.category.name, href: '/shop' }] : []),
-          { label: product?.name ?? 'Товар' },
-        ]}
+        items={[{ label: 'Магазин', href: '/shop' }, { label: product?.name ?? 'Товар' }]}
       />
-      <div aria-live="polite" aria-busy={query.isPending} className="flex flex-col gap-8">
-        {body}
-      </div>
+      <div className="flex flex-col gap-8">{body}</div>
     </div>
   );
 }

@@ -97,7 +97,21 @@ describe('каталог /shop', () => {
   it('состояние загрузки — скелетон', () => {
     mocks.get.mockImplementation(() => new Promise(() => {}));
     render(<ShopPage />, { wrapper: Providers });
-    expect(screen.getByTestId('catalog-skeleton')).toBeInTheDocument();
+    const skeleton = screen.getByTestId('catalog-skeleton');
+    expect(skeleton).toHaveAttribute('role', 'status');
+    expect(skeleton).toHaveTextContent('Загрузка каталога…');
+  });
+
+  it('заголовки: h2 у карточек каталога и «Бонусов», aria-busy при загрузке', async () => {
+    route({ '/store/categories': CATEGORIES, '/store/products': list([PRODUCT]) });
+    render(<ShopPage />, { wrapper: Providers });
+    const catalog = await screen.findByTestId('catalog-list');
+    expect(
+      within(catalog).getByRole('heading', { level: 2, name: 'Тестовая привилегия' }),
+    ).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: 'Бонусы' })).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Бонусы' })).toBeInTheDocument();
+    expect(catalog.parentElement).toHaveAttribute('aria-busy', 'false');
   });
 
   it('пустой каталог — пояснение без кнопки сброса', async () => {
@@ -196,11 +210,73 @@ describe('карточка /shop/[slug]', () => {
     await user.clear(qty);
     await user.type(qty, '99');
     expect(qty).toHaveValue(5);
-    expect(screen.getByRole('button', { name: 'Увеличить количество' })).toBeDisabled();
+    const plus = screen.getByRole('button', { name: 'Увеличить количество' });
+    expect(plus).toHaveAttribute('aria-disabled', 'true');
+    expect(plus).not.toBeDisabled();
     expect(screen.getByText('Не больше 5 за одну покупку.')).toBeInTheDocument();
+    expect(qty).toHaveAccessibleDescription('Не больше 5 за одну покупку.');
 
     await user.click(screen.getByRole('radio', { name: /Навсегда/ }));
     expect(screen.getByRole('radio', { name: /Навсегда/ })).toBeChecked();
+    expect(screen.getAllByTestId('variant-selected')).toHaveLength(1);
+  });
+
+  it('очистка поля количества не сбрасывает в 1, на blur возвращается последнее значение', async () => {
+    const user = userEvent.setup();
+    route({ '/store/products/ares': PRODUCT, '/store/products/ares/bought-together': [] });
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByRole('heading', { level: 1 });
+    const qty = screen.getByRole('spinbutton', { name: 'Количество' });
+    await user.clear(qty);
+    await user.type(qty, '3');
+    expect(qty).toHaveValue(3);
+    await user.clear(qty);
+    expect(qty).toHaveValue(null);
+    await user.tab();
+    expect(qty).toHaveValue(3);
+    await user.clear(qty);
+    await user.type(qty, '0');
+    await user.tab();
+    expect(qty).toHaveValue(1);
+  });
+
+  it('кнопки +/- через aria-disabled: клик на пределе игнорируется, фокус не теряется, лимит озвучивается', async () => {
+    const user = userEvent.setup();
+    route({ '/store/products/ares': PRODUCT, '/store/products/ares/bought-together': [] });
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByRole('heading', { level: 1 });
+    const qty = screen.getByRole('spinbutton', { name: 'Количество' });
+    const minus = screen.getByRole('button', { name: 'Уменьшить количество' });
+    const plus = screen.getByRole('button', { name: 'Увеличить количество' });
+    expect(minus).toHaveAttribute('aria-disabled', 'true');
+    await user.click(minus);
+    expect(qty).toHaveValue(1);
+
+    await user.click(plus);
+    expect(qty).toHaveValue(2);
+    expect(minus).toHaveAttribute('aria-disabled', 'false');
+    await user.clear(qty);
+    await user.type(qty, '5');
+    plus.focus();
+    await user.keyboard('{Enter}');
+    expect(qty).toHaveValue(5);
+    expect(plus).toHaveFocus();
+    expect(screen.getByTestId('quantity-note')).toHaveTextContent('Достигнут предел: не больше 5');
+  });
+
+  it('live-область только у загрузки и ошибки, не у всего тела страницы', async () => {
+    mocks.get.mockImplementation(() => new Promise(() => {}));
+    const first = render(<ProductPage />, { wrapper: Providers });
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Загрузка товара…');
+    expect(status).toBe(screen.getByTestId('product-skeleton'));
+    first.unmount();
+
+    route({ '/store/products/ares': PRODUCT, '/store/products/ares/bought-together': [] });
+    const { container } = render(<ProductPage />, { wrapper: Providers });
+    await screen.findByRole('heading', { level: 1 });
+    expect(container.querySelector('[aria-live]')).toBeNull();
+    expect(container.querySelector('[aria-busy]')).toBeNull();
   });
 
   it('уникальный товар: количество зафиксировано, пометка «уже куплено» — если API её отдал', async () => {
@@ -246,6 +322,18 @@ describe('карточка /shop/[slug]', () => {
       'href',
       '/shop/zeus',
     );
+    // заголовок карточки внутри блока с h2 — h3
+    expect(within(block).getByRole('heading', { level: 3, name: 'Другой товар' })).toBeVisible();
+    expect(within(block).queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
+  });
+
+  it('крошки: категория не дублирует «Магазин»', async () => {
+    route({ '/store/products/ares': PRODUCT, '/store/products/ares/bought-together': [] });
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByRole('heading', { level: 1 });
+    const nav = screen.getByRole('navigation');
+    expect(within(nav).getAllByRole('link', { name: 'Магазин' })).toHaveLength(1);
+    expect(within(nav).queryByText('Привилегии')).not.toBeInTheDocument();
   });
 
   it('загрузка, 404 и ошибка сервера', async () => {

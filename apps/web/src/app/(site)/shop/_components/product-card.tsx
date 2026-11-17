@@ -28,11 +28,20 @@ export function ProductPrice({
 }
 
 /// Карточка каталога: вся карточка — одна ссылка на `/shop/[slug]`.
-export function ProductCard({ product }: { product: StoreProduct }) {
+/// `headingLevel` — уровень заголовка названия: h2 в каталоге, h3 внутри
+/// блока со своим h2 («Покупают вместе»).
+export function ProductCard({
+  product,
+  headingLevel = 2,
+}: {
+  product: StoreProduct;
+  headingLevel?: 2 | 3;
+}) {
   const available = priceSummary(product).min !== null;
+  const Heading = headingLevel === 3 ? 'h3' : 'h2';
   return (
     <li data-context="product" data-context-name={product.name}>
-      <Card className="group relative flex h-full flex-col gap-3 transition-colors focus-within:ring-2 focus-within:ring-primary hover:border-border-strong">
+      <Card className="group relative flex h-full flex-col gap-3 transition-colors hover:border-border-strong">
         <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded bg-surface-sunken">
           {product.image ? (
             <ProtectedImage
@@ -54,14 +63,17 @@ export function ProductCard({ product }: { product: StoreProduct }) {
             {product.isNew ? <Badge tone="primary">Новинка</Badge> : null}
             {product.isPopular ? <Badge>Популярное</Badge> : null}
           </div>
-          <h2 className="truncate text-base font-semibold">
+          <Heading className="line-clamp-2 text-base font-semibold">
             <Link
               href={`/shop/${product.slug}`}
-              className="rounded-sm outline-none after:absolute after:inset-0 after:content-['']"
+              className={
+                "rounded-sm outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] " +
+                'focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-background'
+              }
             >
               {product.name}
             </Link>
-          </h2>
+          </Heading>
           {product.description ? (
             <p className="line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
           ) : null}
@@ -70,7 +82,7 @@ export function ProductCard({ product }: { product: StoreProduct }) {
           className={
             available
               ? 'mt-auto font-display text-lg font-bold tabular'
-              : 'mt-auto text-sm font-medium text-muted-foreground'
+              : 'mt-auto text-sm font-medium text-foreground'
           }
         >
           <ProductPrice product={product} />

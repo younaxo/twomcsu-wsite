@@ -26,6 +26,10 @@ export function durationLabel(duration: string | undefined, fallback = 'Вари
 export interface StoreVariant {
   id: string;
   duration?: ProductDuration;
+  /// Устарело и НЕ отображается: API не отдаёт название варианта (человекочитаемая
+  /// подпись строится из `duration` через `durationLabel`, с безопасным fallback
+  /// «Вариант»). Поле оставлено для совместимости типов.
+  /** @deprecated не использовать в UI; см. durationLabel */
   name?: string;
   price: DecimalString;
   oldPrice?: DecimalString | null;
