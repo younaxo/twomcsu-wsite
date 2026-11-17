@@ -22,13 +22,17 @@ describe('InventoryRetentionService (очистка выключена: толь
     const recent = new Date(T0.getTime() - 10 * DAY);
     await apply.applySnapshot(
       'old',
-      snapshot({ capturedAt: longAgo.toISOString() }),
+      snapshot({
+        capturedAt: longAgo.toISOString(),
+        epoch: longAgo.getTime() - 60_000,
+      }),
       longAgo,
     );
     await apply.applySnapshot(
       'new',
       snapshot({
         capturedAt: recent.toISOString(),
+        epoch: recent.getTime() - 60_000,
         slots: [{ area: 'hotbar', slot: 0, item: item('minecraft:stone') }],
       }),
       recent,
@@ -48,9 +52,13 @@ describe('InventoryRetentionService (очистка выключена: толь
     const edge = new Date(T0.getTime() - 90 * DAY);
     await apply.applySnapshot(
       'edge',
-      snapshot({ capturedAt: edge.toISOString() }),
+      snapshot({
+        capturedAt: edge.toISOString(),
+        epoch: edge.getTime() - 60_000,
+      }),
       edge,
     );
+    expect(store.get('u1', 'edge', 'main')).toBeDefined();
     expect(await new InventoryRetentionService(store).purgeStale(T0)).toBe(0);
   });
 });

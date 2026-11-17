@@ -6,12 +6,14 @@ import {
   snapshot,
   T0,
   TEST_EPOCH,
+  TEST_EPOCH_STORED,
   TEST_EPOCH_2,
+  TEST_EPOCH_2_STORED,
   TEST_UUID,
   TEST_UUID_2,
 } from '../../../test/support/in-memory-inventory';
 import { InventoryApplyService } from './inventory-apply.service';
-import { reparseStoredSlots } from './inventory-normalize';
+import { parseSnapshot, reparseStoredSlots } from './inventory-normalize';
 
 const USER = 'user-1';
 const SERVER = 'survival';
@@ -25,6 +27,48 @@ function setup() {
 
 const NOW = new Date(T0.getTime() + 10_000);
 
+describe('InventoryApplyService: epoch (L-1)', () => {
+  it('epoch выше now + 10 минут — epoch_out_of_range, БД не вызывается', async () => {
+    const { store, service } = setup();
+    const tooFar = NOW.getTime() + 11 * 60_000;
+    expect(
+      await service.applySnapshot(SERVER, snapshot({ epoch: tooFar }), NOW),
+    ).toMatchObject({ status: 'rejected', code: 'epoch_out_of_range' });
+    expect(
+      await service.applyDelta(SERVER, delta({ epoch: tooFar }), NOW),
+    ).toMatchObject({ status: 'rejected', code: 'epoch_out_of_range' });
+    expect(store.mutateCalls).toBe(0);
+  });
+
+  it.each([
+    ['строка из цифр', String(TEST_EPOCH)],
+    ['ULID-подобная строка', '01JC0000000000000000000001'],
+    ['дробное', 1.5],
+    ['ноль', 0],
+    ['отрицательное', -5],
+    ['выше безопасного целого', 2 ** 60],
+    ['Infinity', Infinity],
+    ['null', null],
+  ])(
+    'нечисловой или недопустимый epoch (%s) — invalid_data',
+    async (_n, epoch) => {
+      const { store, service } = setup();
+      expect(
+        await service.applySnapshot(SERVER, snapshot({ epoch }), NOW),
+      ).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+      expect(store.mutateCalls).toBe(0);
+    },
+  );
+
+  it('граница: now + 10 минут принимается', async () => {
+    const { service } = setup();
+    const limit = NOW.getTime() + 10 * 60_000;
+    expect(
+      await service.applySnapshot(SERVER, snapshot({ epoch: limit }), NOW),
+    ).toMatchObject({ status: 'applied' });
+  });
+});
+
 describe('InventoryApplyService.applySnapshot', () => {
   it('сохраняет первый снимок', async () => {
     const { store, service } = setup();
@@ -35,7 +79,7 @@ describe('InventoryApplyService.applySnapshot', () => {
       contentChanged: true,
     });
     const row = store.get(USER, SERVER, 'main')!;
-    expect(row.epoch).toBe(TEST_EPOCH);
+    expect(row.epoch).toBe(TEST_EPOCH_STORED);
     expect(row.rev).toBe(1);
     expect(row.slotCount).toBe(1);
     expect(row.contentHash).toMatch(/^[0-9a-f]{64}$/);
@@ -51,7 +95,7 @@ describe('InventoryApplyService.applySnapshot', () => {
     expect(text).not.toContain(TEST_UUID);
   });
 
-  it('повтор того же снимка безвреден: содержимое не перезаписывается', async () => {
+  it('M-2: повтор того же снимка (равные epoch и rev, тот же состав) — applied без изменений, ряд не пишется', async () => {
     const { store, service } = setup();
     await service.applySnapshot(SERVER, snapshot(), NOW);
     const before = store.get(USER, SERVER, 'main')!;
@@ -65,7 +109,8 @@ describe('InventoryApplyService.applySnapshot', () => {
     const after = store.get(USER, SERVER, 'main')!;
     expect(after.slots).toStrictEqual(before.slots);
     expect(after.contentHash).toBe(before.contentHash);
-    expect(after.lastSeenAt).toEqual(later);
+    expect(after).toBe(before);
+    expect(after.lastSeenAt).toEqual(NOW);
   });
 
   it('тот же состав с новой эпохой и ревизией: обновляются метаданные, не слоты', async () => {
@@ -84,7 +129,7 @@ describe('InventoryApplyService.applySnapshot', () => {
     );
     expect(result).toMatchObject({ status: 'applied', contentChanged: false });
     const row = store.get(USER, SERVER, 'main')!;
-    expect(row.epoch).toBe(TEST_EPOCH_2);
+    expect(row.epoch).toBe(TEST_EPOCH_2_STORED);
     expect(row.rev).toBe(7);
     expect(row.playerOnline).toBe(false);
     expect(row.slots).toBe(slotsBefore);
@@ -147,22 +192,40 @@ describe('InventoryApplyService.applySnapshot', () => {
     expect(store.get(USER, SERVER, 'main')).toBe(before);
   });
 
-  it('равный capturedAt: побеждает принятый позже', async () => {
+  it('M-2: равные epoch и rev с другим составом — stale, ряд не меняется (capturedAt не участвует)', async () => {
     const { store, service } = setup();
     await service.applySnapshot(SERVER, snapshot(), NOW);
-    const result = await service.applySnapshot(
-      SERVER,
+    const before = store.get(USER, SERVER, 'main')!;
+    const other = [{ area: 'hotbar', slot: 2, item: item('minecraft:dirt') }];
+    for (const capturedAt of [iso(0), iso(5), iso(-5)]) {
+      const result = await service.applySnapshot(
+        SERVER,
+        snapshot({ slots: other, capturedAt }),
+        NOW,
+      );
+      expect(result).toEqual({ status: 'stale' });
+    }
+    expect(store.get(USER, SERVER, 'main')).toBe(before);
+  });
+
+  it('M-2: одиночный и собранный снимок решают равные (epoch, rev) одинаково', async () => {
+    const { store, service } = setup();
+    await service.applySnapshot(SERVER, snapshot(), NOW);
+    const before = store.get(USER, SERVER, 'main')!;
+    const parsedSame = parseSnapshot(snapshot(), NOW);
+    const parsedOther = parseSnapshot(
       snapshot({
         slots: [{ area: 'hotbar', slot: 2, item: item('minecraft:dirt') }],
       }),
       NOW,
     );
-    expect(result).toMatchObject({ status: 'applied', contentChanged: true });
+    expect(await service.applyAssembled(SERVER, USER, parsedSame, NOW)).toEqual(
+      { status: 'applied', kind: 'snapshot', contentChanged: false },
+    );
     expect(
-      reparseStoredSlots(store.get(USER, SERVER, 'main')!.slots)[0],
-    ).toMatchObject({
-      slot: 2,
-    });
+      await service.applyAssembled(SERVER, USER, parsedOther, NOW),
+    ).toEqual({ status: 'stale' });
+    expect(store.get(USER, SERVER, 'main')).toBe(before);
   });
 
   it('пустой снимок (все слоты пусты) принимается и очищает ряд', async () => {

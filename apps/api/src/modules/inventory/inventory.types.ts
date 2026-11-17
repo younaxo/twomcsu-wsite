@@ -84,7 +84,7 @@ export type ApplyResult =
   | { status: 'resync_required' }
   | {
       status: 'rejected';
-      code: 'invalid_data' | 'unknown_player';
+      code: 'invalid_data' | 'unknown_player' | 'epoch_out_of_range';
       /// Короткая причина без содержимого предметов.
       reason?: string;
     };
@@ -93,5 +93,14 @@ export class InventoryValidationError extends Error {
   constructor(readonly reason: string) {
     super(reason);
     this.name = 'InventoryValidationError';
+  }
+}
+
+/// `epoch` — число, но вне допустимого окна `[1; сейчас + 10 минут]`
+/// (`rejected epoch_out_of_range`, раздел 3.5 дизайна).
+export class EpochOutOfRangeError extends InventoryValidationError {
+  constructor() {
+    super('epoch: вне допустимого окна');
+    this.name = 'EpochOutOfRangeError';
   }
 }

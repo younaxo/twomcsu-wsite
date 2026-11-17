@@ -16,6 +16,7 @@ import {
   type StoredInventory,
 } from './inventory.store';
 import {
+  EpochOutOfRangeError,
   InventoryValidationError,
   type ApplyResult,
   type NormalizedDelta,
@@ -95,6 +96,13 @@ export class InventoryApplyService {
     try {
       parsed = parse();
     } catch (error) {
+      if (error instanceof EpochOutOfRangeError) {
+        return {
+          status: 'rejected',
+          code: 'epoch_out_of_range',
+          reason: error.reason,
+        };
+      }
       if (error instanceof InventoryValidationError) {
         return {
           status: 'rejected',
@@ -125,17 +133,29 @@ export class InventoryApplyService {
         lastSeenAt: now,
         playerOnline: snapshot.playerOnline,
       };
-      // Единый порядок свежести (раздел 3.5): `epoch`, затем `rev`;
-      // `capturedAt` не участвует. Старее сохранённого — stale (в том числе
-      // регресс `rev` в той же эпохе). Только при равных `(epoch, rev)`
-      // ряд не хранит `snapshotId`, поэтому остаётся прежняя развязка по
-      // `capturedAt`: старее — stale, иначе побеждает принятый позже.
+      // Единый порядок свежести (раздел 3.5; одно правило для одиночного и
+      // собранного снимка, `applyAssembled` идёт сюда же): `epoch`, затем
+      // `rev`; `capturedAt` не участвует. Применяется ТОЛЬКО строго более
+      // свежий, как `WHERE (epoch, rev) < (EXCLUDED.epoch, EXCLUDED.rev)`.
+      // Равные `(epoch, rev)` повторно не применяются: ряд не хранит
+      // `snapshotId` (схема БД не менялась), поэтому повтор отличается по
+      // `contentHash`: тот же состав — повтор применённого (`applied`,
+      // `contentChanged: false`, запись не выполняется, как «snapshot_applied
+      // без изменений»); другой состав — `stale`.
       if (current) {
         const order = compareFreshness(snapshot, current);
-        if (
-          order < 0 ||
-          (order === 0 && snapshot.capturedAt < current.capturedAt)
-        ) {
+        if (order < 0) return { write: null, result: { status: 'stale' } };
+        if (order === 0) {
+          if (current.contentHash === contentHash) {
+            return {
+              write: null,
+              result: {
+                status: 'applied',
+                kind: 'snapshot',
+                contentChanged: false,
+              },
+            };
+          }
           return { write: null, result: { status: 'stale' } };
         }
       }

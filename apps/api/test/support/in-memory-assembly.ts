@@ -8,6 +8,7 @@ import type {
   AssemblyMark,
   FinishInput,
   FinishResult,
+  InfoMemory,
   InventoryAssemblyStore,
   OfferInput,
   OfferResult,
@@ -42,13 +43,22 @@ interface ServerState {
 
 export class InMemoryAssemblyStore implements InventoryAssemblyStore {
   /// Счётчик обращений: проверки до Redis должны оставлять нули.
-  readonly calls = { probe: 0, offer: 0, finish: 0, configGet: 0 };
+  readonly calls = { probe: 0, offer: 0, finish: 0, configGet: 0, info: 0 };
   /// Redis недоступен: любая операция бросает.
   down = false;
   /// Значения для `CONFIG GET`; `configError` — команда запрещена.
   policy: string | null = 'noeviction';
   maxMemory: string | null = String(512 * 1024 * 1024);
-  configError = false;
+  /// Ошибка `CONFIG GET`: `true` — NOPERM (ACL); строка — своё сообщение
+  /// (например, таймаут); `false` — команда работает.
+  configError: boolean | string = false;
+  /// `INFO memory` недоступен (запрет ACL).
+  infoError = false;
+  /// `INFO memory` упал не по ACL (обрыв соединения): текст ошибки.
+  infoFailure: string | null = null;
+  /// Значения для `INFO memory`; по умолчанию — те же, что у `CONFIG GET`.
+  infoPolicy: string | null | undefined = undefined;
+  infoMaxMemory: string | null | undefined = undefined;
 
   /// `clock` — часы модели (мс): TTL ключей считаются по ним, как Redis по
   /// своим; тест двигает их вместе с `now`, который передаёт сборщику.
@@ -261,6 +271,12 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
           reason: 'assembly_too_large',
         };
       }
+      // M-1: рост сборки после создания не выходит за потолки и долю сервера.
+      const over = this.ceilings(input, s, part.bytes, 0, false);
+      if (over) {
+        this.drop(s, id);
+        return { kind: 'rejected', code: 'resync_required', reason: over };
+      }
       asm.p.set(part.n, {
         json: part.slotsJson,
         hash: part.hash,
@@ -284,6 +300,38 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
     return { kind: 'complete', userId: asm.userId, parts };
   }
 
+  /// Потолки памяти (зеркало `ceilings` в Lua): буфер сервера, служебная
+  /// память, число серверов, доля сервера, глобальный потолок. Вызывается при
+  /// создании сборки И при записи каждой новой части (M-1).
+  private ceilings(
+    input: OfferInput,
+    s: ServerState,
+    addBuf: number,
+    addSvc: number,
+    creating: boolean,
+  ): string | null {
+    const c = input.config;
+    const buf = this.bufferBytes(s);
+    if (buf + addBuf > c.maxBufferBytesPerServer) return 'ceiling_buffer';
+    const svcB = this.svcBytes(s, c);
+    if (addSvc > 0 && svcB + addSvc > c.maxServiceBytesPerServer) {
+      return 'ceiling_service';
+    }
+    let n = this.global.size;
+    if (!this.global.has(input.serverId)) {
+      if (creating && n >= c.maxServers) return 'ceiling_servers';
+      n += 1;
+    }
+    const share = Math.min(c.maxServerBytes, Math.floor(c.maxGlobalBytes / n));
+    if (buf + svcB + addBuf + addSvc > share) return 'ceiling_server';
+    let total = 0;
+    for (const g of this.global.values()) total += g.bytes;
+    const mine = this.global.get(input.serverId)?.bytes ?? 0;
+    total = total - mine + buf + svcB + addBuf + addSvc;
+    if (total > c.maxGlobalBytes) return 'ceiling_global';
+    return null;
+  }
+
   private create(
     input: OfferInput,
     s: ServerState,
@@ -305,29 +353,14 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
     if (s.asms.size >= c.maxAssembliesPerServer) {
       return refuse('ceiling_assemblies');
     }
-    const buf = this.bufferBytes(s);
-    const newBytes = input.part.bytes + c.assemblyOverheadBytes;
-    if (buf + newBytes > c.maxBufferBytesPerServer) {
-      return refuse('ceiling_buffer');
-    }
-    const svcB = this.svcBytes(s, c);
-    if (svcB + c.serviceBytesPerSnapshot > c.maxServiceBytesPerServer) {
-      return refuse('ceiling_service');
-    }
-    let n = this.global.size;
-    if (!this.global.has(input.serverId)) {
-      if (n >= c.maxServers) return refuse('ceiling_servers');
-      n += 1;
-    }
-    const share = Math.min(c.maxServerBytes, Math.floor(c.maxGlobalBytes / n));
-    if (buf + svcB + newBytes + c.serviceBytesPerSnapshot > share) {
-      return refuse('ceiling_server');
-    }
-    let total = 0;
-    for (const g of this.global.values()) total += g.bytes;
-    const mine = this.global.get(input.serverId)?.bytes ?? 0;
-    total = total - mine + buf + svcB + newBytes + c.serviceBytesPerSnapshot;
-    if (total > c.maxGlobalBytes) return refuse('ceiling_global');
+    const over = this.ceilings(
+      input,
+      s,
+      input.part.bytes + c.assemblyOverheadBytes,
+      c.serviceBytesPerSnapshot,
+      true,
+    );
+    if (over) return refuse(over);
 
     // Вытеснение самой старой по firstSeenAt: только после всех проверок.
     const own = () =>
@@ -424,8 +457,32 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
   configGet(name: 'maxmemory-policy' | 'maxmemory'): Promise<string | null> {
     this.calls.configGet += 1;
     this.guard();
-    if (this.configError) return Promise.reject(new Error('CONFIG denied'));
+    if (this.configError) {
+      const message =
+        this.configError === true
+          ? "NOPERM this user has no permissions to run the 'config|get' command"
+          : this.configError;
+      return Promise.reject(new Error(message));
+    }
     return Promise.resolve(name === 'maxmemory' ? this.maxMemory : this.policy);
+  }
+
+  infoMemory(): Promise<InfoMemory> {
+    this.calls.info += 1;
+    this.guard();
+    if (this.infoFailure) return Promise.reject(new Error(this.infoFailure));
+    if (this.infoError) {
+      return Promise.reject(
+        new Error(
+          "NOPERM this user has no permissions to run the 'info' command",
+        ),
+      );
+    }
+    return Promise.resolve({
+      policy: this.infoPolicy === undefined ? this.policy : this.infoPolicy,
+      maxMemory:
+        this.infoMaxMemory === undefined ? this.maxMemory : this.infoMaxMemory,
+    });
   }
 
   // --- наблюдение для тестов -----------------------------------------------

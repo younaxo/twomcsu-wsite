@@ -5,6 +5,8 @@
 
 export const INVENTORY_ASSEMBLY_CONFIG = Symbol('INVENTORY_ASSEMBLY_CONFIG');
 
+import { EPOCH_MAX_AHEAD_MS } from './inventory-limits';
+
 const MB = 1024 * 1024;
 const KB = 1024;
 
@@ -47,9 +49,12 @@ export interface AssemblyConfig {
   epochAlarmAheadMs: number;
   /// Запись сервера в `g` старше `TTLsvc` + запас удаляется лениво.
   globalEntryExtraMs: number;
-  /// Состояние политики Redis подтверждено владельцем явно (CONFIG GET
-  /// недоступен: управляемый Redis, запрет ACL). Значение задаёт только
-  /// владелец; по умолчанию `false` (fail-closed).
+  /// Состояние политики Redis подтверждено владельцем явно (CONFIG GET и
+  /// INFO memory недоступны по ACL: управляемый Redis). Читается ТОЛЬКО из
+  /// конфигурации владельца: переменная окружения
+  /// `INVENTORY_REDIS_POLICY_ACKNOWLEDGED=true`; необязательна, без значения
+  /// по умолчанию `true` (fail-closed). Действует только при отказе ACL
+  /// (NOPERM); любая иная ошибка проверки флаг не учитывает.
   redisPolicyAcknowledged: boolean;
 }
 
@@ -78,11 +83,22 @@ export const DEFAULT_ASSEMBLY_CONFIG: AssemblyConfig = {
   assembliesPerPlayerGroup: 2,
   serviceBytesPerSnapshot: 2 * KB,
   assemblyOverheadBytes: 1 * KB,
-  epochMaxAheadMs: 10 * 60 * 1000,
+  epochMaxAheadMs: EPOCH_MAX_AHEAD_MS,
   epochAlarmAheadMs: 120 * 1000,
   globalEntryExtraMs: 30_000,
   redisPolicyAcknowledged: false,
 };
+
+/// Флаг подтверждения политики Redis из окружения владельца: только строка
+/// `true` (без учёта регистра); пусто, не задано, любое иное — `false`.
+export function redisPolicyAcknowledgedFromEnv(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return (
+    (env.INVENTORY_REDIS_POLICY_ACKNOWLEDGED ?? '').trim().toLowerCase() ===
+    'true'
+  );
+}
 
 /// Собирает и проверяет конфигурацию. `ttlSvcMs`, если не задан, выводится из
 /// `assemblyTimeoutMs`. Приёмник отказывается запускать сборку при
@@ -98,6 +114,8 @@ export function resolveAssemblyConfig(
   const config: AssemblyConfig = {
     ...DEFAULT_ASSEMBLY_CONFIG,
     ...overrides,
+    redisPolicyAcknowledged:
+      overrides.redisPolicyAcknowledged ?? redisPolicyAcknowledgedFromEnv(),
     assemblyTimeoutMs: timeout,
     ttlSvcMs: overrides.ttlSvcMs ?? deriveTtlSvcMs(timeout),
   };

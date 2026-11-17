@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import {
   INVENTORY_ASSEMBLY_CONFIG,
@@ -69,6 +69,7 @@ export class InventoryAssemblerService {
   private readonly config: AssemblyConfig;
   /// Счётчики `bridge_inventory_parts_total{result}` (раздел 4.4, метрики).
   readonly counters = new Map<string, number>();
+  private readonly logger = new Logger(InventoryAssemblerService.name);
 
   constructor(
     @Inject(INVENTORY_ASSEMBLY_STORE)
@@ -124,6 +125,17 @@ export class InventoryAssemblerService {
       }
       throw error;
     }
+    // Зона «120 с … 10 минут» принимается С тревогой (раздел 3.5): метрика и
+    // предупреждение без UUID и содержимого. Выше 10 минут — отказ выше.
+    if (Number(part.epoch) - now.getTime() > this.config.epochAlarmAheadMs) {
+      this.counters.set(
+        'alarm:epoch_ahead',
+        (this.counters.get('alarm:epoch_ahead') ?? 0) + 1,
+      );
+      this.logger.warn(
+        `inventory: epoch опережает часы приёмника более чем на ${this.config.epochAlarmAheadMs} мс (сервер ${serverSlug})`,
+      );
+    }
     // П1: политика Redis (флаг в памяти процесса).
     if (!this.policy.isConfirmed()) {
       return rejected('resync_required', 'policy_blocked');
@@ -167,6 +179,7 @@ export class InventoryAssemblerService {
         const current = (
           await this.db(() => this.rows.listForUser(own, serverSlug))
         ).find((row) => row.group === part.group);
+        // Равные `(epoch, rev)` не применяются повторно (3.5, П3 в): stale.
         if (current && compareFreshness(part, current) <= 0) {
           return { status: 'stale' };
         }

@@ -122,4 +122,12 @@ export interface InventoryAssemblyStore {
   /// `CONFIG GET maxmemory-policy | maxmemory`; `null` — значения нет.
   /// Бросает, если команда недоступна (ACL, управляемый Redis).
   configGet(name: 'maxmemory-policy' | 'maxmemory'): Promise<string | null>;
+  /// `INFO memory`: поля `maxmemory_policy` и `maxmemory` (`null` — поля нет).
+  /// Запасной путь, когда `CONFIG GET` запрещён ACL. Бросает при ошибке.
+  infoMemory(): Promise<InfoMemory>;
+}
+
+export interface InfoMemory {
+  policy: string | null;
+  maxMemory: string | null;
 }

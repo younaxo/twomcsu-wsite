@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import type { InventoryArea, InventoryGroup } from './inventory-contract';
 import {
   AREA_ORDER,
+  EPOCH_MAX_AHEAD_MS,
   AREA_SIZE,
   GROUP_AREAS,
   GROUP_SLOT_LIMIT,
@@ -19,6 +20,7 @@ import {
 } from './inventory-limits';
 import { sanitizeRun } from './inventory-text';
 import {
+  EpochOutOfRangeError,
   InventoryValidationError,
   type NormalizedDelta,
   type NormalizedEnchant,
@@ -39,8 +41,6 @@ type Obj = Record<string, unknown>;
 
 const UUID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const EPOCH_RE = /^[\x21-\x7E]{26,64}$/;
-const EPOCH_DIGITS_RE = /^[1-9][0-9]{0,24}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|\+00:00)$/;
 const MAX_INT32 = 2_147_483_647;
 
@@ -317,23 +317,21 @@ export function parseUuid(value: unknown): string {
 }
 
 /// `epoch` растёт при каждом перезапуске плагина (раздел 3.5 дизайна).
-/// Допустимы: целое (время старта в мс; число или строка из цифр) либо
-/// строка 26-64 печатных ASCII (ULID-подобная, формат первого среза). Целое
-/// приводится к десятичной строке; порядок задаёт `compareEpoch`.
-export function parseEpoch(value: unknown): string {
-  if (typeof value === 'number') {
-    if (!Number.isSafeInteger(value) || value < 1) {
-      fail('epoch: целое от 1');
-    }
-    return String(value);
+/// Допустим ТОЛЬКО JSON number: безопасное целое (время старта в мс) от 1 до
+/// `now + maxAheadMs`. Строки (в том числе из цифр и ULID-подобные),
+/// дробные и нечисловые значения — `invalid_data`; число выше границы —
+/// `EpochOutOfRangeError`. Результат — десятичная строка для хранения;
+/// порядок задаёт `compareEpoch`.
+export function parseEpoch(
+  value: unknown,
+  now: Date,
+  maxAheadMs: number = EPOCH_MAX_AHEAD_MS,
+): string {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    fail('epoch: целое число от 1');
   }
-  if (
-    typeof value !== 'string' ||
-    !(EPOCH_RE.test(value) || EPOCH_DIGITS_RE.test(value))
-  ) {
-    fail('epoch: целое или строка 26-64 печатных ASCII');
-  }
-  return value;
+  if (value > now.getTime() + maxAheadMs) throw new EpochOutOfRangeError();
+  return String(value);
 }
 
 export function parseCapturedAt(value: unknown, now: Date): Date {
@@ -413,7 +411,7 @@ export function parseSnapshot(raw: unknown, now: Date): NormalizedSnapshot {
   const snapshot: NormalizedSnapshot = {
     uuid: parseUuid(obj.uuid),
     group,
-    epoch: parseEpoch(obj.epoch),
+    epoch: parseEpoch(obj.epoch, now),
     rev: asInt(obj.rev, 'rev', 1, MAX_INT32),
     capturedAt: parseCapturedAt(obj.capturedAt, now),
     playerOnline: asBool(obj.playerOnline, 'playerOnline'),
@@ -453,7 +451,7 @@ export function parseDelta(raw: unknown, now: Date): NormalizedDelta {
   return {
     uuid: parseUuid(obj.uuid),
     group,
-    epoch: parseEpoch(obj.epoch),
+    epoch: parseEpoch(obj.epoch, now),
     baseRev,
     rev,
     capturedAt: parseCapturedAt(obj.capturedAt, now),

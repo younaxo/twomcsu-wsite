@@ -8,7 +8,7 @@ import {
   iso,
   snapshot,
   T0,
-  TEST_EPOCH,
+  TEST_EPOCH_STORED,
   TEST_UUID,
 } from '../../../test/support/in-memory-inventory';
 import type { PrismaService } from '../prisma/prisma.service';
@@ -223,7 +223,7 @@ describe('InventoryService.getMine', () => {
     const text = JSON.stringify(res);
     expect(text).not.toContain(TEST_UUID);
     expect(text).not.toContain(USER);
-    expect(text).not.toContain(TEST_EPOCH);
+    expect(text).not.toContain(TEST_EPOCH_STORED);
     for (const key of [
       'uuid',
       'userId',
@@ -244,7 +244,7 @@ describe('InventoryService.getMine', () => {
       userId: USER,
       serverSlug: 'survival',
       group: 'main',
-      epoch: TEST_EPOCH,
+      epoch: TEST_EPOCH_STORED,
       rev: 1,
       slots: [
         {

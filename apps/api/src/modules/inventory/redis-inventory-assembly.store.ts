@@ -1,5 +1,6 @@
 import type {
   FinishInput,
+  InfoMemory,
   FinishResult,
   InventoryAssemblyStore,
   OfferInput,
@@ -15,6 +16,8 @@ import type { BufferedPart } from './inventory-parts';
 export interface InventoryRedisClient {
   eval(script: string, numKeys: number, ...args: string[]): Promise<unknown>;
   configGet(name: string): Promise<string | null>;
+  /// Сырой текст `INFO memory`.
+  infoMemory(): Promise<string>;
 }
 
 const ROOT = 'bridge:inv:';
@@ -141,6 +144,33 @@ local function isComplete()
   return count == wantCount
 end
 
+-- Потолки памяти (раздел 4.4, «Память Redis»): буфер сервера, служебная
+-- память, число серверов, доля сервера L(N), глобальный потолок. addBuf и
+-- addSvc — прирост буфера и служебной памяти; для новой части уже
+-- существующей сборки addSvc = 0. Возвращает причину отказа или nil.
+-- Проверяется при создании сборки И при записи КАЖДОЙ новой части (M-1):
+-- сборка растёт до 32 КБ после создания, а доля сервера L(N) за это время
+-- могла сократиться (подключились другие серверы).
+local function ceilings(addBuf, addSvc, creating)
+  local buf = bufferBytes()
+  if buf + addBuf > a.maxBuf then return 'ceiling_buffer' end
+  local svcB = svcBytes()
+  if addSvc > 0 and svcB + addSvc > a.maxSvc then return 'ceiling_service' end
+  local nServers = redis.call('HLEN', G)
+  if redis.call('HEXISTS', G, sid) == 0 then
+    if creating and nServers >= a.maxServers then return 'ceiling_servers' end
+    nServers = nServers + 1
+  end
+  local share = math.min(a.maxServer, math.floor(a.maxGlobal / nServers))
+  if buf + svcB + addBuf + addSvc > share then return 'ceiling_server' end
+  local total = 0
+  for _, v in ipairs(redis.call('HVALS', G)) do total = total + tonumber(v) end
+  local mine = tonumber(redis.call('HGET', G, sid) or '0')
+  total = total - mine + buf + svcB + addBuf + addSvc
+  if total > a.maxGlobal then return 'ceiling_global' end
+  return nil
+end
+
 local function create()
   local userId = a.userArg
   if userId == '' then return {'rejected', 'invalid_data', 'no_user'} end
@@ -149,33 +179,8 @@ local function create()
   if redis.call('ZCARD', IDX) >= a.maxAsm then
     return {'rejected', 'resync_required', 'ceiling_assemblies'}
   end
-  local buf = bufferBytes()
-  local newBytes = a.partBytes + a.overhead
-  if buf + newBytes > a.maxBuf then
-    return {'rejected', 'resync_required', 'ceiling_buffer'}
-  end
-  local svcB = svcBytes()
-  if svcB + svcUnit > a.maxSvc then
-    return {'rejected', 'resync_required', 'ceiling_service'}
-  end
-  local nServers = redis.call('HLEN', G)
-  if redis.call('HEXISTS', G, sid) == 0 then
-    if nServers >= a.maxServers then
-      return {'rejected', 'resync_required', 'ceiling_servers'}
-    end
-    nServers = nServers + 1
-  end
-  local share = math.min(a.maxServer, math.floor(a.maxGlobal / nServers))
-  if buf + svcB + newBytes + svcUnit > share then
-    return {'rejected', 'resync_required', 'ceiling_server'}
-  end
-  local total = 0
-  for _, v in ipairs(redis.call('HVALS', G)) do total = total + tonumber(v) end
-  local mine = tonumber(redis.call('HGET', G, sid) or '0')
-  total = total - mine + buf + svcB + newBytes + svcUnit
-  if total > a.maxGlobal then
-    return {'rejected', 'resync_required', 'ceiling_global'}
-  end
+  local over = ceilings(a.partBytes + a.overhead, svcUnit, true)
+  if over then return {'rejected', 'resync_required', over} end
 
   -- Вытеснение самой старой по firstSeenAt: только после всех проверок.
   local OWN = P .. 'own:' .. userId .. ':' .. a.group
@@ -252,6 +257,12 @@ local function main()
     if bytes - a.overhead + a.partBytes > a.maxAsmBytes then
       dropAsm(a.snapId)
       return {'rejected', 'invalid_data', 'assembly_too_large'}
+    end
+    -- M-1: рост сборки после создания не выходит за потолки и долю сервера.
+    local over = ceilings(a.partBytes, 0, false)
+    if over then
+      dropAsm(a.snapId)
+      return {'rejected', 'resync_required', over}
     end
     redis.call('HSET', ASM, 'p:' .. a.n, a.slotsJson, 'h:' .. a.n, a.hash, 'g:' .. a.n, a.slotGroup,
       'm:bytes', tostring(bytes + a.partBytes))
@@ -543,5 +554,18 @@ export class RedisInventoryAssemblyStore implements InventoryAssemblyStore {
 
   configGet(name: 'maxmemory-policy' | 'maxmemory'): Promise<string | null> {
     return this.redis.configGet(name);
+  }
+
+  async infoMemory(): Promise<InfoMemory> {
+    const text = await this.redis.infoMemory();
+    const fields = new Map<string, string>();
+    for (const line of text.split(/\r?\n/)) {
+      const i = line.indexOf(':');
+      if (i > 0) fields.set(line.slice(0, i), line.slice(i + 1).trim());
+    }
+    return {
+      policy: fields.get('maxmemory_policy') ?? null,
+      maxMemory: fields.get('maxmemory') ?? null,
+    };
   }
 }

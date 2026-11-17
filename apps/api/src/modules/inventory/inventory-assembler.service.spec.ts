@@ -6,12 +6,15 @@ import {
   T0,
   TEST_EPOCH,
   TEST_EPOCH_2,
+  TEST_EPOCH_2_STORED,
   TEST_UUID,
   TEST_UUID_2,
 } from '../../../test/support/in-memory-inventory';
 import { InMemoryAssemblyStore } from '../../../test/support/in-memory-assembly';
 import { InventoryApplyService } from './inventory-apply.service';
 import {
+  DEFAULT_ASSEMBLY_CONFIG,
+  redisPolicyAcknowledgedFromEnv,
   resolveAssemblyConfig,
   type AssemblyConfig,
 } from './inventory-assembly.config';
@@ -418,19 +421,52 @@ describe('InventoryAssemblerService: проверки до Redis (шаг П0)', 
   it('epoch: now + 11 минут — epoch_out_of_range без Redis; now + 10 минут принимается', async () => {
     const { clock, redis, send } = await ready();
     const before = { ...redis.calls };
-    const tooFar = String(clock.t + 11 * 60_000);
+    const tooFar = clock.t + 11 * 60_000;
     expect(await send(part(1, 'hotbar', { epoch: tooFar }))).toMatchObject({
       status: 'rejected',
       code: 'epoch_out_of_range',
     });
     expect(
-      await send(part(1, 'hotbar', { epoch: '9007199254740991' })),
+      await send(part(1, 'hotbar', { epoch: 9007199254740991 })),
     ).toMatchObject({ code: 'epoch_out_of_range' });
     expect(redis.calls).toEqual(before);
-    const limit = String(clock.t + 10 * 60_000);
+    const limit = clock.t + 10 * 60_000;
     expect(await send(part(1, 'hotbar', { epoch: limit }))).toEqual({
       status: 'buffered',
     });
+  });
+
+  it.each([
+    ['строка из цифр', String(TEST_EPOCH)],
+    ['ULID-подобная строка', '01JC0000000000000000000001'],
+    ['дробное', 1.5],
+    ['ноль', 0],
+    ['выше безопасного целого', 2 ** 60],
+    ['null', null],
+  ])(
+    'L-1: epoch не число в допустимом диапазоне (%s) — invalid_data без Redis',
+    async (_n, epoch) => {
+      const { redis, rows, send } = await ready();
+      const before = { ...redis.calls };
+      expect(await send(part(1, 'hotbar', { epoch }))).toMatchObject({
+        status: 'rejected',
+        code: 'invalid_data',
+      });
+      expect(redis.calls).toEqual(before);
+      expect(rows.mutateCalls).toBe(0);
+    },
+  );
+
+  it('L-1: тревога при epoch, опережающем часы больше чем на 120 с; в зоне до 120 с тревоги нет', async () => {
+    const { clock, assembler, send } = await ready();
+    await send(part(1, 'hotbar', { epoch: clock.t + 120_000 }));
+    expect(assembler.counters.get('alarm:epoch_ahead')).toBeUndefined();
+    await send(part(1, 'hotbar', { epoch: clock.t + 121_000 }));
+    expect(assembler.counters.get('alarm:epoch_ahead')).toBe(1);
+    // за пределом окна — отказ, тревожный счётчик не растёт (отказ учтён отдельно)
+    await send(part(1, 'hotbar', { epoch: clock.t + 11 * 60_000 }));
+    expect(assembler.counters.get('alarm:epoch_ahead')).toBe(1);
+    expect(assembler.counters.get('rejected:epoch_out_of_range')).toBe(1);
   });
 
   it('части пустой группы (slots: []) принимаются, полнота — по набору slotGroup', async () => {
@@ -515,6 +551,14 @@ describe('InventoryAssemblerService: свежесть (epoch, затем rev)', 
     expect(redis.assemblyCount(SERVER)).toBe(0);
   });
 
+  it('M-2: равные (epoch, rev) уже применённого ряда — stale, сборка не создаётся', async () => {
+    const { redis, send } = await ready();
+    for (const p of mainSet({ rev: 5 })) await send(p);
+    const same = part(1, 'hotbar', { snapshotId: snap(2), rev: 5 });
+    expect(await send(same)).toEqual({ status: 'stale' });
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+  });
+
   it('новая эпоха с МЕНЬШИМ capturedAt применяется, та же эпоха с меньшим rev и БОЛЬШИМ capturedAt — stale', async () => {
     const { rows, clock, send } = await ready();
     for (const p of mainSet({ rev: 90, capturedAt: iso(5) })) await send(p);
@@ -528,7 +572,7 @@ describe('InventoryAssemblerService: свежесть (epoch, затем rev)', 
     const results: AssembleResult[] = [];
     for (const p of newer) results.push(await send(p));
     expect(results[3].status).toBe('applied');
-    expect(rows.get(USER, SERVER, 'main')?.epoch).toBe(TEST_EPOCH_2);
+    expect(rows.get(USER, SERVER, 'main')?.epoch).toBe(TEST_EPOCH_2_STORED);
 
     const regress = part(1, 'hotbar', {
       snapshotId: snap(3),
@@ -683,6 +727,70 @@ describe('InventoryAssemblerService: лимиты', () => {
     expect(redis.assemblyCount('one')).toBe(0);
   });
 
+  it('M-1: сервер, доля которого сократилась после создания сборки, не раздувает её дальше доли', async () => {
+    // Доля L(N) = min(maxServerBytes, floor(maxGlobal / N)). Первая часть
+    // проходит при N = 1; затем два других сервера появляются в учёте `g`
+    // (N = 3), доля падает, и следующие части отклоняются, сборка сброшена.
+    const { clock, redis, send } = await ready({
+      maxGlobalBytes: 9000,
+      maxServerBytes: 9000,
+    });
+    const all = mainSet();
+    expect((await send(all[0])).status).toBe('buffered');
+    redis.seedGlobal('other-a', 10, clock.t);
+    redis.seedGlobal('other-b', 10, clock.t);
+    // доля = floor(9000 / 3) = 3000; учтённый объём сервера (1 КБ сборки +
+    // часть + 2 КБ служебных) уже около 3200 — любой прирост выходит за долю
+    expect(await send(all[1])).toMatchObject({
+      status: 'rejected',
+      code: 'resync_required',
+      reason: 'ceiling_server',
+    });
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+    expect(redis.bufferBytesOf(SERVER)).toBe(0);
+  });
+
+  it('M-1: рост сборки по частям не превышает буфер сервера (потолок проверяется на каждой части)', async () => {
+    const { redis, send } = await ready({ maxBufferBytesPerServer: 1300 });
+    const all = mainSet();
+    const first = await send(all[0]);
+    expect(first.status).toBe('buffered');
+    const used = redis.bufferBytesOf(SERVER);
+    expect(used).toBeLessThanOrEqual(1300);
+    // следующие части не помещаются: отказ и сброс, буфер не превышен
+    let refused: AssembleResult | null = null;
+    for (const p of all.slice(1)) {
+      const r = await send(p);
+      if (r.status === 'rejected') {
+        refused = r;
+        break;
+      }
+    }
+    expect(refused).toMatchObject({
+      code: 'resync_required',
+      reason: 'ceiling_buffer',
+    });
+    expect(redis.bufferBytesOf(SERVER)).toBeLessThanOrEqual(1300);
+  });
+
+  it('M-1: глобальный потолок проверяется на каждой части', async () => {
+    const { clock, redis, send } = await ready({
+      maxGlobalBytes: 10_000,
+      maxServerBytes: 10_000,
+    });
+    const all = mainSet();
+    expect((await send(all[0])).status).toBe('buffered');
+    // другой сервер занял почти весь глобальный потолок; доля этого сервера
+    // (10000 / 2 = 5000) ещё не исчерпана, но сумма превышает потолок
+    redis.seedGlobal('other', 9000, clock.t);
+    expect(await send(all[1])).toMatchObject({
+      status: 'rejected',
+      code: 'resync_required',
+      reason: 'ceiling_global',
+    });
+    expect(redis.assemblyCount(SERVER)).toBe(0);
+  });
+
   it('снимок сверх предела сборки: invalid_data, сборка сброшена', async () => {
     const { redis, send } = await ready({ maxAssembledBytes: 180 });
     const all = mainSet();
@@ -791,35 +899,128 @@ describe('InventoryAssemblerService: политика Redis (fail-closed)', () =
     },
   );
 
-  it('CONFIG GET недоступен: блокировка; явное подтверждение владельца снимает её', async () => {
+  it('NOPERM на CONFIG GET и на INFO memory: блокировка; явное подтверждение владельца снимает её', async () => {
     const blocked = setup();
     blocked.redis.configError = true;
+    blocked.redis.infoError = true;
     expect((await blocked.policy.refresh()).confirmed).toBe(false);
 
     const acknowledged = setup({ redisPolicyAcknowledged: true });
     acknowledged.redis.configError = true;
+    acknowledged.redis.infoError = true;
     expect(await acknowledged.policy.refresh()).toEqual({
       confirmed: true,
       via: 'owner_acknowledged',
     });
+    expect(acknowledged.policy.counters.get('owner_acknowledged_used')).toBe(1);
     expect((await acknowledged.send(part(1, 'hotbar'))).status).toBe(
       'buffered',
     );
   });
 
+  it('L-2: флаг владельца не действует при ошибке CONFIG GET, не связанной с ACL (таймаут)', async () => {
+    const s = setup({ redisPolicyAcknowledged: true });
+    s.redis.configError = 'Command timed out';
+    expect(await s.policy.refresh()).toEqual({
+      confirmed: false,
+      reason: 'config_unavailable',
+    });
+    expect(s.redis.calls.info).toBe(0);
+    expect(s.policy.counters.get('owner_acknowledged_used')).toBeUndefined();
+    expect((await s.send(part(1, 'hotbar'))).status).toBe('rejected');
+  });
+
+  it('L-2: NOPERM на CONFIG GET, INFO memory работает: реальная проверка по INFO', async () => {
+    const ok = setup({ redisPolicyAcknowledged: true });
+    ok.redis.configError = true;
+    expect(await ok.policy.refresh()).toEqual({ confirmed: true, via: 'info' });
+    // подтверждение владельца не использовалось: проверка выполнена по INFO
+    expect(ok.policy.counters.get('owner_acknowledged_used')).toBeUndefined();
+
+    const evicting = setup({ redisPolicyAcknowledged: true });
+    evicting.redis.configError = true;
+    evicting.redis.infoPolicy = 'allkeys-lru';
+    expect(await evicting.policy.refresh()).toEqual({
+      confirmed: false,
+      reason: 'eviction_policy',
+    });
+
+    const zero = setup({ redisPolicyAcknowledged: true });
+    zero.redis.configError = true;
+    zero.redis.infoMaxMemory = '0';
+    expect(await zero.policy.refresh()).toEqual({
+      confirmed: false,
+      reason: 'maxmemory_unset',
+    });
+  });
+
+  it('L-2: INFO memory без нужных полей: подтверждение владельца; INFO упал не по ACL: блокировка', async () => {
+    const s = setup({ redisPolicyAcknowledged: true });
+    s.redis.configError = true;
+    s.redis.infoMaxMemory = null;
+    expect((await s.policy.refresh()).confirmed).toBe(true);
+    const broken = setup({ redisPolicyAcknowledged: true });
+    broken.redis.configError = true;
+    broken.redis.infoFailure = 'connection reset';
+    expect(await broken.policy.refresh()).toEqual({
+      confirmed: false,
+      reason: 'config_unavailable',
+    });
+  });
+
+  it('L-2: флаг подтверждения читается из окружения владельца; по умолчанию false', () => {
+    expect(redisPolicyAcknowledgedFromEnv({})).toBe(false);
+    expect(
+      redisPolicyAcknowledgedFromEnv({
+        INVENTORY_REDIS_POLICY_ACKNOWLEDGED: '',
+      }),
+    ).toBe(false);
+    expect(
+      redisPolicyAcknowledgedFromEnv({
+        INVENTORY_REDIS_POLICY_ACKNOWLEDGED: '1',
+      }),
+    ).toBe(false);
+    expect(
+      redisPolicyAcknowledgedFromEnv({
+        INVENTORY_REDIS_POLICY_ACKNOWLEDGED: 'true',
+      }),
+    ).toBe(true);
+    expect(DEFAULT_ASSEMBLY_CONFIG.redisPolicyAcknowledged).toBe(false);
+  });
+
   it('переподключение сбрасывает подтверждение; после проверки приём возобновляется', async () => {
     const { redis, policy, send } = await ready();
     expect((await send(part(1, 'hotbar'))).status).toBe('buffered');
-    policy.onReconnect();
+    redis.policy = 'allkeys-lru';
+    // onReconnect сбрасывает подтверждение синхронно и выполняет реальную
+    // проверку: политика сменилась, приём остаётся заблокированным
+    const pending = policy.onReconnect();
+    expect(policy.isConfirmed()).toBe(false);
+    expect(await pending).toEqual({
+      confirmed: false,
+      reason: 'eviction_policy',
+    });
     expect(await send(part(2, 'storage_a'))).toMatchObject({
       reason: 'policy_blocked',
     });
-    redis.policy = 'allkeys-lru';
-    await policy.refresh();
-    expect((await send(part(2, 'storage_a'))).status).toBe('rejected');
     redis.policy = 'noeviction';
-    await policy.refresh();
+    expect(await policy.onReconnect()).toEqual({
+      confirmed: true,
+      via: 'config',
+    });
     expect((await send(part(2, 'storage_a'))).status).toBe('buffered');
+  });
+
+  it('L-2: проверка, начатая до переподключения, не перезаписывает его результат', async () => {
+    const { redis, policy } = await ready();
+    const stale = policy.refresh(); // начата при noeviction
+    redis.policy = 'allkeys-lru';
+    const fresh = policy.onReconnect();
+    await Promise.all([stale, fresh]);
+    expect(policy.current()).toEqual({
+      confirmed: false,
+      reason: 'eviction_policy',
+    });
   });
 });
 

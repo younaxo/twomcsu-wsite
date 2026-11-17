@@ -1,6 +1,5 @@
 import { createHash } from 'crypto';
 import type { InventoryGroup } from './inventory-contract';
-import { isEpochAhead } from './inventory-freshness';
 import { GROUP_AREAS, GROUP_SLOT_LIMIT, AREA_SIZE } from './inventory-limits';
 import type { AssemblyConfig } from './inventory-assembly.config';
 import {
@@ -23,7 +22,7 @@ import {
   sortSlots,
 } from './inventory-normalize';
 import {
-  InventoryValidationError,
+  EpochOutOfRangeError,
   type NormalizedSlot,
   type NormalizedSnapshot,
 } from './inventory.types';
@@ -106,13 +105,7 @@ export function isSlotGroupAllowed(
   return set !== undefined && (set as readonly unknown[]).includes(slotGroup);
 }
 
-/// `epoch` вне допустимого окна (`rejected epoch_out_of_range`, раздел 3.5).
-export class EpochOutOfRangeError extends InventoryValidationError {
-  constructor() {
-    super('epoch: вне допустимого окна');
-    this.name = 'EpochOutOfRangeError';
-  }
-}
+export { EpochOutOfRangeError };
 
 /// Часть снимка после проверки схемы (шаг П0) и очистки.
 export interface NormalizedPart {
@@ -199,10 +192,7 @@ export function parseSnapshotPart(
     return { area, slot, item: parseItem(slotObj.item, `${path}.item`) };
   });
 
-  const epoch = parseEpoch(obj.epoch);
-  if (isEpochAhead(epoch, now.getTime(), config.epochMaxAheadMs)) {
-    throw new EpochOutOfRangeError();
-  }
+  const epoch = parseEpoch(obj.epoch, now, config.epochMaxAheadMs);
   const sorted = sortSlots(slots);
   const slotsJson = canonicalJson(sorted);
   return {

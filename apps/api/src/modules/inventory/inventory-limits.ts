@@ -19,6 +19,10 @@ export const MAX_LORE_RUNS = 16;
 export const MAX_ITEM_TEXT_CHARS = 2000;
 export const MAX_ENCHANTS = 32;
 
+/// `epoch` не больше «сейчас приёмника + 10 минут» (раздел 3.5; допущение до
+/// ответа владельца на Q61/Q62).
+export const EPOCH_MAX_AHEAD_MS = 10 * 60 * 1000;
+
 export const MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_EVENT_FUTURE_MS = 60 * 1000;
 

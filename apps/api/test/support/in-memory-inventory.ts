@@ -12,10 +12,14 @@ import type { ApplyResult } from '../../src/modules/inventory/inventory.types';
 
 export const TEST_UUID = '00000000-0000-4000-8000-000000000001';
 export const TEST_UUID_2 = '00000000-0000-4000-8000-000000000002';
-export const TEST_EPOCH = '01JC0000000000000000000001';
-export const TEST_EPOCH_2 = '01JC0000000000000000000002';
-
 export const T0 = new Date('2026-11-17T12:00:00.000Z');
+
+/// `epoch` в событии — число (время старта плагина, мс), не позже «сейчас».
+export const TEST_EPOCH = T0.getTime() - 3_600_000;
+export const TEST_EPOCH_2 = T0.getTime() - 1_800_000;
+/// В ряду `epoch` хранится десятичной строкой.
+export const TEST_EPOCH_STORED = String(TEST_EPOCH);
+export const TEST_EPOCH_2_STORED = String(TEST_EPOCH_2);
 
 export function iso(offsetSeconds = 0): string {
   return new Date(T0.getTime() + offsetSeconds * 1000).toISOString();

@@ -28,16 +28,3 @@ export function compareFreshness(a: Freshness, b: Freshness): number {
   if (byEpoch !== 0) return byEpoch;
   return a.rev - b.rev;
 }
-
-/// `epoch` из одних цифр — время старта в мс: верхняя граница «сейчас по часам
-/// приёмника + `maxAheadMs`» (раздел 3.5). Для остальных форматов границы нет.
-export function isEpochAhead(
-  epoch: string,
-  nowMs: number,
-  maxAheadMs: number,
-): boolean {
-  if (!DIGITS.test(epoch)) return false;
-  const trimmed = epoch.replace(/^0+(?=[0-9])/, '');
-  if (trimmed.length > 16) return true;
-  return Number(trimmed) > nowMs + maxAheadMs;
-}
