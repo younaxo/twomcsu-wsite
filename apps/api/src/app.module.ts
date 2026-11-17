@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { IpSubnetThrottlerGuard } from './common/guards/ip-subnet-throttler.guard';
 import { envValidationSchema } from './config/env.validation';
 import { AchievementsModule } from './modules/achievements/achievements.module';
 import { ActivityModule } from './modules/activity/activity.module';
@@ -96,7 +97,7 @@ import { VotingModule } from './modules/voting/voting.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: IpSubnetThrottlerGuard,
     },
   ],
 })

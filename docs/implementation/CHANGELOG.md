@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Q21: throttler по подсети /64 и «Последний IP» в админке (ADR-0177, ветка fix/q21-ipv6-throttler-admin-ip, не смержено)
+
+- Глобальный throttler (`IpSubnetThrottlerGuard`) считает по `rateLimitKey`: IPv4 полный, IPv6 по /64, `unknown` / `raw:<hash>`; соседи по /64 делят лимит (решение владельца Q21 1а). Аргументы `@Throttle`/`@SkipThrottle` не менялись; `ws-rate-limit` (по `userId`) не менялся.
+- `BruteForceService` пишет `bruteforce:lastip:<rateLimitKey>` (полный нормализованный IP, EX 900, обновляется при каждой неудаче), `reset()` его удаляет. `GET /admin/security/suspicious` отдаёт `lastIp` (`SuspiciousIpDto`, shared), web: колонки «Ключ подсети» и «Последний IP». Миграции БД нет.
+- Коммиты: 5e895c0 (шаг 1), e134f36, 53c4acc, afcacfb, 14e54ca. 15 новых unit-тестов api, 3 теста web `security.test.tsx`; e2e `throttler-subnet.e2e-spec.ts` (новый), `trust-proxy.e2e-spec.ts`, `admin.e2e-spec.ts` дописаны статически, не запускались. Риски R46–R49. Отчёт: `docs/reports/2026-11-17-00-q21-ipv6-throttler-admin-ip.md`.
+- Исправления по ревью (APPROVE WITH NOTES): `app.module.spec.ts` сделан герметичным (виртуальный мок `multer`; `multer` в package.json не добавлялся); тест пачек `MGET` (100/101/250 ключей); e2e изоляции /64 проверяет исчерпанный лимит (статически, не запускался); риски R50 (NAT64/6to4 в одной /64) и R51 (сброс /64 при успешном входе); L5: основание обработки полного IP как персональных данных — решение владельца.
+
 ### Q52: права на удаление заметок обращений (ADR-0176, ветка fix/q52-delete-notes-perms, не смержено)
 
 - Удаление чужой заметки требует `reports.notes.edit`, чужой закреплённой ещё и `reports.notes.unpin`, иначе 403; своя заметка удаляется как раньше. Web не менялся (кнопки удаления нет).
