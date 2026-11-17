@@ -100,7 +100,7 @@ describe('Inventory (e2e)', () => {
         .patch('/inventory/me/privacy')
         .set('Authorization', user.auth)
         .send({ enderPublic: true, inventoryPublic: false })
-        .expect(400);
+        .expect(422);
       const res = await http()
         .patch('/inventory/me/privacy')
         .set('Authorization', user.auth)
@@ -133,7 +133,7 @@ describe('Inventory (e2e)', () => {
       await http()
         .get('/inventory/me?server=BAD%20SLUG!')
         .set('Authorization', user.auth)
-        .expect(400);
+        .expect(422);
     });
   });
 });
