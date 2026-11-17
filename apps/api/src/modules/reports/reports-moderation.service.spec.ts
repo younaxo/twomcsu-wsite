@@ -203,7 +203,7 @@ describe('ReportsModerationService: уведомления автору', () => 
       expect.objectContaining({
         userId: 'author',
         link: '/support/R-1',
-        type: 'REPORT_VERDICT',
+        type: 'REPORT_STATUS_CHANGED',
       }),
     );
   });

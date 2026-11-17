@@ -223,7 +223,7 @@ export class ReportsModerationService {
       await this.notifyAuthor(
         report,
         actorId,
-        NotificationType.REPORT_VERDICT,
+        NotificationType.REPORT_STATUS_CHANGED,
         `Статус обращения ${report.reportNumber} изменён`,
         REPORT_STATUS_LABEL_RU[dto.status as ReportStatus],
       );
