@@ -10,6 +10,22 @@ import { PermissionService } from '../src/modules/roles/permission.service';
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
 
+/// Служебные поля товара не должны попадать в публичные ответы (S1).
+const SERVICE_FIELDS = [
+  'gameCommands',
+  'server',
+  'currencyType',
+  'currencyAmount',
+  'positionId',
+  'decorationId',
+];
+function expectNoServiceFields(body: unknown) {
+  const json = JSON.stringify(body);
+  for (const field of SERVICE_FIELDS) {
+    expect(json).not.toContain(`"${field}"`);
+  }
+}
+
 describe('Store catalog (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -207,6 +223,8 @@ describe('Store catalog (e2e)', () => {
         slug: productSlug,
         type: 'PRIVILEGE',
         categoryId,
+        gameCommands: ['lp user {player} parent add e2e'],
+        server: 'e2e-server',
         variants: [
           { duration: 'MONTH_1', price: 100 },
           { duration: 'FOREVER', price: 900 },
@@ -224,6 +242,7 @@ describe('Store catalog (e2e)', () => {
       .expect(200);
     expect(detail.body.id).toBe(productId);
     expect(detail.body.inWishlist).toBe(false);
+    expectNoServiceFields(detail.body);
 
     const list = await request(app.getHttpServer())
       .get('/store/products')
@@ -231,6 +250,16 @@ describe('Store catalog (e2e)', () => {
     expect(
       list.body.items.some((p: { id: string }) => p.id === productId),
     ).toBe(true);
+    expectNoServiceFields(list.body);
+
+    // S3: bought-together для несуществующего товара — 404, как и для скрытого.
+    await request(app.getHttpServer())
+      .get('/store/products/e2e-no-such-product/bought-together')
+      .expect(404);
+    const together = await request(app.getHttpServer())
+      .get(`/store/products/${productSlug}/bought-together`)
+      .expect(200);
+    expectNoServiceFields(together.body);
   });
 
   it('товары: доп. вариант через отдельный эндпоинт, обновление и удаление варианта', async () => {
@@ -270,6 +299,7 @@ describe('Store catalog (e2e)', () => {
       .get(`/store/bundles/${bundleSlug}`)
       .expect(200);
     expect(detail.body.slug).toBe(bundleSlug);
+    expectNoServiceFields(detail.body);
 
     const list = await request(app.getHttpServer())
       .get('/store/bundles')
