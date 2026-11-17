@@ -129,6 +129,33 @@ export class PermissionService {
     return actorPriority > targetPriority;
   }
 
+  /// Снятие мута/бана чата (Q25, ADR-0171): снять может выдавший или тот, чей
+  /// приоритет >= приоритета выдавшего. Выдавший «неизвестен» (пустой id,
+  /// пользователь не найден или удалён, accountType=SYSTEM): консервативное
+  /// допущение — нужен приоритет >= максимального приоритета среди всех ролей
+  /// (фактически владелец/superuser). Если ролей нет, только superuser.
+  async canRevokeSanction(
+    actorId: string,
+    issuerId: string | null | undefined,
+  ): Promise<boolean> {
+    if (issuerId && issuerId === actorId) {
+      return true;
+    }
+    const issuer = issuerId
+      ? await this.prisma.user.findUnique({
+          where: { id: issuerId },
+          select: { id: true, accountType: true },
+        })
+      : null;
+    const actorPriority = await this.getMaxPriority(actorId);
+    if (issuer && issuer.accountType !== 'SYSTEM') {
+      return actorPriority >= (await this.getMaxPriority(issuer.id));
+    }
+    const top = await this.prisma.role.aggregate({ _max: { priority: true } });
+    const threshold = top._max.priority ?? Number.POSITIVE_INFINITY;
+    return actorPriority >= threshold;
+  }
+
   /// Выдача роли пользователю (Q23, ADR-0170): права выдаваемой роли должны
   /// входить в эффективные права выдающего. Владелец (роль isSuperuser) —
   /// исключение. Роль с полным доступом (isSuperuser) может выдать только

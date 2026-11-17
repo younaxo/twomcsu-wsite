@@ -149,3 +149,96 @@ describe('PermissionService.assertGrantorCoversRole (Q23)', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('PermissionService.canRevokeSanction (Q25)', () => {
+  function buildRevoke(opts: {
+    byUser: Record<string, RoleRow[]>;
+    users: Record<string, 'USER' | 'SYSTEM'>;
+    topPriority: number | null;
+  }) {
+    const prisma = {
+      userRole: {
+        findMany: jest.fn(({ where }: { where: { userId: string } }) =>
+          Promise.resolve(
+            (opts.byUser[where.userId] ?? []).map((role, i) => ({
+              roleId: `${where.userId}-r${i}`,
+              role,
+            })),
+          ),
+        ),
+      },
+      user: {
+        findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            where.id in opts.users
+              ? { id: where.id, accountType: opts.users[where.id] }
+              : null,
+          ),
+        ),
+      },
+      role: {
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _max: { priority: opts.topPriority } }),
+      },
+    };
+    const redis = {
+      client: {
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue('OK'),
+        sadd: jest.fn().mockResolvedValue(1),
+      },
+    };
+    return new PermissionService(prisma as never, redis as never);
+  }
+  const role = (priority: number, isSuperuser = false): RoleRow => ({
+    isSuperuser,
+    priority,
+    permissions: [],
+  });
+  const base = {
+    byUser: {
+      mod: [role(10)],
+      peer: [role(10)],
+      junior: [role(5)],
+      admin: [role(100)],
+      owner: [role(1000, true)],
+    },
+    users: {
+      mod: 'USER',
+      peer: 'USER',
+      junior: 'USER',
+      admin: 'USER',
+      owner: 'USER',
+      sys: 'SYSTEM',
+    } as Record<string, 'USER' | 'SYSTEM'>,
+    topPriority: 1000,
+  };
+
+  it('выдавший снимает свой, даже с меньшим приоритетом', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('junior', 'junior')).resolves.toBe(true);
+  });
+
+  it('равный и старший могут, младший нет', async () => {
+    const s = buildRevoke(base);
+    await expect(s.canRevokeSanction('peer', 'mod')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('admin', 'mod')).resolves.toBe(true);
+    await expect(s.canRevokeSanction('junior', 'mod')).resolves.toBe(false);
+  });
+
+  it.each([null, undefined, '', 'deleted-user', 'sys'])(
+    'неизвестный выдавший (%p): только приоритет >= максимума ролей',
+    async (issuer) => {
+      const s = buildRevoke(base);
+      await expect(s.canRevokeSanction('admin', issuer)).resolves.toBe(false);
+      await expect(s.canRevokeSanction('owner', issuer)).resolves.toBe(true);
+    },
+  );
+
+  it('неизвестный выдавший и ролей нет: только superuser', async () => {
+    const s = buildRevoke({ ...base, topPriority: null });
+    await expect(s.canRevokeSanction('admin', null)).resolves.toBe(false);
+    await expect(s.canRevokeSanction('owner', null)).resolves.toBe(true);
+  });
+});
