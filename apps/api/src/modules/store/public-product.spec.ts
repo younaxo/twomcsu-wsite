@@ -76,7 +76,10 @@ describe('ProductsService: публичный ответ', () => {
       product: { findUnique, findMany, count: jest.fn().mockResolvedValue(1) },
       wishlistItem: { findFirst: jest.fn() },
     };
-    const service = new ProductsService(prisma as never);
+    const service = new ProductsService(
+      prisma as never,
+      { log: jest.fn() } as never,
+    );
 
     const detail = await service.getBySlug('ares', null);
     expect(detail).not.toHaveProperty('isActive');
@@ -99,7 +102,10 @@ describe('ProductsService: публичный ответ', () => {
           .mockResolvedValue({ ...product, isActive: false }),
       },
     };
-    const service = new ProductsService(prisma as never);
+    const service = new ProductsService(
+      prisma as never,
+      { log: jest.fn() } as never,
+    );
     await expect(service.getBySlug('ares', null)).rejects.toBeInstanceOf(
       NotFoundException,
     );
@@ -111,9 +117,10 @@ describe('ProductsService: публичный ответ', () => {
         .fn()
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ id: 'p1', isActive: false });
-      const service = new ProductsService({
-        product: { findUnique },
-      } as never);
+      const service = new ProductsService(
+        { product: { findUnique } } as never,
+        { log: jest.fn() } as never,
+      );
       const missing = await service.getBoughtTogether('x').catch((e) => e);
       const hidden = await service.getBoughtTogether('y').catch((e) => e);
       expect(missing).toBeInstanceOf(NotFoundException);
@@ -132,7 +139,10 @@ describe('ProductsService: публичный ответ', () => {
           findMany: jest.fn().mockResolvedValue([{ productId: 'p2' }]),
         },
       };
-      await new ProductsService(prisma as never).getBoughtTogether('ares');
+      await new ProductsService(
+        prisma as never,
+        { log: jest.fn() } as never,
+      ).getBoughtTogether('ares');
       const args = findMany.mock.calls[0][0];
       expect(args.include).toBeUndefined();
       expect(args.select).toBe(PUBLIC_PRODUCT_SELECT);

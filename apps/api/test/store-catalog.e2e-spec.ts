@@ -223,11 +223,10 @@ describe('Store catalog (e2e)', () => {
         slug: productSlug,
         type: 'PRIVILEGE',
         categoryId,
-        gameCommands: ['lp user {player} parent add e2e'],
         server: 'e2e-server',
         variants: [
-          { duration: 'MONTH_1', price: 100 },
-          { duration: 'FOREVER', price: 900 },
+          { duration: 'MONTH_1', price: '100.00' },
+          { duration: 'FOREVER', price: '900.00' },
         ],
       })
       .expect(201);
@@ -236,6 +235,22 @@ describe('Store catalog (e2e)', () => {
       (v: { duration: string }) => v.duration === 'MONTH_1',
     ).id;
     expect(created.body.variants).toHaveLength(2);
+    // ADR-0185: новый товар неактивен и не виден в каталоге, пока админ не включит.
+    expect(created.body.isActive).toBe(false);
+    await request(app.getHttpServer())
+      .get(`/store/products/${productSlug}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(admin))
+      .send({ isActive: true })
+      .expect(200);
+    // gameCommands для публичной проверки S1 кладём напрямую в БД
+    // (через API шаблоны не редактируются — ADR-0184 Р1).
+    await prisma.product.update({
+      where: { id: productId },
+      data: { gameCommands: ['lp user {player} parent add e2e'] },
+    });
 
     const detail = await request(app.getHttpServer())
       .get(`/store/products/${productSlug}`)
@@ -266,13 +281,13 @@ describe('Store catalog (e2e)', () => {
     const variant = await request(app.getHttpServer())
       .post(`/admin/store/products/${productId}/variants`)
       .set('Authorization', auth(admin))
-      .send({ duration: 'WEEK_1', price: 30 })
+      .send({ duration: 'WEEK_1', price: '30.00' })
       .expect(201);
 
     await request(app.getHttpServer())
       .patch(`/admin/store/products/${productId}/variants/${variant.body.id}`)
       .set('Authorization', auth(admin))
-      .send({ price: 25 })
+      .send({ price: '25.00' })
       .expect(200);
 
     await request(app.getHttpServer())
