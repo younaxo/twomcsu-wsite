@@ -21,3 +21,7 @@
 ## 5. Вопрос владельцу
 
 Занулить `fromUserId` у прежних уведомлений авторам (миграция данных) или скрывать `fromUser` при чтении для этих типов? См. R44.
+
+## 6. Web: подпись «Системное» (дополнение)
+
+`isSystemMessage` (`apps/web/src/components/notifications/system-sender.tsx`) теперь истинна для типа SYSTEM (как раньше, ADR-0080) и для REPORT_STATUS_CHANGED / REPORT_VERDICT / SYSTEM со ссылкой `/support/` — правило API (`report-author-privacy.ts`), в `packages/shared` его нет, поэтому продублировано локально с комментарием-ссылкой. SYSTEM без `/support/` оставлен системным, иначе сломался бы ADR-0080. Тесты: `system-sender.test.ts`.
