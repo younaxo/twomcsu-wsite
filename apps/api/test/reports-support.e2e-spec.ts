@@ -452,13 +452,19 @@ describe('Reports support (e2e)', () => {
     });
 
     // Вложение сообщения с uploadedBy — игрок не должен его увидеть.
-    const anyMessage = await prisma.reportMessage.findFirst({
-      where: { reportId: appealId, isDeleted: false },
+    // Создание обращения хранит текст в report.description и не создаёт
+    // ReportMessage, поэтому сообщение заводим явно.
+    const anyMessage = await prisma.reportMessage.create({
+      data: {
+        reportId: appealId,
+        authorId: alice.id,
+        content: 'Сообщение автора для проверки приватности',
+        isStaff: false,
+      },
     });
-    expect(anyMessage).not.toBeNull();
     await prisma.reportMessageAttachment.create({
       data: {
-        messageId: anyMessage!.id,
+        messageId: anyMessage.id,
         fileName: 'proof.png',
         fileUrl: 'https://example.com/proof.png',
         fileSize: 1024,
