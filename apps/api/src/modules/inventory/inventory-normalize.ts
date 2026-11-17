@@ -40,27 +40,28 @@ type Obj = Record<string, unknown>;
 const UUID_RE =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const EPOCH_RE = /^[\x21-\x7E]{26,64}$/;
+const EPOCH_DIGITS_RE = /^[1-9][0-9]{0,24}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|\+00:00)$/;
 const MAX_INT32 = 2_147_483_647;
 
-function fail(reason: string): never {
+export function fail(reason: string): never {
   throw new InventoryValidationError(reason);
 }
 
-function asObject(value: unknown, path: string): Obj {
+export function asObject(value: unknown, path: string): Obj {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     fail(`${path}: ожидался объект`);
   }
   return value as Obj;
 }
 
-function asArray(value: unknown, path: string, max: number): unknown[] {
+export function asArray(value: unknown, path: string, max: number): unknown[] {
   if (!Array.isArray(value)) fail(`${path}: ожидался массив`);
   if (value.length > max) fail(`${path}: больше ${max} элементов`);
   return value;
 }
 
-function assertKeys(obj: Obj, allowed: readonly string[], path: string): void {
+export function assertKeys(obj: Obj, allowed: readonly string[], path: string): void {
   for (const key of Object.keys(obj)) {
     if (!allowed.includes(key)) {
       fail(`${path}: неизвестное поле ${key.slice(0, 32)}`);
@@ -68,7 +69,7 @@ function assertKeys(obj: Obj, allowed: readonly string[], path: string): void {
   }
 }
 
-function asInt(value: unknown, path: string, min: number, max: number): number {
+export function asInt(value: unknown, path: string, min: number, max: number): number {
   if (
     typeof value !== 'number' ||
     !Number.isInteger(value) ||
@@ -101,7 +102,7 @@ function asNamespaced(value: unknown, path: string, maxLen: number): string {
   return value;
 }
 
-function asBool(value: unknown, path: string): boolean {
+export function asBool(value: unknown, path: string): boolean {
   if (typeof value !== 'boolean') fail(`${path}: ожидался boolean`);
   return value;
 }
@@ -147,7 +148,7 @@ function runChars(runs: readonly NormalizedTextRun[]): number {
   return total;
 }
 
-function jsonBytes(value: unknown): number {
+export function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
@@ -272,7 +273,7 @@ export function parseItem(
   return item;
 }
 
-function parseArea(
+export function parseArea(
   value: unknown,
   group: InventoryGroup,
   path: string,
@@ -286,7 +287,7 @@ function parseArea(
   return value as InventoryArea;
 }
 
-function parseSlotIndex(
+export function parseSlotIndex(
   value: unknown,
   area: InventoryArea,
   path: string,
@@ -294,26 +295,39 @@ function parseSlotIndex(
   return asInt(value, `${path}.slot`, 0, AREA_SIZE[area] - 1);
 }
 
-function parseGroup(value: unknown): InventoryGroup {
+export function parseGroup(value: unknown): InventoryGroup {
   if (value !== 'main' && value !== 'ender') fail('group: main или ender');
   return value;
 }
 
-function parseUuid(value: unknown): string {
+export function parseUuid(value: unknown): string {
   if (typeof value !== 'string' || !UUID_RE.test(value)) {
     fail('uuid: недопустимый UUID');
   }
   return value.toLowerCase();
 }
 
-function parseEpoch(value: unknown): string {
-  if (typeof value !== 'string' || !EPOCH_RE.test(value)) {
-    fail('epoch: строка 26-64 печатных ASCII');
+/// `epoch` растёт при каждом перезапуске плагина (раздел 3.5 дизайна).
+/// Допустимы: целое (время старта в мс; число или строка из цифр) либо
+/// строка 26-64 печатных ASCII (ULID-подобная, формат первого среза). Целое
+/// приводится к десятичной строке; порядок задаёт `compareEpoch`.
+export function parseEpoch(value: unknown): string {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      fail('epoch: целое от 1');
+    }
+    return String(value);
+  }
+  if (
+    typeof value !== 'string' ||
+    !(EPOCH_RE.test(value) || EPOCH_DIGITS_RE.test(value))
+  ) {
+    fail('epoch: целое или строка 26-64 печатных ASCII');
   }
   return value;
 }
 
-function parseCapturedAt(value: unknown, now: Date): Date {
+export function parseCapturedAt(value: unknown, now: Date): Date {
   if (typeof value !== 'string' || !ISO_UTC.test(value)) {
     fail('capturedAt: ISO 8601 UTC');
   }
@@ -329,7 +343,7 @@ function parseCapturedAt(value: unknown, now: Date): Date {
   return date;
 }
 
-function sortSlots<T extends { area: InventoryArea; slot: number }>(
+export function sortSlots<T extends { area: InventoryArea; slot: number }>(
   slots: T[],
 ): T[] {
   return slots.sort(

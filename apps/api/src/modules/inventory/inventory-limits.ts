@@ -5,10 +5,12 @@ import type { InventoryArea, InventoryGroup } from './inventory-contract';
 export const SCHEMA_VERSION = 1;
 
 /// Q35 (а): предмет не больше 600 байт в компактном JSON; лишний лор
-/// отбрасывается с конца (`loreTruncated`), без `part`.
+/// отбрасывается с конца (`loreTruncated`). Защита размера части снимка.
 export const MAX_ITEM_BYTES = 600;
-/// Суммарный JSON слотов одного ряда.
-export const MAX_ROW_BYTES = 24 * 1024;
+/// Суммарный JSON слотов одного ряда: 32 КБ (было 24 КБ; Q35, раздел 7.3
+/// дизайна: 41 предмет по 600 байт с накладными расходами слотов не
+/// помещается в 24 КБ).
+export const MAX_ROW_BYTES = 32 * 1024;
 
 export const MAX_RUN_TEXT = 256;
 export const MAX_NAME_RUNS = 16;

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { compareFreshness } from './inventory-freshness';
 import { SERVER_SLUG } from './inventory-limits';
 import {
   applyChanges,
@@ -56,6 +57,30 @@ export class InventoryApplyService {
     );
   }
 
+  /// Применение снимка, собранного из частей (раздел 4.4, шаг П5). Привязка
+  /// UUID перечитывается: с проверки при создании сборки прошло до 120 с.
+  /// Отвязан — `unknown_player`; привязан другой пользователь —
+  /// `resync_required`. Свежесть решается здесь же (`epoch`, затем `rev`).
+  async applyAssembled(
+    serverSlug: string,
+    expectedUserId: string,
+    snapshot: NormalizedSnapshot,
+    now: Date = new Date(),
+  ): Promise<ApplyResult> {
+    if (!SERVER_SLUG.test(serverSlug)) {
+      return { status: 'rejected', code: 'invalid_data', reason: 'serverSlug' };
+    }
+    const userId = await this.store.findUserIdByUuid(snapshot.uuid);
+    if (userId === null) {
+      return { status: 'rejected', code: 'unknown_player' };
+    }
+    if (userId !== expectedUserId) return { status: 'resync_required' };
+    return this.store.mutate(
+      { userId, serverSlug, group: snapshot.group },
+      this.decideSnapshot(snapshot, now),
+    );
+  }
+
   private async run<T extends NormalizedSnapshot | NormalizedDelta>(
     serverSlug: string,
     parse: () => T,
@@ -100,10 +125,19 @@ export class InventoryApplyService {
         lastSeenAt: now,
         playerOnline: snapshot.playerOnline,
       };
-      // Снимок побеждает при большем `capturedAt`; при равенстве — принятый
-      // позже (раздел 3.5); старее сохранённого — stale.
-      if (current && snapshot.capturedAt < current.capturedAt) {
-        return { write: null, result: { status: 'stale' } };
+      // Единый порядок свежести (раздел 3.5): `epoch`, затем `rev`;
+      // `capturedAt` не участвует. Старее сохранённого — stale (в том числе
+      // регресс `rev` в той же эпохе). Только при равных `(epoch, rev)`
+      // ряд не хранит `snapshotId`, поэтому остаётся прежняя развязка по
+      // `capturedAt`: старее — stale, иначе побеждает принятый позже.
+      if (current) {
+        const order = compareFreshness(snapshot, current);
+        if (
+          order < 0 ||
+          (order === 0 && snapshot.capturedAt < current.capturedAt)
+        ) {
+          return { write: null, result: { status: 'stale' } };
+        }
       }
       if (current && current.contentHash === contentHash) {
         return {
