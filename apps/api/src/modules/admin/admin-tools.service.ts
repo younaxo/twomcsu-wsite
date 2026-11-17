@@ -644,9 +644,10 @@ export class AdminToolsService {
     });
   }
 
-  /// Список IP, заблокированных/подозрительных по данным BruteForceService
+  /// Список подсетей, заблокированных/подозрительных по данным BruteForceService
   /// (Redis) — честно собрано из реального рантайм-состояния, нет
-  /// персистентной модели SuspiciousActivity.
+  /// персистентной модели SuspiciousActivity. `ip` — ключ подсети
+  /// (`rateLimitKey`, ADR-0163), `lastIp` — последний полный IP неудачи или null.
   async listSuspiciousActivity() {
     const blockedIps = await this.scanKeys('bruteforce:blocked:*');
     const counterIps = await this.scanKeys('bruteforce:login:*');
@@ -655,6 +656,7 @@ export class AdminToolsService {
       string,
       {
         ip: string;
+        lastIp: string | null;
         failedAttempts: number;
         isBlocked: boolean;
         blockedTtlSeconds: number | null;
@@ -666,6 +668,7 @@ export class AdminToolsService {
       const count = await this.redis.client.get(key);
       ips.set(ip, {
         ip,
+        lastIp: null,
         failedAttempts: count ? Number(count) : 0,
         isBlocked: false,
         blockedTtlSeconds: null,
@@ -677,9 +680,24 @@ export class AdminToolsService {
       const existing = ips.get(ip);
       ips.set(ip, {
         ip,
+        lastIp: null,
         failedAttempts: existing?.failedAttempts ?? 0,
         isBlocked: true,
         blockedTtlSeconds: ttl >= 0 ? ttl : null,
+      });
+    }
+
+    // Последний полный IP хранится отдельным ключом `bruteforce:lastip:<ключ>`
+    // (BruteForceService); истёк или отсутствует — null. Не логируется.
+    const subnetKeys = [...ips.keys()];
+    for (let i = 0; i < subnetKeys.length; i += 100) {
+      const chunk = subnetKeys.slice(i, i + 100);
+      const values = await this.redis.client.mget(
+        chunk.map((k) => `bruteforce:lastip:${k}`),
+      );
+      chunk.forEach((k, idx) => {
+        const entry = ips.get(k);
+        if (entry) entry.lastIp = values[idx] ?? null;
       });
     }
 

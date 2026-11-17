@@ -41,3 +41,70 @@ describe('AdminToolsService.getSiteSettings', () => {
     expect(changes.after).toMatchObject({ siteName: 'B' });
   });
 });
+
+describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
+  function makeService(
+    store: Record<string, string>,
+    ttls: Record<string, number> = {},
+  ) {
+    const redis = {
+      client: {
+        scan: jest.fn((_cursor: string, _m: string, pattern: string) => {
+          const prefix = pattern.replace('*', '');
+          return Promise.resolve([
+            '0',
+            Object.keys(store).filter((k) => k.startsWith(prefix)),
+          ]);
+        }),
+        get: jest.fn((k: string) => Promise.resolve(store[k] ?? null)),
+        mget: jest.fn((keys: string[]) =>
+          Promise.resolve(keys.map((k) => store[k] ?? null)),
+        ),
+        ttl: jest.fn((k: string) => Promise.resolve(ttls[k] ?? -1)),
+      },
+    };
+    return new AdminToolsService({} as never, redis as never, {} as never);
+  }
+
+  it('отдаёт ip (ключ подсети) и lastIp (полный адрес) для IPv6', async () => {
+    const service = makeService({
+      'bruteforce:login:v6:2001:db8:0:1': '4',
+      'bruteforce:lastip:v6:2001:db8:0:1': '2001:db8:0:1::abcd',
+    });
+    expect(await service.listSuspiciousActivity()).toEqual([
+      {
+        ip: 'v6:2001:db8:0:1',
+        lastIp: '2001:db8:0:1::abcd',
+        failedAttempts: 4,
+        isBlocked: false,
+        blockedTtlSeconds: null,
+      },
+    ]);
+  });
+
+  it('lastIp = null, если ключ lastip истёк или отсутствует; блокировка сохраняется', async () => {
+    const service = makeService(
+      {
+        'bruteforce:login:203.0.113.7': '10',
+        'bruteforce:blocked:203.0.113.7': '1',
+      },
+      { 'bruteforce:blocked:203.0.113.7': 120 },
+    );
+    expect(await service.listSuspiciousActivity()).toEqual([
+      {
+        ip: '203.0.113.7',
+        lastIp: null,
+        failedAttempts: 10,
+        isBlocked: true,
+        blockedTtlSeconds: 120,
+      },
+    ]);
+  });
+
+  it('ключ lastip сам не создаёт строку в списке', async () => {
+    const service = makeService({
+      'bruteforce:lastip:203.0.113.9': '203.0.113.9',
+    });
+    expect(await service.listSuspiciousActivity()).toEqual([]);
+  });
+});
