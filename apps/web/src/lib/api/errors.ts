@@ -10,6 +10,8 @@ export class ApiError extends Error {
   readonly requestId: string | undefined;
   readonly messages: string[];
   readonly body: unknown;
+  /// Заголовок `Retry-After` (секунды) у 429/503; выставляет клиент после разбора ответа.
+  retryAfterSeconds: number | undefined;
 
   constructor(
     status: number,
