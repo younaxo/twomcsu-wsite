@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -90,14 +91,37 @@ export class QuickModerationService {
   /// => PERMBAN, иначе TEMPBAN с bannedUntil/expiresAt.
   async ban(targetId: string, issuedBy: string, dto: BanUserDto) {
     const target = await this.requireUser(targetId);
+    // Иерархия к цели (Q48): выдать бан старшему или равному по приоритету
+    // нельзя (массовый бан проверяет то же самое до вызова).
+    if (!(await this.permissions.canActOn(issuedBy, targetId))) {
+      throw new ForbiddenException(
+        'Недостаточно прав для действия над этим пользователем',
+      );
+    }
     if (target.isBanned) {
       throw new ForbiddenException('Пользователь уже забанен');
     }
     const bannedUntil = dto.durationHours
       ? new Date(Date.now() + dto.durationHours * 3_600_000)
       : undefined;
-    const [punishment] = await this.prisma.$transaction([
-      this.prisma.userPunishment.create({
+    const punishment = await this.prisma.$transaction(async (tx) => {
+      // Условный перевод isBanned false -> true: две одновременные выдачи
+      // не перезапишут bannedById друг друга (L-1).
+      const claimed = await tx.user.updateMany({
+        where: { id: targetId, isBanned: false },
+        data: {
+          isBanned: true,
+          banReason: dto.reason,
+          bannedUntil: bannedUntil ?? null,
+          bannedById: issuedBy,
+        },
+      });
+      if (claimed.count === 0) {
+        throw new ConflictException(
+          'Состояние пользователя изменилось, повторите действие',
+        );
+      }
+      return tx.userPunishment.create({
         data: {
           userId: targetId,
           punishmentType: dto.durationHours
@@ -108,17 +132,8 @@ export class QuickModerationService {
           issuedBy,
           expiresAt: bannedUntil,
         },
-      }),
-      this.prisma.user.update({
-        where: { id: targetId },
-        data: {
-          isBanned: true,
-          banReason: dto.reason,
-          bannedUntil,
-          bannedById: issuedBy,
-        },
-      }),
-    ]);
+      });
+    });
     await this.auth.revokeAllSessions(targetId);
     return punishment;
   }
@@ -140,22 +155,38 @@ export class QuickModerationService {
       target.bannedById,
       targetId,
     );
-    await this.prisma.user.update({
-      where: { id: targetId },
-      data: {
-        isBanned: false,
-        banReason: null,
-        bannedUntil: null,
-        bannedById: null,
-      },
-    });
-    await this.audit.log({
-      actorId,
-      action: 'user.unban',
-      targetType: 'User',
-      targetId,
-      changes: sanctionRevokeAuditChanges(decision, target.bannedById),
-      severity: 'warning',
+    // L-1/L-3: снятие условно по состоянию, на котором принято решение
+    // (isBanned и bannedById), а аудит пишется в той же транзакции: если
+    // бан перевыдан другим за время проверки — 409 (повторять решение
+    // автоматически нельзя: проверка прав относилась к другому выдавшему),
+    // если аудит не записался — снятие откатывается.
+    await this.prisma.$transaction(async (tx) => {
+      const released = await tx.user.updateMany({
+        where: {
+          id: targetId,
+          isBanned: true,
+          bannedById: target.bannedById ?? null,
+        },
+        data: {
+          isBanned: false,
+          banReason: null,
+          bannedUntil: null,
+          bannedById: null,
+        },
+      });
+      if (released.count === 0) {
+        throw new ConflictException(
+          'Состояние бана изменилось, проверьте его и повторите действие',
+        );
+      }
+      await this.audit.logInTx(tx, {
+        actorId,
+        action: 'user.unban',
+        targetType: 'User',
+        targetId,
+        changes: sanctionRevokeAuditChanges(decision, target.bannedById),
+        severity: 'warning',
+      });
     });
     return { success: true };
   }

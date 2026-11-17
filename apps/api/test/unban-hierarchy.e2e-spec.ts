@@ -257,4 +257,145 @@ describe('Unban hierarchy (e2e)', () => {
       self: true,
     });
   });
+
+  const banAccount = (actor: TestUser, userId: string) =>
+    request(app.getHttpServer())
+      .post(`/moderation/users/${userId}/ban`)
+      .set('Authorization', auth(actor))
+      .send({ reason: 'e2e' });
+  const reportBan = (actor: TestUser, userId: string) =>
+    request(app.getHttpServer())
+      .post(`/admin/reports/ban/${userId}`)
+      .set('Authorization', auth(actor))
+      .send({ reason: 'e2e' });
+  const resetBans = async (userId: string) => {
+    await prisma.reportBan.deleteMany({ where: { userId } });
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isBanned: false,
+        banReason: null,
+        bannedUntil: null,
+        bannedById: null,
+      },
+    });
+  };
+
+  it('bulk: самоснятие не-владельцем -> в failed (иерархия), владельцем — проходит проверку иерархии', async () => {
+    const res = await bulk(junior, [junior.id]).expect(200);
+    expect(res.body.succeeded).toEqual([]);
+    expect(res.body.failed[0]).toMatchObject({ userId: junior.id });
+
+    // Владелец минует canActOn на себя; не забанен -> отказ по состоянию, а
+    // не по иерархии (забаненный владелец не прошёл бы JwtStrategy).
+    const own = await bulk(owner, [owner.id]).expect(200);
+    expect(own.body.failed[0].reason).toBe('Пользователь не забанен');
+    expect(own.body.failed[0].code).toBeUndefined();
+  });
+
+  it('unban аккаунта (QuickModeration через bulk): выдавший снимает, старший снимает, младший — нет', async () => {
+    await resetBans(victim.id);
+    // Бан выдан младшим: сам выдавший снимает.
+    await prisma.user.update({
+      where: { id: victim.id },
+      data: { isBanned: true, banReason: 'x', bannedById: junior.id },
+    });
+    const own = await bulk(junior, [victim.id]).expect(200);
+    expect(own.body.succeeded).toEqual([victim.id]);
+
+    // Бан выдан младшим: старший снимает.
+    await prisma.user.update({
+      where: { id: victim.id },
+      data: { isBanned: true, banReason: 'x', bannedById: junior.id },
+    });
+    const up = await bulk(senior, [victim.id]).expect(200);
+    expect(up.body.succeeded).toEqual([victim.id]);
+
+    // Бан выдан старшим: младший — нет, бан остаётся.
+    await prisma.user.update({
+      where: { id: victim.id },
+      data: { isBanned: true, banReason: 'x', bannedById: senior.id },
+    });
+    const down = await bulk(junior, [victim.id]).expect(200);
+    expect(down.body.failed[0]).toMatchObject({
+      code: 'sanction_revoke_forbidden',
+    });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: victim.id } }))
+        .isBanned,
+    ).toBe(true);
+    await resetBans(victim.id);
+  });
+
+  it('bulk: частичный отказ — разрешённый снимается, запрещённый в failed', async () => {
+    await resetBans(victim.id);
+    await resetBans(legacy.id);
+    await prisma.user.update({
+      where: { id: victim.id },
+      data: { isBanned: true, banReason: 'x', bannedById: senior.id },
+    });
+    await prisma.user.update({
+      where: { id: legacy.id },
+      data: { isBanned: true, banReason: 'x', bannedById: junior.id },
+    });
+    const res = await bulk(junior, [victim.id, legacy.id]).expect(200);
+    expect(res.body.succeeded).toEqual([legacy.id]);
+    expect(res.body.failed).toHaveLength(1);
+    expect(res.body.failed[0]).toMatchObject({
+      userId: victim.id,
+      code: 'sanction_revoke_forbidden',
+    });
+    await resetBans(victim.id);
+    await resetBans(legacy.id);
+  });
+
+  it('выдача бана аккаунта старшему -> 403 (иерархия), младшему -> 201', async () => {
+    await resetBans(senior.id);
+    await banAccount(junior, senior.id).expect(403);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: senior.id } }))
+        .isBanned,
+    ).toBe(false);
+    await banAccount(senior, victim.id).expect(201);
+    await resetBans(victim.id);
+  });
+
+  it('бан в обращениях: выдача старшему -> 403; младший не перебивает бан старшего', async () => {
+    await resetBans(victim.id);
+    await reportBan(junior, senior.id).expect(403);
+
+    await reportBan(senior, victim.id).expect(201);
+    await reportBan(junior, victim.id).expect(403);
+    const active = await prisma.reportBan.findMany({
+      where: { userId: victim.id, isActive: true },
+    });
+    expect(active).toHaveLength(1);
+    expect(active[0].bannedBy).toBe(senior.id);
+  });
+
+  it('бан в обращениях: старший перебивает бан младшего; старый деактивирован, аудит снятия', async () => {
+    await resetBans(victim.id);
+    const old = await prisma.reportBan.create({
+      data: { userId: victim.id, reason: 'x', bannedBy: junior.id },
+    });
+    await reportBan(senior, victim.id).expect(201);
+    const oldAfter = await prisma.reportBan.findUniqueOrThrow({
+      where: { id: old.id },
+    });
+    expect(oldAfter.isActive).toBe(false);
+    const active = await prisma.reportBan.findMany({
+      where: { userId: victim.id, isActive: true },
+    });
+    expect(active).toHaveLength(1);
+    expect(active[0].bannedBy).toBe(senior.id);
+    const log = await prisma.auditLog.findFirst({
+      where: {
+        actorId: senior.id,
+        action: 'reports.ban.revoke',
+        targetId: old.id,
+      },
+    });
+    expect(log).not.toBeNull();
+    await resetBans(victim.id);
+  });
 });

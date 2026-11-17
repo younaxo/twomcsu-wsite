@@ -1,4 +1,10 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, ReportType } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -126,18 +132,68 @@ export class ReportsAdminService {
     await this.prisma.reportMessage.delete({ where: { id: messageId } });
   }
 
+  /// Выдача бана в обращениях (Q48; ADR-0173). 1) иерархия к цели (canActOn):
+  /// банить старшего или равного нельзя; 2) новый бан ЗАМЕНЯЕТ действующие, а
+  /// замена = снятие: правило снятия проверяется для каждого заменяемого бана
+  /// («всё или ничего», 403 `sanction_revoke_forbidden`), иначе младший мог бы
+  /// перебить бан старшего; 3) деактивация, создание и аудит снятий — в одной
+  /// транзакции с условием по id проверенных банов (409 при гонке).
   async banUser(userId: string, bannedBy: string, dto: BanReportsDto) {
-    await this.prisma.reportBan.updateMany({
+    if (!(await this.permissions.canActOn(bannedBy, userId))) {
+      throw new ForbiddenException(
+        'Недостаточно прав для действия над этим пользователем',
+      );
+    }
+    const active = await this.prisma.reportBan.findMany({
       where: { userId, isActive: true },
-      data: { isActive: false },
     });
-    return this.prisma.reportBan.create({
-      data: {
-        userId,
-        reason: dto.reason,
-        bannedBy,
-        bannedUntil: dto.bannedUntil ? new Date(dto.bannedUntil) : undefined,
-      },
+    const decisions: SanctionRevokeDecision[] = [];
+    for (const ban of active) {
+      decisions.push(
+        await this.permissions.assertCanRevokeSanction(
+          bannedBy,
+          ban.bannedBy,
+          userId,
+        ),
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (active.length > 0) {
+        const replaced = await tx.reportBan.updateMany({
+          where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
+          data: { isActive: false },
+        });
+        if (replaced.count !== active.length) {
+          throw new ConflictException(
+            'Состояние банов изменилось, повторите действие',
+          );
+        }
+        for (const [index, ban] of active.entries()) {
+          await this.audit.logInTx(tx, {
+            actorId: bannedBy,
+            action: 'reports.ban.revoke',
+            targetType: 'ReportBan',
+            targetId: ban.id,
+            changes: sanctionRevokeAuditChanges(
+              decisions[index],
+              ban.bannedBy,
+              {
+                userId,
+                replacedByNewBan: true,
+              },
+            ),
+            severity: 'warning',
+          });
+        }
+      }
+      return tx.reportBan.create({
+        data: {
+          userId,
+          reason: dto.reason,
+          bannedBy,
+          bannedUntil: dto.bannedUntil ? new Date(dto.bannedUntil) : undefined,
+        },
+      });
     });
   }
 
@@ -161,22 +217,34 @@ export class ReportsAdminService {
         ),
       );
     }
-    await this.prisma.reportBan.updateMany({
-      where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
-      data: { isActive: false },
-    });
-    for (const [index, ban] of active.entries()) {
-      await this.audit.log({
-        actorId,
-        action: 'reports.ban.revoke',
-        targetType: 'ReportBan',
-        targetId: ban.id,
-        changes: sanctionRevokeAuditChanges(decisions[index], ban.bannedBy, {
-          userId,
-        }),
-        severity: 'warning',
-      });
+    if (active.length === 0) {
+      return;
     }
+    // L-2/L-3: деактивация условна по id проверенных банов, аудит — в той же
+    // транзакции (ошибка аудита откатывает снятие, ничего не теряется тихо).
+    await this.prisma.$transaction(async (tx) => {
+      const released = await tx.reportBan.updateMany({
+        where: { id: { in: active.map((ban) => ban.id) }, isActive: true },
+        data: { isActive: false },
+      });
+      if (released.count !== active.length) {
+        throw new ConflictException(
+          'Состояние банов изменилось, повторите действие',
+        );
+      }
+      for (const [index, ban] of active.entries()) {
+        await this.audit.logInTx(tx, {
+          actorId,
+          action: 'reports.ban.revoke',
+          targetType: 'ReportBan',
+          targetId: ban.id,
+          changes: sanctionRevokeAuditChanges(decisions[index], ban.bannedBy, {
+            userId,
+          }),
+          severity: 'warning',
+        });
+      }
+    });
   }
 
   async listDonations(query: ListReportsQueryDto) {

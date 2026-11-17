@@ -246,6 +246,14 @@ describe('PermissionService.canRevokeSanction (Q25, Q48, Q49)', () => {
     });
   });
 
+  it('владелец: issuerKnown отражает факт, доступ не зависит', async () => {
+    const s = buildRevoke(base);
+    const known = await s.evaluateSanctionRevoke('owner', 'mod', 'x');
+    expect(known).toMatchObject({ allowed: true, issuerKnown: true });
+    const deleted = await s.evaluateSanctionRevoke('owner', 'gone', 'x');
+    expect(deleted).toMatchObject({ allowed: true, issuerKnown: false });
+  });
+
   it('владелец снимает с себя чужую санкцию (Q49), ownerOverride и self', async () => {
     const s = buildRevoke(base);
     const d = await s.evaluateSanctionRevoke('owner', 'admin', 'owner');
@@ -274,7 +282,8 @@ describe('PermissionService.canRevokeSanction (Q25, Q48, Q49)', () => {
       );
       const d = await s.evaluateSanctionRevoke('owner', issuer, 'x');
       expect(d.ownerOverride).toBe(true);
-      expect(d.issuerKnown).toBe(Boolean(issuer));
+      // Ни один из этих выдавших не «известен»: нет записи, удалён или SYSTEM.
+      expect(d.issuerKnown).toBe(false);
     },
   );
 

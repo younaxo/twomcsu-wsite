@@ -1,4 +1,8 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { ChatService } from '../chat/chat.service';
@@ -21,16 +25,23 @@ function build(opts: {
     self: boolean;
     issuerKnown: boolean;
   };
+  canActOn?: boolean;
+  updateCount?: number;
 }) {
+  const tx = {
+    user: {
+      updateMany: jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }),
+    },
+    userPunishment: { create: jest.fn().mockResolvedValue('punishment') },
+  };
   const prisma = {
     user: {
       findUnique: jest.fn().mockResolvedValue(opts.user),
-      update: jest.fn().mockResolvedValue({}),
     },
-    userPunishment: { create: jest.fn().mockReturnValue('punishment-op') },
-    $transaction: jest.fn().mockResolvedValue(['punishment']),
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const permissions = {
+    canActOn: jest.fn().mockResolvedValue(opts.canActOn ?? true),
     assertCanRevokeSanction: jest.fn(() =>
       opts.decision && !opts.decision.allowed
         ? Promise.reject(
@@ -46,7 +57,10 @@ function build(opts: {
           ),
     ),
   };
-  const audit = { log: jest.fn().mockResolvedValue(undefined) };
+  const audit = {
+    log: jest.fn().mockResolvedValue(undefined),
+    logInTx: jest.fn().mockResolvedValue(undefined),
+  };
   const auth = { revokeAllSessions: jest.fn().mockResolvedValue(undefined) };
   const service = new QuickModerationService(
     prisma as unknown as PrismaService,
@@ -56,25 +70,48 @@ function build(opts: {
     permissions as unknown as PermissionService,
     audit as unknown as AuditService,
   );
-  return { service, prisma, permissions, audit, auth };
+  return { service, prisma, tx, permissions, audit, auth };
 }
 
-describe('QuickModerationService.ban: запись «кто выдал» (Q48)', () => {
-  it('сохраняет bannedById = выдавшего', async () => {
-    const { service, prisma } = build({
+describe('QuickModerationService.ban: «кто выдал», иерархия, гонки (Q48)', () => {
+  it('сохраняет bannedById = выдавшего условным переводом isBanned false -> true', async () => {
+    const { service, tx } = build({
       user: { id: 'u1', isBanned: false, bannedById: null },
     });
     await service.ban('u1', 'mod', { reason: 'cheat' } as never);
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
+    expect(tx.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'u1', isBanned: false },
       data: expect.objectContaining({ isBanned: true, bannedById: 'mod' }),
     });
+    expect(tx.userPunishment.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('выдача бана старшему/равному: 403, ничего не пишется', async () => {
+    const { service, prisma } = build({
+      user: { id: 'u1', isBanned: false, bannedById: null },
+      canActOn: false,
+    });
+    await expect(
+      service.ban('u1', 'junior', { reason: 'x' } as never),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('гонка: параллельный бан выиграл -> 409, наказание не создаётся', async () => {
+    const { service, tx } = build({
+      user: { id: 'u1', isBanned: false, bannedById: null },
+      updateCount: 0,
+    });
+    await expect(
+      service.ban('u1', 'mod', { reason: 'x' } as never),
+    ).rejects.toThrow(ConflictException);
+    expect(tx.userPunishment.create).not.toHaveBeenCalled();
   });
 });
 
 describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
-  it('разрешено: очищает бан и bannedById, пишет аудит', async () => {
-    const { service, prisma, permissions, audit } = build({
+  it('разрешено: условно очищает бан и bannedById, аудит в той же транзакции', async () => {
+    const { service, tx, permissions, audit } = build({
       user: { id: 'u1', isBanned: true, bannedById: 'mod' },
     });
     await expect(service.unban('u1', 'mod')).resolves.toEqual({
@@ -85,8 +122,8 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
       'mod',
       'u1',
     );
-    expect(prisma.user.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
+    expect(tx.user.updateMany).toHaveBeenCalledWith({
+      where: { id: 'u1', isBanned: true, bannedById: 'mod' },
       data: {
         isBanned: false,
         banReason: null,
@@ -94,7 +131,8 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
         bannedById: null,
       },
     });
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(audit.logInTx).toHaveBeenCalledWith(
+      tx,
       expect.objectContaining({
         actorId: 'mod',
         action: 'user.unban',
@@ -102,10 +140,11 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
         changes: { issuerId: 'mod', ownerOverride: false, self: false },
       }),
     );
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
-  it('старый бан без выдавшего: правилу передаётся null, в аудите «нет записи»', async () => {
-    const { service, permissions, audit } = build({
+  it('старый бан без выдавшего: правилу null, условие bannedById null, в аудите «нет записи»', async () => {
+    const { service, tx, permissions, audit } = build({
       user: { id: 'u1', isBanned: true, bannedById: null },
       decision: {
         allowed: true,
@@ -120,7 +159,13 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
       null,
       'u1',
     );
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(tx.user.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'u1', isBanned: true, bannedById: null },
+      }),
+    );
+    expect(audit.logInTx).toHaveBeenCalledWith(
+      tx,
       expect.objectContaining({
         changes: {
           issuerId: 'нет записи',
@@ -144,8 +189,25 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
     await expect(service.unban('u1', 'junior')).rejects.toMatchObject({
       response: { code: 'sanction_revoke_forbidden' },
     });
-    expect(prisma.user.update).not.toHaveBeenCalled();
-    expect(audit.log).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(audit.logInTx).not.toHaveBeenCalled();
+  });
+
+  it('гонка: бан перевыдан за время проверки -> 409, аудита нет', async () => {
+    const { service, audit } = build({
+      user: { id: 'u1', isBanned: true, bannedById: 'mod' },
+      updateCount: 0,
+    });
+    await expect(service.unban('u1', 'mod')).rejects.toThrow(ConflictException);
+    expect(audit.logInTx).not.toHaveBeenCalled();
+  });
+
+  it('ошибка аудита пробрасывается из транзакции (снятие откатывается)', async () => {
+    const { service, audit } = build({
+      user: { id: 'u1', isBanned: true, bannedById: 'mod' },
+    });
+    audit.logInTx.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.unban('u1', 'mod')).rejects.toThrow('db down');
   });
 
   it('владелец снимает бан с себя: self=true в аудите', async () => {
@@ -159,7 +221,8 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
       },
     });
     await service.unban('owner', 'owner');
-    expect(audit.log).toHaveBeenCalledWith(
+    expect(audit.logInTx).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         changes: { issuerId: 'admin', ownerOverride: true, self: true },
       }),

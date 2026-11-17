@@ -184,14 +184,6 @@ export class PermissionService {
     targetUserId?: string,
   ): Promise<SanctionRevokeDecision> {
     const self = targetUserId !== undefined && targetUserId === actorId;
-    if (await this.isSuperuser(actorId)) {
-      return {
-        allowed: true,
-        ownerOverride: !issuerId || issuerId !== actorId,
-        self,
-        issuerKnown: Boolean(issuerId),
-      };
-    }
     const issuer = issuerId
       ? await this.prisma.user.findUnique({
           where: { id: issuerId },
@@ -199,6 +191,16 @@ export class PermissionService {
         })
       : null;
     const issuerKnown = Boolean(issuer) && issuer?.accountType !== 'SYSTEM';
+    if (await this.isSuperuser(actorId)) {
+      // issuerKnown отражает факт (запись есть, пользователь существует, не
+      // SYSTEM); на доступ владельца он не влияет.
+      return {
+        allowed: true,
+        ownerOverride: !issuerId || issuerId !== actorId,
+        self,
+        issuerKnown,
+      };
+    }
     const deny = {
       allowed: false,
       ownerOverride: false,
