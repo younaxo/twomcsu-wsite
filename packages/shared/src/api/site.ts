@@ -290,6 +290,49 @@ export interface ProductListItem {
   variants?: { id: string; name?: string; price: DecimalString }[];
 }
 
+/// Публичная карточка товара: `GET /store/products`, `/store/products/:slug`,
+/// `/store/products/:slug/bought-together`. Белый список полей (S1): служебные
+/// gameCommands, server, currencyType/Amount, positionId, decorationId наружу
+/// не отдаются никогда.
+export interface PublicProductVariantDto {
+  id: string;
+  duration: string;
+  price: DecimalString;
+  oldPrice: DecimalString | null;
+  isActive: boolean;
+}
+
+export interface PublicProductDto {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  fullDescription: string | null;
+  type: string;
+  image: string | null;
+  images: string[];
+  isGiftable: boolean;
+  isSelfOnly: boolean;
+  isUnique: boolean;
+  isSeasonalOnly: boolean;
+  maxPerPurchase: number | null;
+  isFeatured: boolean;
+  isNew: boolean;
+  isPopular: boolean;
+  category: {
+    id: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    icon: string | null;
+    image: string | null;
+    parentId: string | null;
+  };
+  variants: PublicProductVariantDto[];
+  /// Только в `GET /store/products/:slug`.
+  inWishlist?: boolean;
+}
+
 /// `GET /store/recent-purchases` — публичная лента последних покупок; ник уже
 /// замаскирован backend-ом (`maskNickname`), личных данных нет.
 export interface RecentPurchaseDto {

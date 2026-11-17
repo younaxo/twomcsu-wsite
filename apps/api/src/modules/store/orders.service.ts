@@ -23,8 +23,26 @@ import {
 } from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { PricedLine, PricingService } from './pricing.service';
+import {
+  PUBLIC_PRODUCT_BRIEF_SELECT,
+  PUBLIC_VARIANT_SELECT,
+} from './public-product';
 
+/// Заказ для покупателя: товар — по белому списку (без gameCommands и прочих
+/// служебных полей), получатель подарка — только публичные поля (ADR-0107).
 const ORDER_INCLUDE = {
+  items: {
+    include: {
+      product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
+      variant: { select: PUBLIC_VARIANT_SELECT },
+      bundle: true,
+      giftToUser: { select: PUBLIC_USER_SELECT },
+    },
+  },
+} as const;
+
+/// Админский список заказов сохраняет прежний состав include.
+const ADMIN_ORDER_INCLUDE = {
   items: {
     include: { product: true, variant: true, bundle: true, giftToUser: true },
   },
@@ -432,7 +450,7 @@ export class OrdersService {
         where,
         // Финансам — публичные поля покупателя и email (ADR-0133), без IP и прочего.
         include: {
-          ...ORDER_INCLUDE,
+          ...ADMIN_ORDER_INCLUDE,
           user: { select: { ...PUBLIC_USER_SELECT, email: true } },
         },
         orderBy: { createdAt: 'desc' },
