@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Q50: перенос прав заметок обращений (ADR-0174, ветка fix/q50-notes-perms-backfill, не смержено)
+
+- Миграция данных `20261117010000_reports_notes_permissions_backfill` (не применялась): создаёт `reports.notes.edit` и `reports.notes.unpin`, выдаёт их ролям со старыми `reports.delete` и `reports.notes.pin` (только ALLOW), идемпотентно, только INSERT.
+- Unit-тест миграции читает SQL (запрещённые операторы, ON CONFLICT, ALLOW, соответствия). Чек-лист владельца обновлён: миграция -> seed -> проверка выдачи -> деплой.
+
 ### Исправления по ревью Q48 (ветка fix/q48-unban-hierarchy-all, не смержено)
 
 - Бан в обращениях: замена действующего бана = снятие, правило проверяется для каждого заменяемого бана («всё или ничего», 403 `sanction_revoke_forbidden`), плюс иерархия к цели (`canActOn`) при выдаче; так же при бане аккаунта через `QuickModerationService.ban`. Допущение chief, ADR-0173, R41.
