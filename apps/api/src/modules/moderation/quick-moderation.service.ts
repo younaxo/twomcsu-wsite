@@ -4,7 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PunishmentType } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
+import {
+  PermissionService,
+  sanctionRevokeAuditChanges,
+} from '../roles/permission.service';
 import { ChatService } from '../chat/chat.service';
 import { CommentsService } from '../comments/comments.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +25,8 @@ export class QuickModerationService {
     private readonly auth: AuthService,
     private readonly chat: ChatService,
     private readonly comments: CommentsService,
+    private readonly permissions: PermissionService,
+    private readonly audit: AuditService,
   ) {}
 
   private async requireUser(userId: string) {
@@ -104,7 +111,12 @@ export class QuickModerationService {
       }),
       this.prisma.user.update({
         where: { id: targetId },
-        data: { isBanned: true, banReason: dto.reason, bannedUntil },
+        data: {
+          isBanned: true,
+          banReason: dto.reason,
+          bannedUntil,
+          bannedById: issuedBy,
+        },
       }),
     ]);
     await this.auth.revokeAllSessions(targetId);
@@ -114,14 +126,36 @@ export class QuickModerationService {
   /// UNBAN — снимает account-level бан (отдельно от ReportBan, см.
   /// ReportsAdminService.unbanUser). Сессии не восстанавливаются — после
   /// разбана пользователь просто снова может пройти login.
-  async unban(targetId: string): Promise<{ success: true }> {
+  /// Единое правило снятия санкции (Q48, Q49; ADR-0173): владелец всегда;
+  /// бан без записи «кто выдал» (старый, выдавший удалён или SYSTEM) — только
+  /// владелец; с себя чужой бан не-владелец снять не может; иначе выдавший
+  /// либо равный/старший по приоритету. Каждое снятие пишется в аудит.
+  async unban(targetId: string, actorId: string): Promise<{ success: true }> {
     const target = await this.requireUser(targetId);
     if (!target.isBanned) {
       throw new ForbiddenException('Пользователь не забанен');
     }
+    const decision = await this.permissions.assertCanRevokeSanction(
+      actorId,
+      target.bannedById,
+      targetId,
+    );
     await this.prisma.user.update({
       where: { id: targetId },
-      data: { isBanned: false, banReason: null, bannedUntil: null },
+      data: {
+        isBanned: false,
+        banReason: null,
+        bannedUntil: null,
+        bannedById: null,
+      },
+    });
+    await this.audit.log({
+      actorId,
+      action: 'user.unban',
+      targetType: 'User',
+      targetId,
+      changes: sanctionRevokeAuditChanges(decision, target.bannedById),
+      severity: 'warning',
     });
     return { success: true };
   }
