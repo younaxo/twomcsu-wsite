@@ -614,7 +614,7 @@ export class AdminToolsService {
       changes: { before: current.ipWhitelist, after: updated.ipWhitelist },
       severity: 'warning',
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Security -------------------------------------------------------------
