@@ -320,6 +320,12 @@ export const envValidationSchema = Joi.object({
   BRIDGE_MAX_BODY_BYTES: Joi.number().integer().min(1024).max(1_048_576),
   BRIDGE_KEY_OVERLAP_DAYS: Joi.number().integer().min(1).max(30),
   BRIDGE_APPLY_LATENCY_LIMIT_MS: Joi.number().integer().min(100).max(30_000),
+  /// Дедлайн чтения тела запроса /bridge/v1 (по умолчанию 10000 мс).
+  BRIDGE_BODY_READ_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30_000)
+    .default(10_000),
   /// Хранение журнала дедупликации: не меньше 7 суток (F5), иначе старт отклоняется.
   BRIDGE_LOG_RETENTION_DAYS: Joi.number().integer().min(7).max(365),
   BRIDGE_LOG_CLEANUP_ENABLED: Joi.boolean(),

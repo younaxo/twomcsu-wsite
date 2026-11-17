@@ -739,3 +739,7 @@ TTL блокировки записи 15 с может быть меньше д�
 ## R132 — Допущение об авторитетном источнике Bridge и LiteBans (L2, L6) — OPEN
 
 Bridge пишет в зеркало со своим `sourceScope`; опрос LiteBans не отключён. Для одной записи возможны два источника с разным scope (дубль наказания в зеркале), пока владелец не решит, какой источник авторитетен для каждого сервера (`punishments-authoritative`). Формат `pluginVersion`/`platform` в `bridge.hello` ограничен (L4); неподходящие значения - `invalid_data`.
+
+## R137 — Серверные таймауты Node и прокси не заданы под slow-body (F1 остаточный) — OPEN
+
+Парсер `/bridge/v1` ограничивает чтение тела дедлайном `BRIDGE_BODY_READ_TIMEOUT_MS` (10 с, 408), но глобальные `requestTimeout`/`headersTimeout` Node и таймауты прокси не менялись. Медленные заголовки (slowloris до парсера) и медленное чтение ответа остаются на значениях по умолчанию. Рекомендация владельцу/инфраструктуре: в nginx `client_header_timeout 10s`, `client_body_timeout 10s`, `send_timeout 15s`, `limit_conn` на `/bridge/v1`; в Node оставить `headersTimeout` не больше 15 с и `requestTimeout` не больше 30 с. Без этого защита от slow-body неполная; решение за владельцем.

@@ -31,6 +31,7 @@ function config(over: Partial<BridgeConfig> = {}): BridgeConfig {
     maxBodyBytes: 262_144,
     keyOverlapDays: 7,
     applyLatencyLimitMs: 2000,
+    bodyReadTimeoutMs: 10000,
     ...over,
   };
 }

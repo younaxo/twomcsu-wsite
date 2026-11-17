@@ -307,6 +307,7 @@ describe('Bridge receiver (e2e)', () => {
           maxBodyBytes: 262_144,
           keyOverlapDays: 7,
           applyLatencyLimitMs: 2000,
+          bodyReadTimeoutMs: 10000,
         })
         .compile();
       const noSecretApp =

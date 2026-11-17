@@ -52,6 +52,8 @@ export const DEFAULT_TIMESTAMP_WINDOW_S = 60;
 export const DEFAULT_MAX_BODY_BYTES = 262_144;
 export const DEFAULT_KEY_OVERLAP_DAYS = 7;
 export const DEFAULT_APPLY_LATENCY_LIMIT_MS = 2000;
+/// Дедлайн чтения тела запроса парсером (slow-body, F1).
+export const DEFAULT_BODY_READ_TIMEOUT_MS = 10_000;
 /// Минимальная длина мастер-секрета в байтах (UTF-8 строки из окружения).
 export const MIN_MASTER_SECRET_BYTES = 32;
 /// Минимум различных значений байт в секрете (L3): отсекает "aaaa..." и

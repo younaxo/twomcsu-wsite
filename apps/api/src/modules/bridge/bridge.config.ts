@@ -1,5 +1,6 @@
 import {
   DEFAULT_APPLY_LATENCY_LIMIT_MS,
+  DEFAULT_BODY_READ_TIMEOUT_MS,
   DEFAULT_KEY_OVERLAP_DAYS,
   DEFAULT_MAX_BODY_BYTES,
   DEFAULT_TIMESTAMP_WINDOW_S,
@@ -18,6 +19,8 @@ export interface BridgeConfig {
   maxBodyBytes: number;
   keyOverlapDays: number;
   applyLatencyLimitMs: number;
+  /// Дедлайн чтения тела запроса парсером, мс.
+  bodyReadTimeoutMs: number;
 }
 
 export interface EnvReader {
@@ -56,6 +59,10 @@ export function readBridgeConfig(env: EnvReader): BridgeConfig {
     applyLatencyLimitMs: toPositiveInt(
       env.get('BRIDGE_APPLY_LATENCY_LIMIT_MS'),
       DEFAULT_APPLY_LATENCY_LIMIT_MS,
+    ),
+    bodyReadTimeoutMs: toPositiveInt(
+      env.get('BRIDGE_BODY_READ_TIMEOUT_MS'),
+      DEFAULT_BODY_READ_TIMEOUT_MS,
     ),
   };
 }

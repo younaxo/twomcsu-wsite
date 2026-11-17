@@ -132,3 +132,7 @@
 e2e (одноразовая БД, сторож `e2e-guarded.sh`):
 - предыдущие прогоны: bridge 26/26 (logs-final5), bans 25/25 (logs-final);
 - после N1: bridge 26/26, bans 25/25, rc=0 (логи `C:\Users\younaxo\AppData\Local\Temp\claude\729b7feedac35387\ea683592-b391-4067-8507-82412725dbec\scratchpad\logs-n1-1`, `summary.txt`).
+
+## Целевое ревью парсера тела /bridge/v1
+
+Вердикт: APPROVE WITH NOTES. F1 (Medium): дедлайн чтения тела `BRIDGE_BODY_READ_TIMEOUT_MS` (408 `request_timeout`, `Connection: close`, буфер очищается, таймер снимается во всех ветках) -> остаточный R137 (таймауты Node и nginx). F2: контракт (2.3 п.0, 2.3 п.2, коды ответов) приведён к поведению: `Content-Encoding` -> `415` на уровне парсера до аутентификации, плюс `408`. F3: префикс пути без учёта регистра и по части до `?`. F4: строгий UTF-8 (`TextDecoder` fatal, без снятия BOM), невалидный -> `400 invalid_body`, `rawBody` побайтный. Тесты добавлены в `bridge-body-parser.spec.ts`.

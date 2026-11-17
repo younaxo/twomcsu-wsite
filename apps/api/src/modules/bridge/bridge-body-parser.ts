@@ -11,8 +11,10 @@ import { BRIDGE_PATH_PREFIX } from './bridge.constants';
 /// `body-parser` (их нет среди зависимостей apps/api).
 ///
 /// Ошибки: 413 при превышении лимита (чтение прерывается, лишнее не
-/// буферизуется), 415 при `Content-Encoding`, иначе 400 `invalid_body` без
-/// текста ошибки разбора. При выключенном/ненастроенном Bridge - 503 до
+/// буферизуется), 415 при `Content-Encoding`, 408 `request_timeout` при
+/// превышении `BRIDGE_BODY_READ_TIMEOUT_MS`, иначе 400 `invalid_body` (в т.ч.
+/// невалидный UTF-8) без текста ошибки разбора. Префикс пути сопоставляется
+/// без учёта регистра и по части до `?`. При выключенном/ненастроенном Bridge - 503 до
 /// чтения тела. Не-JSON content-type пропускается дальше без чтения.
 type ParsedRequest = Request & { rawBody?: Buffer; _body?: boolean };
 
@@ -24,8 +26,8 @@ function isJsonContentType(value: string | undefined): boolean {
 
 export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const url = req.originalUrl;
-    if (url !== BRIDGE_PATH_PREFIX && !url.startsWith(`${BRIDGE_PATH_PREFIX}/`)) {
+    const path = req.originalUrl.split('?', 1)[0].toLowerCase();
+    if (path !== BRIDGE_PATH_PREFIX && !path.startsWith(`${BRIDGE_PATH_PREFIX}/`)) {
       next();
       return;
     }
@@ -53,6 +55,25 @@ export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
 
     const chunks: Buffer[] = [];
     let received = 0;
+    let timer: NodeJS.Timeout | null = null;
+
+    // Дедлайн чтения тела (F1): slow-body не удерживает соединение и буфер.
+    const onTimeout = (): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      chunks.length = 0;
+      received = 0;
+      if (res.headersSent) {
+        req.destroy();
+        return;
+      }
+      res.setHeader('Connection', 'close');
+      res.status(408).json({ error: 'request_timeout' });
+      // Остаток тела отбрасывается; соединение закрывается после ответа.
+      res.once('finish', () => req.destroy());
+      req.resume();
+    };
 
     const onData = (chunk: Buffer | string): void => {
       if (settled) return;
@@ -70,9 +91,20 @@ export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
       settled = true;
       cleanup();
       const raw = Buffer.concat(chunks, received);
-      const text = raw.toString('utf8');
       let parsed: unknown = {};
       if (raw.length > 0) {
+        // Строгий UTF-8 (F4): невалидные байты не заменяются на U+FFFD.
+        // BOM не отбрасывается (ignoreBOM) - JSON с BOM отклоняется как раньше.
+        let text: string;
+        try {
+          text = new TextDecoder('utf-8', {
+            fatal: true,
+            ignoreBOM: true,
+          }).decode(raw);
+        } catch {
+          res.status(400).json({ error: 'invalid_body' });
+          return;
+        }
         const first = text.trimStart()[0];
         if (first !== '{' && first !== '[') {
           res.status(400).json({ error: 'invalid_body' });
@@ -108,6 +140,10 @@ export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
       }
     };
     function cleanup(): void {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
       req.removeListener('data', onData);
       req.removeListener('end', onEnd);
       req.removeListener('close', onClose);
@@ -134,6 +170,7 @@ export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
       }
     }
 
+    timer = setTimeout(onTimeout, config.bodyReadTimeoutMs);
     req.on('data', onData);
     req.on('end', onEnd);
     req.on('close', onClose);
