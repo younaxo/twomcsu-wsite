@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   CartItem,
   DiscountType,
@@ -12,8 +8,17 @@ import {
   ProductType,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  badRequest,
+  CartPromoError,
+  notFound,
+  StoreCartError,
+  toPromoError,
+} from './store-errors';
 
 export interface PricedLine {
+  /// id строки корзины (для быстрой покупки — условный).
+  cartItemId: string | null;
   productId: string | null;
   variantId: string | null;
   bundleId: string | null;
@@ -28,6 +33,7 @@ export interface PricedLine {
   isGiftable: boolean;
   isSelfOnly: boolean;
   isUnique: boolean;
+  maxPerPurchase: number | null;
   name: string;
 }
 
@@ -38,6 +44,8 @@ export interface PricingResult {
   loyaltyDiscountPercent: Prisma.Decimal;
   loyaltyDiscountTotal: Prisma.Decimal;
   promoDiscountTotal: Prisma.Decimal;
+  /// Сохранённый промокод сейчас не действует (только режим softPromo).
+  promoError: CartPromoError | null;
   discountAmount: Prisma.Decimal;
   total: Prisma.Decimal;
 }
@@ -49,6 +57,7 @@ type CartItemWithRelations = CartItem & {
     isGiftable: boolean;
     isSelfOnly: boolean;
     isUnique: boolean;
+    maxPerPurchase?: number | null;
     name: string;
   } | null;
   variant: { id: string; price: Prisma.Decimal } | null;
@@ -130,6 +139,7 @@ export class PricingService {
       let isGiftable = true;
       let isSelfOnly = false;
       let isUnique = false;
+      let maxPerPurchase: number | null = null;
 
       if (item.bundle) {
         unitPrice = item.bundle.totalPrice;
@@ -141,6 +151,7 @@ export class PricingService {
         isGiftable = item.product.isGiftable;
         isSelfOnly = item.product.isSelfOnly;
         isUnique = item.product.isUnique;
+        maxPerPurchase = item.product.maxPerPurchase ?? null;
       } else {
         throw new BadRequestException(
           'Некорректная позиция корзины: не указан товар или набор',
@@ -163,6 +174,7 @@ export class PricingService {
       bulkDiscountTotal = bulkDiscountTotal.plus(bulkDiscount);
 
       lines.push({
+        cartItemId: item.id,
         productId: item.productId,
         variantId: item.variantId,
         bundleId: item.bundleId,
@@ -177,6 +189,7 @@ export class PricingService {
         isGiftable,
         isSelfOnly,
         isUnique,
+        maxPerPurchase,
         name,
       });
     }
@@ -200,31 +213,41 @@ export class PricingService {
       where: { code: code.toUpperCase() },
     });
     if (!promo || !promo.isActive) {
-      throw new NotFoundException('Промокод не найден');
+      throw notFound(StoreCartError.PROMO_NOT_FOUND, 'Промокод не найден');
     }
     const now = new Date();
     if (promo.validFrom && promo.validFrom > now) {
-      throw new BadRequestException('Промокод ещё не активен');
+      throw badRequest(
+        StoreCartError.PROMO_NOT_STARTED,
+        'Промокод ещё не активен',
+      );
     }
     if (promo.validUntil && promo.validUntil < now) {
-      throw new BadRequestException('Срок действия промокода истёк');
+      throw badRequest(
+        StoreCartError.PROMO_EXPIRED,
+        'Срок действия промокода истёк',
+      );
     }
     if (promo.maxUses !== null && promo.usedCount >= promo.maxUses) {
-      throw new BadRequestException('Промокод исчерпан');
+      throw badRequest(StoreCartError.PROMO_EXHAUSTED, 'Промокод исчерпан');
     }
     if (
       options.productTypes &&
       promo.applicableToTypes.length > 0 &&
       !options.productTypes.some((t) => promo.applicableToTypes.includes(t))
     ) {
-      throw new BadRequestException('Промокод неприменим к товарам в корзине');
+      throw badRequest(
+        StoreCartError.PROMO_NOT_APPLICABLE,
+        'Промокод неприменим к товарам в корзине',
+      );
     }
     if (
       options.subtotalAfterBulk !== undefined &&
       promo.minOrderAmount &&
       options.subtotalAfterBulk.lessThan(promo.minOrderAmount)
     ) {
-      throw new BadRequestException(
+      throw badRequest(
+        StoreCartError.PROMO_MIN_AMOUNT,
         'Сумма заказа меньше минимальной для этого промокода',
       );
     }
@@ -233,7 +256,10 @@ export class PricingService {
         where: { userId, status: OrderStatus.COMPLETED },
       });
       if (completedOrders > 0) {
-        throw new BadRequestException('Промокод только для первой покупки');
+        throw badRequest(
+          StoreCartError.PROMO_FIRST_PURCHASE_ONLY,
+          'Промокод только для первой покупки',
+        );
       }
     }
     return promo;
@@ -252,6 +278,9 @@ export class PricingService {
     items: CartItemWithRelations[],
     userId: string | null,
     promoCode: string | null,
+    /// softPromo: отказ промокода не бросает ошибку, а возвращается в promoError
+    /// (корзина без скидки по промокоду). Без флага — 4xx с кодом PROMO_*.
+    options: { softPromo?: boolean } = {},
   ): Promise<PricingResult> {
     const { lines, subtotal, bulkDiscountTotal } = await this.priceLines(items);
     const afterBulk = subtotal.minus(bulkDiscountTotal);
@@ -263,15 +292,24 @@ export class PricingService {
     const afterLoyalty = afterBulk.minus(loyaltyDiscountTotal);
 
     let promoDiscountTotal = new Prisma.Decimal(0);
+    let promoError: CartPromoError | null = null;
     if (promoCode) {
       const productTypes = lines
         .map((l) => l.productType)
         .filter((t): t is ProductType => t !== null);
-      const promo = await this.requireValidPromoCode(promoCode, userId, {
-        subtotalAfterBulk: afterLoyalty,
-        productTypes,
-      });
-      promoDiscountTotal = this.computePromoDiscount(promo, afterLoyalty);
+      try {
+        const promo = await this.requireValidPromoCode(promoCode, userId, {
+          subtotalAfterBulk: afterLoyalty,
+          productTypes,
+        });
+        promoDiscountTotal = this.computePromoDiscount(promo, afterLoyalty);
+      } catch (error) {
+        const known = toPromoError(error);
+        if (!options.softPromo || !known) {
+          throw error;
+        }
+        promoError = known;
+      }
     }
 
     const discountAmount = bulkDiscountTotal
@@ -286,6 +324,7 @@ export class PricingService {
       loyaltyDiscountPercent,
       loyaltyDiscountTotal,
       promoDiscountTotal,
+      promoError,
       discountAmount,
       total: total.greaterThan(0) ? total : new Prisma.Decimal(0),
     };

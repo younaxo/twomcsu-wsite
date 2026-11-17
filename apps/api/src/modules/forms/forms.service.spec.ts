@@ -127,10 +127,13 @@ describe('FormsService.canView и 2FA персонала (Q22, ADR-0169)', () =>
     );
   });
 
-  it('без ключа в production: fail closed, видимость игрока', async () => {
-    const { service } = visibilitySetup({ nodeEnv: 'production' });
-    expect(await service.canView(FormVisibility.ADMIN_ONLY, { id: 'u1' })).toBe(
-      false,
-    );
-  });
+  it.each(['production', '', undefined, 'staging'])(
+    'без ключа, NODE_ENV=%p: fail closed, видимость игрока',
+    async (nodeEnv) => {
+      const { service } = visibilitySetup({ nodeEnv });
+      expect(
+        await service.canView(FormVisibility.ADMIN_ONLY, { id: 'u1' }),
+      ).toBe(false);
+    },
+  );
 });
