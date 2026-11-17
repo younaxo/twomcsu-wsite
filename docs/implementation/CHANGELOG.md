@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Этап 02, срез 1: зеркало наказаний и синхронизация (ADR-0178, ветка feature/stage-02-s1-punishments-core, не смержено)
+
+- Контракт `PunishmentSource`, нормализация, статус, очистка причины, `rowHash`; модели `MinecraftPunishment` и `PunishmentSyncState`; миграция `20261117020000_punishments_mirror` (не применялась); `PunishmentsSyncService` (слои 0-3 и T), лидерство через Redis, `PunishmentsModule` без побочных эффектов без источника; `LITEBANS_*` в валидации env. Адаптер mysql2, `/bans`, «Мои наказания», WebSocket и админ-управление не входят (срезы 2-3). Риски R52-R55. Отчёт: `docs/reports/2026-11-17-02-s1-punishments-core.md`.
+
 ### Q21: throttler по подсети /64 и «Последний IP» в админке (ADR-0177, ветка fix/q21-ipv6-throttler-admin-ip, не смержено)
 
 - Глобальный throttler (`IpSubnetThrottlerGuard`) считает по `rateLimitKey`: IPv4 полный, IPv6 по /64, `unknown` / `raw:<hash>`; соседи по /64 делят лимит (решение владельца Q21 1а). Аргументы `@Throttle`/`@SkipThrottle` не менялись; `ws-rate-limit` (по `userId`) не менялся.
