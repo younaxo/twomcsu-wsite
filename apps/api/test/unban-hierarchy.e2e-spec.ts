@@ -130,6 +130,10 @@ describe('Unban hierarchy (e2e)', () => {
     const users = [owner, senior, junior, victim, legacy].filter(Boolean);
     const ids = users.map((u) => u.id);
     await prisma.reportBan.deleteMany({ where: { userId: { in: ids } } });
+    // Бан аккаунта создаёт UserPunishment (FK на User без onDelete): сначала он.
+    await prisma.userPunishment.deleteMany({
+      where: { OR: [{ userId: { in: ids } }, { issuedBy: { in: ids } }] },
+    });
     await prisma.userRole.deleteMany({
       where: { role: { slug: { in: cleanupRoleSlugs } } },
     });
@@ -284,7 +288,12 @@ describe('Unban hierarchy (e2e)', () => {
   it('bulk: самоснятие не-владельцем -> в failed (иерархия), владельцем — проходит проверку иерархии', async () => {
     const res = await bulk(junior, [junior.id]).expect(200);
     expect(res.body.succeeded).toEqual([]);
-    expect(res.body.failed[0]).toMatchObject({ userId: junior.id });
+    expect(res.body.failed[0]).toMatchObject({
+      userId: junior.id,
+      reason: 'Недостаточно прав для действия над этим пользователем',
+    });
+    // Отказ по иерархии (canActOn) идёт без кода санкции.
+    expect(res.body.failed[0].code).toBeUndefined();
 
     // Владелец минует canActOn на себя; не забанен -> отказ по состоянию, а
     // не по иерархии (забаненный владелец не прошёл бы JwtStrategy).
