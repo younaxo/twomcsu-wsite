@@ -129,7 +129,10 @@ describe('корзина /shop/cart', () => {
     mocks.get.mockResolvedValue(cart({ subtotal: '200.00', total: '777.00' }));
     render(<CartPage />, { wrapper: Providers });
     const total = await screen.findByTestId('cart-total');
-    expect(total).toHaveAttribute('aria-live', 'polite');
+    // единственный polite-регион страницы — cart-announce; итог не озвучивается дважды
+    expect(total).not.toHaveAttribute('aria-live');
+    expect(total).not.toHaveAttribute('role');
+    expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
     expect(total.textContent).toMatch(/777/);
     expect(total.textContent).not.toMatch(/\b200\b/);
     expect(mocks.get).toHaveBeenCalledWith('/store/cart');
@@ -237,6 +240,64 @@ describe('корзина /shop/cart', () => {
     );
     await waitFor(() => expect(mocks.del).toHaveBeenCalledWith('/store/cart'));
     expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+  });
+
+  it('A-1: после очистки корзины фокус на заголовке «Корзина»', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockResolvedValue(EMPTY);
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: /Очистить/ }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Очистить' }),
+    );
+    expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+    const heading = screen.getByRole('heading', { level: 1, name: 'Корзина' });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+
+  it('A-1: после удаления последней позиции фокус на заголовке', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockResolvedValue(EMPTY);
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Удалить: Тестовая привилегия' }));
+    expect(await screen.findByText('Корзина пуста')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Корзина' })).toHaveFocus(),
+    );
+  });
+
+  it('A-1: удаление не последней позиции фокус не уводит', async () => {
+    const user = userEvent.setup();
+    signIn();
+    const two = cart({
+      items: [item(), item({ id: 'i2', productId: 'p2', product: { id: 'p2', name: 'Вторая' } })],
+      lines: [line(), line({ productId: 'p2', name: 'Вторая' })],
+    });
+    mocks.get.mockResolvedValue(two);
+    mocks.del.mockResolvedValue(cart());
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Удалить: Вторая' }));
+    await waitFor(() => expect(mocks.del).toHaveBeenCalledWith('/store/cart/items/i2'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByRole('heading', { level: 1, name: 'Корзина' })).not.toHaveFocus();
+  });
+
+  it('A-3: ошибка удаления показывается в карточке позиции, а не вверху страницы', async () => {
+    const user = userEvent.setup();
+    signIn();
+    mocks.get.mockResolvedValue(cart());
+    mocks.del.mockRejectedValue(new ApiError(409, ['Сбой удаления']));
+    render(<CartPage />, { wrapper: Providers });
+    await user.click(await screen.findByRole('button', { name: 'Удалить: Тестовая привилегия' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Сбой удаления');
+    expect(within(screen.getByTestId('cart-item')).getByRole('alert')).toBe(alert);
+    expect(screen.getByRole('heading', { level: 1, name: 'Корзина' })).not.toHaveFocus();
   });
 
   it('промокод: ошибка сервера у поля, успех — код и описание', async () => {
@@ -358,6 +419,7 @@ describe('«В корзину» на /shop/[slug]', () => {
     productRoutes(PRODUCT);
     mocks.post.mockResolvedValue(cart());
     render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText('Оплата заказа появится в ближайшем обновлении.');
     await user.click(await screen.findByRole('button', { name: /В корзину/ }));
     expect(mocks.post).toHaveBeenCalledWith('/store/cart/items', { variantId: 'v1', quantity: 1 });
     expect(await screen.findByTestId('cart-feedback')).toHaveTextContent('добавлен в корзину');
@@ -398,6 +460,7 @@ describe('«В корзину» на /shop/[slug]', () => {
     productRoutes(PRODUCT);
     mocks.post.mockRejectedValue(new ApiError(404, ['Вариант товара не найден']));
     render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText('Оплата заказа появится в ближайшем обновлении.');
     await user.click(await screen.findByRole('button', { name: /В корзину/ }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Вариант товара не найден');
   });
@@ -413,6 +476,37 @@ describe('«В корзину» на /shop/[slug]', () => {
     await user.click(button);
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it('Q1: пока корзина грузится, «В корзину» неактивна и не отправляет запрос (уникальный товар)', async () => {
+    const user = userEvent.setup();
+    signIn();
+    let release: (value: CartView) => void = () => {};
+    mocks.get.mockImplementation((path: string) => {
+      if (path === '/store/products/ares') return Promise.resolve({ ...PRODUCT, isUnique: true });
+      if (path === '/store/products/ares/bought-together') return Promise.resolve([]);
+      if (path === '/store/cart') return new Promise<CartView>((resolve) => (release = resolve));
+      return Promise.reject(new ApiError(404, ['Not found']));
+    });
+    render(<ProductPage />, { wrapper: Providers });
+    const button = await screen.findByRole('button', { name: /В корзину/ });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Загружаем корзину…')).toBeInTheDocument();
+    await user.click(button);
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.patch).not.toHaveBeenCalled();
+
+    release(cart({ items: [item({ quantity: 1 })] }));
+    await screen.findByText('Уникальный товар уже в корзине.');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('Q1: после загрузки пустой корзины кнопка становится доступной', async () => {
+    signIn();
+    productRoutes(PRODUCT);
+    render(<ProductPage />, { wrapper: Providers });
+    await screen.findByText('Оплата заказа появится в ближайшем обновлении.');
+    expect(screen.getByRole('button', { name: /В корзину/ })).not.toHaveAttribute('aria-disabled');
   });
 
   it('аноним: кнопка неактивна, запросов корзины нет', async () => {

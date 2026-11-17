@@ -298,7 +298,9 @@ function ProductDetails({ product }: { product: StoreProduct }) {
   const inCartTotal = inCart.reduce((sum, item) => sum + item.quantity, 0);
   const sameVariant = selected ? inCart.find((item) => item.variantId === selected.id) : undefined;
   const blockedByUnique = unique && (inCart.length > 0 || product.alreadyPurchased === true);
-  const canAdd = signedIn && selected !== null && !blockedByUnique;
+  // Пока корзина грузится, про уникальный товар и лимит ничего не известно: кнопка неактивна.
+  const cartLoading = signedIn && cart.isPending;
+  const canAdd = signedIn && !cartLoading && selected !== null && !blockedByUnique;
 
   const addToCart = async () => {
     if (!selected || !canAdd || mutations.add.isPending || mutations.setQuantity.isPending) return;
@@ -413,13 +415,15 @@ function ProductDetails({ product }: { product: StoreProduct }) {
               <p id={hintId} className="text-xs text-muted-foreground">
                 {!signedIn
                   ? 'Для покупок понадобится вход в аккаунт.'
-                  : blockedByUnique
-                    ? product.alreadyPurchased
-                      ? 'Этот товар уже куплен — повторно он не продаётся.'
-                      : 'Уникальный товар уже в корзине.'
-                    : sameVariant
-                      ? `В корзине уже ${sameVariant.quantity} шт. этого варианта — количество увеличится.`
-                      : 'Оплата заказа появится в ближайшем обновлении.'}
+                  : cartLoading
+                    ? 'Загружаем корзину…'
+                    : blockedByUnique
+                      ? product.alreadyPurchased
+                        ? 'Этот товар уже куплен — повторно он не продаётся.'
+                        : 'Уникальный товар уже в корзине.'
+                      : sameVariant
+                        ? `В корзине уже ${sameVariant.quantity} шт. этого варианта — количество увеличится.`
+                        : 'Оплата заказа появится в ближайшем обновлении.'}
               </p>
               {signedIn ? (
                 <div aria-live="polite" role="status" data-testid="cart-feedback">

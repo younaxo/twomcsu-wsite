@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ModuleGate } from '@/components/system/site-availability';
 import { Badge } from '@/components/ui/badge';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -65,14 +65,12 @@ function GiftForm({
   mutations,
   recipient,
   onSaved,
-  onError,
 }: {
   item: CartItemView;
   line: CartLineView | null;
   mutations: Mutations;
   recipient: string | undefined;
   onSaved: (nick: string) => void;
-  onError: (message: string) => void;
 }) {
   const hasGift = Boolean(item.giftToUserId ?? line?.giftToUserId);
   const [open, setOpen] = useState(hasGift);
@@ -98,7 +96,6 @@ function GiftForm({
       onSaved(trimmed);
     } catch (error) {
       setFieldError(cartErrorMessage(error));
-      onError(cartErrorMessage(error));
     }
   };
 
@@ -178,7 +175,8 @@ function CartRow({
   recipient,
   busy,
   announce,
-  onError,
+  onRemoving,
+  onRemoveFailed,
   onRecipient,
 }: {
   item: CartItemView;
@@ -187,7 +185,8 @@ function CartRow({
   recipient: string | undefined;
   busy: boolean;
   announce: (message: string) => void;
-  onError: (message: string) => void;
+  onRemoving: () => void;
+  onRemoveFailed: () => void;
   onRecipient: (id: string, nick: string) => void;
 }) {
   const name = itemName(item, line);
@@ -195,22 +194,28 @@ function CartRow({
   const giftable =
     item.productId !== null && line?.isGiftable === true && line.isSelfOnly === false;
   const hasGift = Boolean(item.giftToUserId ?? line?.giftToUserId);
+  // Ошибка действия показывается в самой карточке, рядом с кнопкой.
+  const [rowError, setRowError] = useState<string | null>(null);
 
   const changeQuantity = async (quantity: number) => {
+    setRowError(null);
     try {
       await mutations.setQuantity.mutateAsync({ id: item.id, quantity });
       announce(`${name}: количество ${quantity}.`);
     } catch (error) {
-      onError(cartErrorMessage(error));
+      setRowError(cartErrorMessage(error));
     }
   };
 
   const remove = async () => {
+    setRowError(null);
+    onRemoving();
     try {
       await mutations.remove.mutateAsync(item.id);
       announce(`${name} удалён из корзины.`);
     } catch (error) {
-      onError(cartErrorMessage(error));
+      onRemoveFailed();
+      setRowError(cartErrorMessage(error));
     }
   };
 
@@ -305,13 +310,22 @@ function CartRow({
           ) : null}
         </div>
 
+        {rowError ? (
+          <p
+            role="alert"
+            data-testid="cart-row-error"
+            className="rounded-lg bg-destructive-soft px-3 py-2 text-sm font-medium text-destructive"
+          >
+            {rowError}
+          </p>
+        ) : null}
+
         {giftable ? (
           <GiftForm
             item={item}
             line={line}
             mutations={mutations}
             recipient={recipient}
-            onError={onError}
             onSaved={(nick) => {
               onRecipient(item.id, nick);
               announce(nick ? `Подарок для ${nick} сохранён.` : 'Подарок отменён.');
@@ -474,9 +488,6 @@ function Summary({
           ) : null}
         </dl>
         <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
           data-testid="cart-total"
           className="flex items-baseline justify-between gap-3 border-t border-border-subtle pt-4"
         >
@@ -509,16 +520,31 @@ function CartContent() {
   const mutations = useCartMutations();
   const [confirmClear, setConfirmClear] = useState(false);
   const [message, setMessage] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Метка «после этой мутации нужно вернуть фокус на заголовок, если корзина опустела».
+  const refocus = useRef(false);
   // Сервер отдаёт у подарка только id получателя; введённый ник помним на странице.
   const [recipients, setRecipients] = useState<Record<string, string>>({});
 
   const announce = (text: string) => {
-    setError(null);
+    setClearError(null);
     setMessage(text);
   };
   const busy =
     mutations.setQuantity.isPending || mutations.remove.isPending || mutations.clear.isPending;
+
+  const isEmpty = query.data?.items.length === 0;
+  const itemCount = query.data?.items.length;
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    if (!isEmpty) return;
+    // Кнопки удаления/очистки исчезли вместе с позицией, а Radix ещё возвращает фокус
+    // в снятый с дерева триггер: переносим фокус на заголовок после него.
+    const timer = setTimeout(() => headingRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [isEmpty, itemCount]);
 
   let body;
   if (status === 'idle' || status === 'loading') {
@@ -595,6 +621,15 @@ function CartContent() {
               Очистить
             </Button>
           </div>
+          {clearError ? (
+            <p
+              role="alert"
+              data-testid="cart-clear-error"
+              className="rounded-lg bg-destructive-soft px-3 py-2 text-sm font-medium text-destructive"
+            >
+              {clearError}
+            </p>
+          ) : null}
           <ul className="flex flex-col gap-3" aria-label="Товары в корзине">
             {cart.items.map((item, index) => (
               <CartRow
@@ -605,7 +640,12 @@ function CartContent() {
                 recipient={recipients[item.id]}
                 busy={busy}
                 announce={announce}
-                onError={setError}
+                onRemoving={() => {
+                  refocus.current = true;
+                }}
+                onRemoveFailed={() => {
+                  refocus.current = false;
+                }}
                 onRecipient={(id, nick) => setRecipients((prev) => ({ ...prev, [id]: nick }))}
               />
             ))}
@@ -620,12 +660,15 @@ function CartContent() {
           confirmLabel="Очистить"
           destructive
           onConfirm={async () => {
+            setClearError(null);
+            refocus.current = true;
             try {
               await mutations.clear.mutateAsync();
               setRecipients({});
               announce('Корзина очищена.');
             } catch (e) {
-              setError(cartErrorMessage(e));
+              refocus.current = false;
+              setClearError(cartErrorMessage(e));
             }
           }}
         />
@@ -636,16 +679,14 @@ function CartContent() {
   return (
     <div className="mx-auto flex max-w-[1440px] flex-col gap-6 px-4 py-8 md:px-6">
       <Breadcrumbs items={[{ label: 'Магазин', href: '/shop' }, { label: 'Корзина' }]} />
-      <h1 className="font-display text-2xl font-bold md:text-3xl">Корзина</h1>
-      {error ? (
-        <p
-          role="alert"
-          data-testid="cart-error"
-          className="rounded-lg bg-destructive-soft px-3 py-2 text-sm font-medium text-destructive"
-        >
-          {error}
-        </p>
-      ) : null}
+      <h1
+        ref={headingRef}
+        tabIndex={-1}
+        className="font-display text-2xl font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background md:text-3xl"
+      >
+        Корзина
+      </h1>
+      {/* Единственный polite-регион страницы: итог суммы сам не озвучивается. */}
       <p role="status" aria-live="polite" data-testid="cart-announce" className="sr-only">
         {message}
       </p>
