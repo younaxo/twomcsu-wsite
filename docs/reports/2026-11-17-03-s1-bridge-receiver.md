@@ -119,3 +119,16 @@
 7. L5, флаги `--production --confirm-owner`, runbook владельца: сделано (R131).
 
 Проверки: tsc api 0 ошибок; jest `--runInBand src/modules/bridge src/modules/punishments` 29 наборов, 986 тестов passed. Результаты e2e - в сообщении chief.
+
+## Повторное ревью безопасности
+
+Вердикт: APPROVE WITH NOTES. Обязательное замечание N1 закрыто, остальные заметки внесены в реестр рисков.
+
+- N1 (закрыто, коммит dce7d64): `bridge-body-parser.ts` импортировал `express`, которого нет в `apps/api/package.json`. Парсер переписан на node-потоке (Buffer, потолок `BRIDGE_MAX_BODY_BYTES`): превышение прерывает буферизацию (413), некорректный JSON - 400 `invalid_body` без текста ошибки, `Content-Encoding` - 415, `rawBody` сохраняется для HMAC, 503 при выключенном Bridge - до чтения тела. Зависимости, `package.json` и lockfile не менялись. Импорты типов express в модуле bridge переведены на `import type`. Тесты парсера: ровно граница, +1 байт, chunked с превышением, медленный поток, обрыв соединения, битый JSON, примитив, Content-Encoding, 503, чужие пути.
+- N2 -> R134 (поиск ключа до проверки блокировки, ключи authfail под произвольный key-id), N3 -> R135 (маркер до publish), N4 -> R136 (TTL блокировки записи 15 с), M2 -> R133 (потеря stale-маркера в Redis). R129 уточнён (503 до чтения тела при выключенном Bridge; неаутентифицированный разбор до 256 КБ ограничен throttler).
+
+Проверки после N1: jest без NODE_PATH `--runInBand src/modules/bridge src/modules/punishments`: 29 наборов, 991 тест passed; `tsc --noEmit` apps/api: 0 ошибок; в продуктовом коде bridge нет значений-импортов `express`.
+
+e2e (одноразовая БД, сторож `e2e-guarded.sh`):
+- предыдущие прогоны: bridge 26/26 (logs-final5), bans 25/25 (logs-final);
+- после N1: bridge 26/26, bans 25/25, rc=0 (логи `C:\Users\younaxo\AppData\Local\Temp\claude\729b7feedac35387\ea683592-b391-4067-8507-82412725dbec\scratchpad\logs-n1-1`, `summary.txt`).
