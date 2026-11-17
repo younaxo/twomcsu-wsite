@@ -1,22 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { normalizeIp } from '../../config/trust-proxy';
+import { rateLimitKey } from '../../config/trust-proxy';
 import { RedisService } from '../redis/redis.service';
 
 const CAPTCHA_AFTER_ATTEMPTS = 3;
 const BLOCK_AFTER_ATTEMPTS = 10;
 const WINDOW_SECONDS = 900;
 
-/// Счётчик привязан к IP (не к аккаунту) — см. docs/technical/09-AUTHENTICATION.md.
+/// Счётчик привязан к IP (IPv6 — к подсети /64, ADR-0163; не к аккаунту) — см. docs/technical/09-AUTHENTICATION.md.
 @Injectable()
 export class BruteForceService {
   constructor(private readonly redis: RedisService) {}
 
   private counterKey(ip: string): string {
-    return `bruteforce:login:${normalizeIp(ip)}`;
+    return `bruteforce:login:${rateLimitKey(ip)}`;
   }
 
   private blockedKey(ip: string): string {
-    return `bruteforce:blocked:${normalizeIp(ip)}`;
+    return `bruteforce:blocked:${rateLimitKey(ip)}`;
   }
 
   async isBlocked(ip: string): Promise<boolean> {

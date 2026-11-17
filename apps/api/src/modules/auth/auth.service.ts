@@ -31,6 +31,9 @@ import { TwoFactorService } from './two-factor/two-factor.service';
 
 export interface RequestContext {
   ip: string;
+  /// СЫРОЙ req.ip ?? remoteAddress — только для ключа brute-force (ADR-0163):
+  /// `ip` уже схлопывает мусор в 'unknown'. Нет значения — берётся `ip`.
+  rateLimitIp?: string;
   userAgent?: string;
 }
 
@@ -242,7 +245,7 @@ export class AuthService {
     | ({ user: AuthenticatedUser } & TokenPair)
     | { twoFactorRequired: true; challengeId: string }
   > {
-    if (await this.bruteForce.isBlocked(context.ip)) {
+    if (await this.bruteForce.isBlocked(context.rateLimitIp ?? context.ip)) {
       throw new HttpException(
         'Слишком много попыток входа. Повторите позже.',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -281,7 +284,7 @@ export class AuthService {
       user.accountType === AccountType.SYSTEM ||
       !(await bcrypt.compare(dto.password, user.password))
     ) {
-      await this.bruteForce.registerFailure(context.ip);
+      await this.bruteForce.registerFailure(context.rateLimitIp ?? context.ip);
       throw new UnauthorizedException('Неверный email/логин или пароль');
     }
 
@@ -293,7 +296,7 @@ export class AuthService {
       });
     }
 
-    await this.bruteForce.reset(context.ip);
+    await this.bruteForce.reset(context.rateLimitIp ?? context.ip);
 
     // 2FA (ADR-0109): пароль верен — сессия только после кода.
     if (user.twoFactorEnabled) {
@@ -319,7 +322,7 @@ export class AuthService {
     code: string,
     context: RequestContext,
   ): Promise<{ user: AuthenticatedUser } & TokenPair> {
-    if (await this.bruteForce.isBlocked(context.ip)) {
+    if (await this.bruteForce.isBlocked(context.rateLimitIp ?? context.ip)) {
       throw new HttpException(
         'Слишком много попыток входа. Повторите позже.',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -330,11 +333,13 @@ export class AuthService {
         challengeId,
         code,
       );
-      await this.bruteForce.reset(context.ip);
+      await this.bruteForce.reset(context.rateLimitIp ?? context.ip);
       return await this.issueSessionForUser(userId, context);
     } catch (error) {
       if (error instanceof UnauthorizedException) {
-        await this.bruteForce.registerFailure(context.ip);
+        await this.bruteForce.registerFailure(
+          context.rateLimitIp ?? context.ip,
+        );
       }
       throw error;
     }
