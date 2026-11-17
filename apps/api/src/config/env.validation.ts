@@ -329,4 +329,18 @@ export const envValidationSchema = Joi.object({
   /// Хранение журнала дедупликации: не меньше 7 суток (F5), иначе старт отклоняется.
   BRIDGE_LOG_RETENTION_DAYS: Joi.number().integer().min(7).max(365),
   BRIDGE_LOG_CLEANUP_ENABLED: Joi.boolean(),
+
+  /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
+  /// соединения для старта транзакции и предельная длительность. Prisma по
+  /// умолчанию даёт 2000/5000 мс, что под нагрузкой даёт P2028.
+  PRISMA_TX_MAX_WAIT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(30_000)
+    .default(10_000),
+  PRISMA_TX_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60_000)
+    .default(10_000),
 }).unknown(true);

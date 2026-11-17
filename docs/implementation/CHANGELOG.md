@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Транзакции Prisma: общие maxWait/timeout и 503 busy (ADR-0183, ветка fix/prisma-tx-defaults, не смержено, миграций нет)
+
+- `PrismaService`: `transactionOptions` из конфигурации `PRISMA_TX_MAX_WAIT_MS` и `PRISMA_TX_TIMEOUT_MS` (Joi, 1000-30000 и 1000-60000, по умолчанию 10000/10000). Точечные 10_000/10_000 в формах и вебхуке оплаты заказа убраны; Bridge и зеркало наказаний сохраняют 2000/6000.
+- Глобальный `PrismaExceptionFilter` (`APP_FILTER` в `PrismaModule`): `P2028`, `P2024`, `P2034` -> 503 `{ code: 'busy' }` с `Retry-After` вместо 500; `/bridge/v1` - тело `{ error: 'unavailable' }`; прочие коды -> 500 без деталей.
+- Чек-лист production-env: рекомендация `connection_limit`/`pool_timeout`. Отчёт `docs/reports/2026-11-17-prisma-tx-defaults.md`; риски R138-R142.
+
 ### Этап 03, срез 1: приёмник Bridge (ADR-0182, ветка feature/stage-03-s1-bridge-receiver, не смержено, миграции не применялись)
 
 - Модуль `apps/api/src/modules/bridge`: крипто (HKDF-ключ сервера по `slug` как соль, HMAC-SHA256 над сырым телом, `timingSafeEqual`), конфиг (`BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET` не короче 32 байт; без них все пути отвечают 503), схемы конверта и событий v1, `BridgeSignatureGuard` (порядок проверок раздела 2.3, нонс после подписи, fail-closed 503 при недоступном Redis), `BridgeRateLimitGuard` и Redis-лимиты (запросы на ключ, события в минуту, параллельные запросы, счётчик неудачных аутентификаций), `BridgeController` (`GET /bridge/v1/handshake`, `POST /bridge/v1/events`).

@@ -310,3 +310,34 @@ describe('envValidationSchema NODE_ENV fail-closed (ADR-0164)', () => {
     expect(validate({ ...minimal, NODE_ENV: 'staging' }).error).toBeDefined();
   });
 });
+
+describe('envValidationSchema PRISMA_TX_* (ADR-0183)', () => {
+  const validate = (extra: Record<string, unknown>) =>
+    envValidationSchema.validate({ ...base, ...extra }, { allowUnknown: true });
+
+  it('по умолчанию 10000/10000', () => {
+    const { error, value } = validate({});
+    expect(error).toBeUndefined();
+    expect(value.PRISMA_TX_MAX_WAIT_MS).toBe(10_000);
+    expect(value.PRISMA_TX_TIMEOUT_MS).toBe(10_000);
+  });
+
+  it('принимает значения в границах', () => {
+    const { error, value } = validate({
+      PRISMA_TX_MAX_WAIT_MS: '5000',
+      PRISMA_TX_TIMEOUT_MS: '20000',
+    });
+    expect(error).toBeUndefined();
+    expect(value.PRISMA_TX_MAX_WAIT_MS).toBe(5000);
+  });
+
+  it.each([
+    ['PRISMA_TX_MAX_WAIT_MS', '999'],
+    ['PRISMA_TX_MAX_WAIT_MS', '30001'],
+    ['PRISMA_TX_TIMEOUT_MS', '999'],
+    ['PRISMA_TX_TIMEOUT_MS', '60001'],
+    ['PRISMA_TX_TIMEOUT_MS', 'abc'],
+  ])('%s=%s отклоняется', (key, val) => {
+    expect(validate({ [key]: val }).error).toBeDefined();
+  });
+});
