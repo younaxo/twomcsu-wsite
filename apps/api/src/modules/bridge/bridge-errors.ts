@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 
 /// Все отказы аутентификации имеют одинаковое тело без деталей (2.3, п. 7).
 export function unauthorized(): UnauthorizedException {

@@ -1,5 +1,5 @@
 import { BridgeServer } from '@prisma/client';
-import { Request } from 'express';
+import type { Request } from 'express';
 import { BridgeCapability } from './bridge.constants';
 
 /// Результат успешной проверки подписи. `slug` берётся ТОЛЬКО из ключа.

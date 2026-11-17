@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgeRateLimitGuard } from './bridge-rate-limit.guard';
 import {

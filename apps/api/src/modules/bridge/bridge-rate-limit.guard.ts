@@ -5,7 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { tooManyRequests, unauthorized, unavailable } from './bridge-errors';
 import { BridgeRedisService } from './bridge-redis.service';
 import { BridgeRequest } from './bridge.types';

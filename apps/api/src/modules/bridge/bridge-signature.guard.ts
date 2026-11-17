@@ -6,7 +6,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { rateLimitKey } from '../../config/trust-proxy';
 import { PrismaService } from '../prisma/prisma.service';
 import { resolveCapabilities } from './bridge-capabilities';
