@@ -1,0 +1,68 @@
+import {
+  DEFAULT_APPLY_LATENCY_LIMIT_MS,
+  DEFAULT_KEY_OVERLAP_DAYS,
+  DEFAULT_MAX_BODY_BYTES,
+  DEFAULT_TIMESTAMP_WINDOW_S,
+  MIN_MASTER_SECRET_BYTES,
+} from './bridge.constants';
+
+export const BRIDGE_CONFIG = Symbol('BRIDGE_CONFIG');
+
+export interface BridgeConfig {
+  /// `BRIDGE_ENABLED=true`; пустое и незаданное значение — выключено.
+  enabled: boolean;
+  /// Байты UTF-8 строки `BRIDGE_MASTER_SECRET`; null, если не задан или
+  /// короче 32 байт (приёмник при этом отвечает 503).
+  masterSecret: Buffer | null;
+  timestampWindowS: number;
+  maxBodyBytes: number;
+  keyOverlapDays: number;
+  applyLatencyLimitMs: number;
+}
+
+export interface EnvReader {
+  get<T = string>(key: string): T | undefined;
+}
+
+function toBoolean(value: unknown): boolean {
+  return value === true || String(value ?? '').toLowerCase() === 'true';
+}
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+export function readBridgeConfig(env: EnvReader): BridgeConfig {
+  const rawSecret = env.get<string>('BRIDGE_MASTER_SECRET');
+  const secret =
+    typeof rawSecret === 'string' ? Buffer.from(rawSecret, 'utf8') : null;
+  return {
+    enabled: toBoolean(env.get('BRIDGE_ENABLED')),
+    masterSecret:
+      secret !== null && secret.length >= MIN_MASTER_SECRET_BYTES
+        ? secret
+        : null,
+    timestampWindowS: toPositiveInt(
+      env.get('BRIDGE_TIMESTAMP_WINDOW_S'),
+      DEFAULT_TIMESTAMP_WINDOW_S,
+    ),
+    maxBodyBytes: toPositiveInt(
+      env.get('BRIDGE_MAX_BODY_BYTES'),
+      DEFAULT_MAX_BODY_BYTES,
+    ),
+    keyOverlapDays: toPositiveInt(
+      env.get('BRIDGE_KEY_OVERLAP_DAYS'),
+      DEFAULT_KEY_OVERLAP_DAYS,
+    ),
+    applyLatencyLimitMs: toPositiveInt(
+      env.get('BRIDGE_APPLY_LATENCY_LIMIT_MS'),
+      DEFAULT_APPLY_LATENCY_LIMIT_MS,
+    ),
+  };
+}
+
+/// Приёмник работает только при включённом флаге И корректном секрете.
+export function isBridgeOperational(config: BridgeConfig): boolean {
+  return config.enabled && config.masterSecret !== null;
+}
