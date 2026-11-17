@@ -3655,3 +3655,32 @@ https, оба до 500 символов, `null` убирает логотип; P
   `backup.sh` — отдельная задача.
 - Бэкап на том же сервере не защищает от потери сервера: нужен вывоз копий (S3 или вручную).
 - Вне scope: P3-03c (образы в CI и registry), миграции, workflows, восстановление реальных дампов с ПДн.
+
+## ADR-0160 — Cloudflare real_ip и закрытие origin (P3-02b)
+
+**Status:** Accepted как подготовка (владелец, Q4 и Q14, 2026-11-17): схема на сегодня не меняется, включение Cloudflare отложено до переноса DNS.
+
+**Context.** ADR-0155 оставил топологию production открытой (nginx → api либо Cloudflare → nginx → api).
+Владелец (ответ на Q4) попросил подготовить схему Cloudflare. Ответ на Q14 (2026-11-17): сейчас «nginx → api», DNS в Beget, Cloudflare не используется, `TRUST_PROXY=1`; Cloudflare планируется позже. Сервера пока нет (R8).
+
+**Decision.**
+
+- Решение владельца (Q14): production остаётся «nginx → api» (DNS в Beget, без Cloudflare); блок `set_real_ip_from` в
+  `infrastructure/nginx.twomc.su.conf.example` и инструкция по файрволу остаются закомментированными до переноса DNS; в пример добавлены только комментарии и ссылка на runbook.
+- Игровой адрес и порт Minecraft через Cloudflare не проксируются: отдельная DNS-запись DNS only (при необходимости SRV); проксируется только HTTP(S) сайта.
+- Порядок включения при переносе DNS: файрвол origin (только диапазоны Cloudflare), затем раскомментировать `real_ip`, проверка `X-Forwarded-For`, Authenticated Origin Pulls (рекомендуется).
+- Подготовлен `docs/runbooks/cloudflare-real-ip.md`: диапазоны Cloudflare (снимок 2026-11-16 из ips-v4 и ips-v6),
+  `real_ip_header CF-Connecting-IP`, процедура обновления диапазонов, файрвол origin (ufw с `default deny incoming` и `IPV6=yes`, nftables; 80/443 только
+  с Cloudflare), ограничение SSH, Authenticated Origin Pulls, проверки и откат. Authenticated Origin Pulls с общим
+  сертификатом Cloudflare пропускает любую зону Cloudflare; привязка к своей зоне - только zone-level AOP с собственным
+  сертификатом (рекомендуется). Список диапазонов проверяется (не `0.0.0.0/0`/`::/0`, IPv4 не шире /8, IPv6 не шире /12).
+- `TRUST_PROXY=1` и `X-Forwarded-For $remote_addr` не меняются: хоп Cloudflare срезает nginx (real_ip), API видит
+  один адрес клиента. Значение 2 не используется.
+- `real_ip` включать только вместе с файрволом origin: иначе `CF-Connecting-IP` подделывается прямым запросом.
+- Список диапазонов считается снимком; перед включением и далее регулярно его получают заново.
+
+**Consequences.**
+
+- Ничего не изменено на сервере и в коде; включение требует решения владельца о топологии.
+- Устаревший список ломает либо доступ, либо определение IP: нужна регулярная проверка.
+- Вне scope: покупка и настройка Cloudflare, DNS, WAF-правила, изменение apps/** и workflows.

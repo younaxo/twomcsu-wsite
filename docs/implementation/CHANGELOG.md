@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+- Исправления по ревью P3-03a/b, P3-02b: runbook Cloudflare — скрипт файрвола прерывается до изменения правил при сбое `curl`, пустом списке или неверном формате; Authenticated Origin Pulls помечен как рекомендуемый; добавлено предупреждение не включать `real_ip` без файрвола origin.
+
+### Cloudflare real_ip (P3-02b)
+
+- Runbook `docs/runbooks/cloudflare-real-ip.md` (диапазоны Cloudflare, `real_ip_header CF-Connecting-IP`, обновление, файрвол origin, проверки, откат) и ADR-0160. Только документация: схема прокси не выбрана, блок в `infrastructure/nginx.twomc.su.conf.example` остаётся закомментированным, `TRUST_PROXY=1` без изменений.
+
 ### Бэкапы и восстановление (P3-03b)
 
 - `infrastructure/backup/backup.sh`, `restore.sh`, `restore-drill.sh`, `docker-compose.restore-drill.yml`: дамп PostgreSQL
