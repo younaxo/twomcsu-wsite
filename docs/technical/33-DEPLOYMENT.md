@@ -26,7 +26,8 @@ Web → API (HTTP + Socket.IO на `NEXT_PUBLIC_API_URL`); API → PostgreSQL (�
 ## Сеть и прокси
 Нужен reverse proxy с TLS и поддержкой WebSocket (`/socket.io`); `TRUST_PROXY` в API (S6, ADR-0155) — число доверенных хопов, по умолчанию `1` (nginx). `true`, `*`, `0`, `-1` API отвергает при старте. nginx должен ставить `X-Forwarded-For $remote_addr` (см. `infrastructure/nginx.twomc.su.conf.example`); порты API/web слушают только `127.0.0.1`. Если перед nginx стоит Cloudflare — включить закомментированный блок `real_ip` в примере и ограничить origin диапазонами Cloudflare. Статика `/uploads` отдаётся самим API (до внедрения CDN `cdn-files.twomc.su`).
 ## Backup
-PostgreSQL (обязательно), каталог `UPLOADS_DIR`/CDN-бакет (обязательно), Redis — по сути кеш (AOF включён, но критичного состояния нет: brute-force-счётчики и presence временные), secrets/`.env` — в менеджере секретов.
+PostgreSQL (обязательно), каталог `UPLOADS_DIR`/CDN-бакет (обязательно), Redis — по сути кеш (AOF включён, но критичного состояния нет: brute-force-счётчики и presence временные; не бэкапится), secrets/`.env` — в менеджере секретов.
+Скрипты `infrastructure/backup/backup.sh` (дамп БД, роли, архив uploads, sha256-манифест, шифрование age/gpg, S3 опционально, локальный fallback с ротацией), `restore.sh` и `restore-drill.sh`; порядок и коды выхода — `docs/runbooks/backup-restore.md`, ADR-0159, риск R30. Допущение: RPO 24 ч плюс снимок перед деплоем, RTO 4 ч (решение владельца D9 не принято). Расписание не включено до появления сервера (R8), restore-drill на синтетике подготовлен, но не выполнен.
 
 ## Актуально (PHASE 35)
 Контейнеризация реализована: `infrastructure/api.Dockerfile`, `web.Dockerfile`,

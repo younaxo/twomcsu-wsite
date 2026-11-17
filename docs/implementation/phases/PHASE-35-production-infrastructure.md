@@ -40,8 +40,11 @@ twomc.su на уже предоставленный хостинг сразу п
 
 ## Backup / safety
 
-- PostgreSQL volume `postgres-data` — `pg_dump` перед каждым деплоем с
-  миграциями; `uploads` — rsync/снапшот; Redis — кеш (AOF включён).
+- PostgreSQL volume `postgres-data` — снимок `pg_dump` перед каждым деплоем с
+  миграциями (`deploy.sh`, ADR-0158) и плановые бэкапы `infrastructure/backup/backup.sh`
+  (шифрование age/gpg, S3 опционально, локальный fallback с ротацией); `uploads` —
+  архив через временный контейнер с томом `:ro`; Redis — кеш, не бэкапится.
+  Восстановление и restore-drill: `docs/runbooks/backup-restore.md`, ADR-0159, R30.
 - Откат: `infrastructure/deploy.sh rollback` (образы предыдущего релиза
   остаются локально).
 
