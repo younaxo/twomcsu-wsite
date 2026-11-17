@@ -1,0 +1,4 @@
+# Любое изменение требует одобрения владельца проекта.
+# Вместе с ruleset `main-protection` (require_code_owner_review) это означает,
+# что ни один PR не сливается без одобрения @younaxo.
+* @younaxo
