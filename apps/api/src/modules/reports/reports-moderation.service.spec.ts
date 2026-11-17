@@ -378,6 +378,39 @@ describe('ReportsModerationService.deleteModeratorNote: права (Q52)', () =>
     );
   };
 
+  it('несуществующая заметка — 404, без записи', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue(null);
+    await expect(
+      service.deleteModeratorNote('R-1', 'nope', 'senior'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('заметка другого обращения — 404, без записи', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.reportModeratorNote.findUnique.mockResolvedValue({
+      ...note,
+      reportId: 'other-report',
+    });
+    await expect(
+      service.deleteModeratorNote('R-1', 'n1', 'author-mod'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
+  it('несуществующее обращение — 404, заметка не ищется', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(null);
+    await expect(
+      service.deleteModeratorNote('R-404', 'n1', 'senior'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.reportModeratorNote.findUnique).not.toHaveBeenCalled();
+    expect(prisma.reportModeratorNote.delete).not.toHaveBeenCalled();
+  });
+
   it('своя заметка (в т.ч. закреплённая) удаляется без проверки прав', async () => {
     const { prisma, permissions, service } = setup();
     prisma.report.findUnique.mockResolvedValue(row());

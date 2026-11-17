@@ -10,8 +10,10 @@
 
 - `apps/api/src/modules/reports/reports-moderation.service.ts`: `deleteModeratorNote` принимает `actorId`; своя заметка без проверки прав; чужая требует edit; чужая закреплённая требует edit и unpin; иначе `ForbiddenException` (403).
 - `apps/api/src/modules/reports/reports-moderation.controller.ts`: передаёт `user.id`.
-- `apps/api/src/modules/reports/reports-moderation.service.spec.ts`: 6 unit-тестов (своя закреплённая; чужая без права; с edit; закреплённая с edit без unpin; только unpin без edit; с обоими правами).
-- e2e `reports.e2e-spec.ts`: удаление выполняет автор заметки (moderator), поведение не меняется; правок не потребовалось, e2e не запускались.
+- `apps/api/src/modules/reports/reports-moderation.service.spec.ts`: 9 unit-тестов (своя закреплённая; чужая без права; с edit; закреплённая с edit без unpin; только unpin без edit; с обоими правами; 404: нет заметки, заметка другого обращения, нет обращения).
+- `apps/api/src/modules/reports/reports-rbac.spec.ts`: 2 теста контроллера (право `reports.notes` на DELETE, передача `user.id`).
+- e2e `apps/api/test/reports.e2e-spec.ts` (дописан статически, НЕ запускался, проверен только tsc): добавлены сотрудники peer (`reports.notes`) и senior (`reports.notes` + `reports.notes.edit`), 2FA через `markStaffTwoFactorEnabled`; сценарии: чужая без edit 403; чужая закреплённая с edit без unpin 403; автор удаляет свою закреплённую 200; чужая незакреплённая с edit 200.
+- Ревью ветки D (APPROVE WITH NOTES) закрыто: тесты, тело ADR-0176 (автор и закреплённая), чек-лист владельца (порядок, TTL кэша прав 300 с, SQL по ролям, проверка миграции Q50 на одноразовой БД — не выполнена), R44/R45.
 - Web: кнопки удаления заметки нет, не менялся.
 - Документы: ADR-0176, CHANGELOG, R45.
 

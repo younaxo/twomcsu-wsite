@@ -88,6 +88,8 @@ describe('Reports (e2e)', () => {
   let bob: TestUser;
   let troll: TestUser;
   let spammer: TestUser;
+  let peer: TestUser;
+  let senior: TestUser;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -107,6 +109,8 @@ describe('Reports (e2e)', () => {
     bob = await createUser('bob');
     troll = await createUser('troll');
     spammer = await createUser('spammer');
+    peer = await createUser('peer');
+    senior = await createUser('senior');
 
     const moderatorRole = await createRole(`reports-moderator-${unique}`, 10);
     await grantRole(moderator.id, moderatorRole.id);
@@ -120,6 +124,18 @@ describe('Reports (e2e)', () => {
       'reports.messages.unpin',
       'reports.notes',
       'reports.notes.pin',
+    ]);
+
+    // Q52: peer — только reports.notes; senior — notes + notes.edit (без unpin).
+    const peerRole = await createRole(`reports-peer-${unique}`, 10);
+    await grantRole(peer.id, peerRole.id);
+    await grantPermissions(peerRole.id, ['reports.view', 'reports.notes']);
+    const seniorRole = await createRole(`reports-senior-${unique}`, 10);
+    await grantRole(senior.id, seniorRole.id);
+    await grantPermissions(seniorRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.edit',
     ]);
 
     const adminRole = await createRole(`reports-admin-${unique}`, 20);
@@ -163,6 +179,8 @@ describe('Reports (e2e)', () => {
               bob.email,
               troll.email,
               spammer.email,
+              peer.email,
+              senior.email,
             ],
           },
         },
@@ -178,6 +196,8 @@ describe('Reports (e2e)', () => {
             bob.email,
             troll.email,
             spammer.email,
+            peer.email,
+            senior.email,
           ],
         },
       },
@@ -484,6 +504,55 @@ describe('Reports (e2e)', () => {
     await request(app.getHttpServer())
       .delete(`/moderation/reports/${reportNumber}/notes/${noteId}`)
       .set('Authorization', auth(moderator))
+      .expect(200);
+  });
+
+  it('удаление заметки (Q52): чужая — только с reports.notes.edit, закреплённая — ещё и с unpin', async () => {
+    const created = await request(app.getHttpServer())
+      .post(`/moderation/reports/${reportNumber}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Заметка автора-модератора' })
+      .expect(201);
+    const notes = created.body.moderatorNotes as Array<{ id: string }>;
+    const foreignId = notes[notes.length - 1].id;
+    const url = `/moderation/reports/${reportNumber}/notes/${foreignId}`;
+
+    // Без reports.notes.edit чужую заметку удалить нельзя.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(peer))
+      .expect(403);
+
+    // Закрепляем (moderator имеет reports.notes.pin).
+    await request(app.getHttpServer())
+      .patch(`${url}/pin`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+
+    // С edit, но без unpin закреплённую чужую удалить нельзя.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(senior))
+      .expect(403);
+
+    // Автор удаляет свою закреплённую заметку без unpin.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+
+    // Незакреплённая чужая заметка: с edit — 200.
+    const second = await request(app.getHttpServer())
+      .post(`/moderation/reports/${reportNumber}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Вторая заметка' })
+      .expect(201);
+    const secondNotes = second.body.moderatorNotes as Array<{ id: string }>;
+    await request(app.getHttpServer())
+      .delete(
+        `/moderation/reports/${reportNumber}/notes/${secondNotes[secondNotes.length - 1].id}`,
+      )
+      .set('Authorization', auth(senior))
       .expect(200);
   });
 
