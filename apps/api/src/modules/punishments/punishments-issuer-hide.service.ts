@@ -19,6 +19,13 @@ const MAX_ATTEMPTS = 2;
 
 type Mode = 'hide' | 'unhide';
 
+/// IP и User-Agent запроса для аудита: действие идёт с `@SkipAudit()`, общий
+/// AuditInterceptor их не запишет, поэтому контроллер передаёт их явно.
+export interface IssuerHideRequestMeta {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 /// Скрытие и показ выдавшего у конкретного наказания (контракт 4.2, Q63 п.3).
 /// Право и 2FA проверяет `PermissionsGuard`; здесь - иерархия относительно
 /// выдавшего (N3), условный UPDATE и аудит в ОДНОЙ транзакции (N2).
@@ -35,12 +42,17 @@ export class PunishmentsIssuerHideService {
     actorId: string,
     ref: string,
     reason: string,
+    meta: IssuerHideRequestMeta = {},
   ): Promise<StaffPunishmentResponse> {
-    return this.change('hide', actorId, ref, reason);
+    return this.change('hide', actorId, ref, reason, meta);
   }
 
-  unhide(actorId: string, ref: string): Promise<StaffPunishmentResponse> {
-    return this.change('unhide', actorId, ref, null);
+  unhide(
+    actorId: string,
+    ref: string,
+    meta: IssuerHideRequestMeta = {},
+  ): Promise<StaffPunishmentResponse> {
+    return this.change('unhide', actorId, ref, null, meta);
   }
 
   private async change(
@@ -48,6 +60,7 @@ export class PunishmentsIssuerHideService {
     actorId: string,
     ref: string,
     reason: string | null,
+    meta: IssuerHideRequestMeta,
   ): Promise<StaffPunishmentResponse> {
     const parsed = parseRef(ref, false);
     if (parsed === null) throw punishmentNotFound();
@@ -73,6 +86,7 @@ export class PunishmentsIssuerHideService {
         ref,
         reason,
         current,
+        meta,
       );
       if (changed) {
         // Кэш сбрасывается только после успешной фиксации транзакции.
@@ -97,8 +111,16 @@ export class PunishmentsIssuerHideService {
     ref: string,
     reason: string | null,
     row: MirrorRow,
+    meta: IssuerHideRequestMeta,
   ): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
+      // Low-3: иерархия перепроверяется непосредственно перед условным UPDATE
+      // в той же транзакции (роль актора или скрывшего могла измениться между
+      // первой проверкой и записью). Отказ - 403 и откат без записи.
+      await this.assertIssuerAccess(actorId, row);
+      if (mode === 'unhide') {
+        await this.assertCanUnhide(actorId, row.issuerHiddenById);
+      }
       const now = new Date();
       const result = await tx.minecraftPunishment.updateMany({
         where:
@@ -148,6 +170,8 @@ export class PunishmentsIssuerHideService {
         targetType: 'MinecraftPunishment',
         targetId: row.id,
         changes,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
         severity: 'warning',
       });
       return true;

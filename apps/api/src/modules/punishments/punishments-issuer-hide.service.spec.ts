@@ -508,3 +508,111 @@ describe('assertCanUnhide (п.37)', () => {
     expect(h.audit.logInTx).not.toHaveBeenCalled();
   });
 });
+
+describe('IP и User-Agent в аудите (Low-2)', () => {
+  const meta = { ipAddress: '203.0.113.7', userAgent: 'jest-agent/1' };
+
+  it('hide: ipAddress и userAgent запроса попадают в запись аудита', async () => {
+    const h = make();
+    h.permissions.isSuperuser.mockResolvedValue(true);
+    await h.service.hide('actor', 'ban-42', 'r', meta);
+    expect(h.audit.logInTx.mock.calls[0][1]).toMatchObject({
+      action: 'punishment.issuer.hide',
+      ipAddress: '203.0.113.7',
+      userAgent: 'jest-agent/1',
+    });
+  });
+
+  it('unhide: то же', async () => {
+    const h = make();
+    h.permissions.isSuperuser.mockResolvedValue(true);
+    h.reader.findByRef.mockResolvedValue(
+      row({ issuerHidden: true, issuerHiddenById: 'hider' }),
+    );
+    await h.service.unhide('actor', 'ban-42', meta);
+    expect(h.audit.logInTx.mock.calls[0][1]).toMatchObject({
+      action: 'punishment.issuer.unhide',
+      ipAddress: '203.0.113.7',
+      userAgent: 'jest-agent/1',
+    });
+  });
+
+  it('без meta поля не заданы (прежний вызов не ломается)', async () => {
+    const h = make();
+    h.permissions.isSuperuser.mockResolvedValue(true);
+    await h.service.hide('actor', 'ban-42', 'r');
+    const input = h.audit.logInTx.mock.calls[0][1];
+    expect(input.ipAddress).toBeUndefined();
+    expect(input.userAgent).toBeUndefined();
+  });
+});
+
+describe('повторная проверка иерархии внутри транзакции (Low-3)', () => {
+  it('hide: роль изменилась между первой проверкой и транзакцией - 403, UPDATE и аудита нет', async () => {
+    const h = make();
+    // Консольный выдавший разрешён любому; в транзакции правило уже не
+    // выполняется: подменяем на сопоставленного вышестоящего.
+    h.reader.findByRef.mockResolvedValue(row({ executorIsConsole: false }));
+    h.prisma.minecraftAccount.findUnique.mockResolvedValue({
+      userId: 'boss',
+      user: { accountType: 'HUMAN' },
+    });
+    // Первая проверка (вне транзакции) пропускает, повторная (в транзакции)
+    // уже отказывает: приоритет действующего понизили.
+    h.permissions.canActOn
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const e = await thrown(h.service.hide('actor', 'ban-42', 'r'));
+    expectForbiddenHide(e);
+    expect(h.permissions.canActOn).toHaveBeenCalledTimes(2);
+    expect(h.tx.minecraftPunishment.updateMany).not.toHaveBeenCalled();
+    expect(h.audit.logInTx).not.toHaveBeenCalled();
+    expect(h.reader.invalidatePublicCache).not.toHaveBeenCalled();
+  });
+
+  it('unhide: приоритет понижен после первой проверки - 403, UPDATE и аудита нет', async () => {
+    const h = make();
+    h.reader.findByRef.mockResolvedValue(
+      row({
+        executorIsConsole: true,
+        issuerHidden: true,
+        issuerHiddenById: 'hider',
+      }),
+    );
+    h.prisma.user.findUnique.mockResolvedValue({ id: 'hider' });
+    // Вне транзакции приоритет 50 против 40, в транзакции уже 10 против 40.
+    h.permissions.getMaxPriority.mockImplementation(
+      (() => {
+        let calls = 0;
+        return (id: string) => {
+          calls += 1;
+          if (id === 'hider') return Promise.resolve(40);
+          return Promise.resolve(calls <= 2 ? 50 : 10);
+        };
+      })(),
+    );
+
+    const e = await thrown(h.service.unhide('actor', 'ban-42'));
+    expectForbiddenHide(e);
+    expect(h.tx.minecraftPunishment.updateMany).not.toHaveBeenCalled();
+    expect(h.audit.logInTx).not.toHaveBeenCalled();
+    expect(h.reader.invalidatePublicCache).not.toHaveBeenCalled();
+  });
+
+  it('проверка идёт до условного UPDATE внутри $transaction', async () => {
+    const h = make();
+    h.permissions.isSuperuser.mockResolvedValue(true);
+    const order: string[] = [];
+    h.permissions.isSuperuser.mockImplementation(() => {
+      order.push(h.prisma.$transaction.mock.calls.length > 0 ? 'in-tx' : 'pre');
+      return Promise.resolve(true);
+    });
+    h.tx.minecraftPunishment.updateMany.mockImplementation(() => {
+      order.push('update');
+      return Promise.resolve({ count: 1 });
+    });
+    await h.service.hide('actor', 'ban-42', 'r');
+    expect(order).toEqual(['pre', 'in-tx', 'update']);
+  });
+});

@@ -30,7 +30,10 @@ import {
   sendPublic,
   setPrivateNoStore,
 } from './punishments-http';
-import { PunishmentsIssuerHideService } from './punishments-issuer-hide.service';
+import {
+  IssuerHideRequestMeta,
+  PunishmentsIssuerHideService,
+} from './punishments-issuer-hide.service';
 import {
   HidePunishmentIssuerDto,
   MyPunishmentsQueryDto,
@@ -89,6 +92,14 @@ export class MinecraftPunishmentsMeController {
   }
 }
 
+/// IP и User-Agent для аудита скрытия выдавшего (как в AuditInterceptor).
+function requestMeta(req: Request): IssuerHideRequestMeta {
+  return {
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+  };
+}
+
 /// Персонал: право `users.punishments` + обязательная 2FA через
 /// `PermissionsGuard` (ADR-0109, ADR-0169). Маршрут `status` - до `:ref`.
 @Controller('admin/punishments')
@@ -132,8 +143,10 @@ export class MinecraftPunishmentsAdminController {
   }
 
   /// Аудит пишет сервис в той же транзакции: общий AuditInterceptor отключён.
+  /// Нужны ОБА права (fail-closed): ответ отдаёт полную карточку персонала,
+  /// иначе обход аудита `punishment.card.view` (Low-1, ADR-0180).
   @SkipAudit()
-  @RequirePermissions('punishments.issuer.hide')
+  @RequirePermissions('punishments.issuer.hide', 'users.punishments')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @HttpCode(200)
   @Post(':ref/issuer-hidden')
@@ -141,22 +154,24 @@ export class MinecraftPunishmentsAdminController {
     @Param('ref') ref: string,
     @Body() body: HidePunishmentIssuerDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     setPrivateNoStore(res);
-    return this.issuerHide.hide(user.id, ref, body.reason);
+    return this.issuerHide.hide(user.id, ref, body.reason, requestMeta(req));
   }
 
   @SkipAudit()
-  @RequirePermissions('punishments.issuer.hide')
+  @RequirePermissions('punishments.issuer.hide', 'users.punishments')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Delete(':ref/issuer-hidden')
   async unhideIssuer(
     @Param('ref') ref: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     setPrivateNoStore(res);
-    return this.issuerHide.unhide(user.id, ref);
+    return this.issuerHide.unhide(user.id, ref, requestMeta(req));
   }
 }

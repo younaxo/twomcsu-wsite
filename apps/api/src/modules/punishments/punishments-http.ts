@@ -41,6 +41,7 @@ export class PunishmentsErrorHeadersFilter implements ExceptionFilter {
       typeof response === 'string'
         ? { statusCode: status, message: response }
         : response;
+    suppressEtag(res);
     res.setHeader('Cache-Control', 'no-store');
     if (status === 404 || status === 503) {
       res.setHeader('X-Robots-Tag', 'noindex');
@@ -48,6 +49,22 @@ export class PunishmentsErrorHeadersFilter implements ExceptionFilter {
     if (status === 503) res.setHeader('Retry-After', '60');
     res.status(status).json(body);
   }
+}
+
+/// Express сам ставит слабый ETag на любой res.send/json (app.set('etag')).
+/// Контракт 6.1: ETag только у публичного 200; у ошибок, «Мои» и admin его нет.
+/// Глобальная настройка Express не меняется: перед отправкой заголовков (writeHead
+/// вызывается уже после того, как Express проставил ETag) ETag снимается
+/// у конкретного ответа.
+export function suppressEtag(res: Response): void {
+  const original = res.writeHead;
+  res.writeHead = function patchedWriteHead(
+    this: Response,
+    ...args: unknown[]
+  ): Response {
+    this.removeHeader('ETag');
+    return (original as (...a: unknown[]) => Response).apply(this, args);
+  } as typeof res.writeHead;
 }
 
 /// Сравнение `If-None-Match` со слабым ETag (слабое сравнение, список, `*`).
@@ -82,6 +99,7 @@ export function sendPublic<T extends { meta: { generatedAt: string } }>(
 
 /// «Мои» и admin: без кэша и без ETag.
 export function setPrivateNoStore(res: Response): void {
+  suppressEtag(res);
   res.setHeader('Cache-Control', NO_STORE);
   res.setHeader('Vary', 'Authorization');
 }

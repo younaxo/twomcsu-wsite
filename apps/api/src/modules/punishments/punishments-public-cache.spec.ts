@@ -1,3 +1,4 @@
+import { PUBLIC_CACHE_CONTROL } from './punishments-http';
 import {
   PUBLIC_CACHE_MAX_KEYS,
   PUBLIC_CACHE_TTL_MS,
@@ -96,5 +97,44 @@ describe('PublicPunishmentsCache', () => {
     expect(await slow).toBe('stale');
     expect(cache.size).toBe(0);
     expect(await cache.getOrLoad('k2', async () => 'fresh')).toBe('fresh');
+  });
+});
+
+/// Тест-план п.17 (L2): без инвалидации запись видна не дольше
+/// TTL серверного кэша + max-age + stale-while-revalidate = 5 + 15 + 30 с.
+describe('предел задержки скрытия (п.17, контракт 6.2)', () => {
+  function seconds(directive: string): number {
+    const match = new RegExp(`${directive}=([0-9]+)`).exec(
+      PUBLIC_CACHE_CONTROL,
+    );
+    if (!match) throw new Error(`нет директивы ${directive}`);
+    return Number(match[1]);
+  }
+
+  it('директивы Cache-Control: max-age 15 и stale-while-revalidate 30, без s-maxage', () => {
+    expect(seconds('max-age')).toBe(15);
+    expect(seconds('stale-while-revalidate')).toBe(30);
+    expect(PUBLIC_CACHE_CONTROL).not.toContain('s-maxage');
+  });
+
+  it('TTL серверного кэша 5 с; сумма 5 + 15 + 30 = 50 с', () => {
+    expect(PUBLIC_CACHE_TTL_MS).toBe(5000);
+    const totalMs =
+      PUBLIC_CACHE_TTL_MS +
+      (seconds('max-age') + seconds('stale-while-revalidate')) * 1000;
+    expect(totalMs).toBe(50_000);
+  });
+
+  it('без инвалидации серверный кэш отдаёт старое значение строго до TTL и не дольше', async () => {
+    let now = 0;
+    const cache = new PublicPunishmentsCache<string>(() => now);
+    let value = 'старое';
+    const load = () => cache.getOrLoad('k', async () => value);
+    expect(await load()).toBe('старое');
+    value = 'новое';
+    now = PUBLIC_CACHE_TTL_MS - 1;
+    expect(await load()).toBe('старое');
+    now = PUBLIC_CACHE_TTL_MS;
+    expect(await load()).toBe('новое');
   });
 });

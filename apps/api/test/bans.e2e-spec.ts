@@ -5,6 +5,8 @@ import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
+import { PrismaPunishmentMirrorStore } from '../src/modules/punishments/prisma-punishment-mirror.store';
+import { NormalizedPunishment } from '../src/modules/punishments/punishment.types';
 import { AuditService } from '../src/modules/audit/audit.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
@@ -183,6 +185,7 @@ describe('Bans / punishments mirror (e2e)', () => {
   let junior: TestUser;
   let viewer: TestUser;
   let noTwoFactor: TestUser;
+  let hideOnly: TestUser; // только punishments.issuer.hide, без users.punishments
   let player: TestUser;
 
   const uPlayer = randomUUID();
@@ -212,7 +215,13 @@ describe('Bans / punishments mirror (e2e)', () => {
     initialSyncDoneAt: Date | null;
   }> = [];
 
+  /// Тестовая константа (не секрет, не из .env): включает admin-2FA, чтобы
+  /// кейс 403 admin_2fa_required исполнялся, а не проходил молча (M1).
+  const TEST_TWO_FACTOR_KEY = 'e2e-bans-test-only-key-0123456789abcdef';
+  const previousTwoFactorKey = process.env.TWO_FACTOR_ENCRYPTION_KEY;
+
   beforeAll(async () => {
+    process.env.TWO_FACTOR_ENCRYPTION_KEY = TEST_TWO_FACTOR_KEY;
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -230,6 +239,7 @@ describe('Bans / punishments mirror (e2e)', () => {
     junior = await createUser('junior');
     viewer = await createUser('viewer');
     noTwoFactor = await createUser('nofa');
+    hideOnly = await createUser('hideo');
     player = await createUser('player');
 
     const hide = ['users.punishments', 'punishments.issuer.hide'];
@@ -248,6 +258,11 @@ describe('Bans / punishments mirror (e2e)', () => {
     await grantRole(
       viewer.id,
       (await createRole(`bn-viewer-${unique}`, 5, ['users.punishments'])).id,
+    );
+    await grantRole(
+      hideOnly.id,
+      (await createRole(`bn-hideo-${unique}`, 60, ['punishments.issuer.hide']))
+        .id,
     );
     await grantRole(
       noTwoFactor.id,
@@ -403,6 +418,7 @@ describe('Bans / punishments mirror (e2e)', () => {
           junior,
           viewer,
           noTwoFactor,
+          hideOnly,
           player,
         ].filter(Boolean);
         const ids = users.map((u) => u.id);
@@ -450,6 +466,11 @@ describe('Bans / punishments mirror (e2e)', () => {
         }
       }
     } finally {
+      if (previousTwoFactorKey === undefined) {
+        delete process.env.TWO_FACTOR_ENCRYPTION_KEY;
+      } else {
+        process.env.TWO_FACTOR_ENCRYPTION_KEY = previousTwoFactorKey;
+      }
       if (app) await app.close();
     }
   }, 40_000);
@@ -803,8 +824,7 @@ describe('Bans / punishments mirror (e2e)', () => {
       expect(await staffAuditCount(viewer.id)).toBe(total);
     });
 
-    it('персонал без 2FA: 403 admin_2fa_required (если задан TWO_FACTOR_ENCRYPTION_KEY)', async () => {
-      if ((process.env.TWO_FACTOR_ENCRYPTION_KEY ?? '').length < 32) return;
+    it('персонал без 2FA: 403 admin_2fa_required (ключ 2FA задаётся тестом, M1)', async () => {
       const res = await get('/admin/punishments/status', noTwoFactor).expect(
         403,
       );
@@ -1064,6 +1084,131 @@ describe('Bans / punishments mirror (e2e)', () => {
       expect(await auditCount('punishment.issuer.unhide', ban6.id)).toBe(
         unhidesBefore,
       );
+    });
+
+    it('Low-1: только punishments.issuer.hide без users.punishments - 403, состояние и аудит не меняются', async () => {
+      const path = `/admin/punishments/${ban4.ref}/issuer-hidden`;
+      const before = await rowOf(ban4);
+      const hidesBefore = await auditCount('punishment.issuer.hide', ban4.id);
+      const hide = await post(path, hideOnly, { reason: 'x' }).expect(403);
+      expect(hide.body.code).toBeUndefined();
+      const unhide = await del(path, hideOnly).expect(403);
+      expect(unhide.body.code).toBeUndefined();
+      const after = await rowOf(ban4);
+      expect(after.issuerHidden).toBe(before.issuerHidden);
+      expect(after.rev).toBe(before.rev);
+      expect(await auditCount('punishment.issuer.hide', ban4.id)).toBe(
+        hidesBefore,
+      );
+    });
+
+    it('Low-2: аудит скрытия и раскрытия содержит IP и User-Agent запроса', async () => {
+      const fx = await mk({
+        kind: 'BAN',
+        subjectName: `${P}_ban8`,
+        subjectUuid: randomUUID(),
+        executorIsConsole: true,
+      });
+      const path = `/admin/punishments/${fx.ref}/issuer-hidden`;
+      await http()
+        .post(path)
+        .set('Authorization', bearer(curator))
+        .set('User-Agent', 'e2e-bans-agent/hide')
+        .send({ reason: 'ip-ua' })
+        .expect(200);
+      const hideLog = await prisma.auditLog.findFirstOrThrow({
+        where: { action: 'punishment.issuer.hide', targetId: fx.id },
+      });
+      expect(hideLog.userAgent).toBe('e2e-bans-agent/hide');
+      expect(hideLog.ipAddress).toBeTruthy();
+
+      await http()
+        .delete(path)
+        .set('Authorization', bearer(curator))
+        .set('User-Agent', 'e2e-bans-agent/unhide')
+        .expect(200);
+      const unhideLog = await prisma.auditLog.findFirstOrThrow({
+        where: { action: 'punishment.issuer.unhide', targetId: fx.id },
+      });
+      expect(unhideLog.userAgent).toBe('e2e-bans-agent/unhide');
+      expect(unhideLog.ipAddress).toBeTruthy();
+    });
+
+    it('L1: синхронизация зеркала (изменение строки, пометка DELETED_AT_SOURCE, оживление) не сбрасывает issuerHidden*', async () => {
+      const fx = await mk({
+        kind: 'BAN',
+        subjectName: `${P}_ban9`,
+        subjectUuid: randomUUID(),
+        executorIsConsole: true,
+      });
+      await post(`/admin/punishments/${fx.ref}/issuer-hidden`, curator, {
+        reason: 'до синхронизации',
+      }).expect(200);
+      const hidden = await rowOf(fx);
+      expect(hidden.issuerHidden).toBe(true);
+
+      const store = new PrismaPunishmentMirrorStore(prisma);
+      const sourceId = hidden.sourceId.toString();
+      const changed: NormalizedPunishment = {
+        kind: 'BAN',
+        sourceId,
+        subjectUuid: hidden.subjectUuid,
+        subjectName: hidden.subjectName,
+        ipBan: false,
+        reason: 'изменено синхронизацией',
+        executor: { console: true },
+        startedAt: hidden.startedAt,
+        until: null,
+        status: 'ACTIVE',
+        removal: null,
+        scope: null,
+        origin: null,
+        silent: false,
+        template: null,
+        sourceActive: true,
+        rowHash: `e2e-sync-${unique}-changed`,
+      };
+      const applied = await store.applyBatch(
+        SOURCE,
+        'BAN',
+        [changed],
+        null,
+        new Date(),
+      );
+      expect(applied).toHaveLength(1);
+      expect(applied[0].inserted).toBe(false);
+      const afterUpsert = await rowOf(fx);
+      expect(afterUpsert.reason).toBe('изменено синхронизацией');
+      expect(afterUpsert.issuerHidden).toBe(true);
+      expect(afterUpsert.issuerHiddenById).toBe(curator.id);
+      expect(afterUpsert.issuerHiddenReason).toBe('до синхронизации');
+      expect(afterUpsert.issuerHiddenAt?.getTime()).toBe(
+        hidden.issuerHiddenAt?.getTime(),
+      );
+
+      await store.markDeletedAtSource(
+        SOURCE,
+        'BAN',
+        [hidden.sourceId],
+        new Date(),
+      );
+      expect((await rowOf(fx)).status).toBe('DELETED_AT_SOURCE');
+      expect((await rowOf(fx)).issuerHidden).toBe(true);
+
+      // Оживление: тот же rowHash, но статус DELETED_AT_SOURCE - строка пишется.
+      const revived = await store.applyBatch(
+        SOURCE,
+        'BAN',
+        [changed],
+        null,
+        new Date(),
+      );
+      expect(revived).toHaveLength(1);
+      const afterRevive = await rowOf(fx);
+      expect(afterRevive.status).toBe('ACTIVE');
+      expect(afterRevive.issuerHidden).toBe(true);
+      expect(afterRevive.issuerHiddenById).toBe(curator.id);
+      expect(afterRevive.issuerHiddenReason).toBe('до синхронизации');
     });
 
     it('снятие: «скрывший не найден» - только superuser (п.37)', async () => {

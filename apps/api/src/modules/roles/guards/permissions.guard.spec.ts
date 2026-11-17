@@ -166,3 +166,74 @@ describe('PermissionsGuard admin-2FA (ADR-0156)', () => {
     warn.mockRestore();
   });
 });
+
+/// Контракт /bans, п.31 (M2): до seed права `punishments.issuer.hide` в БД
+/// нет, роль с одним `users.punishments` его не получает - 403; проходит
+/// только superuser. Реальный PermissionService, эффективные права - из
+/// подставленного кэша Redis (без БД).
+describe('PermissionsGuard: два права issuer-hidden (п.31, Low-1)', () => {
+  const REQUIRED = ['punishments.issuer.hide', 'users.punishments'];
+
+  function build(effective: { superuser: boolean; permissions: string[] }) {
+    const redis = {
+      client: {
+        get: jest.fn().mockResolvedValue(
+          JSON.stringify({
+            ...effective,
+            maxPriority: 50,
+          }),
+        ),
+      },
+    };
+    const permissions = new PermissionService({} as never, redis as never);
+    const config = {
+      get: (name: string, fallback?: unknown) =>
+        name === 'NODE_ENV' ? 'test' : fallback,
+    } as unknown as ConfigService;
+    const reflector = {
+      getAllAndOverride: () => REQUIRED,
+    } as unknown as Reflector;
+    const guard = new PermissionsGuard(reflector, permissions, config);
+    const context = {
+      getHandler: () => undefined,
+      getClass: () => undefined,
+      switchToHttp: () => ({
+        getRequest: () => ({ user: { id: 'u1', twoFactorEnabled: true } }),
+      }),
+    } as unknown as ExecutionContext;
+    return { guard, context };
+  }
+
+  it('роль только с users.punishments (права скрытия в БД ещё нет) - 403', async () => {
+    const { guard, context } = build({
+      superuser: false,
+      permissions: ['users.punishments'],
+    });
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('роль только с punishments.issuer.hide - 403', async () => {
+    const { guard, context } = build({
+      superuser: false,
+      permissions: ['punishments.issuer.hide'],
+    });
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('роль с обоими правами - пропуск', async () => {
+    const { guard, context } = build({
+      superuser: false,
+      permissions: REQUIRED,
+    });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('superuser проходит без назначения прав', async () => {
+    const { guard, context } = build({ superuser: true, permissions: [] });
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+});

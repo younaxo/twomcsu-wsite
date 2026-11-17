@@ -84,7 +84,11 @@ describe('маршруты (п.8, 22, 30)', () => {
       expect(keysOf(proto, m)).toEqual(['users.punishments']);
     }
     for (const m of ['hideIssuer', 'unhideIssuer']) {
-      expect(keysOf(proto, m)).toEqual(['punishments.issuer.hide']);
+      // Low-1: оба права (fail-closed), порядок в декораторе значения не имеет.
+      expect([...(keysOf(proto, m) ?? [])].sort()).toEqual([
+        'punishments.issuer.hide',
+        'users.punishments',
+      ]);
     }
   });
 
