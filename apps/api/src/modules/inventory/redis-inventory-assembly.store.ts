@@ -345,7 +345,8 @@ export const FINISH_SCRIPT = PRELUDE + FINISH_BODY;
 export { PROBE_SCRIPT };
 
 function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) throw new Error('assembly: неожиданный ответ Redis');
+  if (!Array.isArray(value))
+    throw new Error('assembly: неожиданный ответ Redis');
   return value.map((v) => String(v));
 }
 

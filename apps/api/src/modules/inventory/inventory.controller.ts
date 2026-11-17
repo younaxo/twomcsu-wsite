@@ -46,7 +46,7 @@ export function matchesIfNoneMatch(
 
 function setPrivateHeaders(res: Response): void {
   res.setHeader('Cache-Control', 'private, no-cache');
-  res.setHeader('Vary', 'Cookie');
+  res.setHeader('Vary', 'Authorization, Cookie');
 }
 
 /// Свой инвентарь и его приватность (ADR-0168, ADR-0179, срез 2). Чужой

@@ -76,10 +76,7 @@ export type OfferResult =
   | {
       kind: 'rejected';
       code:
-        | 'invalid_data'
-        | 'snapshot_mismatch'
-        | 'conflict'
-        | 'resync_required';
+        'invalid_data' | 'snapshot_mismatch' | 'conflict' | 'resync_required';
       reason: string;
     }
   /// Комплект полон, захват занят другим запросом.

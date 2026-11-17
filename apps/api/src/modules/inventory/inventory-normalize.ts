@@ -61,7 +61,11 @@ export function asArray(value: unknown, path: string, max: number): unknown[] {
   return value;
 }
 
-export function assertKeys(obj: Obj, allowed: readonly string[], path: string): void {
+export function assertKeys(
+  obj: Obj,
+  allowed: readonly string[],
+  path: string,
+): void {
   for (const key of Object.keys(obj)) {
     if (!allowed.includes(key)) {
       fail(`${path}: неизвестное поле ${key.slice(0, 32)}`);
@@ -69,7 +73,12 @@ export function assertKeys(obj: Obj, allowed: readonly string[], path: string): 
   }
 }
 
-export function asInt(value: unknown, path: string, min: number, max: number): number {
+export function asInt(
+  value: unknown,
+  path: string,
+  min: number,
+  max: number,
+): number {
   if (
     typeof value !== 'number' ||
     !Number.isInteger(value) ||

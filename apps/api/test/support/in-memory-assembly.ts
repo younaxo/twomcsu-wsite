@@ -250,7 +250,10 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
           };
         }
       }
-      if (asm.bytes - c.assemblyOverheadBytes + part.bytes > c.maxAssembledBytes) {
+      if (
+        asm.bytes - c.assemblyOverheadBytes + part.bytes >
+        c.maxAssembledBytes
+      ) {
         this.drop(s, id);
         return {
           kind: 'rejected',
@@ -323,14 +326,15 @@ export class InMemoryAssemblyStore implements InventoryAssemblyStore {
     let total = 0;
     for (const g of this.global.values()) total += g.bytes;
     const mine = this.global.get(input.serverId)?.bytes ?? 0;
-    total =
-      total - mine + buf + svcB + newBytes + c.serviceBytesPerSnapshot;
+    total = total - mine + buf + svcB + newBytes + c.serviceBytesPerSnapshot;
     if (total > c.maxGlobalBytes) return refuse('ceiling_global');
 
     // Вытеснение самой старой по firstSeenAt: только после всех проверок.
     const own = () =>
       [...s.asms.entries()]
-        .filter(([, a]) => a.userId === userId && a.group === input.header.group)
+        .filter(
+          ([, a]) => a.userId === userId && a.group === input.header.group,
+        )
         .sort((x, y) => x[1].first - y[1].first);
     while (own().length >= c.assembliesPerPlayerGroup) {
       const oldest = own()[0][0];

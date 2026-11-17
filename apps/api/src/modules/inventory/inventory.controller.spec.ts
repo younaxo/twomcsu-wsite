@@ -70,7 +70,7 @@ describe('InventoryController', () => {
     expect(body).toEqual(BODY);
     expect(inventory.getMine).toHaveBeenCalledWith('u1', 'survival');
     expect(headers['Cache-Control']).toBe('private, no-cache');
-    expect(headers['Vary']).toBe('Cookie');
+    expect(headers['Vary']).toBe('Authorization, Cookie');
     expect(headers['ETag']).toBe(etagFor(BODY));
   });
 

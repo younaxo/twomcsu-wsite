@@ -50,11 +50,11 @@ describe('Inventory (e2e)', () => {
   }
 
   afterEach(async () => {
-    if (userIds.length > 0) {
+    if (userIds.length > 0 && prisma) {
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       userIds.length = 0;
     }
-    await app.close();
+    if (app) await app.close();
     if (previousBridge === undefined) delete process.env.BRIDGE_ENABLED;
     else process.env.BRIDGE_ENABLED = previousBridge;
   });
@@ -112,14 +112,33 @@ describe('Inventory (e2e)', () => {
       });
     });
 
-    it('пустой инвентарь: 200, ETag и 304 по If-None-Match', async () => {
+    it('нет привязки Minecraft: 404 not_found', async () => {
+      await boot('true');
+      const user = await createUser('nolink');
+      const res = await http()
+        .get('/inventory/me')
+        .set('Authorization', user.auth)
+        .expect(404);
+      expect(JSON.stringify(res.body)).toContain('not_found');
+    });
+
+    it('привязка есть, снимков нет: 200 no_data, ETag и 304 по If-None-Match', async () => {
       await boot('true');
       const user = await createUser('me');
+      await prisma.minecraftAccount.create({
+        data: {
+          userId: user.id,
+          uuid: randomUUID(),
+          name: `P${unique}`.slice(0, 16),
+        },
+      });
       const first = await http()
         .get('/inventory/me')
         .set('Authorization', user.auth)
         .expect(200);
+      expect(first.body).toMatchObject({ state: 'no_data' });
       expect(first.headers.etag).toBeDefined();
+      expect(first.headers.vary).toContain('Authorization');
       await http()
         .get('/inventory/me')
         .set('Authorization', user.auth)
@@ -127,7 +146,7 @@ describe('Inventory (e2e)', () => {
         .expect(304);
     });
 
-    it('неверный параметр server: 400', async () => {
+    it('неверный параметр server: 422 invalid_param', async () => {
       await boot('true');
       const user = await createUser('qs');
       await http()

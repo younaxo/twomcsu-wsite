@@ -166,7 +166,10 @@ export function parseSnapshotPart(
   assertKeys(obj, PART_KEYS, 'part');
   if (obj.schemaVersion !== 1) fail('schemaVersion: поддерживается только 1');
 
-  if (typeof obj.snapshotId !== 'string' || !SNAPSHOT_ID_RE.test(obj.snapshotId)) {
+  if (
+    typeof obj.snapshotId !== 'string' ||
+    !SNAPSHOT_ID_RE.test(obj.snapshotId)
+  ) {
     fail('snapshotId: недопустимый формат');
   }
   const group = parseGroup(obj.group);
@@ -271,7 +274,8 @@ export function assembleSnapshot(
   parts: readonly BufferedPart[],
 ): NormalizedSnapshot {
   const expected = expectedSlotGroups(header.group, header.parts);
-  if (!expected) fail('parts: сочетание с group не входит в перечень раскладок');
+  if (!expected)
+    fail('parts: сочетание с group не входит в перечень раскладок');
   if (parts.length !== header.parts) fail('комплект неполон');
   const numbers = new Set(parts.map((p) => p.part));
   for (let n = 1; n <= header.parts; n += 1) {
@@ -279,7 +283,10 @@ export function assembleSnapshot(
   }
   const groups = parts.map((p) => p.slotGroup).sort();
   const wanted = [...expected].sort();
-  if (groups.length !== wanted.length || groups.some((g, i) => g !== wanted[i])) {
+  if (
+    groups.length !== wanted.length ||
+    groups.some((g, i) => g !== wanted[i])
+  ) {
     fail('комплект: набор slotGroup не равен набору раскладки');
   }
   const seen = new Set<string>();

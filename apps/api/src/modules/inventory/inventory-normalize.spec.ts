@@ -8,14 +8,17 @@ import {
 } from '../../../test/support/in-memory-inventory';
 import {
   applyChanges,
+  assertRowSize,
   canonicalJson,
   hashSlots,
+  jsonBytes,
   parseDelta,
   parseItem,
   parseSnapshot,
   reparseStoredSlots,
 } from './inventory-normalize';
 import { InventoryValidationError } from './inventory.types';
+import type { NormalizedSlot } from './inventory.types';
 
 const SECTION = String.fromCharCode(0xa7);
 
@@ -361,6 +364,38 @@ describe('parseItem: схема и лимиты', () => {
         'item',
       ),
     );
+  });
+
+  it('граница 600/601 байт: ровно 600 принимается, 601 — отказ', () => {
+    const build = (k: number) =>
+      item('minecraft:stone', {
+        name: [
+          { text: 'a'.repeat(200) },
+          { text: 'a'.repeat(200) },
+          { text: 'a'.repeat(k) },
+        ],
+      });
+    const size = (k: number) => jsonBytes(parseItem(build(k), 'item'));
+    let k = 0;
+    while (k < 256 && size(k) < 600) k += 1;
+    expect(size(k)).toBe(600);
+    expect(parseItem(build(k), 'item')).toBeDefined();
+    rejects(() => parseItem(build(k + 1), 'item'));
+  });
+
+  it('граница ряда: ровно 32768 байт принимается, 32769 — отказ', () => {
+    const make = (n: number) =>
+      [
+        {
+          area: 'hotbar',
+          slot: 0,
+          item: { id: 'minecraft:stone', name: [{ text: 'a'.repeat(n) }] },
+        },
+      ] as unknown as NormalizedSlot[];
+    const n = 32768 - jsonBytes(make(0));
+    expect(jsonBytes(make(n))).toBe(32768);
+    expect(() => assertRowSize(make(n))).not.toThrow();
+    rejects(() => assertRowSize(make(n + 1)));
   });
 
   it('хвостовые пустые строки лора отбрасываются, внутренние сохраняются', () => {

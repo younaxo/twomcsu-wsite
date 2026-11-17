@@ -161,9 +161,7 @@ export class InventoryAssemblerService {
         if (now.getTime() - part.capturedAt.getTime() > cutoffMs(this.config)) {
           return rejected('resync_required', 'cutoff');
         }
-        userId = await this.db(() =>
-          this.rows.findUserIdByUuid(part.uuid),
-        );
+        userId = await this.db(() => this.rows.findUserIdByUuid(part.uuid));
         if (userId === null) return rejected('unknown_player', 'unlinked');
         const own = userId;
         const current = (

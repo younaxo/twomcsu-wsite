@@ -291,16 +291,19 @@ describe('InventoryAssemblerService: Q35, обязательные сценар�
     ['capturedAt', { capturedAt: iso(1) }],
     ['playerOnline', { playerOnline: false }],
     ['uuid', { uuid: TEST_UUID_2 }],
-  ])('разный заголовок %s между частями: snapshot_mismatch', async (_n, diff) => {
-    const { rows, send } = await ready();
-    rows.link(TEST_UUID_2, 'user-2');
-    await send(part(1, 'hotbar'));
-    expect(await send(part(2, 'storage_a', diff))).toMatchObject({
-      status: 'rejected',
-      code: 'snapshot_mismatch',
-    });
-    expect(rows.rows.size).toBe(0);
-  });
+  ])(
+    'разный заголовок %s между частями: snapshot_mismatch',
+    async (_n, diff) => {
+      const { rows, send } = await ready();
+      rows.link(TEST_UUID_2, 'user-2');
+      await send(part(1, 'hotbar'));
+      expect(await send(part(2, 'storage_a', diff))).toMatchObject({
+        status: 'rejected',
+        code: 'snapshot_mismatch',
+      });
+      expect(rows.rows.size).toBe(0);
+    },
+  );
 
   it('сбой применения на завершающей части: 503, части целы; повтор под тем же eventId применяет', async () => {
     const { redis, rows, send } = await ready();
@@ -332,8 +335,10 @@ describe('InventoryAssemblerService: Q35, обязательные сценар�
     const all = mainSet();
     for (const p of all.slice(0, 3)) await send(p);
     rows.failMutate = 1;
-    await send(all[3], 'ev-1');
-    expect(await send(all[3], 'ev-2')).toMatchObject({ status: 'applied' });
+    await send(all[3], 'ev-final-a');
+    expect(await send(all[3], 'ev-final-b')).toMatchObject({
+      status: 'applied',
+    });
     expect(rows.get(USER, SERVER, 'main')?.slotCount).toBe(5);
   });
 
@@ -383,14 +388,20 @@ describe('InventoryAssemblerService: проверки до Redis (шаг П0)', 
     ],
   ];
 
-  it.each(bad)('%s: invalid_data, ноль обращений к Redis и БД', async (_n, data) => {
-    const { redis, rows, send } = await ready();
-    const before = { ...redis.calls };
-    const result = await send(data);
-    expect(result).toMatchObject({ status: 'rejected', code: 'invalid_data' });
-    expect(redis.calls).toEqual(before);
-    expect(rows.mutateCalls).toBe(0);
-  });
+  it.each(bad)(
+    '%s: invalid_data, ноль обращений к Redis и БД',
+    async (_n, data) => {
+      const { redis, rows, send } = await ready();
+      const before = { ...redis.calls };
+      const result = await send(data);
+      expect(result).toMatchObject({
+        status: 'rejected',
+        code: 'invalid_data',
+      });
+      expect(redis.calls).toEqual(before);
+      expect(rows.mutateCalls).toBe(0);
+    },
+  );
 
   it('serverSlug и eventId вне формата: invalid_data', async () => {
     const { redis, send } = await ready();
@@ -635,7 +646,9 @@ describe('InventoryAssemblerService: лимиты', () => {
       expect(r.status).toBe('buffered');
     }
     expect(
-      await send(part(1, 'hotbar', { uuid: user(4).uuid, snapshotId: snap(4) })),
+      await send(
+        part(1, 'hotbar', { uuid: user(4).uuid, snapshotId: snap(4) }),
+      ),
     ).toMatchObject({ code: 'resync_required', reason: 'ceiling_assemblies' });
     expect(redis.assemblyCount(SERVER)).toBe(3);
   });
@@ -646,8 +659,11 @@ describe('InventoryAssemblerService: лимиты', () => {
     });
     for (let n = 1; n <= 3; n += 1) rows.link(user(n).uuid, user(n).id);
     expect(
-      (await send(part(1, 'hotbar', { uuid: user(1).uuid, snapshotId: snap(1) })))
-        .status,
+      (
+        await send(
+          part(1, 'hotbar', { uuid: user(1).uuid, snapshotId: snap(1) }),
+        )
+      ).status,
     ).toBe('buffered');
     const second = await send(
       part(1, 'hotbar', { uuid: user(2).uuid, snapshotId: snap(2) }),
@@ -759,18 +775,21 @@ describe('InventoryAssemblerService: политика Redis (fail-closed)', () =
     ['noeviction', null],
   ];
 
-  it.each(blockedPolicies)('policy=%s maxmemory=%s блокирует сборку', async (policy, maxMemory) => {
-    const { redis, policy: guard, send } = setup();
-    redis.policy = policy;
-    redis.maxMemory = maxMemory;
-    await guard.refresh();
-    expect(guard.isConfirmed()).toBe(false);
-    expect(await send(part(1, 'hotbar'))).toMatchObject({
-      code: 'resync_required',
-      reason: 'policy_blocked',
-    });
-    expect(redis.calls.offer).toBe(0);
-  });
+  it.each(blockedPolicies)(
+    'policy=%s maxmemory=%s блокирует сборку',
+    async (policy, maxMemory) => {
+      const { redis, policy: guard, send } = setup();
+      redis.policy = policy;
+      redis.maxMemory = maxMemory;
+      await guard.refresh();
+      expect(guard.isConfirmed()).toBe(false);
+      expect(await send(part(1, 'hotbar'))).toMatchObject({
+        code: 'resync_required',
+        reason: 'policy_blocked',
+      });
+      expect(redis.calls.offer).toBe(0);
+    },
+  );
 
   it('CONFIG GET недоступен: блокировка; явное подтверждение владельца снимает её', async () => {
     const blocked = setup();

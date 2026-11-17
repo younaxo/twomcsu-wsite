@@ -125,8 +125,5 @@ export function serverShareBytes(
   config: AssemblyConfig,
 ): number {
   const n = Math.min(Math.max(1, serverCount), config.maxServers);
-  return Math.min(
-    config.maxServerBytes,
-    Math.floor(config.maxGlobalBytes / n),
-  );
+  return Math.min(config.maxServerBytes, Math.floor(config.maxGlobalBytes / n));
 }

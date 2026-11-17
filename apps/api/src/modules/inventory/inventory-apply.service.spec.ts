@@ -130,6 +130,23 @@ describe('InventoryApplyService.applySnapshot', () => {
     expect(store.get(USER, SERVER, 'main')).toBe(before);
   });
 
+  it('L1: регресс rev в одной эпохе — stale, даже при большем capturedAt', async () => {
+    const { store, service } = setup();
+    await service.applySnapshot(
+      SERVER,
+      snapshot({ capturedAt: iso(10), rev: 5 }),
+      NOW,
+    );
+    const before = store.get(USER, SERVER, 'main')!;
+    const result = await service.applySnapshot(
+      SERVER,
+      snapshot({ capturedAt: iso(30), rev: 3 }),
+      NOW,
+    );
+    expect(result).toEqual({ status: 'stale' });
+    expect(store.get(USER, SERVER, 'main')).toBe(before);
+  });
+
   it('равный capturedAt: побеждает принятый позже', async () => {
     const { store, service } = setup();
     await service.applySnapshot(SERVER, snapshot(), NOW);
