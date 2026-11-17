@@ -8,6 +8,7 @@
 ### Этап 02, срез 1: зеркало наказаний и синхронизация (ADR-0178, ветка feature/stage-02-s1-punishments-core, не смержено)
 
 - Контракт `PunishmentSource`, нормализация, статус, очистка причины, `rowHash`; модели `MinecraftPunishment` и `PunishmentSyncState`; миграция `20261117020000_punishments_mirror` (не применялась); `PunishmentsSyncService` (слои 0-3 и T), лидерство через Redis, `PunishmentsModule` без побочных эффектов без источника; `LITEBANS_*` в валидации env. Адаптер mysql2, `/bans`, «Мои наказания», WebSocket и админ-управление не входят (срезы 2-3). Риски R52-R55. Отчёт: `docs/reports/2026-11-17-02-s1-punishments-core.md`.
+- Раунд исправлений по ревью (фазы A и B): F1-F2 сверка при откате источника (курсор опускается только после успешной мягкой сверки), F3 пороги массовой пометки (`MASS_DELETE_MAX_RATIO` 0.5, `MASS_DELETE_MIN_ROWS` 10, код `MASS_DELETE_SUSPECTED`), часы (`CLOCK_TOLERANCE_MS` 5 с, код `CLOCK_SKEW`), F4 лимиты транзакции записи (`APPLY_TX_MAX_WAIT_MS`, `APPLY_TX_TIMEOUT_MS`) в пределах TTL блокировки 10 с, F5 `drainSkippedIds`, F6 проверка токена лидера перед записью, F7-F11 (heartbeat после `release()`, сбой `eval`, `stale` вне `degraded`, Invalid Date проверяется до транзакции, полная сверка после опроса всех типов), очистка текста (`sanitizeReasonDetailed`, `isReasonMasked`). Миграция по-прежнему не применялась (R52). Скорректированы R52-R54, R56-R58. Отчёт: раздел «Исправления по ревью».
 
 ### Q21: throttler по подсети /64 и «Последний IP» в админке (ADR-0177, ветка fix/q21-ipv6-throttler-admin-ip, не смержено)
 
