@@ -103,3 +103,12 @@
 e2e (статически): события, формы и темы выдают роли через `grantRole`, который вызывает `markStaffTwoFactorEnabled`; тестов, ожидающих скрытое для сотрудника без 2FA, нет. e2e не запускались; сценарий «сотрудник без 2FA не видит скрытое» в e2e не добавлен (покрыт unit-тестами).
 
 Проверки: tsc --noEmit api (включая test/) и shared без ошибок; jest --runInBand по api: 46 сьютов, 434 теста, все пройдены; eslint и prettier по изменённым файлам без замечаний.
+
+## Раунд 3: замечания повторного ревью (APPROVE WITH NOTES)
+
+- `admin-tools.service.ts`: `updateSiteSettings` убирает `requireAdmin2fa` из ответа (как GET) и из `before/after` аудита (формат аудита прежний, без одного поля). Тест на ответ и аудит добавлен.
+- Проводка контроллер -> сервис: `events.controller.spec.ts` (attend, featured, bySlug), `forms.controller.spec.ts` (getBySlug, saveDraft); проверяются точные аргументы вызова сервиса, включая `twoFactorEnabled`.
+- Fail-closed без ключа: `it.each(['', undefined, 'staging'])` в сьютах событий и тем (NODE_ENV подаётся через мок ConfigService, `process.env` не меняется).
+- Чат: тесты `send_message` в read-only канал без 2FA (отказ, сообщение не создаётся) и с 2FA (создаётся); в `build` добавлен мок `SiteStatusService.unavailable`.
+- ADR-0169: уточнено про `/events/mine`. RISKS: новый R36 (приглашение к форме по коду без проверки INVITE_ONLY; прежнее поведение, не Q22, не исправлялось). WS-ошибка строкой (`chat.gateway.ts:119`) не тронута.
+- CHANGELOG: запись добавлена в блок Q22 вверху файла (файл ведётся в обратном порядке; конец файла относится к ранним фазам).

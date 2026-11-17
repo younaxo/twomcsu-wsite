@@ -59,3 +59,15 @@ describe('TopicsService и 2FA персонала (Q22, ADR-0169)', () => {
     expect(res.map((t) => t.id)).toEqual(['t1']);
   });
 });
+
+describe('TopicsService: без ключа 2FA вне dev/test — fail closed (Q22)', () => {
+  // NODE_ENV подаётся через мок ConfigService, process.env не затрагивается.
+  it.each(['', undefined, 'staging'])(
+    'NODE_ENV=%p без ключа: персонал без флага 2FA не получает staff-видимость',
+    async (nodeEnv) => {
+      const { service } = setup({ nodeEnv });
+      const res = await service.listPublic({} as never, { id: 'u1' });
+      expect(res.map((t) => t.id)).toEqual(['t1']);
+    },
+  );
+});

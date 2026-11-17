@@ -51,6 +51,17 @@ function build(opts: { twoFactorEnabled: boolean; authorId?: string }) {
     {} as never,
   ) as unknown as ChatService & { setPinned: jest.Mock };
   chat.setPinned = jest.fn().mockResolvedValue({ id: 'x', channelId: 'c' });
+  const chatMessageCreate = jest
+    .fn()
+    .mockResolvedValue({ id: 'm-new', channelId: 'ro' });
+  (chatMessage as Record<string, unknown>).create = chatMessageCreate;
+  const guards = chat as unknown as Record<string, jest.Mock>;
+  guards.requireActiveChannel = jest
+    .fn()
+    .mockResolvedValue({ id: 'ro', isActive: true, isReadOnly: true });
+  guards.requireNotChatBanned = jest.fn().mockResolvedValue(undefined);
+  guards.requireNotMuted = jest.fn().mockResolvedValue(undefined);
+  guards.requireNotFlooding = jest.fn().mockResolvedValue(undefined);
   const gateway = new ChatGateway(
     {} as JwtService,
     config,
@@ -58,7 +69,9 @@ function build(opts: { twoFactorEnabled: boolean; authorId?: string }) {
     permissions,
     chat as unknown as ChatService,
     moderation as unknown as ModerationService,
-    {} as SiteStatusService,
+    {
+      unavailable: jest.fn().mockResolvedValue(null),
+    } as unknown as SiteStatusService,
     {
       client: {
         multi: () => ({
@@ -84,7 +97,16 @@ function build(opts: { twoFactorEnabled: boolean; authorId?: string }) {
     data: { userId: 'admin1' },
     emit,
   } as unknown as Socket;
-  return { gateway, client, emit, moderation, chat, chatMessage, findFirst };
+  return {
+    gateway,
+    client,
+    emit,
+    moderation,
+    chat,
+    chatMessage,
+    chatMessageCreate,
+    findFirst,
+  };
 }
 
 describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
@@ -163,5 +185,37 @@ describe('ChatGateway staff-действия и admin-2FA (ADR-0156)', () => {
     await gateway.onDeleteMessage(client, { messageId: 'x' } as never);
     expect(chatMessage.update).toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalledWith('error', expect.anything());
+  });
+
+  it('send_message в read-only канал без 2FA — отказ, сообщение не создаётся', async () => {
+    const { gateway, client, emit, chatMessageCreate } = build({
+      twoFactorEnabled: false,
+    });
+    const res = await gateway.onSendMessage(client, {
+      channelId: 'ro',
+      content: 'привет',
+    } as never);
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('admin_2fa_required');
+    expect(chatMessageCreate).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        event: 'send_message',
+        message: expect.stringContaining('admin_2fa_required'),
+      }),
+    );
+  });
+
+  it('send_message в read-only канал с 2FA — сообщение создаётся', async () => {
+    const { gateway, client, chatMessageCreate } = build({
+      twoFactorEnabled: true,
+    });
+    const res = await gateway.onSendMessage(client, {
+      channelId: 'ro',
+      content: 'привет',
+    } as never);
+    expect(res.ok).toBe(true);
+    expect(chatMessageCreate).toHaveBeenCalledTimes(1);
   });
 });

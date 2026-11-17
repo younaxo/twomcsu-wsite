@@ -61,3 +61,15 @@ describe('EventsService.list и 2FA персонала (Q22, ADR-0169)', () => {
     expect(visibilityIn(prisma)).toEqual(['PUBLIC']);
   });
 });
+
+describe('EventsService: без ключа 2FA вне dev/test — fail closed (Q22)', () => {
+  // NODE_ENV подаётся через мок ConfigService, process.env не затрагивается.
+  it.each(['', undefined, 'staging'])(
+    'NODE_ENV=%p без ключа: персонал без флага 2FA не получает staff-видимость',
+    async (nodeEnv) => {
+      const { service, prisma } = setup({ nodeEnv });
+      await service.list({} as never, { id: 'u1' });
+      expect(visibilityIn(prisma)).not.toContain('STAFF');
+    },
+  );
+});

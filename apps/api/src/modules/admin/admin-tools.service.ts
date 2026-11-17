@@ -245,8 +245,15 @@ export class AdminToolsService {
   /// Ответ API без deprecated-колонки `requireAdmin2fa` (Q22/Q44): флага
   /// больше нет, наружу он не отдаётся.
   async getSiteSettings() {
-    const { requireAdmin2fa: _deprecated, ...rest } =
-      await this.getOrCreateSiteSettings();
+    return AdminToolsService.withoutDeprecated2fa(
+      await this.getOrCreateSiteSettings(),
+    );
+  }
+
+  private static withoutDeprecated2fa<T extends { requireAdmin2fa?: unknown }>(
+    row: T,
+  ): Omit<T, 'requireAdmin2fa'> {
+    const { requireAdmin2fa: _deprecated, ...rest } = row;
     void _deprecated;
     return rest;
   }
@@ -416,9 +423,12 @@ export class AdminToolsService {
       action: 'settings.site.update',
       targetType: 'SiteSettings',
       targetId: updated.id,
-      changes: { before: current, after: updated },
+      changes: {
+        before: AdminToolsService.withoutDeprecated2fa(current),
+        after: AdminToolsService.withoutDeprecated2fa(updated),
+      } as Prisma.InputJsonValue,
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Сезонная система (ADR-0079) -----------------------------------------
