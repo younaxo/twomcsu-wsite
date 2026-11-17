@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -14,6 +15,7 @@ jest.setTimeout(20_000);
 describe('Store cart: серверные лимиты и коды ошибок (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let redis: RedisService;
   const unique = randomUUID().slice(0, 8);
   const tag = unique.toUpperCase();
 
@@ -85,6 +87,7 @@ describe('Store cart: серверные лимиты и коды ошибок (
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    redis = app.get(RedisService);
 
     alice = await createUser('alice');
     bob = await createUser('bob');
@@ -190,6 +193,14 @@ describe('Store cart: серверные лимиты и коды ошибок (
     await mk('TYPE', { applicableToTypes: ['KEY'] });
     await mk('OFF', { isActive: false });
   }, 30_000);
+
+  /// Лимит подарков (Q81) копится в Redis по пользователю и IP; тесты делят
+  /// один адрес и пользователей, поэтому счётчики сбрасываются перед каждым.
+  const resetGiftRate = async () => {
+    const keys = await redis.client.keys('cart:gift:*');
+    if (keys.length > 0) await redis.client.del(...keys);
+  };
+  beforeEach(resetGiftRate);
 
   afterAll(async () => {
     const userIds = [alice.id, bob.id];
@@ -704,6 +715,73 @@ describe('Store cart: серверные лимиты и коды ошибок (
         giftToUsername: other.username.toLowerCase(),
       }).expect(201);
       expect(res2.body.items[0].giftToUserId).toBe(other.id);
+    });
+  });
+
+  describe('подарок: лимит операций (Q81, M1)', () => {
+    beforeEach(() => clearCart(alice));
+
+    it('11-я операция с подарком за минуту — 429, Retry-After, код', async () => {
+      const gift = {
+        variantId: giftableVariant,
+        giftToUsername: bob.username,
+      };
+      for (let i = 0; i < 10; i++) {
+        await addItem(alice, gift).expect(201);
+      }
+      const res = await addItem(alice, gift).expect(429);
+      expect(res.body.code).toBe('CART_GIFT_RATE_LIMITED');
+      expect(res.body.statusCode).toBe(429);
+      const retry = Number(res.headers['retry-after']);
+      expect(retry).toBeGreaterThan(0);
+      expect(retry).toBeLessThanOrEqual(3600);
+      // PATCH с подарком — тот же счётчик
+      const line = (await getCart(alice).expect(200)).body.items[0];
+      await api()
+        .patch(`/store/cart/items/${line.id}`)
+        .set('Authorization', auth(alice))
+        .send({ giftToUsername: bob.username })
+        .expect(429);
+    });
+
+    it('операции без подарка и снятие подарка лимитом не затрагиваются', async () => {
+      const gift = {
+        variantId: giftableVariant,
+        giftToUsername: bob.username,
+      };
+      for (let i = 0; i < 11; i++) {
+        await addItem(alice, gift);
+      }
+      await addItem(alice, { variantId: giftableVariant, quantity: 1 }).expect(
+        201,
+      );
+      const line = (await getCart(alice).expect(200)).body.items[0];
+      await api()
+        .patch(`/store/cart/items/${line.id}`)
+        .set('Authorization', auth(alice))
+        .send({ quantity: 2 })
+        .expect(200);
+      await api()
+        .patch(`/store/cart/items/${line.id}`)
+        .set('Authorization', auth(alice))
+        .send({ giftToUsername: '' })
+        .expect(200);
+    });
+
+    it('лимит пользователя не мешает другому пользователю', async () => {
+      const gift = {
+        variantId: giftableVariant,
+        giftToUsername: alice.username,
+      };
+      for (let i = 0; i < 10; i++) {
+        await addItem(bob, gift).expect(201);
+      }
+      await addItem(bob, gift).expect(429);
+      await addItem(alice, {
+        variantId: giftableVariant,
+        giftToUsername: bob.username,
+      }).expect(201);
+      await clearCart(bob);
     });
   });
 });

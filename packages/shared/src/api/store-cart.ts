@@ -20,6 +20,8 @@ export const STORE_CART_ERROR_CODES = {
   /// Подарки: единый ответ для «нет такого игрока» и «нельзя подарить этому
   /// игроку» (защита от перебора ников).
   CART_GIFT_UNAVAILABLE: 'CART_GIFT_UNAVAILABLE',
+  /// Подарки: слишком много операций с подарком (429, заголовок Retry-After).
+  CART_GIFT_RATE_LIMITED: 'CART_GIFT_RATE_LIMITED',
 } as const;
 
 export type StoreCartErrorCode =
