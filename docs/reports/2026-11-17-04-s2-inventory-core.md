@@ -7,12 +7,12 @@
 - Prisma: модели `PlayerInventory` (последнее состояние на пользователя, сервер и группу `main`/`ender`) и `InventoryPrivacy`; миграция `20261117030000_inventory_core` (только добавление).
 - Модуль `apps/api/src/modules/inventory`: нормализация и валидация предметов (лимит 600 байт на предмет, Q35 а), безопасный текст (имена как есть, но экранируются, Q38 а), `InventoryApplyService` (применение снимков и дельт для будущего приёмника Bridge; приёмника и маршрутов записи нет), `InventoryService` (чтение своего инвентаря), `InventoryPrivacyService` (приватность по умолчанию «приватно», Ender Chest только при публичном основном, Q34 а), `InventoryRetentionService` (очистка 90 суток, Q36 а; планировщика нет, выключена), политика донат-прав как заглушка `default` (правил нет), fail-closed guard `BRIDGE_ENABLED`.
 - Контракт: `packages/shared/src/api/inventory.ts` и локальное зеркало `apps/api/src/modules/inventory/inventory-contract.ts` (apps/api не импортирует `@twomc/shared` по правилу eslint).
-- Тесты: 8 jest-наборов модуля, статическая e2e-спека `apps/api/test/inventory.e2e-spec.ts` (не запускалась), in-memory хранилище для тестов `apps/api/test/support/in-memory-inventory.ts` (фикстур в продуктовом коде нет).
+- Тесты (на момент первого раунда: 8 jest-наборов модуля; итоговые числа в разделе 4), статическая e2e-спека `apps/api/test/inventory.e2e-spec.ts` (не запускалась), in-memory хранилище для тестов `apps/api/test/support/in-memory-inventory.ts` (фикстур в продуктовом коде нет).
 - Истории нет (Q36 а): хранится только последнее состояние.
 
 ## 2. API (срез 2)
 
-Все маршруты: `JwtAuthGuard` + `InventoryEnabledGuard` (без `BRIDGE_ENABLED=true` ответ `503 inventory_unavailable`). Заголовки `Cache-Control: private, no-cache`, `Vary: Cookie`.
+Все маршруты: `JwtAuthGuard` + `InventoryEnabledGuard` (без `BRIDGE_ENABLED=true` ответ `503 inventory_unavailable`). Заголовки `Cache-Control: private, no-cache`, `Vary: Authorization, Cookie` (по коду `inventory.controller.ts` и ADR-0179 п. 13; прежнее значение `Vary: Cookie` в первой редакции отчёта и дизайна было ошибкой).
 
 - `GET /inventory/me?server=<slug>` (60/мин): `InventoryMeResponseDto`; ETag по телу, `If-None-Match` даёт 304. Неверный `server` даёт `422 invalid_param`.
 - `GET /inventory/me/privacy` (60/мин): `InventoryPrivacyDto { inventoryPublic, enderPublic }`.
@@ -27,7 +27,8 @@
 ## 4. Проверки
 
 - `tsc --noEmit` api (с test/) и shared: 0 ошибок.
-- jest `src/modules/inventory --runInBand`: 10 наборов, 199 тестов, зелёные.
+- Итог на ветке (проверка chief 2026-11-17): jest `--runInBand src/modules/inventory src/modules/punishments src/modules/roles` - 34 набора passed, 1 skipped; 979 тестов passed, 6 skipped. Отдельно модуль inventory (специалист): 242 passed, 6 skipped (redis-набор пропускается без `INVENTORY_REDIS_TEST_URL`). Интеграционный Lua-тест на Redis 7: 6/6 (+2 юнит-регресса, итого 8/8).
+- Исторически, на момент раунда 1 (до сборщика частей и ревью): jest `src/modules/inventory --runInBand` - 10 наборов, 199 тестов, зелёные. Эти числа устарели.
 - eslint и prettier на изменённых файлах: чисто.
 - e2e, миграции на БД, полный jest: не запускались.
 
@@ -64,7 +65,7 @@
 
 - Добавлены модели `PlayerInventory`, `InventoryPrivacy` и миграция `20261117030000_inventory_core` (не применена).
 - Добавлен модуль `inventory`: `GET /inventory/me`, `GET|PATCH /inventory/me/privacy`, нормализация предметов, применение снимков и дельт, очистка 90 суток (выключена).
-- Добавлены контракты `packages/shared/src/api/inventory.ts`, 128 jest-тестов, статическая e2e-спека.
+- Добавлены контракты `packages/shared/src/api/inventory.ts`, 128 jest-тестов на момент раунда 1 (итог: см. раздел 4), статическая e2e-спека.
 
 ### Риски R70-R79
 
