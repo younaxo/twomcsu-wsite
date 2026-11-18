@@ -1,17 +1,22 @@
-import { IsBoolean, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
+import { IsPriceString } from './price-string';
 
 export class UpdateVariantDto {
+  /// Decimal-строка ("199.00"), не число.
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  price?: number;
+  @IsPriceString()
+  price?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  oldPrice?: number;
+  @IsPriceString()
+  oldPrice?: string;
 
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  order?: number;
 }

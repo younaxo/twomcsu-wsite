@@ -366,6 +366,86 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .expect(200);
   });
 
+  it('админка товаров: мутации без 2FA — 403 admin_2fa_required, с 2FA — доступ', async () => {
+    const role = await prisma.role.findUniqueOrThrow({
+      where: { slug: roleSlug },
+    });
+    const perms = await prisma.permission.findMany({
+      where: {
+        key: {
+          in: [
+            'store.products.view',
+            'store.products.create',
+            'store.products.edit',
+            'store.products.delete',
+            'store.products.variants',
+            'store.categories.view',
+            'store.categories.create',
+            'store.categories.edit',
+            'store.categories.delete',
+          ],
+        },
+      },
+    });
+    await prisma.rolePermission.createMany({
+      data: perms.map((p) => ({ roleId: role.id, permissionId: p.id })),
+      skipDuplicates: true,
+    });
+    await app.get(PermissionService).invalidateUser(userId);
+    const auth = `Bearer ${token}`;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: false },
+    });
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: true } });
+
+    const body = {
+      name: 'E2E 2FA',
+      slug: `e2e-2fa-${randomUUID().slice(0, 8)}`,
+      type: 'PRIVILEGE',
+      categoryId: 'any',
+      variants: [{ duration: 'MONTH_1', price: '1.00' }],
+    };
+    const denials = [
+      http().get('/admin/store/products'),
+      http().post('/admin/store/products').send(body),
+      http().patch('/admin/store/products/any').send({ name: 'x' }),
+      http().delete('/admin/store/products/any'),
+      http()
+        .post('/admin/store/products/any/variants')
+        .send({ duration: 'MONTH_1', price: '1.00' }),
+      http().delete('/admin/store/products/any/variants/any'),
+      http()
+        .patch('/admin/store/products/any/variants/any')
+        .send({ price: '2.00' }),
+      http().get('/admin/store/categories'),
+      http()
+        .post('/admin/store/categories')
+        .send({ name: 'E2E 2FA cat', slug: 'e2e-2fa-cat' }),
+      http().patch('/admin/store/categories/any').send({ name: 'x' }),
+      http().delete('/admin/store/categories/any'),
+    ];
+    for (const req of denials) {
+      const denied = await req.set('Authorization', auth).expect(403);
+      expect(denied.body.code).toBe('admin_2fa_required');
+    }
+    expect(await prisma.product.count({ where: { slug: body.slug } })).toBe(0);
+    expect(
+      await prisma.category.count({ where: { slug: 'e2e-2fa-cat' } }),
+    ).toBe(0);
+
+    // С включённой 2FA guard пропускает: список доступен.
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: true },
+    });
+    await http()
+      .get('/admin/store/products')
+      .set('Authorization', auth)
+      .expect(200);
+    await prisma.siteSettings.updateMany({ data: { requireAdmin2fa: false } });
+  });
+
   it('отключение: нужен пароль и код; после — вход без второго шага', async () => {
     const auth = `Bearer ${token}`;
     await http()

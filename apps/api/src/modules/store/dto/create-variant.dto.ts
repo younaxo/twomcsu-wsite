@@ -1,16 +1,21 @@
 import { ProductDuration } from '@prisma/client';
-import { IsEnum, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { IsPriceString } from './price-string';
 
 export class CreateVariantDto {
   @IsEnum(ProductDuration)
   duration!: ProductDuration;
 
-  @IsNumber()
-  @Min(0)
-  price!: number;
+  /// Decimal-строка ("199.00"), не число.
+  @IsPriceString()
+  price!: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsPriceString()
+  oldPrice?: string;
+
+  @IsOptional()
+  @IsInt()
   @Min(0)
-  oldPrice?: number;
+  order?: number;
 }
