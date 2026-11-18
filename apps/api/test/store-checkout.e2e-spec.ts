@@ -41,6 +41,10 @@ describe('Store checkout (e2e)', () => {
   const unique = randomUUID().slice(0, 8);
   const cleanupRoleSlugs: string[] = [];
   const webhookSecret = E2E_PAYMENT_WEBHOOK_SECRET;
+  const aliceNick = `ChkAl${unique}`;
+  const bobNick = `ChkBo${unique}`;
+  /// Версия оферты по умолчанию (настройка store.offerVersion не задана).
+  const ACCEPT_OFFER = { offerVersion: '1' };
 
   interface TestUser {
     id: string;
@@ -129,6 +133,15 @@ describe('Store checkout (e2e)', () => {
     admin = await createUser('admin');
     alice = await createUser('alice');
     bob = await createUser('bob');
+    // Привязанный Minecraft-ник — ник получателя по умолчанию (0.5).
+    for (const [user, name] of [
+      [alice, aliceNick],
+      [bob, bobNick],
+    ] as const) {
+      await prisma.minecraftAccount.create({
+        data: { userId: user.id, uuid: randomUUID(), name },
+      });
+    }
 
     const adminRole = await createRole(`store-chk-admin-${unique}`, 20);
     await grantRole(admin.id, adminRole.id);
@@ -388,6 +401,7 @@ describe('Store checkout (e2e)', () => {
     const created = await request(app.getHttpServer())
       .post('/store/orders')
       .set('Authorization', auth(alice))
+      .send(ACCEPT_OFFER)
       .expect(201);
     orderNumber = created.body.order.orderNumber;
     firstOrderId = created.body.order.id;
@@ -520,6 +534,7 @@ describe('Store checkout (e2e)', () => {
       const created = await request(app.getHttpServer())
         .post('/store/orders')
         .set('Authorization', auth(alice))
+        .send(ACCEPT_OFFER)
         .expect(201);
       const number = created.body.order.orderNumber;
       createdOrderNumbers.push(number);
@@ -556,6 +571,7 @@ describe('Store checkout (e2e)', () => {
     const firstOrder = await request(app.getHttpServer())
       .post('/store/orders')
       .set('Authorization', auth(alice))
+      .send(ACCEPT_OFFER)
       .expect(201);
     const firstOrderNumber = firstOrder.body.order.orderNumber;
     createdOrderNumbers.push(firstOrderNumber);
@@ -569,6 +585,7 @@ describe('Store checkout (e2e)', () => {
     await request(app.getHttpServer())
       .post('/store/orders')
       .set('Authorization', auth(alice))
+      .send(ACCEPT_OFFER)
       .expect(400);
   });
 
@@ -577,13 +594,14 @@ describe('Store checkout (e2e)', () => {
       .post('/store/quick-buy')
       .send({
         variantId: giftableVariantId,
-        guestMinecraftNick: 'GuestNick123',
+        guestMinecraftNick: aliceNick,
+        ...ACCEPT_OFFER,
       })
       .expect(201);
     createdOrderNumbers.push(res.body.order.orderNumber);
     expectNoServiceFields(res.body);
     expect(res.body.order.userId).toBeNull();
-    expect(res.body.order.guestMinecraftNick).toBe('GuestNick123');
+    expect(res.body.order.guestMinecraftNick).toBe(aliceNick);
 
     await payOrder(res.body.order.orderNumber);
   });
@@ -597,6 +615,7 @@ describe('Store checkout (e2e)', () => {
     const pendingOrder = await request(app.getHttpServer())
       .post('/store/orders')
       .set('Authorization', auth(bob))
+      .send(ACCEPT_OFFER)
       .expect(201);
     const pendingOrderNumber = pendingOrder.body.order.orderNumber;
     createdOrderNumbers.push(pendingOrderNumber);

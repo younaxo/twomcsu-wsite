@@ -343,4 +343,12 @@ export const envValidationSchema = Joi.object({
     .min(1000)
     .max(60_000)
     .default(10_000),
+  /// Анонимный quick-buy (0.5, ADR-0186 Р5): аварийный выключатель. В dev/test
+  /// по умолчанию включён, в production (и при пустом/неизвестном NODE_ENV)
+  /// выключен, пока владелец не включит явно вместе с боевым запуском.
+  QUICK_BUY_ENABLED: Joi.boolean().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.boolean().default(true),
+    otherwise: Joi.boolean().default(false),
+  }),
 }).unknown(true);

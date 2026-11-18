@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 
 /// Зеркало STORE_CART_ERROR_CODES из @twomc/shared (api не импортирует shared).
@@ -62,4 +64,40 @@ export function toPromoError(error: unknown): CartPromoError | null {
     };
   }
   return null;
+}
+
+/// Коды оформления заказа (0.5). Отдельно от StoreCartError: это не отказы
+/// корзины/промокода, и они не должны попадать под `toPromoError`.
+export const StoreCheckoutError = {
+  OFFER_NOT_ACCEPTED: 'offer_not_accepted',
+  OFFER_VERSION_MISMATCH: 'offer_version_mismatch',
+  NICK_REQUIRED: 'nick_required',
+  /// Единый ответ на «ник неизвестен сайту»: причина не раскрывается (ADR-0186).
+  NICK_UNAVAILABLE: 'nick_unavailable',
+  PAYMENT_UNAVAILABLE: 'payment_unavailable',
+  QUICK_BUY_DISABLED: 'quick_buy_disabled',
+} as const;
+
+export type StoreCheckoutErrorCode =
+  (typeof StoreCheckoutError)[keyof typeof StoreCheckoutError];
+
+export function checkoutBadRequest(
+  code: StoreCheckoutErrorCode,
+  message: string,
+) {
+  return new BadRequestException({ code, message });
+}
+
+export function paymentUnavailable() {
+  return new ServiceUnavailableException({
+    code: StoreCheckoutError.PAYMENT_UNAVAILABLE,
+    message: 'Оплата временно недоступна',
+  });
+}
+
+export function quickBuyDisabled() {
+  return new ForbiddenException({
+    code: StoreCheckoutError.QUICK_BUY_DISABLED,
+    message: 'Покупка без входа сейчас недоступна — войдите в аккаунт',
+  });
 }

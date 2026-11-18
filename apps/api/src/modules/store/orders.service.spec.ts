@@ -53,6 +53,7 @@ function setup(order: unknown, movedCount = 1) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, prisma, tx };
 }
@@ -75,6 +76,7 @@ function setupCancel(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
     {} as never,
     {} as never,
     audit as never,
+    {} as never,
     {} as never,
   );
   return { service, tx, audit };
@@ -334,6 +336,7 @@ describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', (
       {} as never,
       audit as never,
       notifications as never,
+      {} as never,
     );
     return { service, prisma: base.prisma, audit, notifications };
   }
