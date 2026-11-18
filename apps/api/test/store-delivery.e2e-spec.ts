@@ -1198,4 +1198,114 @@ describe('Выдача купленного (0.7, e2e)', () => {
       expect(await tasksOf(fresh)).toHaveLength(1);
     });
   });
+
+  // ------------------------------- гонка сверки и возврата (ревью 0.7)
+
+  describe('возврат против создания заданий и выдачи (ревью 0.7)', () => {
+    const later = () => new Date(Date.now() + 5 * 60_000);
+
+    async function paidWithoutTasks(): Promise<string> {
+      const no = await makeOrder(alice, [{ productId: gameProductId }]);
+      const spy = jest
+        .spyOn(delivery, 'createTasksForOrder')
+        .mockRejectedValueOnce(new Error('simulated insert failure'));
+      try {
+        await payment(no);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await tasksOf(no)).toHaveLength(0);
+      return no;
+    }
+
+    it('возврат между выборкой кандидата и вставкой: заданий нет', async () => {
+      const no = await paidWithoutTasks();
+      const order = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber: no },
+      });
+      // Сверка уже выбрала заказ как кандидата; возврат проходит раньше вставки.
+      await orders.refund(order.id, { reason: 'гонка' }, admin.id);
+      const created = await prisma.$transaction((tx) =>
+        delivery.createTasksForOrder(tx, order.id),
+      );
+      expect(created).toBe(0);
+      expect(await delivery.createTasksAfterPayment(order.id)).toBe(true);
+      expect(await tasksOf(no)).toHaveLength(0);
+    });
+
+    it('настоящая гонка: возврат держит блокировку заказа, вставка ждёт и не создаёт задания', async () => {
+      const no = await paidWithoutTasks();
+      const order = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber: no },
+      });
+      let pending: Promise<boolean> | undefined;
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM orders WHERE id = ${order.id} FOR UPDATE`;
+        pending = delivery.createTasksAfterPayment(order.id);
+        await new Promise((r) => setTimeout(r, 400));
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: 'REFUNDED', refundedAt: new Date() },
+        });
+      });
+      await expect(pending).resolves.toBe(true);
+      expect(await tasksOf(no)).toHaveLength(0);
+      await delivery.reconcileMissingTasks({ now: later() });
+      expect(await tasksOf(no)).toHaveLength(0);
+    });
+
+    it('ручная отметка «выдано» при REFUNDED заказе: 409, задание не меняется', async () => {
+      await setFlag('false');
+      const no = await makeOrder(alice, [{ productId: gameProductId }]);
+      await payment(no);
+      const [task] = await tasksOf(no);
+      // Рассинхрон данных (задание не отменено): прямое обновление в обход refund.
+      await prisma.order.update({
+        where: { orderNumber: no },
+        data: { status: 'REFUNDED', refundedAt: new Date() },
+      });
+      const res = await http()
+        .post(`/admin/delivery/tasks/${task.id}/manual-done`)
+        .set('Authorization', auth(admin))
+        .send({ reason: 'выдал' })
+        .expect(409);
+      expect(JSON.stringify(res.body)).toContain(
+        'delivery_order_not_completed',
+      );
+      const after = await prisma.deliveryTask.findUniqueOrThrow({
+        where: { id: task.id },
+      });
+      expect(after.status).toBe('AWAITING_MANUAL');
+      expect(
+        (
+          await prisma.orderItem.findFirstOrThrow({
+            where: { id: task.orderItemId },
+          })
+        ).isDelivered,
+      ).toBe(false);
+    });
+
+    it('воркер не выдаёт по закрытому заказу: задание становится CANCELLED', async () => {
+      await setFlag('true');
+      try {
+        const no = await makeOrder(alice, [{ productId: decoProductId }]);
+        await payment(no);
+        const [task] = await tasksOf(no);
+        expect(task.status).toBe('PENDING');
+        await prisma.order.update({
+          where: { orderNumber: no },
+          data: { status: 'REFUNDED', refundedAt: new Date() },
+        });
+        await delivery.processBatch();
+        const after = await prisma.deliveryTask.findUniqueOrThrow({
+          where: { id: task.id },
+        });
+        expect(after.status).toBe('CANCELLED');
+        expect(after.lastError).toBe('order_not_completed');
+        expect(after.attempts).toBe(0);
+      } finally {
+        await setFlag('false');
+      }
+    });
+  });
 });

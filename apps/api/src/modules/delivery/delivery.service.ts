@@ -167,10 +167,25 @@ export class DeliveryService {
   /// UNIQUE (orderItemId, step): повторный вызов дублей не создаёт.
   /// Подарок выдаётся получателю (`giftToUserId`), не покупателю. Флаг
   /// доставки не влияет на создание: он управляет только обработкой.
+  ///
+  /// Гонка с возвратом (ревью 0.7): заказ блокируется `SELECT ... FOR UPDATE`
+  /// (тот же порядок блокировок, что у `refund`: заказ, затем задания), статус
+  /// читается под блокировкой, и задания создаются ТОЛЬКО для COMPLETED.
+  /// Иначе (возврат успел между выборкой кандидата и вставкой) — пропуск с
+  /// логом, 0 заданий. Вызывать только внутри транзакции.
   async createTasksForOrder(
     tx: Prisma.TransactionClient,
     orderId: string,
   ): Promise<number> {
+    const locked = await tx.$queryRaw<{ status: OrderStatus }[]>`
+      SELECT status FROM orders WHERE id = ${orderId} FOR UPDATE`;
+    const lockedStatus = locked[0]?.status;
+    if (lockedStatus !== OrderStatus.COMPLETED) {
+      this.logger.warn(
+        `Создание заданий выдачи пропущено: order=${orderId} статус ${lockedStatus ?? 'не найден'} (нужен COMPLETED)`,
+      );
+      return 0;
+    }
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: {
@@ -236,7 +251,10 @@ export class DeliveryService {
   /// Возвращает true, если шаг прошёл без ошибки.
   async createTasksAfterPayment(orderId: string): Promise<boolean> {
     try {
-      await this.createTasksForOrder(this.prisma, orderId);
+      await this.prisma.$transaction(
+        (tx) => this.createTasksForOrder(tx, orderId),
+        { maxWait: 10_000, timeout: 10_000 },
+      );
       return true;
     } catch (error) {
       this.logger.error(
@@ -322,6 +340,7 @@ export class DeliveryService {
   ): Promise<number> {
     if (!(await this.isEnabled(now.getTime()))) return 0;
     await this.recoverExpiredLeases(now);
+    await this.cancelTasksOfClosedOrders();
     let processed = 0;
     for (let i = 0; i < limit; i += 1) {
       const task = await this.claimNext(new Date());
@@ -330,6 +349,52 @@ export class DeliveryService {
       processed += 1;
     }
     return processed;
+  }
+
+  /// Воркер не выдаёт по закрытому заказу: `claimNext` берёт только задания
+  /// COMPLETED-заказов, а невыданные открытые задания REFUNDED/CANCELLED/FAILED
+  /// заказов переводятся в CANCELLED (`lastError = order_not_completed`).
+  /// Выбор CANCELLED, а не NEEDS_ATTENTION: задание не выполнялось, а
+  /// NEEDS_ATTENTION блокирует возврат и показывается покупателю как сбой;
+  /// CANCELLED не теряет данных (строка и причина остаются) и совпадает с
+  /// тем, что делает возврат. Задания PENDING-заказа не трогаются (просто не
+  /// берутся). Миграции не нужны (значение enum уже есть).
+  async cancelTasksOfClosedOrders(): Promise<number> {
+    const res = await this.prisma.deliveryTask.updateMany({
+      where: {
+        status: {
+          in: [
+            DeliveryTaskStatus.PENDING,
+            DeliveryTaskStatus.RETRY_WAIT,
+            DeliveryTaskStatus.AWAITING_MANUAL,
+          ],
+        },
+        orderItem: {
+          order: {
+            status: {
+              in: [
+                OrderStatus.REFUNDED,
+                OrderStatus.CANCELLED,
+                OrderStatus.FAILED,
+              ],
+            },
+          },
+        },
+      },
+      data: {
+        status: DeliveryTaskStatus.CANCELLED,
+        lastError: 'order_not_completed',
+        leaseToken: null,
+        leaseUntil: null,
+        nextAttemptAt: null,
+      },
+    });
+    if (res.count > 0) {
+      this.logger.warn(
+        `Выдача: отменено ${res.count} заданий закрытых заказов (order_not_completed)`,
+      );
+    }
+    return res.count;
   }
 
   leaseMs(): number {
@@ -365,6 +430,12 @@ export class DeliveryService {
           AND (
             c.status = 'PENDING'::"DeliveryTaskStatus"
             OR (c.status = 'RETRY_WAIT'::"DeliveryTaskStatus" AND c."nextAttemptAt" <= ${now})
+          )
+          AND EXISTS (
+            SELECT 1 FROM order_items oi
+            JOIN orders o ON o.id = oi."orderId"
+            WHERE oi.id = c."orderItemId"
+              AND o.status = 'COMPLETED'::"OrderStatus"
           )
           AND NOT EXISTS (
             SELECT 1 FROM delivery_tasks p
@@ -699,7 +770,11 @@ export class DeliveryService {
     if (!text) throw new BadRequestException('Причина обязательна');
     return this.prisma.$transaction(
       async (tx) => {
+        const orderStatus = await this.lockOrderOfTask(tx, id);
         const task = await this.lockTask(tx, id);
+        // Заказ возвращён/отменён: отказ без изменений (задание остаётся как
+        // есть, ничего не теряется; открытые задания возврат уже отменил).
+        this.assertOrderCompleted(orderStatus);
         if (task.status === DeliveryTaskStatus.IN_PROGRESS) {
           throw new ConflictException({
             code: 'delivery_in_progress',
@@ -749,7 +824,16 @@ export class DeliveryService {
   }
 
   /// Ручной повтор из FAILED или NEEDS_ATTENTION с явным подтверждением
-  /// («команда могла уже выполниться», Р6). Номер попытки не сбрасывается.
+  /// («команда могла уже выполниться», Р6).
+  ///
+  /// Счётчик `attempts` при ручном повторе НЕ сбрасывается (решение по ревью
+  /// 0.7, Q1). Следствие: после повтора из FAILED (исчерпан потолок попыток)
+  /// воркер делает ровно одну дополнительную попытку, а при неудаче задание
+  /// снова уходит в FAILED без автоповторов. Обоснование: сброс дал бы ещё до
+  /// `maxAttempts` автоматических запусков, возможно неидемпотентной команды,
+  /// после одного подтверждения админа; история попыток и `attempt` в
+  /// idempotencyKey/снимке остаются монотонными. Нужна ещё попытка — админ
+  /// жмёт «Повторить» снова. Повтор по заказу не в COMPLETED запрещён (409).
   async retryTask(
     id: string,
     actorId: string,
@@ -763,7 +847,9 @@ export class DeliveryService {
     }
     return this.prisma.$transaction(
       async (tx) => {
+        const orderStatus = await this.lockOrderOfTask(tx, id);
         const task = await this.lockTask(tx, id);
+        this.assertOrderCompleted(orderStatus);
         if (!RETRY_FROM.includes(task.status)) {
           throw new ConflictException({
             code: 'delivery_invalid_status',
@@ -806,6 +892,33 @@ export class DeliveryService {
       },
       { maxWait: 10_000, timeout: 10_000 },
     );
+  }
+
+  /// Блокирует заказ задания (FOR UPDATE; порядок «заказ, затем задания» тот
+  /// же, что у возврата, взаимоблокировок нет) и возвращает его статус.
+  /// Нет задания — 404.
+  private async lockOrderOfTask(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+  ): Promise<OrderStatus | undefined> {
+    const rows = await tx.$queryRaw<{ status: OrderStatus }[]>`
+      SELECT o.status FROM orders o
+      JOIN order_items i ON i."orderId" = o.id
+      JOIN delivery_tasks t ON t."orderItemId" = i.id
+      WHERE t.id = ${taskId}
+      FOR UPDATE OF o`;
+    return rows[0]?.status;
+  }
+
+  /// Ручные действия и выдача допустимы только для COMPLETED-заказа: при
+  /// возврате или отмене заказ закрыт, выдавать по нему нельзя.
+  private assertOrderCompleted(status: OrderStatus | undefined): void {
+    if (status !== undefined && status !== OrderStatus.COMPLETED) {
+      throw new ConflictException({
+        code: 'delivery_order_not_completed',
+        message: `Заказ не завершён (статус ${status}): выдача невозможна`,
+      });
+    }
   }
 
   private async lockTask(tx: Prisma.TransactionClient, id: string) {

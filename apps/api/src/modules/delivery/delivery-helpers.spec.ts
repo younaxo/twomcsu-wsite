@@ -74,6 +74,50 @@ describe('sanitizeDeliveryError', () => {
       sanitizeDeliveryError('x y '.repeat(200)).length,
     ).toBeLessThanOrEqual(300);
   });
+
+  it.each([
+    ['Authorization: Bearer abc123def', 'abc123def'],
+    ['authorization=Basic dXNlcjpwYXNz', 'dXNlcjpwYXNz'],
+    ['Authorization: rawsecret99 failed', 'rawsecret99'],
+    ['request failed with Bearer s3cr3t', 's3cr3t'],
+    [`Bearer ${'t'.repeat(10)}.${'u'.repeat(60)}`, 'ttttttttttu'],
+    ['connect postgres://admin:hunter2@db:5432/x', 'hunter2'],
+    ['connect postgres://admin:hunter2@db:5432/x', 'admin'],
+    ['redis://:p%40ss@cache:6379', 'p%40ss'],
+    ['rcon pass=hunter2', 'hunter2'],
+    ['rcon password=hunter2', 'hunter2'],
+    ['rcon=hunter2', 'hunter2'],
+    ['pwd: hunter2', 'hunter2'],
+    ['passwd=hunter2', 'hunter2'],
+    ['apikey=hunter2', 'hunter2'],
+    ['api_key: hunter2', 'hunter2'],
+    ['token=hunter2', 'hunter2'],
+    ['secret: hunter2', 'hunter2'],
+    ['db_password=hunter2', 'hunter2'],
+    ['{"password":"hunter2"}', 'hunter2'],
+    ['{"token": "hun ter2 x"}', 'ter2 x'],
+    ["{'secret':'hunter2'}", 'hunter2'],
+    ['{"rcon":"hunter2","a":1}', 'hunter2'],
+    ['password = "hun ter2"', 'ter2'],
+  ])('скрывает секрет: %s', (input, secret) => {
+    const text = sanitizeDeliveryError(input);
+    expect(text).not.toContain(secret);
+    expect(text).toContain('[скрыто]');
+  });
+
+  it('обычный текст ошибки сохраняется', () => {
+    expect(sanitizeDeliveryError('ECONNREFUSED 127.0.0.1:25575')).toBe(
+      'ECONNREFUSED 127.0.0.1:25575',
+    );
+    expect(sanitizeDeliveryError('tests passed: 5')).toBe('tests passed: 5');
+  });
+
+  it('огромное сообщение разбирается быстро и обрезается', () => {
+    const started = Date.now();
+    const text = sanitizeDeliveryError('a'.repeat(200_000));
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(text.length).toBeLessThanOrEqual(300);
+  });
 });
 
 describe('ManualExecutor', () => {

@@ -12,9 +12,19 @@ interface Opts {
   settings?: Array<{ key: string; value: string }>;
   env?: unknown;
   transport?: MockCommandTransport;
+  orderStatus?: string;
+}
+
+/// Текст SQL из tagged template (массив строк) или Prisma.sql (объект).
+function sqlText(q: unknown): string {
+  const strings = Array.isArray(q)
+    ? (q as string[])
+    : ((q as { strings?: string[] }).strings ?? []);
+  return strings.join('?');
 }
 
 function setup(opts: Opts = {}) {
+  const state = { orderStatus: opts.orderStatus ?? 'COMPLETED', locked: true };
   const tx = {
     order: { findUnique: jest.fn() },
     minecraftAccount: { findMany: jest.fn().mockResolvedValue([]) },
@@ -32,7 +42,12 @@ function setup(opts: Opts = {}) {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     user: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
-    $queryRaw: jest.fn().mockResolvedValue([{ id: 't1' }]),
+    $queryRaw: jest.fn(async (q: unknown) => {
+      const text = sqlText(q);
+      if (text.includes('pg_try_advisory')) return [{ locked: state.locked }];
+      if (text.includes('FROM orders')) return [{ status: state.orderStatus }];
+      return [{ id: 't1' }];
+    }),
   };
   const prisma = {
     siteSetting: {
@@ -62,7 +77,7 @@ function setup(opts: Opts = {}) {
     new SiteExecutor(prisma as never),
     new CommandExecutor(transport),
   );
-  return { service, prisma, tx, config, audit, transport };
+  return { service, prisma, tx, config, audit, transport, state };
 }
 
 function orderOf(over: Record<string, unknown> = {}) {
@@ -82,6 +97,40 @@ function orderOf(over: Record<string, unknown> = {}) {
 }
 
 describe('DeliveryService.createTasksForOrder (0.7)', () => {
+  it('заказ блокируется FOR UPDATE до чтения и вставки', async () => {
+    const { service, tx } = setup();
+    tx.order.findUnique.mockResolvedValue(orderOf());
+    await service.createTasksForOrder(tx as never, 'o1');
+    expect(sqlText(tx.$queryRaw.mock.calls[0][0])).toContain(
+      'FROM orders WHERE id',
+    );
+    expect(sqlText(tx.$queryRaw.mock.calls[0][0])).toContain('FOR UPDATE');
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.deliveryTask.createMany.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(['REFUNDED', 'CANCELLED', 'FAILED', 'PENDING'])(
+    'заказ в статусе %s: заданий нет, вставки нет',
+    async (orderStatus) => {
+      const { service, tx } = setup({ orderStatus });
+      tx.order.findUnique.mockResolvedValue(orderOf());
+      await expect(
+        service.createTasksForOrder(tx as never, 'o1'),
+      ).resolves.toBe(0);
+      expect(tx.deliveryTask.createMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('заказ не найден под блокировкой: 0 без вставки', async () => {
+    const { service, tx } = setup();
+    tx.$queryRaw.mockResolvedValueOnce([]);
+    await expect(service.createTasksForOrder(tx as never, 'o1')).resolves.toBe(
+      0,
+    );
+    expect(tx.deliveryTask.createMany).not.toHaveBeenCalled();
+  });
+
   it('игровой товар без украшения: manual, AWAITING_MANUAL, ник заказа', async () => {
     const { service, tx } = setup();
     tx.order.findUnique.mockResolvedValue(orderOf());
@@ -318,6 +367,33 @@ describe('DeliveryService.claimNext (ADR-0184 Р6)', () => {
     expect(sql).toContain('"leaseToken"');
     expect(sql).toContain('attempts = t.attempts + 1');
     expect(sql).toContain('p.step < c.step');
+  });
+
+  it('захват берёт только задания COMPLETED-заказов', async () => {
+    const { service, prisma } = setup();
+    await service.claimNext();
+    const sql = (
+      prisma.$queryRaw.mock.calls[0][0] as { strings: string[] }
+    ).strings.join('?');
+    expect(sql).toContain('JOIN orders o ON o.id = oi."orderId"');
+    expect(sql).toContain(`o.status = 'COMPLETED'::"OrderStatus"`);
+  });
+
+  it('cancelTasksOfClosedOrders: открытые задания закрытых заказов -> CANCELLED', async () => {
+    const { service, prisma } = setup();
+    prisma.deliveryTask.updateMany.mockResolvedValueOnce({ count: 3 });
+    await expect(service.cancelTasksOfClosedOrders()).resolves.toBe(3);
+    const arg = prisma.deliveryTask.updateMany.mock.calls[0][0];
+    expect([...arg.where.status.in].sort()).toEqual(
+      [S.PENDING, S.RETRY_WAIT, S.AWAITING_MANUAL].sort(),
+    );
+    expect([...arg.where.orderItem.order.status.in].sort()).toEqual([
+      'CANCELLED',
+      'FAILED',
+      'REFUNDED',
+    ]);
+    expect(arg.data.status).toBe(S.CANCELLED);
+    expect(arg.data.lastError).toBe('order_not_completed');
   });
 
   it('аренда строго длиннее тайм-аута исполнителя', () => {
@@ -762,6 +838,60 @@ describe('DeliveryService ручные действия админа', () => {
     }
   });
 
+  it('manual-done при REFUNDED/CANCELLED заказе — 409 delivery_order_not_completed, без записи', async () => {
+    for (const orderStatus of ['REFUNDED', 'CANCELLED']) {
+      const ctx = setup({ orderStatus });
+      ctx.tx.deliveryTask.findUniqueOrThrow.mockResolvedValue({
+        status: S.AWAITING_MANUAL,
+        orderItemId: 'i1',
+        step: 1,
+        executor: 'manual',
+      });
+      await expect(
+        ctx.service.markManualDone('t1', 'a1', 'выдал'),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'delivery_order_not_completed',
+        }),
+      });
+      expect(ctx.tx.deliveryTask.update).not.toHaveBeenCalled();
+      expect(ctx.audit.logInTx).not.toHaveBeenCalled();
+    }
+  });
+
+  it('manual-done блокирует заказ FOR UPDATE раньше задания', async () => {
+    const { service, tx } = locked(S.AWAITING_MANUAL);
+    await service.markManualDone('t1', 'a1', 'ok');
+    expect(sqlText(tx.$queryRaw.mock.calls[0][0])).toContain('FOR UPDATE OF o');
+    expect(sqlText(tx.$queryRaw.mock.calls[1][0])).toContain('delivery_tasks');
+  });
+
+  it('retry при REFUNDED заказе — 409 delivery_order_not_completed', async () => {
+    const ctx = setup({ orderStatus: 'REFUNDED' });
+    ctx.tx.deliveryTask.findUniqueOrThrow.mockResolvedValue({
+      status: S.FAILED,
+      orderItemId: 'i1',
+      step: 1,
+      executor: 'site',
+    });
+    await expect(
+      ctx.service.retryTask('t1', 'a1', { confirmed: true }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'delivery_order_not_completed',
+      }),
+    });
+    expect(ctx.tx.deliveryTask.update).not.toHaveBeenCalled();
+  });
+
+  it('retry не сбрасывает attempts (Q1): в update нет поля attempts', async () => {
+    const { service, tx } = locked(S.FAILED, 'site');
+    await service.retryTask('t1', 'a1', { confirmed: true });
+    expect(tx.deliveryTask.update.mock.calls[0][0].data).not.toHaveProperty(
+      'attempts',
+    );
+  });
+
   it('retry без подтверждения — 400 без обращения к БД', async () => {
     const { service, prisma } = locked(S.FAILED);
     await expect(
@@ -824,26 +954,24 @@ describe('DeliveryService.cancelOpenTasks (возврат, Р5)', () => {
 });
 
 describe('DeliveryService.createTasksAfterPayment (шаг после коммита)', () => {
-  it('успех: вставка идёт не в транзакции, возвращает true', async () => {
+  it('успех: вставка идёт в короткой транзакции с блокировкой заказа, true', async () => {
     const { service, prisma, tx } = setup();
-    (prisma as unknown as Record<string, unknown>).order = {
-      findUnique: tx.order.findUnique,
-    };
-    (prisma as unknown as Record<string, unknown>).minecraftAccount =
-      tx.minecraftAccount;
-    (prisma.deliveryTask as unknown as Record<string, unknown>).createMany =
-      tx.deliveryTask.createMany;
     tx.order.findUnique.mockResolvedValue(orderOf());
     await expect(service.createTasksAfterPayment('o1')).resolves.toBe(true);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(sqlText(tx.$queryRaw.mock.calls[0][0])).toContain('FOR UPDATE');
     expect(tx.deliveryTask.createMany).toHaveBeenCalledTimes(1);
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('возврат до вставки (REFUNDED): заданий нет, шаг не падает', async () => {
+    const { service, tx } = setup({ orderStatus: 'REFUNDED' });
+    tx.order.findUnique.mockResolvedValue(orderOf());
+    await expect(service.createTasksAfterPayment('o1')).resolves.toBe(true);
+    expect(tx.deliveryTask.createMany).not.toHaveBeenCalled();
   });
 
   it('сбой вставки не пробрасывается: false (догонит сверка)', async () => {
-    const { service, prisma, tx } = setup();
-    (prisma as unknown as Record<string, unknown>).order = {
-      findUnique: tx.order.findUnique,
-    };
+    const { service, tx } = setup();
     tx.order.findUnique.mockRejectedValue(new Error('db down'));
     await expect(service.createTasksAfterPayment('o1')).resolves.toBe(false);
   });
@@ -860,7 +988,6 @@ describe('DeliveryService.reconcileMissingTasks (сверка)', () => {
     (ctx.prisma as unknown as Record<string, unknown>).order = {
       findMany: orderFindMany,
     };
-    ctx.tx.$queryRaw.mockResolvedValue([{ locked: true }]);
     ctx.tx.order.findUnique.mockResolvedValue(orderOf());
     return { ...ctx, orderFindMany };
   }
@@ -889,8 +1016,8 @@ describe('DeliveryService.reconcileMissingTasks (сверка)', () => {
   });
 
   it('чужой advisory lock: заказ пропускается без вставки', async () => {
-    const { service, tx } = withOrders(['o1']);
-    tx.$queryRaw.mockResolvedValue([{ locked: false }]);
+    const { service, tx, state } = withOrders(['o1']);
+    state.locked = false;
     await expect(service.reconcileMissingTasks({ now })).resolves.toBe(0);
     expect(tx.deliveryTask.createMany).not.toHaveBeenCalled();
   });
