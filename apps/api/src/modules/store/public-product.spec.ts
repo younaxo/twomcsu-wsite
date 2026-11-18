@@ -193,6 +193,7 @@ describe('заказ покупателя: без служебных полей'
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     await service.listMine('u1');
     const item = findMany.mock.calls[0][0].include.items.include;
@@ -212,6 +213,7 @@ describe('заказ покупателя: без служебных полей'
     const count = jest.fn().mockResolvedValue(0);
     const service = new OrdersService(
       { order: { findMany, count } } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

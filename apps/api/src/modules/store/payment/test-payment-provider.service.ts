@@ -14,6 +14,19 @@ export const WEBHOOK_TIMESTAMP_HEADER = 'x-twomc-timestamp';
 /// Допустимое расхождение timestamp подписи с текущим временем (секунды).
 export const WEBHOOK_TOLERANCE_SECONDS = 300;
 
+/// Подпись вебхука: HMAC-SHA256 над `timestamp.rawBody` (digest). Единая
+/// функция для проверки провайдером и для dev-симулятора.
+export function computeWebhookSignature(
+  secret: string,
+  timestamp: string,
+  rawBody: Buffer | string,
+): Buffer {
+  return createHmac('sha256', secret)
+    .update(`${timestamp}.`)
+    .update(rawBody)
+    .digest();
+}
+
 function headerValue(
   headers: WebhookHeaders,
   name: string,
@@ -62,10 +75,7 @@ export class TestPaymentProvider implements PaymentProvider {
     if (Math.abs(nowSeconds - Number(timestamp)) > WEBHOOK_TOLERANCE_SECONDS) {
       return null;
     }
-    const expected = createHmac('sha256', secret)
-      .update(`${timestamp}.`)
-      .update(rawBody)
-      .digest();
+    const expected = computeWebhookSignature(secret, timestamp, rawBody);
     const given = /^[0-9a-f]{64}$/i.test(signature)
       ? Buffer.from(signature, 'hex')
       : null;

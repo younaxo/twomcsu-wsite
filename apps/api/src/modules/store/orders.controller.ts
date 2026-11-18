@@ -18,6 +18,11 @@ export class StoreExtrasController {
     return this.orders.recentPurchases();
   }
 
+  @Get('checkout-config')
+  async checkoutConfig() {
+    return this.orders.checkoutConfig();
+  }
+
   /// Анонимный: без лимита любой может плодить PENDING-заказы (SEC-07, ADR-0157).
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('quick-buy')
