@@ -7,7 +7,6 @@ import type {
   WalletSummaryDto,
 } from '@twomc/shared';
 import {
-  Heart,
   LifeBuoy,
   MessageSquare,
   Package,
@@ -45,8 +44,11 @@ export interface MiniProfileEntry {
 export function miniProfileEntries(
   username: string,
   counts: { friendRequests?: number } = {},
+  /// Модуль магазина включён: пункт «Заказы» активен; выключен — скрыт (Q67).
+  options: { storeEnabled?: boolean } = {},
 ): MiniProfileEntry[] {
-  return [
+  const { storeEnabled = true } = options;
+  const entries: MiniProfileEntry[] = [
     {
       key: 'profile',
       label: 'Мой профиль',
@@ -61,12 +63,14 @@ export function miniProfileEntries(
       href: '/friends',
       badge: counts.friendRequests,
     },
-    // Разделы волн Social (2) и Store (4) — появятся вместе с функцией.
     { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: '/messages' },
     { key: 'support', label: 'Обращения', icon: LifeBuoy, href: '/support' },
-    { key: 'favorites', label: 'Избранное', icon: Heart, href: null },
-    { key: 'orders', label: 'Заказы', icon: Package, href: null },
   ];
+  // «Избранное» скрыто до появления раздела (Q67): пункт без href не показываем.
+  if (storeEnabled) {
+    entries.push({ key: 'orders', label: 'Заказы', icon: Package, href: '/shop/orders' });
+  }
+  return entries;
 }
 
 /// Вход в админку — отдельный административный блок (не пункт общего меню).

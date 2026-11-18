@@ -1,10 +1,10 @@
 'use client';
 
-import { CircleCheck, CircleX, Clock, PackageSearch, RefreshCw, UserRound } from 'lucide-react';
+import { PackageSearch, RefreshCw, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { OrderStatusBadge } from '@/components/store/order-status-badge';
 import { ModuleGate } from '@/components/system/site-availability';
-import { Badge } from '@/components/ui/badge';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,20 +20,8 @@ import {
   orderHref,
   useOrder,
   type OrderItemView,
-  type OrderStatus,
   type OrderView,
 } from '@/lib/store/checkout';
-
-const STATUS_VIEW: Record<
-  OrderStatus,
-  { tone: 'warning' | 'success' | 'destructive' | 'neutral'; Icon: typeof Clock }
-> = {
-  PENDING: { tone: 'warning', Icon: Clock },
-  COMPLETED: { tone: 'success', Icon: CircleCheck },
-  FAILED: { tone: 'destructive', Icon: CircleX },
-  CANCELLED: { tone: 'neutral', Icon: CircleX },
-  REFUNDED: { tone: 'neutral', Icon: CircleCheck },
-};
 
 function OrderSkeleton() {
   return (
@@ -51,15 +39,12 @@ function itemTitle(item: OrderItemView): string {
 }
 
 function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: boolean }) {
-  const { tone, Icon } = STATUS_VIEW[order.status];
   const text = ORDER_STATUS_TEXT[order.status];
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       <Card className="flex flex-col gap-3" data-testid="order-status-card">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={tone} icon={<Icon aria-hidden className="size-3.5" />}>
-            {text.label}
-          </Badge>
+          <OrderStatusBadge status={order.status} />
           <span className="text-sm text-muted-foreground tabular">№ {order.orderNumber}</span>
         </div>
         {/* Единственный polite-регион страницы: смена статуса озвучивается сама. */}

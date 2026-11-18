@@ -139,6 +139,10 @@ function Sessions() {
           <p className="text-xs text-muted-foreground">
             Незнакомое устройство — завершите сессию и смените пароль.
           </p>
+          <p className="text-xs text-muted-foreground" data-testid="sessions-note">
+            Это активные сессии: журнал завершённых входов не ведётся. IP-адрес показан не
+            полностью.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
