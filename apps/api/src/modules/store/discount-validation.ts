@@ -33,3 +33,14 @@ export function money(
     ? null
     : new Prisma.Decimal(value).toFixed(2);
 }
+
+/// Допущение владельца Q83: скидка 100% допустима, но каждое создание или
+/// изменение такой скидки/промокода фиксируется отдельным событием аудита.
+export const FULL_DISCOUNT_NOTE = 'скидка 100%';
+
+export function isFullPercentDiscount(
+  type: DiscountType,
+  value: string | Prisma.Decimal,
+): boolean {
+  return type === DiscountType.PERCENT && new Prisma.Decimal(value).equals(100);
+}

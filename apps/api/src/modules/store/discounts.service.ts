@@ -6,7 +6,12 @@ import {
 import { BulkDiscount, LoyaltyDiscount, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { assertDiscountValue, money } from './discount-validation';
+import {
+  assertDiscountValue,
+  FULL_DISCOUNT_NOTE,
+  isFullPercentDiscount,
+  money,
+} from './discount-validation';
 import { CreateBulkDiscountDto } from './dto/create-bulk-discount.dto';
 import { CreateLoyaltyDiscountDto } from './dto/create-loyalty-discount.dto';
 import { UpdateBulkDiscountDto } from './dto/update-bulk-discount.dto';
@@ -73,6 +78,22 @@ export class DiscountsService {
     });
   }
 
+  /// Q83: отдельное предупреждающее событие для скидки 100% (без секретов).
+  private auditFullPercent(
+    tx: Prisma.TransactionClient,
+    actorId: string,
+    action: string,
+    targetId: string,
+    kind: 'bulk' | 'loyalty',
+  ) {
+    return this.auditEvent(tx, actorId, action, targetId, {
+      note: FULL_DISCOUNT_NOTE,
+      kind,
+      discountType: 'PERCENT',
+      discountValue: '100.00',
+    });
+  }
+
   /// Публичный список (только активные) — для витрины и расчёта цены.
   async listBulk() {
     return this.prisma.bulkDiscount.findMany({ where: { isActive: true } });
@@ -121,6 +142,15 @@ export class DiscountsService {
         created.id,
         bulkSnapshot(created),
       );
+      if (isFullPercentDiscount(created.discountType, created.discountValue)) {
+        await this.auditFullPercent(
+          tx,
+          actorId,
+          'store.discount.full_percent',
+          created.id,
+          'bulk',
+        );
+      }
       return created;
     });
   }
@@ -152,6 +182,17 @@ export class DiscountsService {
           from,
           to,
         });
+        if (
+          isFullPercentDiscount(updated.discountType, updated.discountValue)
+        ) {
+          await this.auditFullPercent(
+            tx,
+            actorId,
+            'store.discount.full_percent',
+            id,
+            'bulk',
+          );
+        }
       }
       return updated;
     });
@@ -185,6 +226,15 @@ export class DiscountsService {
         created.id,
         loyaltySnapshot(created),
       );
+      if (isFullPercentDiscount('PERCENT', created.discountPercent)) {
+        await this.auditFullPercent(
+          tx,
+          actorId,
+          'store.discount.full_percent',
+          created.id,
+          'loyalty',
+        );
+      }
       return created;
     });
   }
@@ -219,6 +269,15 @@ export class DiscountsService {
           id,
           { from, to },
         );
+        if (isFullPercentDiscount('PERCENT', updated.discountPercent)) {
+          await this.auditFullPercent(
+            tx,
+            actorId,
+            'store.discount.full_percent',
+            id,
+            'loyalty',
+          );
+        }
       }
       return updated;
     });

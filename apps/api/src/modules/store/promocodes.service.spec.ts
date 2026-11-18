@@ -37,9 +37,11 @@ function setupPromo(row: unknown, orders = 0) {
     $queryRaw: jest.fn().mockResolvedValue([{ id: 'p1' }]),
     promoCode: {
       findUnique: jest.fn().mockResolvedValue(row),
-      update: jest.fn().mockImplementation(({ data }) =>
-        Promise.resolve({ ...(row as object), ...data }),
-      ),
+      update: jest
+        .fn()
+        .mockImplementation(({ data }) =>
+          Promise.resolve({ ...(row as object), ...data }),
+        ),
       delete: jest.fn().mockResolvedValue({}),
       create: jest.fn(),
     },
@@ -58,8 +60,12 @@ function setupPromo(row: unknown, orders = 0) {
 describe('DTO скидок и промокодов (0.4)', () => {
   it('промокод: число приводится к Decimal-строке, мусор и отрицательные — ошибка', async () => {
     const base = { code: 'SALE10', discountType: 'PERCENT' };
-    expect(await errorsOf(CreatePromoCodeDto, { ...base, discountValue: '10.50' })).toEqual([]);
-    expect(await errorsOf(CreatePromoCodeDto, { ...base, discountValue: 10 })).toEqual([]);
+    expect(
+      await errorsOf(CreatePromoCodeDto, { ...base, discountValue: '10.50' }),
+    ).toEqual([]);
+    expect(
+      await errorsOf(CreatePromoCodeDto, { ...base, discountValue: 10 }),
+    ).toEqual([]);
     for (const bad of ['-1', 'abc', '1e3', '10.999', '', null, -5]) {
       expect(
         await errorsOf(CreatePromoCodeDto, { ...base, discountValue: bad }),
@@ -70,10 +76,16 @@ describe('DTO скидок и промокодов (0.4)', () => {
   it('лояльность: discountPercent — Decimal-строка', async () => {
     const base = { minPurchases: 1, name: 'n' };
     expect(
-      await errorsOf(CreateLoyaltyDiscountDto, { ...base, discountPercent: '5' }),
+      await errorsOf(CreateLoyaltyDiscountDto, {
+        ...base,
+        discountPercent: '5',
+      }),
     ).toEqual([]);
     expect(
-      await errorsOf(CreateLoyaltyDiscountDto, { ...base, discountPercent: 'x' }),
+      await errorsOf(CreateLoyaltyDiscountDto, {
+        ...base,
+        discountPercent: 'x',
+      }),
     ).toContain('discountPercent');
   });
 
@@ -113,7 +125,10 @@ describe('PromocodesService (0.4)', () => {
 
   it('update: смена типа на PERCENT проверяет уже сохранённое значение', async () => {
     const { service } = setupPromo(
-      promoRow({ discountType: 'FIXED', discountValue: new Prisma.Decimal('500') }),
+      promoRow({
+        discountType: 'FIXED',
+        discountValue: new Prisma.Decimal('500'),
+      }),
     );
     await expect(
       service.update('p1', { discountType: 'PERCENT' }, 'admin1'),
@@ -175,12 +190,16 @@ describe('DiscountsService (0.4)', () => {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'd1' }]),
       bulkDiscount: {
         findUnique: jest.fn().mockResolvedValue(row),
-        update: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({ ...(row as object), ...data }),
-        ),
-        create: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({ id: 'd1', isActive: true, ...data }),
-        ),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ ...(row as object), ...data }),
+          ),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'd1', isActive: true, ...data }),
+          ),
         delete: jest.fn().mockResolvedValue({}),
       },
     };
@@ -215,7 +234,10 @@ describe('DiscountsService (0.4)', () => {
       ),
     ).rejects.toMatchObject({ status: 400 });
     await expect(
-      service.createBulk({ discountType: 'PERCENT', discountValue: '101' }, 'a'),
+      service.createBulk(
+        { discountType: 'PERCENT', discountValue: '101' },
+        'a',
+      ),
     ).rejects.toMatchObject({ status: 400 });
     expect(tx.bulkDiscount.create).not.toHaveBeenCalled();
   });
@@ -246,5 +268,107 @@ describe('DiscountsService (0.4)', () => {
     expect(ok.audit.log).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'store.discount.bulk_deleted' }),
     );
+  });
+});
+
+describe('скидка 100%: отдельное событие аудита (Q83)', () => {
+  const fullEvents = (audit: { log: jest.Mock }) =>
+    audit.log.mock.calls
+      .map((c) => c[0])
+      .filter((c) => String(c.action).endsWith('.full_percent'));
+
+  it('промокод: update до 100% PERCENT — событие warning с «скидка 100%», строгое, в tx', async () => {
+    const { service, tx, audit } = setupPromo(promoRow());
+    await service.update('p1', { discountValue: '100' }, 'admin1');
+    const events = fullEvents(audit);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actorId: 'admin1',
+      action: 'store.promocode.full_percent',
+      targetId: 'p1',
+      severity: 'warning',
+      tx,
+      strict: true,
+      changes: expect.objectContaining({ note: 'скидка 100%' }),
+    });
+  });
+
+  it('промокод: 99.99% и FIXED 100 — события нет', async () => {
+    const a = setupPromo(promoRow());
+    await a.service.update('p1', { discountValue: '99.99' }, 'admin1');
+    const b = setupPromo(promoRow());
+    await b.service.update(
+      'p1',
+      { discountType: 'FIXED', discountValue: '100' } as never,
+      'admin1',
+    );
+    expect(fullEvents(a.audit)).toHaveLength(0);
+    expect(fullEvents(b.audit)).toHaveLength(0);
+  });
+
+  it('скидка за объём: create 100% PERCENT — событие; FIXED 100 — нет', async () => {
+    const make = () => {
+      const tx = {
+        bulkDiscount: {
+          create: jest
+            .fn()
+            .mockImplementation(({ data }) =>
+              Promise.resolve({ id: 'd1', isActive: true, ...data }),
+            ),
+        },
+      };
+      const prisma = {
+        $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+      };
+      const audit = { log: jest.fn().mockResolvedValue(undefined) };
+      return {
+        service: new DiscountsService(prisma as never, audit as never),
+        audit,
+      };
+    };
+    const full = make();
+    await full.service.createBulk(
+      {
+        discountType: 'PERCENT',
+        discountValue: '100',
+        minQuantity: 1,
+      } as never,
+      'admin1',
+    );
+    const events = fullEvents(full.audit);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      action: 'store.discount.full_percent',
+      severity: 'warning',
+      changes: expect.objectContaining({ note: 'скидка 100%', kind: 'bulk' }),
+    });
+    const fixed = make();
+    await fixed.service.createBulk(
+      { discountType: 'FIXED', discountValue: '100', minQuantity: 1 } as never,
+      'admin1',
+    );
+    expect(fullEvents(fixed.audit)).toHaveLength(0);
+  });
+
+  it('лояльность: create 100% — событие', async () => {
+    const tx = {
+      loyaltyDiscount: {
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'l1', isActive: true, ...data }),
+          ),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const service = new DiscountsService(prisma as never, audit as never);
+    await service.createLoyalty(
+      { minPurchases: 5, discountPercent: '100' } as never,
+      'admin1',
+    );
+    expect(fullEvents(audit)).toHaveLength(1);
   });
 });

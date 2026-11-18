@@ -16,6 +16,7 @@ import {
 import { maskNickname } from '../../common/privacy.util';
 import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
@@ -120,6 +121,7 @@ export class OrdersService {
     private readonly payments: PaymentProviderRegistry,
     private readonly storage: StorageService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -380,6 +382,87 @@ export class OrdersService {
   /// ретраят non-2xx, ADR-0025). Идемпотентно и безопасно при конкуренции:
   /// переход статуса — атомарный `updateMany where {id, status: PENDING}`;
   /// побочные эффекты (usedCount) выполняются только если переход состоялся.
+  /// Поздний `succeeded` по заказу в CANCELLED/FAILED (0.4, ревью M1): деньги
+  /// могли списаться, а заказ не выполняется. Статус и цену НЕ меняем —
+  /// фиксируем событие для ручного разбора (возврат средств). Только
+  /// orderNumber, paymentId, provider — без ПДн и секретов. Сбой наблюдения не
+  /// должен ломать ответ вебхука (иначе провайдер зациклит ретраи).
+  private async reportLatePayment(
+    order: { id: string; orderNumber: string; status: OrderStatus },
+    event: PaymentWebhookEvent,
+    provider: PaymentProvider,
+  ): Promise<void> {
+    this.logger.warn(
+      `Поздняя оплата заказа ${order.orderNumber} в статусе ${order.status}: paymentId=${event.paymentId} provider=${provider.name}`,
+    );
+    try {
+      const system = await this.prisma.user.findFirst({
+        where: { accountType: 'SYSTEM' },
+        select: { id: true },
+      });
+      if (system) {
+        await this.audit.log({
+          actorId: system.id,
+          action: 'orders.order.late_payment',
+          targetType: 'order',
+          targetId: order.id,
+          changes: {
+            orderNumber: order.orderNumber,
+            orderStatus: order.status,
+            paymentId: event.paymentId,
+            provider: provider.name,
+          },
+          severity: 'warning',
+        });
+      } else {
+        this.logger.warn(
+          'Аудит поздней оплаты пропущен: нет системного аккаунта',
+        );
+      }
+      const staff = await this.prisma.user.findMany({
+        where: {
+          isBanned: false,
+          accountType: { not: 'SYSTEM' },
+          roles: {
+            some: {
+              role: {
+                OR: [
+                  { isSuperuser: true },
+                  {
+                    permissions: {
+                      some: {
+                        effect: 'ALLOW',
+                        permission: { key: 'orders.view' },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        select: { id: true },
+        take: 50,
+      });
+      await Promise.all(
+        staff.map((u) =>
+          this.notifications.create({
+            userId: u.id,
+            type: 'SYSTEM',
+            title: 'Поздняя оплата отменённого заказа',
+            message: `Заказ ${order.orderNumber} (${order.status}) получил успешную оплату. Проверьте и при необходимости оформите возврат.`,
+            priority: 'HIGH',
+            bypassPreferences: true,
+          }),
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось зафиксировать позднюю оплату ${order.orderNumber}: ${(error as Error).message}`,
+      );
+    }
+  }
+
   async handleWebhook(
     provider: PaymentProvider,
     event: PaymentWebhookEvent,
@@ -397,6 +480,13 @@ export class OrdersService {
       return { accepted: false, reason: 'provider_mismatch' };
     }
     if (order.status !== OrderStatus.PENDING) {
+      if (
+        event.status === 'succeeded' &&
+        (order.status === OrderStatus.CANCELLED ||
+          order.status === OrderStatus.FAILED)
+      ) {
+        await this.reportLatePayment(order, event, provider);
+      }
       return { accepted: true, reason: 'already_processed' };
     }
     if (order.paymentId && order.paymentId !== event.paymentId) {

@@ -9,7 +9,12 @@ import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromoCodeDto } from './dto/create-promo-code.dto';
 import { UpdatePromoCodeDto } from './dto/update-promo-code.dto';
-import { assertDiscountValue, money } from './discount-validation';
+import {
+  assertDiscountValue,
+  FULL_DISCOUNT_NOTE,
+  isFullPercentDiscount,
+  money,
+} from './discount-validation';
 
 /// Поля промокода для аудита: деньги — нормализованными строками, без
 /// служебных счётчиков использования.
@@ -55,6 +60,29 @@ export class PromocodesService {
       tx,
       strict: true,
     });
+  }
+
+  /// Q83: отдельное предупреждающее событие для промокода на 100%. Код
+  /// промокода — не секрет (вводится покупателем), но в аудит идёт только id и
+  /// нормализованное значение.
+  private auditFullPercent(
+    tx: Prisma.TransactionClient,
+    actorId: string,
+    targetId: string,
+    code: string,
+  ) {
+    return this.auditEvent(
+      tx,
+      actorId,
+      'store.promocode.full_percent',
+      targetId,
+      {
+        note: FULL_DISCOUNT_NOTE,
+        code,
+        discountType: 'PERCENT',
+        discountValue: '100.00',
+      },
+    );
   }
 
   async list(search?: string) {
@@ -111,6 +139,11 @@ export class PromocodesService {
           promoSnapshot(created),
           'info',
         );
+        if (
+          isFullPercentDiscount(created.discountType, created.discountValue)
+        ) {
+          await this.auditFullPercent(tx, actorId, created.id, created.code);
+        }
         return created;
       });
     } catch (error) {
@@ -175,6 +208,11 @@ export class PromocodesService {
           },
           'warning',
         );
+        if (
+          isFullPercentDiscount(updated.discountType, updated.discountValue)
+        ) {
+          await this.auditFullPercent(tx, actorId, id, before.code);
+        }
       }
       return updated;
     });
