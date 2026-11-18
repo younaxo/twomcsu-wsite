@@ -203,6 +203,7 @@ Staff-endpoints: **269**, уникальных permission keys: **246**, мод�
 | store | `store.discounts.loyalty.create` | POST `/admin/store/discounts/loyalty` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.discounts.loyalty.delete` | DELETE `/admin/store/discounts/loyalty/:id` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.discounts.loyalty.edit` | PATCH `/admin/store/discounts/loyalty/:id` | ADMIN | ✔ (`*`) | configurable |
+| store | `store.discounts.view` | GET `/admin/store/discounts/bulk`, GET `/admin/store/discounts/loyalty` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.create` | POST `/admin/store/products` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.delete` | DELETE `/admin/store/products/:id` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.edit` | PATCH `/admin/store/products/:id` | ADMIN | ✔ (`*`) | configurable |
