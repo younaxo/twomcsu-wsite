@@ -46,6 +46,9 @@ function setup(order: unknown, movedCount = 1) {
     },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
+  const delivery = {
+    createTasksForOrder: jest.fn().mockResolvedValue(1),
+  };
   const service = new OrdersService(
     prisma as never,
     {} as never,
@@ -54,8 +57,9 @@ function setup(order: unknown, movedCount = 1) {
     {} as never,
     {} as never,
     {} as never,
+    delivery as never,
   );
-  return { service, prisma, tx };
+  return { service, prisma, tx, delivery };
 }
 
 function setupCancel(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
@@ -76,6 +80,7 @@ function setupCancel(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
     {} as never,
     {} as never,
     audit as never,
+    {} as never,
     {} as never,
     {} as never,
   );
@@ -167,13 +172,35 @@ describe('OrdersService.handleWebhook (ADR-0157)', () => {
     expect(tx.promoCodeUsage.createMany).not.toHaveBeenCalled();
   });
 
-  it('проигравший гонку (count=0): already_processed, usedCount не меняется', async () => {
-    const { service, tx } = setup(baseOrder(), 0);
+  it('проигравший гонку (count=0): already_processed, usedCount не меняется, заданий нет', async () => {
+    const { service, tx, delivery } = setup(baseOrder(), 0);
     await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
       accepted: true,
       reason: 'already_processed',
     });
     expect(tx.promoCode.update).not.toHaveBeenCalled();
+    expect(delivery.createTasksForOrder).not.toHaveBeenCalled();
+  });
+
+  it('0.7: задания выдачи создаются в той же транзакции и только при moved.count === 1', async () => {
+    const { service, tx, delivery } = setup(baseOrder());
+    await service.handleWebhook(provider, ev());
+    expect(delivery.createTasksForOrder).toHaveBeenCalledTimes(1);
+    expect(delivery.createTasksForOrder).toHaveBeenCalledWith(tx, 'o1');
+  });
+
+  it('0.7: отказ платежа (failed) заданий не создаёт', async () => {
+    const { service, delivery } = setup(baseOrder());
+    await service.handleWebhook(provider, ev({ status: 'failed' }));
+    expect(delivery.createTasksForOrder).not.toHaveBeenCalled();
+  });
+
+  it('0.7: сбой создания заданий откатывает транзакцию (ошибка пробрасывается)', async () => {
+    const { service, delivery } = setup(baseOrder());
+    delivery.createTasksForOrder.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.handleWebhook(provider, ev())).rejects.toThrow(
+      'db down',
+    );
   });
 
   it('повтор по уже обработанному заказу: already_processed без записи', async () => {
@@ -336,6 +363,7 @@ describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', (
       {} as never,
       audit as never,
       notifications as never,
+      {} as never,
       {} as never,
     );
     return { service, prisma: base.prisma, audit, notifications };

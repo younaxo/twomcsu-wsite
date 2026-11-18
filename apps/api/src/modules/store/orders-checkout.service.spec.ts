@@ -33,6 +33,7 @@ describe('OrdersService: оформление без провайдера и с�
       {} as never,
       {} as never,
       checkout as never,
+      {} as never,
     );
     return { service, prisma, checkout };
   }

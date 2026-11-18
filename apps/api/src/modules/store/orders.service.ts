@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import {
   isDateRangeInverted,
@@ -13,6 +13,11 @@ import {
 } from '../../common/date-range.util';
 import { maskNickname } from '../../common/privacy.util';
 import { AuditService } from '../audit/audit.service';
+import {
+  BuyerDeliveryStatus,
+  buyerDeliveryStatus,
+} from '../delivery/delivery-status';
+import { DeliveryService } from '../delivery/delivery.service';
 import { StorageService } from '../files/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,6 +64,8 @@ const ORDER_INCLUDE = {
         select: { id: true, name: true, slug: true, image: true },
       },
       giftToUser: { select: PUBLIC_USER_SELECT },
+      // Только статусы: из них считается деталь-свободный статус выдачи (0.7).
+      deliveryTasks: { select: { status: true } },
     },
   },
 } as const;
@@ -72,16 +79,49 @@ const BUYER_HIDDEN_ORDER_FIELDS = [
   'promoCodeId',
 ] as const;
 
-/// Ответ покупателю: заказ без внутренних платёжных полей. Админские
-/// эндпоинты этим не пользуются — им поля нужны.
-export function toBuyerOrder<T extends object>(
-  order: T,
-): Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]> {
+type BuyerItems<T> = T extends { items: readonly (infer I)[] }
+  ? {
+      items: Array<
+        Omit<I, 'deliveryTasks'> & {
+          deliveryStatus: BuyerDeliveryStatus | null;
+        }
+      >;
+    }
+  : unknown;
+
+export type BuyerOrder<T> = Omit<
+  T,
+  (typeof BUYER_HIDDEN_ORDER_FIELDS)[number] | 'items'
+> & { deliveryStatus: BuyerDeliveryStatus | null } & BuyerItems<T>;
+
+/// Ответ покупателю: заказ без внутренних платёжных полей и со статусом
+/// выдачи (0.7): `pending` | `delivered` | `failed` — без внутренних деталей
+/// (исполнитель, попытки, ошибки не отдаются). Для незавершённого заказа
+/// статус выдачи `null`. Админские эндпоинты этим не пользуются.
+export function toBuyerOrder<T extends object>(order: T): BuyerOrder<T> {
   const copy = { ...order } as Record<string, unknown>;
   for (const field of BUYER_HIDDEN_ORDER_FIELDS) {
     delete copy[field];
   }
-  return copy as Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]>;
+  const completed = copy.status === OrderStatus.COMPLETED;
+  const allStatuses: DeliveryTaskStatus[] = [];
+  if (Array.isArray(copy.items)) {
+    copy.items = copy.items.map((raw: Record<string, unknown>) => {
+      const { deliveryTasks, ...rest } = raw;
+      const statuses = Array.isArray(deliveryTasks)
+        ? (deliveryTasks as Array<{ status: DeliveryTaskStatus }>).map(
+            (t) => t.status,
+          )
+        : [];
+      allStatuses.push(...statuses);
+      return {
+        ...rest,
+        deliveryStatus: completed ? buyerDeliveryStatus(statuses) : null,
+      };
+    });
+  }
+  copy.deliveryStatus = completed ? buyerDeliveryStatus(allStatuses) : null;
+  return copy as unknown as BuyerOrder<T>;
 }
 
 /// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
@@ -146,6 +186,7 @@ export class OrdersService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly checkout: CheckoutPolicyService,
+    private readonly delivery: DeliveryService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -605,6 +646,9 @@ export class OrdersService {
             });
           }
         }
+        // Outbox (ADR-0184 п. 3): задания выдачи в той же транзакции, только
+        // при moved.count === 1. Повторный вебхук сюда не доходит.
+        await this.delivery.createTasksForOrder(tx, order.id);
         return true;
       });
       return transitioned

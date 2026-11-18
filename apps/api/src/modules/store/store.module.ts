@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DeliveryModule } from '../delivery/delivery.module';
 import { BundlesAdminController } from './bundles-admin.controller';
 import { BundlesController } from './bundles.controller';
 import { BundlesService } from './bundles.service';
@@ -34,6 +35,7 @@ import { WishlistController } from './wishlist.controller';
 import { WishlistService } from './wishlist.service';
 
 @Module({
+  imports: [DeliveryModule],
   controllers: [
     CategoriesController,
     CategoriesAdminController,
