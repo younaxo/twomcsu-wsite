@@ -198,10 +198,15 @@ describe('Mini profile в header (ADR-0088)', () => {
       'Друзья3',
       'Сообщения',
       'Обращения',
-      'Избранноескоро',
-      'Заказыскоро',
+      'Заказы',
       'Выйти',
     ]);
+    // «Избранное» скрыто (Q67), «Заказы» — рабочая ссылка на список заказов.
+    expect(within(menu).queryByRole('menuitem', { name: /Избранное/ })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: 'Заказы' })).toHaveAttribute(
+      'href',
+      '/shop/orders',
+    );
     expect(within(menu).getByRole('menuitem', { name: /Друзья/ })).toHaveAttribute(
       'href',
       '/friends',
@@ -218,10 +223,31 @@ describe('Mini profile в header (ADR-0088)', () => {
       'href',
       '/support',
     );
-    expect(within(menu).getByRole('menuitem', { name: /Избранное/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+  });
+
+  it('модуль магазина выключен — пункт «Заказы» скрыт', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (...args) => {
+      const { path } = requestInfo(args);
+      if (path.endsWith('/site/status')) {
+        return jsonResponse({ maintenance: null, disabledModules: ['store'] });
+      }
+      if (path.includes('/summary')) return jsonResponse(summary);
+      if (path.endsWith('/wallet')) return jsonResponse(WALLET);
+      return new Response(null, { status: 404 });
+    });
+    render(<ProfileMenu />, { wrapper: Providers });
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some((call) => requestInfo(call).path.endsWith('/site/status')),
+      ).toBe(true),
     );
+    await user.click(screen.getByRole('button', { name: /^Профиль: / }));
+    const menu = await screen.findByRole('menu');
+    await waitFor(() =>
+      expect(within(menu).queryByRole('menuitem', { name: 'Заказы' })).toBeNull(),
+    );
+    expect(within(menu).getByRole('menuitem', { name: /Обращения/ })).toBeInTheDocument();
   });
 
   it('админ-панель — отдельный блок только при effective permission, «Выйти» — последним', async () => {
@@ -363,7 +389,11 @@ describe('Mini profile в header (ADR-0088)', () => {
       'href',
       '/messages',
     );
-    expect(within(nav).getByRole('button', { name: /Избранное/ })).toBeDisabled();
+    expect(within(nav).queryByRole('button', { name: /Избранное/ })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Заказы' })).toHaveAttribute(
+      'href',
+      '/shop/orders',
+    );
     expect(within(sheet).getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
     // Те же данные, что в popover: кошелёк из /wallet, обычному игроку — без админ-блока.
     await waitFor(() =>

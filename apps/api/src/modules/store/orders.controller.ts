@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -46,8 +55,11 @@ export class OrdersController {
   }
 
   @Get()
-  async list(@CurrentUser() user: AuthenticatedUser) {
-    return this.orders.listMine(user.id);
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListMyOrdersQueryDto,
+  ) {
+    return this.orders.listMine(user.id, query);
   }
 
   @Get(':orderNumber')
