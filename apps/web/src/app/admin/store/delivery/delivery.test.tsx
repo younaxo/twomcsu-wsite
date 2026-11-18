@@ -159,6 +159,11 @@ describe('Выдача: чистые функции', () => {
     expect(
       describeDeliveryError(new ApiError(409, ['x'], { code: 'delivery_in_progress' })).message,
     ).toMatch(/выполняется/);
+    const notCompleted = describeDeliveryError(
+      new ApiError(409, ['Order is not COMPLETED'], { code: 'delivery_order_not_completed' }),
+    );
+    expect(notCompleted.conflict).toBe(true);
+    expect(notCompleted.message).toBe('Заказ не завершён — выдача недоступна.');
     expect(
       describeDeliveryError(new ApiError(403, ['2fa'], { code: 'admin_2fa_required' }))
         .needsTwoFactor,
@@ -316,6 +321,48 @@ describe('Выдача: карточка и действия', () => {
     );
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(mocks.toast.success).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('task-heading')).toHaveFocus());
+  });
+
+  it('«Повторить»: после успеха фокус на заголовке карточки', async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    mocks.post.mockResolvedValue(card());
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('task-summary');
+    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox'));
+    await user.click(within(dialog).getByRole('button', { name: 'Повторить выдачу' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('task-heading')).toHaveFocus());
+  });
+
+  it('карточка: пометка, что повтор не сбрасывает счётчик попыток', async () => {
+    mocks.granted.add('store.delivery.view');
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    const note = await screen.findByTestId('attempts-note');
+    expect(note).toHaveTextContent(/не сбрасывает счётчик попыток/);
+    expect(note).toHaveTextContent(/ровно одну дополнительную попытку/);
+  });
+
+  it('409 delivery_order_not_completed: понятный русский текст в окне', async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    mocks.post.mockRejectedValueOnce(
+      new ApiError(409, ['Order is not COMPLETED'], { code: 'delivery_order_not_completed' }),
+    );
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('task-summary');
+    await user.click(screen.getByRole('button', { name: 'Отметить выданным' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/Причина/), 'Готово');
+    await user.click(within(dialog).getByRole('button', { name: 'Отметить выданным' }));
+    expect(await within(dialog).findByTestId('delivery-action-error')).toHaveTextContent(
+      'Заказ не завершён — выдача недоступна.',
+    );
   });
 
   it('«Повторить»: без подтверждения POST не уходит, с подтверждением — confirmed: true', async () => {

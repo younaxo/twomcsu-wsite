@@ -32,12 +32,17 @@ export function RetryDialog({
   title,
   open,
   onOpenChange,
+  onSuccessFocus,
 }: {
   taskId: string;
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /// После успеха кнопка-открыватель может исчезнуть (статус сменился): фокус
+  /// переводится на заголовок/статус карточки через этот колбэк.
+  onSuccessFocus?: () => void;
 }) {
+  const succeededRef = useRef(false);
   const retry = useRetryDelivery();
   const [confirmed, setConfirmed] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -73,6 +78,7 @@ export function RetryDialog({
       {
         onSuccess: () => {
           toast.success('Выдача поставлена на повтор');
+          succeededRef.current = true;
           onOpenChange(false);
         },
         onError: (error) => {
@@ -99,6 +105,10 @@ export function RetryDialog({
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
+          if (succeededRef.current && onSuccessFocus) {
+            onSuccessFocus();
+            return;
+          }
           if (openerRef.current instanceof HTMLElement) openerRef.current.focus();
         }}
         onEscapeKeyDown={(event) => {
@@ -113,7 +123,7 @@ export function RetryDialog({
             <DialogTitle>Повторить выдачу</DialogTitle>
             <DialogDescription>
               {title}. Задание вернётся в очередь. Предыдущая попытка могла уже сработать на
-              сервере, тогда игрок получит покупку дважды.
+              сервере, тогда игрок получит покупку дважды. Счётчик попыток не сбрасывается.
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-3">

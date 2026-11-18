@@ -259,12 +259,15 @@ export function describeDeliveryError(error: unknown): DeliveryActionError {
   if (!(error instanceof ApiError)) return base;
   if (error.status === 409) {
     const running = error.code === 'delivery_in_progress';
+    const notCompleted = error.code === 'delivery_order_not_completed';
     return {
       ...base,
       conflict: true,
-      message: running
-        ? 'Задание выполняется прямо сейчас. Дождитесь результата и повторите действие.'
-        : 'Задание уже в другом статусе, это действие недоступно. Данные обновлены.',
+      message: notCompleted
+        ? 'Заказ не завершён — выдача недоступна.'
+        : running
+          ? 'Задание выполняется прямо сейчас. Дождитесь результата и повторите действие.'
+          : 'Задание уже в другом статусе, это действие недоступно. Данные обновлены.',
     };
   }
   if (error.status === 403) {

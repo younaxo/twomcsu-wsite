@@ -37,8 +37,7 @@ export const DELIVERY_STATUS_TEXT: Record<DeliveryStatus, { label: string; descr
     },
     failed: {
       label: 'Ошибка выдачи',
-      description:
-        'Выдать покупку не удалось. Мы уже знаем о проблеме; если покупка не появится, обратитесь в поддержку.',
+      description: 'Выдача не удалась. Обратитесь в поддержку, указав номер заказа.',
     },
   };
 

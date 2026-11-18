@@ -32,13 +32,18 @@ export function ManualDoneDialog({
   title,
   open,
   onOpenChange,
+  onSuccessFocus,
 }: {
   taskId: string;
   /// Короткое описание задания для заголовка («Товар × 1, заказ O-1»).
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /// После успеха кнопка-открыватель может исчезнуть (статус сменился): фокус
+  /// переводится на заголовок/статус карточки через этот колбэк.
+  onSuccessFocus?: () => void;
 }) {
+  const succeededRef = useRef(false);
   const mark = useMarkManualDone();
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -69,6 +74,7 @@ export function ManualDoneDialog({
       {
         onSuccess: () => {
           toast.success('Выдача отмечена выполненной');
+          succeededRef.current = true;
           onOpenChange(false);
         },
         onError: (error) => {
@@ -95,6 +101,10 @@ export function ManualDoneDialog({
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
+          if (succeededRef.current && onSuccessFocus) {
+            onSuccessFocus();
+            return;
+          }
           if (openerRef.current instanceof HTMLElement) openerRef.current.focus();
         }}
         onEscapeKeyDown={(event) => {

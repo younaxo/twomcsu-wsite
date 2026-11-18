@@ -3,7 +3,7 @@
 import { ArrowLeft, CircleCheck, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   DescriptionItem,
   DescriptionList,
@@ -42,11 +42,23 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
   const showRetry = manage && canRetryDelivery(task.status);
   const orderNumber = task.orderItem.order.orderNumber;
   const dialogTitle = `${deliveryTaskTitle(task)}, заказ ${orderNumber}`;
+  const headingRef = useRef<HTMLSpanElement>(null);
+  // После успешного действия кнопка-открыватель может исчезнуть: фокус на заголовок.
+  const focusHeading = () => headingRef.current?.focus();
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title={`Выдача по заказу ${orderNumber}`}
+        title={
+          <span
+            ref={headingRef}
+            tabIndex={-1}
+            data-testid="task-heading"
+            className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {`Выдача по заказу ${orderNumber}`}
+          </span>
+        }
         description={deliveryTaskTitle(task)}
         breadcrumbs={[
           { label: 'Магазин' },
@@ -105,6 +117,10 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
             {task.lastError ?? '—'}
           </DescriptionItem>
         </DescriptionList>
+        <p className="mt-2 text-sm text-muted-foreground" data-testid="attempts-note">
+          «Повторить» не сбрасывает счётчик попыток. Ручной повтор из статуса «Ошибка» даёт ровно
+          одну дополнительную попытку, без автоповторов.
+        </p>
       </PageSection>
 
       {manage ? null : (
@@ -114,10 +130,22 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
       )}
 
       {doneOpen ? (
-        <ManualDoneDialog taskId={task.id} title={dialogTitle} open onOpenChange={setDoneOpen} />
+        <ManualDoneDialog
+          taskId={task.id}
+          title={dialogTitle}
+          open
+          onOpenChange={setDoneOpen}
+          onSuccessFocus={focusHeading}
+        />
       ) : null}
       {retryOpen ? (
-        <RetryDialog taskId={task.id} title={dialogTitle} open onOpenChange={setRetryOpen} />
+        <RetryDialog
+          taskId={task.id}
+          title={dialogTitle}
+          open
+          onOpenChange={setRetryOpen}
+          onSuccessFocus={focusHeading}
+        />
       ) : null}
     </div>
   );

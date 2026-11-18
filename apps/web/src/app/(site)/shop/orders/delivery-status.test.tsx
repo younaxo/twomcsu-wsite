@@ -108,6 +108,12 @@ describe('статус выдачи: страница заказа', () => {
     expect(description).not.toMatch(/обновится|автоматически|сама|не нужно|Перезагружать/i);
   });
 
+  it('«ошибка выдачи»: просит обратиться в поддержку с номером заказа, без обещания «уже знаем»', () => {
+    const { description } = DELIVERY_STATUS_TEXT.failed;
+    expect(description).toBe('Выдача не удалась. Обратитесь в поддержку, указав номер заказа.');
+    expect(description).not.toMatch(/знаем|уже работаем|исправим/i);
+  });
+
   it('внутренних деталей нет: ни ошибки транспорта, ни id задания', async () => {
     mocks.get.mockResolvedValue(order('failed'));
     render(<OrderPage />, { wrapper: Providers });
