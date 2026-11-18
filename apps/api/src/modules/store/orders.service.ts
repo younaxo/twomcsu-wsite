@@ -590,7 +590,15 @@ export class OrdersService {
       );
       return { accepted: false, reason: 'provider_mismatch' };
     }
-    if (order.status !== OrderStatus.PENDING) {
+    // R29/ADR-0187: поздний succeeded по FAILED-заказу с тем же paymentId
+    // переводит заказ FAILED -> COMPLETED (после проверок суммы и валюты ниже);
+    // без сохранённого paymentId сверить платёж нельзя — только отчёт для
+    // ручного разбора. CANCELLED деньги не оживляет: отмена осознанная.
+    const lateRecovery =
+      order.status === OrderStatus.FAILED &&
+      event.status === 'succeeded' &&
+      !!order.paymentId;
+    if (order.status !== OrderStatus.PENDING && !lateRecovery) {
       if (
         event.status === 'succeeded' &&
         (order.status === OrderStatus.CANCELLED ||
@@ -623,7 +631,7 @@ export class OrdersService {
       const transitioned = await this.prisma.$transaction(async (tx) => {
         const now = new Date();
         const moved = await tx.order.updateMany({
-          where: { id: order.id, status: OrderStatus.PENDING },
+          where: { id: order.id, status: order.status },
           data: {
             status: OrderStatus.COMPLETED,
             paidAt: now,
@@ -648,6 +656,11 @@ export class OrdersService {
         }
         return true;
       });
+      if (transitioned && lateRecovery) {
+        this.logger.warn(
+          `Заказ ${order.orderNumber} восстановлен FAILED -> COMPLETED по позднему succeeded: paymentId=${event.paymentId} provider=${provider.name}`,
+        );
+      }
       if (transitioned) {
         // ADR-0184, «Реализация 0.7»: задания выдачи создаются ПОСЛЕ коммита
         // COMPLETED отдельным шагом (только у победителя перехода). Ошибка
