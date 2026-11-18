@@ -8,12 +8,12 @@ import { AppModule } from './../src/app.module';
 import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
 import { signPaymentWebhook } from './helpers/sign-payment-webhook';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { OrdersService } from '../src/modules/store/orders.service';
 import { PaymentsWebhookController } from '../src/modules/store/payments-webhook.controller';
 import { PaymentProviderRegistry } from '../src/modules/store/payment/payment-provider.registry';
 import { TestPaymentProvider } from '../src/modules/store/payment/test-payment-provider.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
-import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
