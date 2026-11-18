@@ -1397,8 +1397,60 @@ model OrderItem {
   bundle     Bundle?         @relation(fields: [bundleId], references: [id])
   giftToUser User?           @relation(fields: [giftToUserId], references: [id])
 
+  deliveryTasks DeliveryTask[]
+
   @@index([orderId])
   @@map("order_items")
+}
+
+/// Статусы задания выдачи (0.7, ADR-0184 п. 4).
+enum DeliveryTaskStatus {
+  PENDING
+  IN_PROGRESS
+  RETRY_WAIT
+  DELIVERED
+  FAILED
+  NEEDS_ATTENTION
+  AWAITING_MANUAL
+  MANUAL_DONE
+  CANCELLED
+}
+
+/// Очередь выдачи купленного (0.7, ADR-0184). Ключ идемпотентности —
+/// (orderItemId, step). Исполнитель — строка (manual | site | command | …):
+/// новый исполнитель не требует миграции.
+model DeliveryTask {
+  id              String             @id @default(cuid())
+  orderItemId     String
+  step            Int                @default(1)
+  executor        String             @db.VarChar(16)
+  status          DeliveryTaskStatus @default(PENDING)
+  /// Номер попытки: растёт при каждом захвате (Р6).
+  attempts        Int                @default(0)
+  nextAttemptAt   DateTime?
+  /// Токен аренды: результат принимается, только если совпал (Р6).
+  leaseToken      String?            @db.VarChar(64)
+  leaseUntil      DateTime?
+  /// Снимок ника получателя на момент создания задания.
+  nick            String?            @db.VarChar(16)
+  /// Получатель-пользователь сайта (для сайтовой выдачи); без внешнего ключа.
+  recipientUserId String?
+  /// В 0.7 всегда null: шаблонов нет (0.11).
+  renderedCommand String?            @db.VarChar(256)
+  templateVersion Int?
+  /// Очищенный текст ошибки, без секретов.
+  lastError       String?            @db.VarChar(500)
+  deliveredAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@unique([orderItemId, step])
+  @@index([status, nextAttemptAt])
+  @@index([status, leaseUntil])
+  @@index([status, createdAt])
+  @@map("delivery_tasks")
 }
 
 model LoyaltyDiscount {
