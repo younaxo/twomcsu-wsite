@@ -54,7 +54,11 @@ export class OrdersAdminController {
 
   @Patch(':id/refund')
   @RequirePermissions('orders.refund')
-  async refund(@Param('id') id: string, @Body() dto: RefundOrderDto) {
-    return this.orders.refund(id, dto);
+  async refund(
+    @Param('id') id: string,
+    @Body() dto: RefundOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.refund(id, dto, user.id);
   }
 }

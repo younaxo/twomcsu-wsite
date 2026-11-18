@@ -351,4 +351,14 @@ export const envValidationSchema = Joi.object({
     then: Joi.boolean().default(true),
     otherwise: Joi.boolean().default(false),
   }),
+  /// Жёсткий аварийный запрет выдачи купленного (0.7, ADR-0184 Р10, Q80): явный
+  /// false выключает доставку независимо от настройки сайта
+  /// `store.delivery.enabled`. Без значения решает настройка (по умолчанию выкл.).
+  /// Значение не требует перезапуска только в смысле настройки; смена
+  /// переменной — перезапуск процесса.
+  STORE_DELIVERY_ENABLED: Joi.boolean().optional(),
+  /// Фоновая сверка заданий выдачи (ADR-0184, «Реализация 0.7»): досоздаёт
+  /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
+  /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
+  DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
 }).unknown(true);

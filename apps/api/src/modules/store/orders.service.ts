@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import {
   isDateRangeInverted,
@@ -13,6 +13,11 @@ import {
 } from '../../common/date-range.util';
 import { maskNickname } from '../../common/privacy.util';
 import { AuditService } from '../audit/audit.service';
+import {
+  BuyerDeliveryStatus,
+  buyerDeliveryStatus,
+} from '../delivery/delivery-status';
+import { DeliveryService } from '../delivery/delivery.service';
 import { StorageService } from '../files/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,6 +64,8 @@ const ORDER_INCLUDE = {
         select: { id: true, name: true, slug: true, image: true },
       },
       giftToUser: { select: PUBLIC_USER_SELECT },
+      // Только статусы: из них считается деталь-свободный статус выдачи (0.7).
+      deliveryTasks: { select: { status: true } },
     },
   },
 } as const;
@@ -72,16 +79,49 @@ const BUYER_HIDDEN_ORDER_FIELDS = [
   'promoCodeId',
 ] as const;
 
-/// Ответ покупателю: заказ без внутренних платёжных полей. Админские
-/// эндпоинты этим не пользуются — им поля нужны.
-export function toBuyerOrder<T extends object>(
-  order: T,
-): Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]> {
+type BuyerItems<T> = T extends { items: readonly (infer I)[] }
+  ? {
+      items: Array<
+        Omit<I, 'deliveryTasks'> & {
+          deliveryStatus: BuyerDeliveryStatus | null;
+        }
+      >;
+    }
+  : unknown;
+
+export type BuyerOrder<T> = Omit<
+  T,
+  (typeof BUYER_HIDDEN_ORDER_FIELDS)[number] | 'items'
+> & { deliveryStatus: BuyerDeliveryStatus | null } & BuyerItems<T>;
+
+/// Ответ покупателю: заказ без внутренних платёжных полей и со статусом
+/// выдачи (0.7): `pending` | `delivered` | `failed` — без внутренних деталей
+/// (исполнитель, попытки, ошибки не отдаются). Для незавершённого заказа
+/// статус выдачи `null`. Админские эндпоинты этим не пользуются.
+export function toBuyerOrder<T extends object>(order: T): BuyerOrder<T> {
   const copy = { ...order } as Record<string, unknown>;
   for (const field of BUYER_HIDDEN_ORDER_FIELDS) {
     delete copy[field];
   }
-  return copy as Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]>;
+  const completed = copy.status === OrderStatus.COMPLETED;
+  const allStatuses: DeliveryTaskStatus[] = [];
+  if (Array.isArray(copy.items)) {
+    copy.items = copy.items.map((raw: Record<string, unknown>) => {
+      const { deliveryTasks, ...rest } = raw;
+      const statuses = Array.isArray(deliveryTasks)
+        ? (deliveryTasks as Array<{ status: DeliveryTaskStatus }>).map(
+            (t) => t.status,
+          )
+        : [];
+      allStatuses.push(...statuses);
+      return {
+        ...rest,
+        deliveryStatus: completed ? buyerDeliveryStatus(statuses) : null,
+      };
+    });
+  }
+  copy.deliveryStatus = completed ? buyerDeliveryStatus(allStatuses) : null;
+  return copy as unknown as BuyerOrder<T>;
 }
 
 /// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
@@ -146,6 +186,7 @@ export class OrdersService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly checkout: CheckoutPolicyService,
+    private readonly delivery: DeliveryService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -607,6 +648,13 @@ export class OrdersService {
         }
         return true;
       });
+      if (transitioned) {
+        // ADR-0184, «Реализация 0.7»: задания выдачи создаются ПОСЛЕ коммита
+        // COMPLETED отдельным шагом (только у победителя перехода). Ошибка
+        // здесь логируется внутри и не отменяет оплату: недостающие задания
+        // досоздаёт фоновая сверка.
+        await this.delivery.createTasksAfterPayment(order.id);
+      }
       return transitioned
         ? { accepted: true }
         : { accepted: true, reason: 'already_processed' };
@@ -727,14 +775,6 @@ export class OrdersService {
     };
   }
 
-  private async requireOrder(id: string) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) {
-      throw new NotFoundException('Заказ не найден');
-    }
-    return order;
-  }
-
   /// Отмена только PENDING (0.4). Статус перечитывается под блокировкой строки
   /// (FOR UPDATE): параллельный вебхук оплаты не пройдёт между проверкой и
   /// записью. Оплаченный/завершённый/возвращённый/неуспешный заказ — 409.
@@ -789,20 +829,38 @@ export class OrdersService {
     );
   }
 
-  async refund(id: string, dto: RefundOrderDto) {
-    const order = await this.requireOrder(id);
-    if (order.status !== OrderStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Возврат возможен только для завершённого заказа',
-      );
-    }
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.REFUNDED,
-        refundedAt: new Date(),
-        cancelReason: dto.reason,
+  /// Возврат (0.7, ADR-0184 Р4/Р5): запрещён (409), если любое задание
+  /// выдачи в DELIVERED/MANUAL_DONE/IN_PROGRESS/NEEDS_ATTENTION. Иначе в одной
+  /// транзакции: блокировка заказа и заданий, отмена невыданных заданий,
+  /// отзыв сайтовой выдачи, смена статуса. Деньги провайдер не возвращает
+  /// (это 0.9): меняется только статус.
+  async refund(id: string, dto: RefundOrderDto, actorId?: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id = ${id} FOR UPDATE`;
+        if (locked.length === 0) {
+          throw new NotFoundException('Заказ не найден');
+        }
+        const order = await tx.order.findUniqueOrThrow({ where: { id } });
+        if (order.status !== OrderStatus.COMPLETED) {
+          throw new BadRequestException(
+            'Возврат возможен только для завершённого заказа',
+          );
+        }
+        await this.delivery.assertRefundAllowed(tx, id);
+        await this.delivery.cancelOpenTasks(tx, id);
+        await this.delivery.revokeSiteGrants(tx, id, actorId);
+        return tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.REFUNDED,
+            refundedAt: new Date(),
+            cancelReason: dto.reason,
+          },
+        });
       },
-    });
+      { maxWait: 10_000, timeout: 10_000 },
+    );
   }
 }
