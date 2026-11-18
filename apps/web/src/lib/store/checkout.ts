@@ -21,8 +21,35 @@ export interface CheckoutConfig {
 
 export type OrderStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
 
+/// Статус выдачи для покупателя (0.7, ADR-0184 п. 10): только три значения, без
+/// внутренних деталей. `null`/отсутствует — заказ не завершён (или API старый).
+export type DeliveryStatus = 'pending' | 'delivered' | 'failed';
+
+export const DELIVERY_STATUS_TEXT: Record<DeliveryStatus, { label: string; description: string }> =
+  {
+    pending: {
+      label: 'Ожидает выдачи',
+      description: 'Покупка скоро будет выдана. Перезагружать страницу не нужно.',
+    },
+    delivered: {
+      label: 'Выдано',
+      description: 'Покупка выдана.',
+    },
+    failed: {
+      label: 'Ошибка выдачи',
+      description:
+        'Выдать покупку не удалось. Мы уже знаем о проблеме; если покупка не появится, обратитесь в поддержку.',
+    },
+  };
+
+/// Безопасное чтение статуса выдачи из ответа API: неизвестное значение — «нет статуса».
+export function readDeliveryStatus(value: unknown): DeliveryStatus | null {
+  return value === 'pending' || value === 'delivered' || value === 'failed' ? value : null;
+}
+
 export interface OrderItemView {
   id: string;
+  deliveryStatus?: DeliveryStatus | null;
   quantity: number;
   unitPrice: DecimalString;
   totalPrice: DecimalString;
@@ -36,6 +63,7 @@ export interface OrderView {
   id: string;
   orderNumber: string;
   status: OrderStatus;
+  deliveryStatus?: DeliveryStatus | null;
   subtotal: DecimalString;
   discountAmount: DecimalString;
   total: DecimalString;

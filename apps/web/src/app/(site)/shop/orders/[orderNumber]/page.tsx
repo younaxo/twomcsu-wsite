@@ -3,6 +3,7 @@
 import { PackageSearch, RefreshCw, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { DeliveryStatusBadge } from '@/components/store/delivery-status-badge';
 import { OrderStatusBadge } from '@/components/store/order-status-badge';
 import { ModuleGate } from '@/components/system/site-availability';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -16,8 +17,10 @@ import { useAuthStore } from '@/lib/auth/store';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { isPositive } from '@/lib/store/cart';
 import {
+  DELIVERY_STATUS_TEXT,
   ORDER_STATUS_TEXT,
   orderHref,
+  readDeliveryStatus,
   useOrder,
   type OrderItemView,
   type OrderView,
@@ -40,6 +43,7 @@ function itemTitle(item: OrderItemView): string {
 
 function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: boolean }) {
   const text = ORDER_STATUS_TEXT[order.status];
+  const delivery = readDeliveryStatus(order.deliveryStatus);
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       <Card className="flex flex-col gap-3" data-testid="order-status-card">
@@ -51,6 +55,20 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
         <p role="status" aria-live="polite" data-testid="order-status-live" className="text-sm">
           {text.label}. {text.description}
         </p>
+        {delivery ? (
+          <div
+            data-testid="order-delivery"
+            className="flex flex-col gap-1 border-t border-border-subtle pt-3"
+          >
+            <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+              Выдача
+              <DeliveryStatusBadge status={delivery} />
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {DELIVERY_STATUS_TEXT[delivery].description}
+            </p>
+          </div>
+        ) : null}
         {order.status === 'PENDING' && autoRefresh ? (
           <p className="text-xs text-muted-foreground">Статус обновляется автоматически.</p>
         ) : null}
@@ -81,6 +99,11 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
                 {item.giftToUser ? (
                   <span className="block text-xs text-muted-foreground">
                     Подарок для {item.giftToUser.username}
+                  </span>
+                ) : null}
+                {readDeliveryStatus(item.deliveryStatus) ? (
+                  <span className="mt-1 block">
+                    <DeliveryStatusBadge status={item.deliveryStatus} />
                   </span>
                 ) : null}
               </span>
