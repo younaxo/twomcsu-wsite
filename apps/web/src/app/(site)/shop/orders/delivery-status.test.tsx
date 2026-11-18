@@ -99,10 +99,13 @@ describe('статус выдачи: страница заказа', () => {
     expect(within(item).getByTestId('delivery-status')).toHaveTextContent(label);
   });
 
-  it('«ожидает выдачи»: нет обещания, что перезагрузка не нужна', () => {
+  it('«ожидает выдачи»: честный текст без обещания автообновления', () => {
     const { description } = DELIVERY_STATUS_TEXT.pending;
-    expect(description).toMatch(/ожидает выдачи/);
-    expect(description).not.toMatch(/Перезагружать|не нужно/i);
+    expect(description).toBe(
+      'Покупка ожидает выдачи. Обновите страницу позже, чтобы увидеть результат.',
+    );
+    expect(description).toMatch(/Обновите страницу/);
+    expect(description).not.toMatch(/обновится|автоматически|сама|не нужно|Перезагружать/i);
   });
 
   it('внутренних деталей нет: ни ошибки транспорта, ни id задания', async () => {
