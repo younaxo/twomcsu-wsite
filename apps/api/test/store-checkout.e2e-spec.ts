@@ -12,6 +12,7 @@ import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { OrdersService } from '../src/modules/store/orders.service';
 import { PaymentsWebhookController } from '../src/modules/store/payments-webhook.controller';
 import { PaymentProviderRegistry } from '../src/modules/store/payment/payment-provider.registry';
+import { MockHttpPaymentProvider } from '../src/modules/store/payment/mock-http-payment-provider.service';
 import { TestPaymentProvider } from '../src/modules/store/payment/test-payment-provider.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
@@ -744,6 +745,7 @@ describe('Payment webhook при NODE_ENV=production (e2e, ADR-0157)', () => {
       providers: [
         PaymentProviderRegistry,
         TestPaymentProvider,
+        MockHttpPaymentProvider,
         { provide: OrdersService, useValue: { handleWebhook } },
         {
           provide: ConfigService,
