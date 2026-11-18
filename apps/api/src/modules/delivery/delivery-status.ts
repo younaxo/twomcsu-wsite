@@ -30,9 +30,14 @@ const SANITIZE_INPUT_LIMIT = 4000;
 
 /// Заголовок `Authorization: [схема] значение`: скрывается целиком.
 const AUTHORIZATION_HEADER =
-  /\bauthorization\s*[=:]\s*(?:(?:basic|bearer|digest|token|negotiate|ntlm|apikey|api-key)\s+)?\S+/gi;
-/// `Bearer <токен>` в любом месте текста, токен любой длины.
-const BEARER_TOKEN = /\bbearer\s+\S+/gi;
+  /\bauthorization["']?\s*[=:]\s*["']?(?:(?:basic|bearer|digest|token|negotiate|ntlm|apikey|api-key)(?:\s+|\s*[=:]\s*))?[^\s"']+["']?/gi;
+/// `Bearer <токен>` и `Bearer:<токен>` в любом месте текста, токен любой длины.
+const BEARER_TOKEN = /\bbearer(?:\s+|\s*[=:]\s*)[^\s"']+/gi;
+/// Экранирование и URL-кодирование, за которыми прячутся разделители:
+/// `\"` (JSON внутри строки), `%3D` (=), `%3A` (:), `%22` ("). Приводятся к
+/// обычному виду до поиска секретов; замены линейные, без backtracking.
+const ESCAPED_QUOTE = /\\+"/g;
+const PERCENT_DELIMITERS = /%(3[dDaA]|22|20)/g;
 /// `схема://user:pass@host`: userinfo (логин и пароль) скрывается целиком.
 const URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/]*@/gi;
 /// Секретные ключи в формах `key=value`, `key: value`, `"key":"value"`
@@ -51,6 +56,16 @@ export function sanitizeDeliveryError(raw: unknown): string {
         : 'unknown_error';
   return text
     .slice(0, SANITIZE_INPUT_LIMIT)
+    .replace(ESCAPED_QUOTE, '"')
+    .replace(PERCENT_DELIMITERS, (_m, code: string) =>
+      code === '22'
+        ? '"'
+        : code === '20'
+          ? ' '
+          : code.toLowerCase() === '3d'
+            ? '='
+            : ':',
+    )
     .replace(AUTHORIZATION_HEADER, 'authorization=[скрыто]')
     .replace(BEARER_TOKEN, 'Bearer [скрыто]')
     .replace(URL_USERINFO, '$1[скрыто]@')

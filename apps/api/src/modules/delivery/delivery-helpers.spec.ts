@@ -99,6 +99,18 @@ describe('sanitizeDeliveryError', () => {
     ["{'secret':'hunter2'}", 'hunter2'],
     ['{"rcon":"hunter2","a":1}', 'hunter2'],
     ['password = "hun ter2"', 'ter2'],
+    ['{\\"password\\":\\"hunter2\\"}', 'hunter2'],
+    ['{\\\\\\"token\\\\\\": \\\\\\"hunter2\\\\\\"}', 'hunter2'],
+    ['password%3Dhunter2', 'hunter2'],
+    ['password%3ahunter2', 'hunter2'],
+    ['x?rcon%3Dhunter2&a=1', 'hunter2'],
+    ['%22password%22%3A%22hunter2%22', 'hunter2'],
+    ['Authorization: "Bearer abc"', 'abc'],
+    ['"Authorization":"Bearer abc"', 'abc'],
+    ["Authorization: 'Basic abc'", 'abc'],
+    ['BEARER:abc', 'abc'],
+    ['bearer: abc', 'abc'],
+    ['Authorization%3A%20Bearer abc', 'abc'],
   ])('скрывает секрет: %s', (input, secret) => {
     const text = sanitizeDeliveryError(input);
     expect(text).not.toContain(secret);
@@ -110,6 +122,17 @@ describe('sanitizeDeliveryError', () => {
       'ECONNREFUSED 127.0.0.1:25575',
     );
     expect(sanitizeDeliveryError('tests passed: 5')).toBe('tests passed: 5');
+    expect(sanitizeDeliveryError('player "Steve" not found: 404')).toBe(
+      'player "Steve" not found: 404',
+    );
+  });
+
+  it('длинный ввод с экранированием, процентами и bearer обрабатывается быстро', () => {
+    const started = Date.now();
+    const evil = '\\"%3A%3D bearer: authorization:"'.repeat(200_000);
+    const text = sanitizeDeliveryError(evil);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(text.length).toBeLessThanOrEqual(300);
   });
 
   it('огромное сообщение разбирается быстро и обрезается', () => {
