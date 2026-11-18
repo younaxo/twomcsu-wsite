@@ -82,6 +82,7 @@ export function safePaymentUrl(url: string | null | undefined): string | null {
 export const checkoutKeys = {
   config: ['store', 'checkout-config'] as const,
   order: (orderNumber: string) => ['store', 'order', orderNumber] as const,
+  list: (page: number, limit: number) => ['store', 'orders', page, limit] as const,
 };
 
 export function useCheckoutConfig(enabled = true) {
@@ -148,6 +149,28 @@ export function useOrder(orderNumber: string) {
     void query.refetch();
   };
   return { query, pollExpired: pollExpired && pending, resumePolling };
+}
+
+/// Список своих заказов (`GET /store/orders?page&limit`): новые сверху, только заказы
+/// текущего пользователя (фильтрует сервер).
+export interface OrdersPageView {
+  items: OrderView[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const ORDERS_PAGE_SIZE = 20;
+
+export function useMyOrders(page: number, limit = ORDERS_PAGE_SIZE, enabled = true) {
+  const authenticated = useAuthStore((state) => state.status === 'authenticated');
+  return useQuery({
+    queryKey: checkoutKeys.list(page, limit),
+    queryFn: () => api.get<OrdersPageView>(`/store/orders?page=${page}&limit=${limit}`),
+    enabled: authenticated && enabled,
+    retry: false,
+    placeholderData: (previous) => previous,
+  });
 }
 
 export const ORDER_STATUS_TEXT: Record<OrderStatus, { label: string; description: string }> = {

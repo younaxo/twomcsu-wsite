@@ -103,6 +103,10 @@ describe('Настройки → Безопасность', () => {
     render(<SecuritySettingsPage />, { wrapper: Providers });
     const list = await screen.findByTestId('sessions');
     expect(list).toHaveTextContent('Chrome, Windows');
+    // Честно: «последние входы» — это активные сессии, журнала завершённых нет.
+    expect(screen.getByTestId('sessions-note')).toHaveTextContent(
+      'журнал завершённых входов не ведётся',
+    );
     // У своего устройства — метка и нет «Завершить»; у чужого — есть.
     const mine = list.querySelector('li[data-current]') as HTMLElement;
     expect(mine).toHaveTextContent('Это устройство');
