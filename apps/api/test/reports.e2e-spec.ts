@@ -5,8 +5,8 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
-import { PermissionService } from '../src/modules/roles/permission.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
+import { PermissionService } from '../src/modules/roles/permission.service';
 import { REPORT_CREATE_LIMIT } from '../src/modules/reports/report-constants';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
