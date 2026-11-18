@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { AnnouncementsService } from '../src/modules/communications/announcements.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 jest.setTimeout(30_000);
@@ -60,6 +61,7 @@ describe('Announcements (e2e)', () => {
   async function grant(userId: string, keys: string[]) {
     const role = await createRole(keys);
     await prisma.userRole.create({ data: { userId, roleId: role.id } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 

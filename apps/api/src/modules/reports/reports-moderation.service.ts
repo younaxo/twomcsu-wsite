@@ -1,25 +1,91 @@
 import {
+  BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { NotificationType, Report, ReportStatus } from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PermissionService } from '../roles/permission.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
+import { AssignableStaffQueryDto } from './dto/assignable-staff-query.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
 import { CreateModeratorNoteDto } from './dto/create-moderator-note.dto';
-import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 import { LockReportDto } from './dto/lock-report.dto';
+import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { SetVerdictDto } from './dto/set-verdict.dto';
 import { SoftDeleteMessageDto } from './dto/soft-delete-message.dto';
+import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
 import { UpdateModeratorNoteDto } from './dto/update-moderator-note.dto';
+import {
+  MODERATOR_NOTES_ORDER,
+  REPORT_STATUS_LABEL_RU,
+} from './report-constants';
+import {
+  REPORT_PRIORITY_PROVIDER,
+  ReportPriorityProvider,
+} from './report-priority.provider';
+import { buildStaffReportWhere } from './report-staff-filters';
+
+/// Для history: audit-события staff-мутаций пишет AuditInterceptor с
+/// targetType = префикс permission (`reports`) и targetId = id обращения
+/// (из результата хендлера); `report` — для явных вызовов AuditService.log.
+const REPORT_AUDIT_TARGET_TYPES = ['reports', 'report'];
+
+/// Право, дающее править чужие заметки (Q27, ADR-0172; автор всегда правит
+/// свои).
+const FOREIGN_NOTE_EDIT_PERMISSION = 'reports.notes.edit';
+const FOREIGN_NOTE_UNPIN_PERMISSION = 'reports.notes.unpin';
 
 @Injectable()
 export class ReportsModerationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReportsModerationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: PermissionService,
+    private readonly notifications: NotificationsService,
+    @Inject(REPORT_PRIORITY_PROVIDER)
+    private readonly priority: ReportPriorityProvider,
+  ) {}
+
+  /// Уведомление автору — побочный эффект: его сбой не должен ломать
+  /// действие персонала. Себе (автор == исполнитель действия) не шлём.
+  /// Приватность (Q51, ADR-0175): отправитель — система. fromUserId и любые
+  /// данные сотрудника в уведомление автору не передаются (ни в payload, ни
+  /// в push/WS/email: текст — только статус/номер); actorId нужен лишь для
+  /// проверки «себе».
+  private async notifyAuthor(
+    report: Pick<Report, 'authorId' | 'reportNumber'>,
+    actorId: string,
+    type: NotificationType,
+    title: string,
+    message?: string,
+  ): Promise<void> {
+    if (report.authorId === actorId) {
+      return;
+    }
+    try {
+      await this.notifications.create({
+        userId: report.authorId,
+        type,
+        title,
+        message,
+        link: `/support/${report.reportNumber}`,
+        metadata: { reportNumber: report.reportNumber },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось отправить уведомление по ${report.reportNumber}: ${(error as Error).message}`,
+      );
+    }
+  }
 
   private async requireReport(reportNumber: string) {
     const report = await this.prisma.report.findUnique({
@@ -31,15 +97,14 @@ export class ReportsModerationService {
     return report;
   }
 
-  async listModeration(query: ListReportsQueryDto) {
+  async listModeration(query: StaffListReportsQueryDto, actorId: string) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;
-    const where: Prisma.ReportWhereInput = {
+    const where = {
       isArchived: false,
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.type ? { type: query.type } : {}),
+      ...buildStaffReportWhere(query, actorId, this.priority),
     };
-    const [items, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.report.findMany({
         where,
         // Персоналу — только публичные поля пользователей (ADR-0128, ADR-0107).
@@ -54,20 +119,102 @@ export class ReportsModerationService {
       }),
       this.prisma.report.count({ where }),
     ]);
+    const items = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        priority: await this.priority.resolve(row),
+      })),
+    );
     return { items, total, page, limit };
   }
 
-  async assign(reportNumber: string, dto: AssignReportDto) {
-    const report = await this.requireReport(reportNumber);
-    return this.prisma.report.update({
-      where: { id: report.id },
-      data: { assignedToId: dto.assignedToId ?? null },
+  /// Кандидаты для назначения: не заблокированные пользователи (кроме
+  /// системных аккаунтов) с эффективным `reports.view` — суперпользователь
+  /// или роль с ALLOW-правом (то же правило, что PermissionService). Выборка
+  /// одним запросом по ролям, без поштучных hasPermission. Только публичные
+  /// поля (ADR-0107).
+  async assignableStaff(query: AssignableStaffQueryDto) {
+    const q = query.q?.trim();
+    const items = await this.prisma.user.findMany({
+      where: {
+        isBanned: false,
+        accountType: { not: 'SYSTEM' },
+        ...(q ? { username: { contains: q, mode: 'insensitive' } } : {}),
+        roles: {
+          some: {
+            role: {
+              OR: [
+                { isSuperuser: true },
+                {
+                  permissions: {
+                    some: {
+                      effect: 'ALLOW',
+                      permission: { key: 'reports.view' },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+      select: PUBLIC_USER_SELECT,
+      orderBy: { username: 'asc' },
+      take: query.limit ?? 20,
     });
+    return { items };
   }
 
-  async changeStatus(reportNumber: string, dto: ChangeReportStatusDto) {
+  /// Назначение/передача: исполнитель должен существовать, не быть
+  /// заблокированным и иметь `reports.view`. `assignedToId: null` — снять.
+  async assign(reportNumber: string, dto: AssignReportDto, actorId: string) {
     const report = await this.requireReport(reportNumber);
-    return this.prisma.report.update({
+    const assigneeId = dto.assignedToId ?? null;
+    if (assigneeId) {
+      const assignee = await this.prisma.user.findUnique({
+        where: { id: assigneeId },
+        select: { id: true, isBanned: true },
+      });
+      if (!assignee) {
+        throw new NotFoundException('Исполнитель не найден');
+      }
+      if (assignee.isBanned) {
+        throw new BadRequestException('Исполнитель заблокирован');
+      }
+      if (!(await this.permissions.hasPermission(assigneeId, 'reports.view'))) {
+        throw new BadRequestException('У исполнителя нет доступа к обращениям');
+      }
+    }
+    const updated = await this.prisma.report.update({
+      where: { id: report.id },
+      data: { assignedToId: assigneeId },
+    });
+    if (assigneeId && assigneeId !== actorId) {
+      try {
+        await this.notifications.create({
+          userId: assigneeId,
+          type: NotificationType.REPORT_ASSIGNED,
+          title: `Вам назначено обращение ${report.reportNumber}`,
+          link: `/admin/reports/${report.reportNumber}`,
+          fromUserId: actorId,
+          metadata: { reportNumber: report.reportNumber },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Не удалось уведомить исполнителя по ${report.reportNumber}: ${(error as Error).message}`,
+        );
+      }
+    }
+    return updated;
+  }
+
+  async changeStatus(
+    reportNumber: string,
+    dto: ChangeReportStatusDto,
+    actorId: string,
+  ) {
+    const report = await this.requireReport(reportNumber);
+    const updated = await this.prisma.report.update({
       where: { id: report.id },
       data: {
         status: dto.status,
@@ -76,11 +223,21 @@ export class ReportsModerationService {
           : null,
       },
     });
+    if (report.status !== dto.status) {
+      await this.notifyAuthor(
+        report,
+        actorId,
+        NotificationType.REPORT_STATUS_CHANGED,
+        `Статус обращения ${report.reportNumber} изменён`,
+        REPORT_STATUS_LABEL_RU[dto.status as ReportStatus],
+      );
+    }
+    return updated;
   }
 
-  async setVerdict(reportNumber: string, dto: SetVerdictDto) {
+  async setVerdict(reportNumber: string, dto: SetVerdictDto, actorId: string) {
     const report = await this.requireReport(reportNumber);
-    return this.prisma.report.update({
+    const updated = await this.prisma.report.update({
       where: { id: report.id },
       data: {
         verdict: dto.verdict,
@@ -97,6 +254,16 @@ export class ReportsModerationService {
           : {}),
       },
     });
+    await this.notifyAuthor(
+      report,
+      actorId,
+      NotificationType.REPORT_VERDICT,
+      `По обращению ${report.reportNumber} вынесен вердикт`,
+      dto.status
+        ? REPORT_STATUS_LABEL_RU[dto.status as ReportStatus]
+        : undefined,
+    );
+    return updated;
   }
 
   async addMessage(
@@ -119,6 +286,12 @@ export class ReportsModerationService {
         isStaff: true,
       },
     });
+    await this.notifyAuthor(
+      report,
+      staffId,
+      NotificationType.SYSTEM,
+      `Новый ответ по обращению ${report.reportNumber}`,
+    );
     return this.prisma.report.findUnique({
       where: { id: report.id },
       include: {
@@ -209,7 +382,7 @@ export class ReportsModerationService {
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -227,26 +400,65 @@ export class ReportsModerationService {
     reportNumber: string,
     noteId: string,
     dto: UpdateModeratorNoteDto,
+    actorId: string,
   ) {
     const report = await this.requireReport(reportNumber);
-    await this.requireNote(report.id, noteId);
+    const note = await this.requireNote(report.id, noteId);
+    // Править может автор заметки или актёр с reports.notes.edit.
+    if (
+      note.authorId !== actorId &&
+      !(await this.permissions.hasPermission(
+        actorId,
+        FOREIGN_NOTE_EDIT_PERMISSION,
+      ))
+    ) {
+      throw new ForbiddenException('Править можно только свои заметки');
+    }
     await this.prisma.reportModeratorNote.update({
       where: { id: noteId },
       data: { content: dto.content, contentHtml: escapeToHtml(dto.content) },
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
-  async deleteModeratorNote(reportNumber: string, noteId: string) {
+  /// Своя заметка удаляется автором. Чужая — только с reports.notes.edit;
+  /// чужая закреплённая — только с reports.notes.edit И reports.notes.unpin
+  /// (решение владельца Q52, ADR-0176).
+  async deleteModeratorNote(
+    reportNumber: string,
+    noteId: string,
+    actorId: string,
+  ) {
     const report = await this.requireReport(reportNumber);
-    await this.requireNote(report.id, noteId);
+    const note = await this.requireNote(report.id, noteId);
+    if (note.authorId !== actorId) {
+      if (
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_EDIT_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException('Удалять можно только свои заметки');
+      }
+      if (
+        note.isPinned &&
+        !(await this.permissions.hasPermission(
+          actorId,
+          FOREIGN_NOTE_UNPIN_PERMISSION,
+        ))
+      ) {
+        throw new ForbiddenException(
+          'Удалить чужую закреплённую заметку можно только с правом открепления',
+        );
+      }
+    }
     await this.prisma.reportModeratorNote.delete({ where: { id: noteId } });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -263,7 +475,7 @@ export class ReportsModerationService {
     });
     return this.prisma.report.findUnique({
       where: { id: report.id },
-      include: { moderatorNotes: { orderBy: { createdAt: 'asc' } } },
+      include: { moderatorNotes: { orderBy: MODERATOR_NOTES_ORDER } },
     });
   }
 
@@ -276,5 +488,37 @@ export class ReportsModerationService {
         ? { isLocked: true, lockedBy: moderatorId, lockedReason: dto.reason }
         : { isLocked: false, lockedBy: null, lockedReason: null },
     });
+  }
+
+  /// История действий персонала по обращению (AuditLog). Без IP/User-Agent;
+  /// исполнитель — только публичные поля. Срок хранения — ретенция audit.
+  async history(reportNumber: string, query: ReportHistoryQueryDto) {
+    const report = await this.requireReport(reportNumber);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const where = {
+      targetId: report.id,
+      targetType: { in: REPORT_AUDIT_TARGET_TYPES },
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        select: {
+          id: true,
+          action: true,
+          targetType: true,
+          targetId: true,
+          changes: true,
+          severity: true,
+          createdAt: true,
+          actor: { select: PUBLIC_USER_SELECT },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+    return { items, total, page, limit };
   }
 }

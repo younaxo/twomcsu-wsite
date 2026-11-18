@@ -18,6 +18,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
+import { normalizeIp } from '../../config/trust-proxy';
 import { RequestContext } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
@@ -64,8 +65,10 @@ export type SocialResultStatus =
   | 'error';
 
 function requestContext(req: Request): RequestContext {
+  const rawIp = req.ip ?? req.socket.remoteAddress;
   return {
-    ip: req.ip ?? req.socket.remoteAddress ?? 'unknown',
+    ip: normalizeIp(rawIp),
+    rateLimitIp: rawIp ?? '',
     userAgent: req.get('user-agent'),
   };
 }

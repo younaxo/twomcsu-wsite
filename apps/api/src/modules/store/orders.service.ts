@@ -1,40 +1,127 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
-import { randomBytes, timingSafeEqual } from 'crypto';
-import { ConfigService } from '@nestjs/config';
+import { randomBytes } from 'crypto';
+import {
+  isDateRangeInverted,
+  parseDateRange,
+} from '../../common/date-range.util';
 import { maskNickname } from '../../common/privacy.util';
+import { AuditService } from '../audit/audit.service';
 import { StorageService } from '../files/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
-import { PaymentWebhookDto } from './dto/payment-webhook.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
+import {
+  PaymentProvider,
+  PaymentWebhookEvent,
+} from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
+import { assertCartLimits, CartLimitLine } from './cart-limits';
+import { CART_ITEM_INCLUDE } from './cart.service';
 import { PricedLine, PricingService } from './pricing.service';
+import {
+  PUBLIC_PRODUCT_BRIEF_SELECT,
+  PUBLIC_VARIANT_SELECT,
+} from './public-product';
+import { badRequest, StoreCartError } from './store-errors';
 
+function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
+  return lines.map((l) => ({
+    productId: l.productId,
+    productName: l.name,
+    quantity: l.quantity,
+    isUnique: l.isUnique,
+    maxPerPurchase: l.maxPerPurchase,
+  }));
+}
+
+/// Заказ для покупателя: товар — по белому списку (без gameCommands и прочих
+/// служебных полей), получатель подарка — только публичные поля (ADR-0107).
 const ORDER_INCLUDE = {
   items: {
-    include: { product: true, variant: true, bundle: true, giftToUser: true },
+    include: {
+      product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
+      variant: { select: PUBLIC_VARIANT_SELECT },
+      bundle: true,
+      giftToUser: { select: PUBLIC_USER_SELECT },
+    },
   },
 } as const;
 
+/// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
+/// Скалярные поля позиции сохранены (контракт AdminOrderDto); товар, вариант и
+/// набор — по белому списку (без gameCommands, server, цен закупки и прочих
+/// служебных полей); получатель подарка — публичные поля (ADR-0107).
+const ADMIN_ORDER_ITEM_SELECT = {
+  id: true,
+  orderId: true,
+  productId: true,
+  variantId: true,
+  bundleId: true,
+  quantity: true,
+  unitPrice: true,
+  totalPrice: true,
+  giftToUserId: true,
+  giftMessage: true,
+  isDelivered: true,
+  deliveredAt: true,
+  product: { select: { id: true, name: true, slug: true, type: true } },
+  variant: { select: { id: true, duration: true, price: true } },
+  bundle: { select: { id: true, name: true, slug: true } },
+  giftToUser: { select: PUBLIC_USER_SELECT },
+} satisfies Prisma.OrderItemSelect;
+
+/// Покупатель для админки: публичные поля и email (ADR-0133), без IP и прочего.
+const ADMIN_ORDER_USER_SELECT = {
+  ...PUBLIC_USER_SELECT,
+  email: true,
+} satisfies Prisma.UserSelect;
+
+const ADMIN_ORDER_INCLUDE = {
+  items: { select: ADMIN_ORDER_ITEM_SELECT, orderBy: { id: 'asc' } },
+  user: { select: ADMIN_ORDER_USER_SELECT },
+} satisfies Prisma.OrderInclude;
+
+/// Карточка заказа: к списочному составу добавляется промокод (без служебных
+/// счётчиков использований).
+const ADMIN_ORDER_CARD_INCLUDE = {
+  ...ADMIN_ORDER_INCLUDE,
+  promoCode: {
+    select: {
+      id: true,
+      code: true,
+      discountType: true,
+      discountValue: true,
+    },
+  },
+} satisfies Prisma.OrderInclude;
+
+const MAX_SEARCH_LENGTH = 100;
+
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly payments: PaymentProviderRegistry,
-    private readonly config: ConfigService,
     private readonly storage: StorageService,
+    private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -72,7 +159,8 @@ export class OrdersService {
       },
     });
     if (owned) {
-      throw new BadRequestException(
+      throw badRequest(
+        StoreCartError.CART_UNIQUE_ALREADY_OWNED,
         'Один из товаров уже куплен и недоступен для повторной покупки',
       );
     }
@@ -144,20 +232,8 @@ export class OrdersService {
       include: {
         promoCode: true,
         items: {
-          include: {
-            product: {
-              select: {
-                id: true,
-                type: true,
-                isGiftable: true,
-                isSelfOnly: true,
-                isUnique: true,
-                name: true,
-              },
-            },
-            variant: { select: { id: true, price: true } },
-            bundle: { select: { id: true, totalPrice: true, name: true } },
-          },
+          include: CART_ITEM_INCLUDE,
+          orderBy: { addedAt: 'asc' },
         },
       },
     });
@@ -165,11 +241,16 @@ export class OrdersService {
       throw new BadRequestException('Корзина пуста');
     }
 
+    // Недействительный сохранённый промокод здесь — 4xx с кодом PROMO_*, а не
+    // молчаливое повышение суммы (в корзине причина видна в promoError).
     const totals = await this.pricing.computeTotals(
       cart.items,
       userId,
       cart.promoCode?.code ?? null,
     );
+    // Лимиты товара (isUnique/maxPerPurchase) — по строкам корзины целиком,
+    // даже если дубли появились в обход API корзины.
+    assertCartLimits(limitLinesOf(totals.lines));
     const result = await this.createOrderFromLines(
       userId,
       dto.targetMinecraftNick ?? null,
@@ -196,14 +277,6 @@ export class OrdersService {
       throw new NotFoundException('Вариант товара не найден');
     }
     const quantity = dto.quantity ?? 1;
-    if (
-      variant.product.maxPerPurchase &&
-      quantity > variant.product.maxPerPurchase
-    ) {
-      throw new BadRequestException(
-        `Максимум ${variant.product.maxPerPurchase} шт. этого товара за покупку`,
-      );
-    }
 
     const fakeCartItem = {
       id: 'quick-buy',
@@ -221,12 +294,19 @@ export class OrdersService {
         isGiftable: variant.product.isGiftable,
         isSelfOnly: variant.product.isSelfOnly,
         isUnique: variant.product.isUnique,
+        maxPerPurchase: variant.product.maxPerPurchase,
         name: variant.product.name,
       },
       variant: { id: variant.id, price: variant.price },
       bundle: null,
     };
-    const totals = await this.pricing.computeTotals([fakeCartItem], null, null);
+    const priced = await this.pricing.computeTotals([fakeCartItem], null, null);
+    // Без корзины строки нет: cartItemId = null (CartLineRef).
+    const totals = {
+      ...priced,
+      lines: priced.lines.map((l) => ({ ...l, cartItemId: null })),
+    };
+    assertCartLimits(limitLinesOf(totals.lines));
     return this.createOrderFromLines(
       null,
       dto.guestMinecraftNick,
@@ -297,95 +377,227 @@ export class OrdersService {
     });
   }
 
-  private verifyWebhookSecret(secret: string): boolean {
-    const configured = this.config.get<string>('PAYMENT_WEBHOOK_SECRET') ?? '';
-    const a = Buffer.from(secret);
-    const b = Buffer.from(configured);
-    if (a.length !== b.length) {
-      return false;
+  /// ADR-0157. Подпись уже проверена провайдером (PaymentsWebhookController).
+  /// Всегда 200 для проверенных событий (внешние провайдеры агрессивно
+  /// ретраят non-2xx, ADR-0025). Идемпотентно и безопасно при конкуренции:
+  /// переход статуса — атомарный `updateMany where {id, status: PENDING}`;
+  /// побочные эффекты (usedCount) выполняются только если переход состоялся.
+  /// Поздний `succeeded` по заказу в CANCELLED/FAILED (0.4, ревью M1): деньги
+  /// могли списаться, а заказ не выполняется. Статус и цену НЕ меняем —
+  /// фиксируем событие для ручного разбора (возврат средств). Только
+  /// orderNumber, paymentId, provider — без ПДн и секретов. Сбой наблюдения не
+  /// должен ломать ответ вебхука (иначе провайдер зациклит ретраи).
+  private async reportLatePayment(
+    order: { id: string; orderNumber: string; status: OrderStatus },
+    event: PaymentWebhookEvent,
+    provider: PaymentProvider,
+  ): Promise<void> {
+    this.logger.warn(
+      `Поздняя оплата заказа ${order.orderNumber} в статусе ${order.status}: paymentId=${event.paymentId} provider=${provider.name}`,
+    );
+    try {
+      const system = await this.prisma.user.findFirst({
+        where: { accountType: 'SYSTEM' },
+        select: { id: true },
+      });
+      if (system) {
+        await this.audit.log({
+          actorId: system.id,
+          action: 'orders.order.late_payment',
+          targetType: 'order',
+          targetId: order.id,
+          changes: {
+            orderNumber: order.orderNumber,
+            orderStatus: order.status,
+            paymentId: event.paymentId,
+            provider: provider.name,
+          },
+          severity: 'warning',
+        });
+      } else {
+        this.logger.warn(
+          'Аудит поздней оплаты пропущен: нет системного аккаунта',
+        );
+      }
+      const staff = await this.prisma.user.findMany({
+        where: {
+          isBanned: false,
+          accountType: { not: 'SYSTEM' },
+          roles: {
+            some: {
+              role: {
+                OR: [
+                  { isSuperuser: true },
+                  {
+                    permissions: {
+                      some: {
+                        effect: 'ALLOW',
+                        permission: { key: 'orders.view' },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        select: { id: true },
+        take: 50,
+      });
+      await Promise.all(
+        staff.map((u) =>
+          this.notifications.create({
+            userId: u.id,
+            type: 'SYSTEM',
+            title: 'Поздняя оплата отменённого заказа',
+            message: `Заказ ${order.orderNumber} (${order.status}) получил успешную оплату. Проверьте и при необходимости оформите возврат.`,
+            priority: 'HIGH',
+            bypassPreferences: true,
+          }),
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось зафиксировать позднюю оплату ${order.orderNumber}: ${(error as Error).message}`,
+      );
     }
-    return timingSafeEqual(a, b);
   }
 
-  /// Всегда 200 (внешние провайдеры агрессивно ретраят non-2xx — та же
-  /// причина, что и Voting webhook, ADR-0025). Идемпотентно: повторный
-  /// вебхук для уже обработанного заказа не меняет состояние повторно.
   async handleWebhook(
-    dto: PaymentWebhookDto,
+    provider: PaymentProvider,
+    event: PaymentWebhookEvent,
   ): Promise<{ accepted: boolean; reason?: string }> {
-    if (!this.verifyWebhookSecret(dto.secret)) {
-      return { accepted: false, reason: 'invalid_secret' };
-    }
     const order = await this.prisma.order.findUnique({
-      where: { orderNumber: dto.orderNumber },
+      where: { orderNumber: event.orderNumber },
     });
     if (!order) {
       return { accepted: false, reason: 'order_not_found' };
     }
+    if (order.paymentProvider !== provider.name) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=provider_mismatch`,
+      );
+      return { accepted: false, reason: 'provider_mismatch' };
+    }
     if (order.status !== OrderStatus.PENDING) {
+      if (
+        event.status === 'succeeded' &&
+        (order.status === OrderStatus.CANCELLED ||
+          order.status === OrderStatus.FAILED)
+      ) {
+        await this.reportLatePayment(order, event, provider);
+      }
       return { accepted: true, reason: 'already_processed' };
     }
+    if (order.paymentId && order.paymentId !== event.paymentId) {
+      this.logger.warn(
+        `Webhook rejected: order=${order.id} provider=${provider.name} reason=payment_id_mismatch`,
+      );
+      return { accepted: false, reason: 'payment_id_mismatch' };
+    }
 
-    if (dto.status === 'succeeded') {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.order.update({
-          where: { id: order.id },
+    if (event.status === 'succeeded') {
+      if (event.currency !== provider.currency) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=currency_mismatch`,
+        );
+        return { accepted: false, reason: 'currency_mismatch' };
+      }
+      if (!event.amount.equals(order.total)) {
+        this.logger.warn(
+          `Webhook rejected: order=${order.id} provider=${provider.name} reason=amount_mismatch`,
+        );
+        return { accepted: false, reason: 'amount_mismatch' };
+      }
+      const transitioned = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const moved = await tx.order.updateMany({
+          where: { id: order.id, status: OrderStatus.PENDING },
           data: {
             status: OrderStatus.COMPLETED,
-            paidAt: new Date(),
-            paymentWebhookVerifiedAt: new Date(),
-            paymentId: dto.paymentId,
+            paidAt: now,
+            paymentWebhookVerifiedAt: now,
+            ...(order.paymentId ? {} : { paymentId: event.paymentId }),
           },
         });
+        if (moved.count !== 1) {
+          return false;
+        }
         if (order.promoCodeId) {
           await tx.promoCode.update({
             where: { id: order.promoCodeId },
             data: { usedCount: { increment: 1 } },
           });
           if (order.userId) {
-            await tx.promoCodeUsage.create({
-              data: { promoCodeId: order.promoCodeId, userId: order.userId },
+            await tx.promoCodeUsage.createMany({
+              data: [{ promoCodeId: order.promoCodeId, userId: order.userId }],
+              skipDuplicates: true,
             });
           }
         }
+        return true;
       });
-    } else {
-      await this.prisma.order.update({
-        where: { id: order.id },
-        data: { status: OrderStatus.FAILED },
-      });
+      return transitioned
+        ? { accepted: true }
+        : { accepted: true, reason: 'already_processed' };
     }
-    return { accepted: true };
+
+    const failed = await this.prisma.order.updateMany({
+      where: { id: order.id, status: OrderStatus.PENDING },
+      data: { status: OrderStatus.FAILED },
+    });
+    return failed.count === 1
+      ? { accepted: true }
+      : { accepted: true, reason: 'already_processed' };
   }
 
   async listAdmin(query: ListAdminOrdersQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 30;
+    if (isDateRangeInverted(query.dateFrom, query.dateTo)) {
+      throw new BadRequestException('dateFrom не может быть позже dateTo');
+    }
+    const createdAtRange = parseDateRange(query.dateFrom, query.dateTo);
+    const search = query.search?.trim().slice(0, MAX_SEARCH_LENGTH);
+    const orderNumber = query.orderNumber?.trim();
+    const nickname = query.nickname?.trim();
     const where: Prisma.OrderWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.userId ? { userId: query.userId } : {}),
-      ...(query.dateFrom || query.dateTo
-        ? {
-            createdAt: {
-              ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
-            },
-          }
+      ...(orderNumber
+        ? { orderNumber: { contains: orderNumber, mode: 'insensitive' } }
         : {}),
-      ...(query.search
+      ...(nickname
         ? {
             OR: [
-              { orderNumber: { contains: query.search, mode: 'insensitive' } },
               {
-                guestMinecraftNick: {
-                  contains: query.search,
-                  mode: 'insensitive',
-                },
+                guestMinecraftNick: { contains: nickname, mode: 'insensitive' },
               },
               {
-                user: {
-                  username: { contains: query.search, mode: 'insensitive' },
-                },
+                user: { username: { contains: nickname, mode: 'insensitive' } },
+              },
+            ],
+          }
+        : {}),
+      ...(createdAtRange ? { createdAt: createdAtRange } : {}),
+      ...(search
+        ? {
+            AND: [
+              {
+                OR: [
+                  { orderNumber: { contains: search, mode: 'insensitive' } },
+                  {
+                    guestMinecraftNick: {
+                      contains: search,
+                      mode: 'insensitive',
+                    },
+                  },
+                  {
+                    user: {
+                      username: { contains: search, mode: 'insensitive' },
+                    },
+                  },
+                ],
               },
             ],
           }
@@ -394,18 +606,39 @@ export class OrdersService {
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
-        // Финансам — публичные поля покупателя и email (ADR-0133), без IP и прочего.
-        include: {
-          ...ORDER_INCLUDE,
-          user: { select: { ...PUBLIC_USER_SELECT, email: true } },
-        },
-        orderBy: { createdAt: 'desc' },
+        include: ADMIN_ORDER_INCLUDE,
+        // Второй ключ — стабильная пагинация при одинаковом createdAt.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.order.count({ where }),
     ]);
     return { items, total, page, limit };
+  }
+
+  /// Карточка заказа для админки: по id или по номеру заказа. Событий вебхука
+  /// в БД нет (хранится только итог: `paymentWebhookVerifiedAt`, `paidAt`,
+  /// `paymentId`, `paymentProvider`), поэтому секция `payment` — это сводка по
+  /// этим полям; подпись и тело вебхука не хранятся и не отдаются.
+  async getAdminCard(idOrNumber: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { OR: [{ id: idOrNumber }, { orderNumber: idOrNumber }] },
+      include: ADMIN_ORDER_CARD_INCLUDE,
+    });
+    if (!order) {
+      throw new NotFoundException('Заказ не найден');
+    }
+    return {
+      ...order,
+      payment: {
+        provider: order.paymentProvider,
+        paymentId: order.paymentId,
+        isPaid: order.status === OrderStatus.COMPLETED && !!order.paidAt,
+        paidAt: order.paidAt,
+        webhookVerifiedAt: order.paymentWebhookVerifiedAt,
+      },
+    };
   }
 
   async stats() {
@@ -432,21 +665,58 @@ export class OrdersService {
     return order;
   }
 
-  async cancel(id: string, dto: CancelOrderDto) {
-    const order = await this.requireOrder(id);
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException(
-        'Отменить можно только заказ в статусе PENDING',
-      );
+  /// Отмена только PENDING (0.4). Статус перечитывается под блокировкой строки
+  /// (FOR UPDATE): параллельный вебхук оплаты не пройдёт между проверкой и
+  /// записью. Оплаченный/завершённый/возвращённый/неуспешный заказ — 409.
+  /// Аудит — в той же транзакции и строгий: сбой записи откатывает отмену.
+  /// Причина хранится в `Order.cancelReason` и в аудите.
+  async cancel(id: string, dto: CancelOrderDto, actorId: string) {
+    const reason = dto.reason.trim();
+    if (!reason) {
+      throw new BadRequestException('Причина отмены обязательна');
     }
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.CANCELLED,
-        cancelledAt: new Date(),
-        cancelReason: dto.reason,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id = ${id} FOR UPDATE`;
+        if (locked.length === 0) {
+          throw new NotFoundException('Заказ не найден');
+        }
+        const order = await tx.order.findUniqueOrThrow({ where: { id } });
+        if (order.status !== OrderStatus.PENDING) {
+          throw new ConflictException({
+            code: 'ORDER_NOT_CANCELLABLE',
+            message: `Отменить можно только заказ в статусе PENDING, текущий статус: ${order.status}`,
+          });
+        }
+        const updated = await tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelReason: reason,
+          },
+        });
+        await this.audit.log({
+          actorId,
+          action: 'orders.order.cancelled',
+          targetType: 'order',
+          targetId: id,
+          changes: {
+            orderNumber: order.orderNumber,
+            from: order.status,
+            to: OrderStatus.CANCELLED,
+            total: order.total.toFixed(2),
+            reason,
+          },
+          severity: 'warning',
+          tx,
+          strict: true,
+        });
+        return updated;
       },
-    });
+      { maxWait: 10_000, timeout: 10_000 },
+    );
   }
 
   async refund(id: string, dto: RefundOrderDto) {

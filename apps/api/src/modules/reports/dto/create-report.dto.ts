@@ -20,11 +20,19 @@ export class CreateReportDto {
 
   /// Нарушители — обязательны только для жалоб на игрока/администрацию
   /// (проверяет сервис, ADR-0120); у остальных типов целей может не быть.
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => ReportTargetDto)
-  targets!: ReportTargetDto[];
+  targets?: ReportTargetDto[];
+
+  /// Обжалуемое наказание: обязательно для PUNISHMENT_APPEAL и запрещено для
+  /// остальных типов (проверяет сервис).
+  @IsOptional()
+  @IsString()
+  @Length(1, 64)
+  appealedPunishmentId?: string;
 
   @IsOptional()
   @IsString()

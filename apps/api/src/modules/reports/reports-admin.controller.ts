@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { SkipAudit } from '../audit/skip-audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -16,6 +17,7 @@ import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { ArchiveReportDto } from './dto/archive-report.dto';
 import { BanReportsDto } from './dto/ban-reports.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
+import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
 import { ReportsAdminService } from './reports-admin.service';
 
 @Controller('admin')
@@ -31,8 +33,11 @@ export class ReportsAdminController {
 
   @Get('reports/archived')
   @RequirePermissions('reports.archived.view')
-  async listArchived(@Query() query: ListReportsQueryDto) {
-    return this.admin.listArchived(query);
+  async listArchived(
+    @Query() query: StaffListReportsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.admin.listArchived(query, user.id);
   }
 
   @Post('reports/:reportNumber/archive')
@@ -80,8 +85,12 @@ export class ReportsAdminController {
 
   @Delete('reports/ban/:userId')
   @RequirePermissions('reports.ban')
-  async unbanUser(@Param('userId') userId: string) {
-    await this.admin.unbanUser(userId);
+  @SkipAudit() // ReportsAdminService пишет запись reports.ban.revoke на каждый бан (Q48)
+  async unbanUser(
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    await this.admin.unbanUser(userId, user.id);
     return { success: true };
   }
 

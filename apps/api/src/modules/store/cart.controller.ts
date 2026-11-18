@@ -15,6 +15,7 @@ import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { ApplyPromoDto } from './dto/apply-promo.dto';
 import { CalculateCartDto } from './dto/calculate-cart.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
+import { CartGiftRateGuard } from './cart-gift-rate.guard';
 import { CartService } from './cart.service';
 import { SiteModule } from '../system/site-module.decorator';
 
@@ -29,6 +30,7 @@ export class CartController {
     return this.cart.getCart(user.id);
   }
 
+  @UseGuards(CartGiftRateGuard)
   @Post('items')
   async addItem(
     @CurrentUser() user: AuthenticatedUser,
@@ -37,6 +39,7 @@ export class CartController {
     return this.cart.addItem(user.id, dto);
   }
 
+  @UseGuards(CartGiftRateGuard)
   @Patch('items/:id')
   async updateItem(
     @CurrentUser() user: AuthenticatedUser,

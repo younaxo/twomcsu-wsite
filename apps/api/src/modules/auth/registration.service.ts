@@ -28,6 +28,7 @@ import {
   RegisterVerifyDto,
 } from './dto/registration.dto';
 import { testOtpOutcome } from './test-otp';
+import { isProductionLike } from '../../config/node-env';
 
 const OTP_TTL_MS = 10 * 60_000;
 const COMPLETION_TTL_MS = 30 * 60_000;
@@ -102,7 +103,7 @@ export class RegistrationService {
     } catch (error) {
       const reason =
         error instanceof Error ? error.message.slice(0, 120) : 'unknown';
-      if (this.config.get<string>('NODE_ENV') === 'production') {
+      if (isProductionLike(this.config.get<string>('NODE_ENV'))) {
         this.logger.error(`Письмо с кодом не отправлено: ${reason}`);
         await this.prisma.emailVerification.deleteMany({
           where: { id: verificationId, verifiedAt: null },

@@ -5,6 +5,212 @@
 
 ## [Unreleased]
 
+### Транзакции Prisma: общие maxWait/timeout и 503 busy (ADR-0183, ветка fix/prisma-tx-defaults, не смержено, миграций нет)
+
+- `PrismaService`: `transactionOptions` из конфигурации `PRISMA_TX_MAX_WAIT_MS` и `PRISMA_TX_TIMEOUT_MS` (Joi, 1000-30000 и 1000-60000, по умолчанию 10000/10000). Точечные 10_000/10_000 в формах и вебхуке оплаты заказа убраны; Bridge и зеркало наказаний сохраняют 2000/6000.
+- Глобальный `PrismaExceptionFilter` (`APP_FILTER` в `PrismaModule`): `P2028`, `P2024`, `P2034` -> 503 `{ code: 'busy' }` с `Retry-After` вместо 500; `/bridge/v1` - тело `{ error: 'unavailable' }`; прочие коды -> 500 без деталей.
+- Чек-лист production-env: рекомендация `connection_limit`/`pool_timeout`. Отчёт `docs/reports/2026-11-17-prisma-tx-defaults.md`; риски R138-R142.
+
+### Этап 03, срез 1: приёмник Bridge (ADR-0182, ветка feature/stage-03-s1-bridge-receiver, не смержено, миграции не применялись)
+
+- Модуль `apps/api/src/modules/bridge`: крипто (HKDF-ключ сервера по `slug` как соль, HMAC-SHA256 над сырым телом, `timingSafeEqual`), конфиг (`BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET` не короче 32 байт; без них все пути отвечают 503), схемы конверта и событий v1, `BridgeSignatureGuard` (порядок проверок раздела 2.3, нонс после подписи, fail-closed 503 при недоступном Redis), `BridgeRateLimitGuard` и Redis-лимиты (запросы на ключ, события в минуту, параллельные запросы, счётчик неудачных аутентификаций), `BridgeController` (`GET /bridge/v1/handshake`, `POST /bridge/v1/events`).
+- Приём (`BridgeIngestService`): `punishment.*` применяются в одной транзакции с записью в `bridge_event_log` (дедупликация `(serverSlug, eventId)`, `conflict` при другом `payloadHash`), порядок по маркеру `occurredAt` в Redis (`stale`), capabilities до применения; запись в зеркало этапа 02 идёт через `BridgePunishmentSource` (`id = 'bridge'`, push). `player.*` выключены (`unsupported_type`).
+- Очистка журнала раз в сутки, срок не меньше 7 суток (F5). CLI: `bridge:register` (запись сервера, секрет не читает) и `bridge:print-key` (ключ только владельцу, F3). Симулятор плагина `scripts/bridge-plugin-sim.ts` (только режим scenario) и fixtures `apps/api/test/fixtures/bridge`.
+- Раунд безопасности приёмника Bridge: `received` (короткая транзакция, атомарный маркер) -> publish вне транзакции -> `applied`; подписчик зеркала со своим `sourceScope`; счётчик неверных подписей по паре (ip, key-id); парсер тела `/bridge/v1` (`BRIDGE_MAX_BODY_BYTES`, 413 и 400 `invalid_body`); строгая проверка мастер-секрета; формат `bridge.hello`; флаги `--production --confirm-owner` для боевой регистрации (runbook `docs/runbooks/bridge-server-registration.md`). R121 закрыт, R127–R132 новые.
+- Статический e2e `apps/api/test/bridge.e2e-spec.ts` по плану раздела 11 контракта (не запускался).
+- Сверка с итоговым контрактом (коммиты a43b0f3, c5b6efc): `chat.*`, `player.*`, `inventory.*` -> `rejected` `unsupported_type`, `features.player_events=false`; формат `key-id` по slug `^[a-z0-9][a-z0-9-]{1,31}$`; при недоступном Redis guard и лимитер отвечают 503 `unavailable` с `Retry-After: 5`; коды инвентаря 5.1 и раздел 6.1 не реализованы; регистрация сервера только данными через CLI `bridge:register`, без лимита (Q42). Тест `bridge-slice1-contract.spec.ts`.
+- Документы: ADR-0182, риски R111-R125, контракт `docs/stage-03/BRIDGE-CONTRACT.md`; отчёт `docs/reports/2026-11-17-03-s1-bridge-receiver.md`.
+- Целевое ревью парсера тела `/bridge/v1` (APPROVE WITH NOTES): дедлайн чтения `BRIDGE_BODY_READ_TIMEOUT_MS` (408 `request_timeout`, 10000 мс, границы 1000-30000), префикс пути без учёта регистра и по части до `?`, строгий UTF-8 (невалидный -> 400 `invalid_body`, `rawBody` побайтный), контракт приведён к 415 `unsupported_encoding` на уровне парсера. Новый риск R137 (таймауты Node и nginx не менялись).
+- Проверки: `tsc --noEmit` 0 ошибок; jest `src/modules/bridge src/modules/punishments` 975 тестов, все пройдены. e2e в этой сверке не перезапускались (код не менялся; ранее на a43b0f3: bridge 21/21, bans 25/25). Открыто: противоречия контракта 1 и 2 (R122, R123), publish внутри транзакции при малом пуле Prisma (R121).
+
+### Этап 02, срез 2: фронтенд /bans и «Наказания на серверах» (ADR-0181, ветка feature/stage-02-s2-bans-ui, не смержено, сборка и e2e не запускались)
+
+- Публичная страница `/bans` (баны и муты: поиск по нику по кнопке, фильтры типа и статуса, сортировка по дате, курсорная пагинация «Показать ещё») и карточка `/bans/[ref]`, обе `noindex`. Вывод по белому списку полей, причина дословно как текст.
+- «Настройки -> Наказания»: блок «Наказания на серверах» (`GET /punishments/me`) отдельно от «Наказаний на сайте»; состояния загрузки, пусто, ошибка с повтором, 401, 404, 429 (Retry-After), 503, `meta.stale`, аккаунт не привязан (`linked: false`).
+- Клиент API: `ApiError.retryAfterSeconds` (целые секунды из `Retry-After`). Ссылка «Список наказаний» в футере.
+- Экспорт `Retry-After` через CORS (коммит d89fa51, `fix(api)`): `exposedHeaders: ['Retry-After']` в `apps/api/src/configure-app.ts`, unit-spec `configure-app.spec.ts`, усиление assert Low-1 в `bans.e2e-spec.ts`. Без этого браузер не видит `Retry-After` на кросс-доменных запросах web -> api (R110).
+- Проверки: `tsc --noEmit` (apps/web) 0 ошибок; vitest apps/web 103 файла, 605 тестов, все пройдены (из них 21 новый в `punishments-ui.test.tsx` и 2 в `client.test.ts`). e2e и `next build` не запускались.
+
+### Этап 02, срез 2: бэкенд /bans (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, миграция и e2e не запускались)
+
+- Эндпоинты (модуль `PunishmentsModule`, контроллеры `MinecraftPunishments{Public,Me,Admin}Controller`): `GET /punishments/public` и `/punishments/public/:ref` (без входа, throttle 60/мин, ETag, `noindex`), `GET /punishments/me` (JWT, 30/мин, только по подтверждённой привязке, uuid версии 3 даёт `linked: false`), `GET /admin/punishments`, `/admin/punishments/status`, `/admin/punishments/:ref` (право `users.punishments` + 2FA, аудит `punishment.card.view` только для карточки), `POST` и `DELETE /admin/punishments/:ref/issuer-hidden` (право `punishments.issuer.hide`, иерархия N3, условный `UPDATE` и аудит в одной транзакции). Публичная причина - закрытый словарь, пока карта пуста всегда `rules`; выдавший виден по умолчанию с флагом принудительного скрытия; область с названием сервера; курсорная пагинация; серверный кэш с TTL 5 с и сбросом при скрытии выдавшего.
+- Раунд исправлений 1 (по ревью Q&S и e2e chief): ETag снят у ответов модуля, которым он не положен (ошибки, `me`, `admin/*`; `suppressEtag` в `punishments-http.ts`, глобальный Express не менялся); `issuer-hidden` требует оба права `punishments.issuer.hide` и `users.punishments`; в аудит скрытия и раскрытия пишутся IP и User-Agent; иерархия перепроверяется внутри `$transaction` (R100); в `bans.e2e-spec.ts` ключ 2FA задаётся тестовой константой (кейс `admin_2fa_required` теперь исполняется), добавлены кейсы Low-1, Low-2 и L1 (синхронизация не сбрасывает `issuerHidden*`); юнит-тесты `PermissionsGuard` (п.31), предела 5 + 15 + 30 с (п.17), IP/UA, повторной проверки иерархии. e2e не запускались.
+- Право `punishments.issuer.hide` добавлено в каталог `packages/shared/src/permissions.ts` (в БД попадает только seed, который выполняет владелец). Локальная копия типов API с контрактным тестом синхронизации (R80).
+- Коммиты: d596ec0, 3858e34, ba36556, 6517d2a, ec75b5c и коммит этапа C (e2e). 675 unit-тестов (19 наборов); статические e2e (не запускались): `apps/api/test/bans.e2e-spec.ts` (HTTP-стек, заголовки, порядок проверок, ETag/304, аудит, откат транзакции, гонки), `bans-throttle.e2e-spec.ts` (429 и `Retry-After`), `bans-explain.e2e-spec.ts` (EXPLAIN на одноразовой БД, включается только `BANS_EXPLAIN_E2E=1`). Миграция среза 2 не применялась. Риски R90, R91, R92.
+
+### Этап 02, срез 2: миграция колонок скрытия выдавшего и индексов (ADR-0180, ветка feature/stage-02-s2-bans-contract, не смержено, не применялась, ждёт ревью Q28)
+
+- Миграция `20261117040000_punishments_public_indexes` (вручную, Q43 а; только `ADD COLUMN` четырёх колонок `issuerHidden*` и `CREATE INDEX` трёх индексов: выражение `lower("subjectName") text_pattern_ops`, частичный публичный `(startedAt, id)`, обычный `(startedAt, id)`). Поля добавлены в модель `MinecraftPunishment` (`schema.prisma`), индексы описаны комментарием модели. Юнит-тесты: текст миграции (только разрешённые операторы, нет `DROP` индексов и колонок в других миграциях) и текст SQL upsert синхронизации (нет `issuerHidden`). Контроллеры и сервисы среза 2 не писались; на БД не применялась. Риски R88, R89.
+
+### Этап 02, срез 2: контракт API наказаний (ADR-0180, ветка feature/stage-02-s2-bans-contract, только документ, не смержено)
+
+- `docs/stage-02/BANS-API-CONTRACT.md`: публичный список и карточка `/punishments/public`, «мои наказания» `/punishments/me`, просмотр персоналом `/admin/punishments` (право `users.punishments`, 2FA), причина на `/bans` только из закрытого словаря (Q59), недоступность 404/503/`stale`, DTO для `packages/shared`, синхронизация копий типов тестом (R80), WebSocket отложен. Код, схема и миграции не менялись; ADR-0180 в статусе Proposed.
+- Проход 2 по ответу владельца на Q63 (только документы, 2026-11-17; ADR-0180 остаётся Proposed): причина на `/bans` публично везде «Нарушение правил», пока владелец не пришлёт соответствие шаблонов и формулировок (карты пусты и выключены, словарь из семи категорий и механизм описаны); выдавший виден по умолчанию публично и игроку (отменяет Q31 п.5), включая случай «консоль»; принудительное скрытие выдавшего куратором и выше (новое право `punishments.issuer.hide`, 2FA, иерархия `canActOn`, `POST` и `DELETE /admin/punishments/:ref/issuer-hidden`, флаг в колонках зеркала `issuerHidden*` в добавочной миграции среза 2, синхронизация флаг не затирает, аудит «кто, у какого, когда»); область публично везде с названием сервера (`Server` сайта, иначе очищенное `server_scope`, иначе «Неизвестный сервер»); аудит только просмотра карточки персоналом, список не пишется; публичный банлист без входа и без права, `punishments.view` не вводится. Тест-план дополнен (п.23-30). Риски R81-R87. Код, схема, миграции и `permissions.ts` не менялись.
+- Финал контракта (только документы, 2026-11-17): ADR-0180 Accepted, утверждён chief по итогам независимого ревью Q&S (APPROVE WITH NOTES); внесены N1-N3 (право `punishments.issuer.hide` только через seed, атомарность скрытия и аудита в одной транзакции, сопоставление выдавшего только по подтверждённой привязке с fail-closed правилом для несопоставленного), тест-план 31-38, проверки миграции и оценка блокировок (2.6), ссылка на расхождение с дизайном (silent скрыт).
+- Раунд исправлений 1 (только документы; пункты об аудите списка, скрытом выдавшем и необъявленной области заменены проходом 2): IP-баны не публикуются никогда (`ipBan = false`), офлайн-UUID (версия 3) даёт `linked:false`, порядок проверок и `503` при отсутствии первичной загрузки любого нужного вида, единая формула `meta.stale`, префиксный поиск через `$queryRaw` с экранированием и описание отдельной индексной миграции среза 2 (только `CREATE INDEX`, ревью до контроллеров, файл не создан), аудит просмотра персоналом, юридическое условие включения раздела (152-ФЗ), форматы и кодирование query, курсор с хэшем фильтров, формат `ref` до 18 цифр, контракт ошибок (`PunishmentErrorBody extends ApiErrorBody`), `removedReason` убран из `me`, имена контроллеров `MinecraftPunishments*`, расширенный контрактный тест типов, риск R80 в `RISKS.md`.
+
+### Этап 02, срез 1: зеркало наказаний и синхронизация (ADR-0178, ветка feature/stage-02-s1-punishments-core, не смержено)
+
+- Контракт `PunishmentSource`, нормализация, статус, очистка причины, `rowHash`; модели `MinecraftPunishment` и `PunishmentSyncState`; миграция `20261117020000_punishments_mirror` (не применялась); `PunishmentsSyncService` (слои 0-3 и T), лидерство через Redis, `PunishmentsModule` без побочных эффектов без источника; `LITEBANS_*` в валидации env. Адаптер mysql2, `/bans`, «Мои наказания», WebSocket и админ-управление не входят (срезы 2-3). Риски R52-R55. Отчёт: `docs/reports/2026-11-17-02-s1-punishments-core.md`.
+- Раунд исправлений по ревью (фазы A и B): F1-F2 сверка при откате источника (курсор опускается только после успешной мягкой сверки), F3 пороги массовой пометки (`MASS_DELETE_MAX_RATIO` 0.5, `MASS_DELETE_MIN_ROWS` 10, код `MASS_DELETE_SUSPECTED`), часы (`CLOCK_TOLERANCE_MS` 5 с, код `CLOCK_SKEW`), F4 лимиты транзакции записи (`APPLY_TX_MAX_WAIT_MS`, `APPLY_TX_TIMEOUT_MS`) в пределах TTL блокировки 10 с, F5 `drainSkippedIds`, F6 проверка токена лидера перед записью, F7-F11 (heartbeat после `release()`, сбой `eval`, `stale` вне `degraded`, Invalid Date проверяется до транзакции, полная сверка после опроса всех типов), очистка текста (`sanitizeReasonDetailed`, `isReasonMasked`). Миграция по-прежнему не применялась (R52). Скорректированы R52-R54, R56-R58. Отчёт: раздел «Исправления по ревью».
+- Повторное ревью среза 1 (раунд 2): токен лидера между группами пометки и перед записью состояния (M1, M2), слой T только после сверки часов (M3), склонения платформ и секреты в очистке причин (N1, N5), тесты границ F2/F3/F5, `RECONCILE_STALLED`; R54, R56. Схема и миграция не менялись.
+
+### Q21: throttler по подсети /64 и «Последний IP» в админке (ADR-0177, ветка fix/q21-ipv6-throttler-admin-ip, не смержено)
+
+- Глобальный throttler (`IpSubnetThrottlerGuard`) считает по `rateLimitKey`: IPv4 полный, IPv6 по /64, `unknown` / `raw:<hash>`; соседи по /64 делят лимит (решение владельца Q21 1а). Аргументы `@Throttle`/`@SkipThrottle` не менялись; `ws-rate-limit` (по `userId`) не менялся.
+- `BruteForceService` пишет `bruteforce:lastip:<rateLimitKey>` (полный нормализованный IP, EX 900, обновляется при каждой неудаче), `reset()` его удаляет. `GET /admin/security/suspicious` отдаёт `lastIp` (`SuspiciousIpDto`, shared), web: колонки «Ключ подсети» и «Последний IP». Миграции БД нет.
+- Коммиты: 5e895c0 (шаг 1), e134f36, 53c4acc, afcacfb, 14e54ca. 15 новых unit-тестов api, 3 теста web `security.test.tsx`; e2e `throttler-subnet.e2e-spec.ts` (новый), `trust-proxy.e2e-spec.ts`, `admin.e2e-spec.ts` дописаны статически, не запускались. Риски R46–R49. Отчёт: `docs/reports/2026-11-17-00-q21-ipv6-throttler-admin-ip.md`.
+- Исправления по ревью (APPROVE WITH NOTES): `app.module.spec.ts` сделан герметичным (виртуальный мок `multer`; `multer` в package.json не добавлялся); тест пачек `MGET` (100/101/250 ключей); e2e изоляции /64 проверяет исчерпанный лимит (статически, не запускался); риски R50 (NAT64/6to4 в одной /64) и R51 (сброс /64 при успешном входе); L5: основание обработки полного IP как персональных данных — решение владельца.
+
+### Q52: права на удаление заметок обращений (ADR-0176, ветка fix/q52-delete-notes-perms, не смержено)
+
+- Удаление чужой заметки требует `reports.notes.edit`, чужой закреплённой ещё и `reports.notes.unpin`, иначе 403; своя заметка удаляется как раньше. Web не менялся (кнопки удаления нет).
+- 9 unit-тестов сервиса (в т.ч. 404: нет заметки, заметка другого обращения, нет обращения) и 2 теста контроллера (право `reports.notes`, передача `user.id`); e2e дописан статически (403 без `edit`, 200 с `edit`, 403 чужая закреплённая без `unpin`, автор удаляет свою закреплённую), не запускался; миграций нет. Риск R45; чек-лист владельца дополнен (кэш прав, SQL по ролям, проверка миграции Q50 на одноразовой БД).
+
+### Q51: модератор скрыт в уведомлениях автору обращения (ADR-0175, ветка fix/q51-hide-moderator-in-author-notifications, не смержено)
+
+- `notifyAuthor` (смена статуса, вердикт, ответ модерации) не передаёт `fromUserId`: отправитель — система, имя и аватар модератора не попадают в payload, WS и push-превью. Уведомление исполнителю (`REPORT_ASSIGNED`) не менялось.
+- Unit-тест: payload автору без данных модератора, персоналу без изменений; e2e `reports-support` дописан статически, не запускался. Старые уведомления с `fromUserId` остаются (R44).
+
+### Q51: модератор скрыт в уведомлениях автору обращения (ADR-0175, ветка fix/q51-hide-moderator-in-author-notifications, не смержено)
+
+- `notifyAuthor` (смена статуса, вердикт, ответ модерации) не передаёт `fromUserId`: отправитель — система, имя/аватар модератора не попадают в payload, WS и push-превью. Уведомление исполнителю (`REPORT_ASSIGNED`) не менялось.
+- Unit-тест: payload автору без данных модератора, персоналу без изменений; e2e `reports-support` дописан статически, не запускался. Старые уведомления с `fromUserId` остаются (R44).
+
+### Q50: перенос прав заметок обращений (ADR-0174, ветка fix/q50-notes-perms-backfill, не смержено)
+
+- Миграция данных `20261117010000_reports_notes_permissions_backfill` (не применялась): создаёт `reports.notes.edit` и `reports.notes.unpin`, выдаёт их ролям со старыми `reports.delete` и `reports.notes.pin` (только ALLOW), идемпотентно, только INSERT.
+- Unit-тест миграции читает SQL (запрещённые операторы, ON CONFLICT, ALLOW, соответствия). Чек-лист владельца обновлён: миграция -> seed -> проверка выдачи -> деплой.
+
+### Исправления по ревью Q48 (ветка fix/q48-unban-hierarchy-all, не смержено)
+
+- Бан в обращениях: замена действующего бана = снятие, правило проверяется для каждого заменяемого бана («всё или ничего», 403 `sanction_revoke_forbidden`), плюс иерархия к цели (`canActOn`) при выдаче; так же при бане аккаунта через `QuickModerationService.ban`. Допущение chief, ADR-0173, R41.
+- Снятие и выдача бана аккаунта условны по состоянию (`updateMany`, 409 при гонке); снятие бана аккаунта и бана в обращениях пишет аудит в той же транзакции (`AuditService.logInTx`), ошибка аудита откатывает снятие.
+- `issuerKnown` для владельца отражает факт; R42 и чек-лист исправлены: без миграции падает чтение любого пользователя. e2e дописаны статически, не запускались.
+
+### Исправления по ревью Q26/Q27 (ветка feature/q26-q27-report-status-notification, не смержено)
+
+- `PATCH /moderation/reports/:reportNumber/notes/:noteId/pin` только закрепляет: `pinned:false` даёт 400; открепление только `DELETE .../pin` под `reports.notes.unpin` (иначе держатель pin обходил право unpin). Web должен перейти на DELETE. Unit-тесты добавлены; e2e дописаны статически, не запускались.
+- Документация: уточнён риск R40 (без миграции смена статуса не падает, уведомление теряется с `logger.warn`), порядок выкладки и сверка PostgreSQL (образ 16) в чек-листе, права и эндпоинты заметок в `04-API-REFERENCE.md`.
+
+### Безопасность: снятие мута и бана в чате по иерархии
+
+- Снять мут или бан чата (`DELETE /admin/chat/mutes/:id`, `/bans/:id`) может выдавший либо сотрудник с приоритетом не ниже выдавшего; иначе 403 с общим текстом (решение владельца Q25, ADR-0171, ветка fix/q25-chat-unmute-hierarchy, не смержено). Снять санкцию с себя может только выдавший. Выдавший неизвестен (пусто, удалён, SYSTEM): снимает только приоритет не ниже максимального по ролям (допущение, ADR-0171). Новый метод `PermissionService.canRevokeSanction`; HTTP-контракт и схема не менялись. Unit-тесты добавлены, e2e не запускались. Другие пути снятия бана не менялись, записан R38.
+
+### Безопасность: выдача роли только в пределах своих прав
+
+- Выдача роли пользователю (`POST /admin/users/:userId/roles/:roleId`) требует, чтобы права роли входили в права выдающего; иначе 403 `role_permissions_exceed_grantor` со списком недостающих прав (решение владельца Q23, ADR-0170, ветка fix/q23-role-grant-subset, не смержено). Владелец (роль с полным доступом) проверку не проходит; роль с полным доступом выдаёт только владелец; право `*` покрывает любые права. Проверки priority и canActOn сохранены, снятие роли не менялось. Единый метод `PermissionService.assertGrantorCoversRole`. Unit-тесты добавлены; e2e-кейс дописан, не запускался. Других путей выдачи роли в API нет. Записан R37.
+
+### Безопасность: 2FA персонала обязательна
+
+- 2FA персонала обязательна всегда (решение владельца Q22, ветка fix/q22-admin-2fa-always, не смержено): переключатель «требовать 2FA для администрации» убран, действия администрации и модерации (в том числе мут, бан и закрепление в чате, поиск получателей рассылок) без включённой 2FA дают отказ `admin_2fa_required`; войти и включить 2FA сотрудник может сам. В production без ключа шифрования 2FA отказ получают все. Повторное подтверждение 2FA для чувствительных операций позже отдельной задачей. Если потеряны устройство и резервные коды, нужна офлайн-процедура владельца: `docs/runbooks/owner-emergency-access.md`. Колонка настройки в БД не удалена (ждёт решения владельца). e2e обновлены, не запускались.
+- Чтение staff-видимого контента без 2FA (R35, ADR-0169, та же ветка): события (`events.view.staff`), формы (`forms.view.*`) и темы (`topics.view.*`) для сотрудника без 2FA показываются как обычному игроку (скрытое и staff-видимое не отдаётся, без 403); с 2FA или без ключа в явных development/test поведение прежнее. Сервисы принимают viewer `{ id, twoFactorEnabled }` вместо `id`. Unit-тесты добавлены; e2e не запускались.
+- Q22, раунд 3 (та же ветка): `PUT/PATCH /admin/settings/site` больше не возвращает deprecated-поле `requireAdmin2fa` ни в ответе, ни в данных аудита; добавлены тесты проводки viewer с `twoFactorEnabled` (события, формы), fail-closed для `NODE_ENV` пусто/не задан/staging в событиях и темах, отказ `send_message` в read-only канал без 2FA в чате; уточнён ADR-0169 про `/events/mine`; записан R36 (приглашение к форме без проверки INVITE_ONLY, прежнее поведение, не исправлено).
+- Исправления по ревью (та же ветка): 2FA требуется и на проверках прав вне `PermissionsGuard` — чтение чужого обращения по `reports.view`, загрузка файлов по праву персонала, отправка в read-only канал чата по `chat.messages.post_readonly`; `GET /admin/settings/site` не отдаёт устаревшее поле `requireAdmin2fa`. Заметка для релиза: старый web-клиент, присылающий `requireAdmin2fa` в обновлении настроек сайта, получит 400 (`forbidNonWhitelisted`); web в этой ветке обновлён, кэшированный старый клиент нужно перезагрузить.
+
+### Контракт этапа 03: TwoMC Bridge (только документ)
+
+- Добавлен проект контракта Bridge v1 (плагин → сайт, HTTPS + HMAC, идемпотентность, симулятор и записка для разработчика плагина): `docs/stage-03/BRIDGE-CONTRACT.md` и ADR-0167 (Proposed). Код, плагин, миграции и ключи не создавались.
+- Добавлен дизайн сайтовой части этапа 04 «Инвентарь» (данные через Bridge, хранение, API, приватность, иконки; ADR-0168, Proposed): `docs/stage-04/INVENTORY-SITE-DESIGN.md`. Код, миграции и ключи не создавались.
+
+### Дизайн этапа 02: наказания LiteBans (только документ)
+
+- Добавлен проект интеграции с LiteBans: `docs/stage-02/LITEBANS-INTEGRATION-DESIGN.md` и ADR-0166 (Proposed). Код, миграции и зависимости не менялись; реализация ждёт решений владельца.
+
+- Обращения, срез 2 (ADR-0165, ветка feature/support-slice-2 от fix/q11-staff-hierarchy-node-env, не смержено): выбор исполнителя списком (`GET /moderation/reports/assignable-staff`), правка и закрепление заметок (`PATCH` заметки, `PATCH`/`DELETE .../pin`), игроку у сообщений персонала `authorId=null` и `isStaff=true` (бейдж «Сотрудник»), `GET /reports/:reportNumber/history` для автора, в web `?punishment=ID`, фильтры status/type и блок «История». Не сделано: тип уведомления `REPORT_STATUS_CHANGED` (нужна миграция, решение владельца), вложения (R3, заглушка). e2e написаны, не запускались (ОЗУ).
+
+- Безопасность: NODE_ENV fail-closed (ADR-0164, ветка fix/q11-staff-hierarchy-node-env, не смержено): пустой/не заданный NODE_ENV = production, схема env принимает только development/test/production или пусто (staging и прочее роняют старт); хелпер `isProductionLike`, схема env без дефолта `development`, guard admin-2FA, тестовый OTP, CORS, письма с кодами; `start:dev` и `start:debug` api через `scripts/with-node-env.mjs development`; `start` NODE_ENV не задаёт. В той же ветке: проверка иерархии при mute/ban в `ModerationService` (запрет равного приоритета и себя).
+
+- Исправления по ревью C: лимит отправки форм (ADR-0162: `maxWait`/`timeout` транзакции отправки 5 с вместо 10 с; `@Throttle` отвергнут — e2e форм шлёт 22 отправки/мин с одного IP), тесты `rateLimitIp` для brute-force входа и 2FA (ADR-0163).
+
+- Безопасность: лимиты brute-force входа и 2FA для IPv6 считаются по подсети /64 (ADR-0163, ветка fix/q9-ipv6-64-rate-limit, не смержено): `rateLimitKey` в `config/trust-proxy.ts`, применён в `BruteForceService`; журналы/аудит/captcha по-прежнему с полным адресом; глобальный throttler не менялся. e2e отложен: диск. Доработка по ревью: ключ brute-force строится от сырого `req.ip` (`RequestContext.rateLimitIp`), мусор больше не делит `unknown`; полная форма mapped IPv4 распознаётся.
+
+- Формы: транзакция отправки ответа получила `maxWait`/`timeout` 10 с (ADR-0162, ветка fix/forms-submit-tx-wait, не смержено): параллельные отправки больше не падают 500 на ожидании advisory lock. e2e отложен: диск.
+
+- Fail-fast production env (ADR-0161, ветка fix/p3-env-prod-startup-check, не смержено): API в production не стартует без TRUST_PROXY и TURNSTILE_SECRET_KEY, TURNSTILE_DISABLED=true запрещён (раньше captcha отключалась); compose требует TRUST_PROXY; добавлен чек-лист `docs/runbooks/production-env-checklist.md`.
+
+- Исправления по ревью P3-03a/b, P3-02b: runbook Cloudflare — скрипт файрвола прерывается до изменения правил при сбое `curl`, пустом списке или неверном формате; Authenticated Origin Pulls помечен как рекомендуемый; добавлено предупреждение не включать `real_ip` без файрвола origin.
+
+### Cloudflare real_ip (P3-02b)
+
+- Runbook `docs/runbooks/cloudflare-real-ip.md` (диапазоны Cloudflare, `real_ip_header CF-Connecting-IP`, обновление, файрвол origin, проверки, откат) и ADR-0160. Только документация: схема прокси не выбрана, блок в `infrastructure/nginx.twomc.su.conf.example` остаётся закомментированным, `TRUST_PROXY=1` без изменений.
+
+### Бэкапы и восстановление (P3-03b)
+
+- `infrastructure/backup/backup.sh`, `restore.sh`, `restore-drill.sh`, `docker-compose.restore-drill.yml`: дамп PostgreSQL
+  и роли, архив uploads, манифест sha256, шифрование age/gpg, S3 опционально, локальный fallback с ротацией, отказ
+  восстановления при несовпадении sha256. Runbook `docs/runbooks/backup-restore.md`, ADR-0159, риск R30. Restore-drill
+  не выполнялся (диск), расписание не включено.
+
+### Безопасность deploy.sh и лимиты production-compose (P3-03a)
+
+- `infrastructure/deploy.sh`: снимок БД перед `prisma migrate deploy` (при провале деплой останавливается), честные
+  проверки health и откат без ложного «Откат выполнен», остановка при отсутствии `.release.prev`, хранение
+  `KEEP_RELEASES` последних тегов образов вместо `docker image prune -f`. `.release*` в `.gitignore`.
+- `docker-compose.prod.yml`: лимиты памяти и ротация логов json-file (значения через env). Runbook
+  `docs/runbooks/deploy.md`, ADR-0158.
+
+### Платёжный вебхук: HMAC и сверка суммы (P3-01)
+
+- `POST /webhooks/payments/:provider` проверяет HMAC-SHA256 подпись над сырым телом (`x-twomc-signature`,
+  `x-twomc-timestamp`, окно ±5 минут); неверная подпись — 401, неизвестный провайдер — 404. Секрет в теле
+  и дефолт `PAYMENT_WEBHOOK_SECRET` удалены (пустой секрет отклоняет всё).
+- Сверка суммы и валюты, запрет перезаписи `paymentId`, атомарный переход `PENDING` -> `COMPLETED`/`FAILED`;
+  `usedCount` промокода растёт ровно один раз при параллельных вебхуках; повтор — 200 `already_processed`.
+- Тестовый платёжный провайдер регистрируется только при `NODE_ENV` development/test; `quick-buy` ограничен
+  10 запросами в минуту.
+- Отказы сверки вебхука (provider/paymentId/валюта/сумма) пишутся в `Logger.warn` без подписей и сумм; добавлены
+  тесты идемпотентности `failed`; задокументирован риск R29 (порядок событий).
+
+### Безопасные cookie в production и обязательная 2FA админов (P3-A1, P3-A2)
+
+- В production API не стартует без `COOKIE_SECURE=true`, `COOKIE_DOMAIN` (не localhost/127.0.0.1/пусто)
+  и `TWO_FACTOR_ENCRYPTION_KEY` (≥ 32 символов). `COOKIE_SAMESITE=none` допустим только при
+  `COOKIE_SECURE=true` (во всех окружениях). dev/test сохраняют прежние дефолты.
+- `PermissionsGuard`: в production без ключа 2FA и при включённом `requireAdmin2fa` действия персонала
+  отклоняются (`403 admin_2fa_required`), а не пропускаются молча.
+- Та же проверка admin-2FA добавлена в WS `/chat` (`mute_user`, `ban_user`, `pin_message`, а также
+  `delete_message` в модераторской ветке — удаление чужого сообщения; автор удаляет своё без 2FA) и в
+  `GET /admin/communications/recipients`.
+- `TWO_FACTOR_ENCRYPTION_KEY` обрезается по краям (`trim`): ключ из пробелов не проходит проверку.
+- Вне production без ключа 2FA при старте один раз пишется предупреждение: admin-2FA не работает
+  (допустимо только вне production; production-compose задаёт `NODE_ENV: production`).
+- ПЕРЕД ДЕПЛОЕМ: задать `COOKIE_SECURE=true`, `COOKIE_DOMAIN`, `TWO_FACTOR_ENCRYPTION_KEY` в серверном
+  `.env`/compose — иначе API не запустится.
+
+### Реальный IP клиента за прокси: TRUST_PROXY (P3-02)
+
+- Новая переменная `TRUST_PROXY` с проверкой при старте: пусто (выключено), число hop-ов (`1` для
+  nginx → api), `loopback`/`linklocal`/`uniquelocal` или список CIDR. `true`, `*`, `-1` и мусор не
+  допускаются (иначе IP можно подделать заголовком).
+- Клиентский IP нормализуется (`::ffff:1.2.3.4` → `1.2.3.4`) для throttler, brute-force входа, audit,
+  сессий, `lastLoginIp`, captcha и регистрации: клиенты за прокси больше не делят один счётчик.
+- `docker-compose.prod.yml`: `TRUST_PROXY: ${TRUST_PROXY:-1}` (пустое или незаданное значение трактуется
+  как `1`); nginx-пример передаёт `X-Forwarded-For $remote_addr` (перезапись, не дописывание).
+- Нормализация: не-IP значение, слишком длинная строка → ключ `unknown`; IPv6 zone id (`%eth0`) срезается.
+- ВНИМАНИЕ перед деплоем: проверить серверный `.env` — значение `TRUST_PROXY=true` теперь отвергается
+  при старте API; заменить на `1` (или удалить строку). `uniquelocal` включает `fc00::/7`.
+- ADR-0155.
+
+### Docker web: публичный ключ Turnstile (P3-04)
+
+- Образ web получает ключ как `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (раньше — устаревшее
+  `NEXT_PUBLIC_HCAPTCHA_SITE_KEY`, из-за чего в production-сборке капча не включалась).
+- Сборка web с пустым ключом падает с понятным сообщением; секретный ключ в образ web не попадает.
+  Проверка действует для Docker-сборки; локальный `next build` без ключа по-прежнему отключает капчу.
+
+### Обращения: обжалование наказания, приоритет и очередь персонала
+
+- Обжалование привязывается к конкретному наказанию: только своему, обжалуемому и без другого
+  открытого обжалования; из «Моих наказаний» — кнопка «Обжаловать».
+- Открыт тип обращения «Проблема с донатом» (только обращение, без покупок и платежей).
+- У обращений есть приоритет (вычисляет сервер), на странице обращения — хронология переписки;
+  в завершённом или заблокированном обращении игрок больше не может писать.
+- Очередь персонала: фильтры по приоритету и ответственному, поиск, передача обращения,
+  вкладка «История» с действиями персонала; уведомления о сообщениях и смене статуса.
+- Игрок больше не получает служебные поля персонала в ответах API.
+- Защита от спама: не более 5 обращений за 10 минут и 20 сообщений в минуту от одного игрока.
+
 ### Формы: ответы под защитой
 
 - Поля формы, на которую уже есть ответы, больше нельзя пересоздать — раньше это молча стирало
@@ -1170,3 +1376,33 @@ check-all-users` (пакетная модель, ADR-0043), не событий�
   `exports.scheduled.*`, `security.*`, `content.view`, `finance.*`,
   `users.bulk.edit`, `users.export`, `orders.export`, `reports.export`,
   `news.export`).
+
+## 2026-11-17 — Исправления по ревью Q25 (ADR-0171)
+
+- e2e `chat.e2e-spec.ts`: иерархия снятия мута и бана (старший/равный/младший); написаны статически, не запускались.
+- `PermissionService.getEffectivePermissions`: при чтении из кеша `maxPriority` null восстанавливается в `-Infinity` (R39); unit-тесты кеш-пути.
+- ADR-0171 дополнен: самоснятие владельцем, момент сравнения приоритетов.
+
+## 2026-11-17 — Q26 и Q27: REPORT_STATUS_CHANGED и права заметок обращений (ADR-0172)
+
+- Новый тип уведомления `REPORT_STATUS_CHANGED` (миграция `20261017000000_report_status_changed`, `ADD VALUE`, не применялась): `changeStatus` шлёт его вместо `REPORT_VERDICT`; `setVerdict` без изменений.
+- Новые права `reports.notes.edit` (правка чужих заметок, раньше `reports.delete`) и `reports.notes.unpin` (открепление, раньше `reports.notes.pin`); закрепление остаётся `reports.notes.pin`. Каталог `packages/shared/src/permissions.ts`, API, web.
+- e2e `reports-support.e2e-spec.ts` обновлён статически, не запускался. ADR-0172, R40.
+- Для владельца: применить миграцию на production и выдать права ролям (`docs/runbooks/production-env-checklist.md`).
+
+## 2026-11-17 — Q48 и Q49: единое правило снятия санкции для всех путей (ADR-0173)
+
+- `PermissionService.canRevokeSanction(actorId, issuerId, targetUserId?)` и `assertCanRevokeSanction`: владелец всегда (в т.ч. с себя); неизвестный выдавший — только владелец; с себя чужую санкцию не-владелец снять не может; выдавший может; иначе приоритет действующего не ниже приоритета выдавшего. Отказ — 403 `sanction_revoke_forbidden`.
+- Применено к мутам и банам чата, бану аккаунта, массовому снятию (`PATCH /admin/users/bulk`, `UNBAN`; отказ в `failed` с `code`) и бану в обращениях (для каждого активного бана, «всё или ничего»). Закрыт R38.
+- Миграция `20261117000000_user_banned_by` (`users.bannedById TEXT NULL`, без FK и индекса, не применялась). Старые баны без выдавшего снимает только владелец.
+- Аудит на каждое снятие (`chat.mute.revoke`, `chat.ban.revoke`, `user.unban`, `reports.ban.revoke`) с `issuerId`, `ownerOverride`, `self`; `@SkipAudit()` на трёх хендлерах против дублей.
+- Тесты: unit api 517 в 53 наборах, PASS; e2e `unban-hierarchy.e2e-spec.ts` написан статически, не запускался. Новые риски R41-R43.
+
+## 2026-11-17 — Этап 04, срез 2: ядро инвентаря на сайте (ADR-0179, ветка feature/stage-04-s2-inventory, не смержено, миграция не применена, e2e не запускалась)
+
+- Модели `PlayerInventory` (последнее состояние на пользователя, сервер и группу `main`/`ender`) и `InventoryPrivacy`; миграция `20261117030000_inventory_core` (только добавление, написана вручную, ждёт ревью Q28, на БД не применялась).
+- Модуль `apps/api/src/modules/inventory`: нормализация предметов (лимит 600 байт, Q35 а), безопасный текст (Q38 а), применение снимков и дельт (приёмника Bridge пока нет), чтение своего инвентаря, приватность по умолчанию «приватно» (Q34 а), очистка 90 суток (Q36 а, выключена), точка расширения донат-прав (`default`), fail-closed guard `BRIDGE_ENABLED`.
+- API: `GET /inventory/me`, `GET|PATCH /inventory/me/privacy`; без `BRIDGE_ENABLED=true` ответ 503 `inventory_unavailable`.
+- Контракт: `packages/shared/src/api/inventory.ts` и локальное зеркало в `apps/api`. Сборщик частей снимка (Lua-атомарность, ADR-0179 п. 9-12) и заголовок частей (ADR-0179, риск R101).
+- Проверки: `tsc --noEmit` api и shared 0 ошибок; jest `--runInBand src/modules/inventory src/modules/punishments src/modules/roles` 34 набора passed, 1 skipped, 979 тестов passed, 6 skipped (проверка 2026-11-17; модуль inventory отдельно: 242 passed, 6 skipped, redis-набор без `INVENTORY_REDIS_TEST_URL` пропускается; прежние числа раунда 1 - 10 наборов, 199 тестов - устарели); eslint и prettier на изменённых файлах чисто. Lua-тест на реальном Redis 7 запущен 2026-11-17: 6/6 (+2 юнит-регресса, 8/8) (R93). e2e `apps/api/test/inventory.e2e-spec.ts`, миграция на БД и полный jest не запускались.
+- Риски R70–R79 (срез 2), R93–R99 и R101 (сборщик и заголовок частей). Отчёт: `docs/reports/2026-11-17-04-s2-inventory-core.md`.

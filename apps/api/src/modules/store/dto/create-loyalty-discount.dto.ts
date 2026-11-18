@@ -1,22 +1,14 @@
-import {
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Length,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class CreateLoyaltyDiscountDto {
   @IsInt()
   @Min(1)
   minPurchases!: number;
 
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  discountPercent!: number;
+  /// Decimal-строка процента, 0 < значение <= 100 (проверяет сервис).
+  @IsDecimalInput()
+  discountPercent!: string;
 
   @IsString()
   @Length(1, 100)
