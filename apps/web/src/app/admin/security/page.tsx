@@ -120,8 +120,22 @@ function SessionsTab({ kind }: { kind: 'sessions' | 'logins' }) {
 const SUSPICIOUS_COLUMNS: DataGridColumn<SuspiciousIpDto>[] = [
   {
     key: 'ip',
-    header: 'IP',
+    header: 'Ключ подсети',
     cell: (row) => <span className="font-mono text-xs">{row.ip}</span>,
+  },
+  {
+    key: 'lastIp',
+    header: 'Последний IP',
+    cell: (row) =>
+      row.lastIp !== null ? (
+        <span className="font-mono text-xs">{row.lastIp}</span>
+      ) : (
+        <span className="text-xs text-muted-foreground">
+          <span aria-hidden="true">—</span>
+          <span className="sr-only">Последний IP истёк</span>
+          <span aria-hidden="true"> истёк</span>
+        </span>
+      ),
   },
   {
     key: 'failed',
@@ -171,7 +185,7 @@ function SuspiciousTab() {
         error={suspicious.isError ? suspicious.error : undefined}
         onRetry={() => suspicious.refetch()}
         emptyTitle="Подозрительной активности нет"
-        caption="Подозрительные IP: адрес, число неудачных попыток, статус, остаток блокировки"
+        caption="Подозрительные IP: ключ подсети, последний IP, число неудачных попыток, статус, остаток блокировки"
       />
     </PageSection>
   );

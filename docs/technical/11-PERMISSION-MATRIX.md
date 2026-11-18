@@ -158,7 +158,9 @@ Staff-endpoints: **269**, уникальных permission keys: **246**, мод�
 | reports | `reports.messages.pin` | PATCH `/moderation/reports/:reportNumber/messages/:messageId/pin` | HELPER | ✔ (`*`) | configurable |
 | reports | `reports.messages.unpin` | PATCH `/moderation/reports/:reportNumber/messages/:messageId/unpin` | HELPER | ✔ (`*`) | configurable |
 | reports | `reports.notes` | POST `/moderation/reports/:reportNumber/notes`<br>PATCH `/moderation/reports/:reportNumber/notes/:noteId`<br>DELETE `/moderation/reports/:reportNumber/notes/:noteId` | HELPER | ✔ (`*`) | configurable |
+| reports | `reports.notes.edit` | PATCH `/moderation/reports/:reportNumber/notes/:noteId` (чужая заметка; автор правит свои с `reports.notes`) | HELPER | ✔ (`*`) | configurable |
 | reports | `reports.notes.pin` | PATCH `/moderation/reports/:reportNumber/notes/:noteId/pin` | HELPER | ✔ (`*`) | configurable |
+| reports | `reports.notes.unpin` | DELETE `/moderation/reports/:reportNumber/notes/:noteId/pin` | HELPER | ✔ (`*`) | configurable |
 | reports | `reports.stats` | GET `/admin/reports/stats` | ADMIN | ✔ (`*`) | configurable |
 | reports | `reports.status` | PATCH `/moderation/reports/:reportNumber/status` | HELPER | ✔ (`*`) | configurable |
 | reports | `reports.unarchive` | POST `/admin/reports/:reportNumber/unarchive` | ADMIN | ✔ (`*`) | configurable |
@@ -201,6 +203,7 @@ Staff-endpoints: **269**, уникальных permission keys: **246**, мод�
 | store | `store.discounts.loyalty.create` | POST `/admin/store/discounts/loyalty` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.discounts.loyalty.delete` | DELETE `/admin/store/discounts/loyalty/:id` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.discounts.loyalty.edit` | PATCH `/admin/store/discounts/loyalty/:id` | ADMIN | ✔ (`*`) | configurable |
+| store | `store.discounts.view` | GET `/admin/store/discounts/bulk`, GET `/admin/store/discounts/loyalty` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.create` | POST `/admin/store/products` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.delete` | DELETE `/admin/store/products/:id` | ADMIN | ✔ (`*`) | configurable |
 | store | `store.products.edit` | PATCH `/admin/store/products/:id` | ADMIN | ✔ (`*`) | configurable |

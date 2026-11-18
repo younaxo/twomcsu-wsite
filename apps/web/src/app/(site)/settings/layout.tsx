@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { useModuleAvailability } from '@/lib/site/status';
 
 const SECTIONS = [
   { href: '/settings', label: 'Профиль' },
@@ -14,15 +15,19 @@ const SECTIONS = [
   { href: '/settings/media', label: 'Медиа' },
   { href: '/settings/showcase', label: 'Витрина' },
   { href: '/settings/linked-accounts', label: 'Привязки' },
+  { href: '/settings/purchases', label: 'История покупок', module: 'store' },
 ] as const;
 
 /// Настройки аккаунта (волна 1): общая навигация разделов.
 export default function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  // Раздел модуля скрыт, пока модуль магазина выключен.
+  const store = useModuleAvailability('store');
+  const sections = SECTIONS.filter((section) => !('module' in section) || !store.reason);
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-3 py-6 md:px-6">
       <nav aria-label="Разделы настроек" className="flex gap-1 overflow-x-auto">
-        {SECTIONS.map((section) => {
+        {sections.map((section) => {
           const active = pathname === section.href;
           return (
             <Link

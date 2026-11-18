@@ -185,3 +185,40 @@ describe('api client', () => {
     await expect(raw.text()).resolves.toBe('id,name\n1,a');
   });
 });
+
+describe('Retry-After у ошибок', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = installFetchMock();
+    tokenStore.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('429: секунды из заголовка попадают в ApiError.retryAfterSeconds', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { statusCode: 429, message: 'Too Many' },
+        { status: 429, headers: { 'Retry-After': '42' } },
+      ),
+    );
+    const error = await api.get('/punishments/public', { auth: false }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(429);
+    expect((error as ApiError).retryAfterSeconds).toBe(42);
+  });
+
+  it('нечисловой или отсутствующий Retry-After даёт undefined', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        { statusCode: 503, message: 'x' },
+        { status: 503, headers: { 'Retry-After': 'Wed, 21 Oct 2026 07:28:00 GMT' } },
+      ),
+    );
+    const error = await api.get('/punishments/public', { auth: false }).catch((e: unknown) => e);
+    expect((error as ApiError).retryAfterSeconds).toBeUndefined();
+  });
+});

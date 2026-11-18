@@ -284,6 +284,12 @@ export const PERMISSIONS = [
     module: 'users',
     description: 'Просмотр и управление историей наказаний пользователя',
   },
+  {
+    key: 'punishments.issuer.hide',
+    module: 'punishments',
+    description:
+      'Принудительное скрытие и показ выдавшего у наказания сервера (публично и игроку); назначается ролям уровня куратора и выше',
+  },
   { key: 'users.delete', module: 'users', description: 'Удаление аккаунта пользователя' },
   {
     key: 'messages.hard_delete',
@@ -344,6 +350,16 @@ export const PERMISSIONS = [
     key: 'reports.notes.pin',
     module: 'reports',
     description: 'Закрепление заметки модератора',
+  },
+  {
+    key: 'reports.notes.unpin',
+    module: 'reports',
+    description: 'Открепление заметки модератора',
+  },
+  {
+    key: 'reports.notes.edit',
+    module: 'reports',
+    description: 'Правка чужих заметок модератора (автор всегда правит свои)',
   },
   {
     key: 'reports.lock',
@@ -419,6 +435,11 @@ export const PERMISSIONS = [
     key: 'store.discounts.loyalty.delete',
     module: 'store',
     description: 'Удаление скидки за лояльность',
+  },
+  {
+    key: 'store.discounts.view',
+    module: 'store',
+    description: 'Просмотр всех скидок (включая неактивные) в админке',
   },
   { key: 'store.currencies.view', module: 'store', description: 'Просмотр курсов валют в админке' },
   { key: 'store.currencies.create', module: 'store', description: 'Добавление курса валюты' },

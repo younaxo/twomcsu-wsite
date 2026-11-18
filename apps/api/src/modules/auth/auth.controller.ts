@@ -32,6 +32,7 @@ import {
   RegisterStateDto,
   RegisterVerifyDto,
 } from './dto/registration.dto';
+import { normalizeIp } from '../../config/trust-proxy';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
@@ -47,8 +48,10 @@ import { StorageService } from '../files/storage.service';
 import { formatDiscriminator } from '../users/public-tag';
 
 function requestContext(req: Request): RequestContext {
+  const rawIp = req.ip ?? req.socket.remoteAddress;
   return {
-    ip: req.ip ?? req.socket.remoteAddress ?? 'unknown',
+    ip: normalizeIp(rawIp),
+    rateLimitIp: rawIp ?? '',
     userAgent: req.get('user-agent'),
   };
 }

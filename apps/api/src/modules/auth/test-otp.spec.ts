@@ -61,6 +61,15 @@ describe('тестовый OTP (ADR-0087)', () => {
     ).toBeNull();
   });
 
+  it.each([undefined, '', 'staging'])(
+    'NODE_ENV=%p (production-like): тестовый OTP не работает даже с флагом (ADR-0164)',
+    (nodeEnv) => {
+      expect(
+        testOtpOutcome(TEST_OTP_ACCEPT, { nodeEnv, flag: true }),
+      ).toBeNull();
+    },
+  );
+
   it('DEV: 123456 → почта подтверждена (без настоящего кода)', async () => {
     const { service, update } = makeService(
       { NODE_ENV: 'development', AUTH_TEST_OTP_ENABLED: true },

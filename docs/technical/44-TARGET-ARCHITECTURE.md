@@ -10,4 +10,4 @@
 7. **Нормализованные API/ошибки** — единый `ExceptionFilter`: `{ statusCode, code, message, details, requestId }`; сохранить обратную совместимость `message`.
 8. **Инвалидация кеша** — обязательна после profile/role/permission/news/store/server update; централизованный `CacheInvalidator` с тегами/паттернами.
 9. **Платежи** — реальный провайдер + вебхук; удалить `mock-complete`.
-10. **Инфраструктура** — Dockerfile api/web, CI (lint, typecheck, test, prisma validate), `trust proxy`, Redis-storage для throttler, distributed lock для cron.
+10. **Инфраструктура** — Dockerfile api/web, CI (lint, typecheck, test, prisma validate), `trust proxy` (сделано в P3-02, ADR-0155), Redis-storage для throttler, distributed lock для cron.

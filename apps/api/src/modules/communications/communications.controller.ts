@@ -8,13 +8,17 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import { SkipAudit } from '../audit/skip-audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
-import { PermissionsGuard } from '../roles/guards/permissions.guard';
+import {
+  assertAdmin2fa,
+  PermissionsGuard,
+} from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { CommunicationsService } from './communications.service';
 import {
@@ -32,6 +36,7 @@ export class CommunicationsController {
   constructor(
     private readonly communications: CommunicationsService,
     private readonly permissions: PermissionService,
+    private readonly config: ConfigService,
   ) {}
 
   /// Поиск получателей — для личного сообщения или для выбора пользователей
@@ -48,6 +53,8 @@ export class CommunicationsController {
     if (!send && !bulk) {
       throw new ForbiddenException('Недостаточно прав');
     }
+    // Нет @RequirePermissions (любое из двух прав) — admin-2FA проверяем явно.
+    assertAdmin2fa(actor, this.config);
     return this.communications.searchRecipients(query.q);
   }
 

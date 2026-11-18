@@ -14,6 +14,10 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
 import { CreateVariantDto } from './create-variant.dto';
 
 export class CreateProductDto {
@@ -43,12 +47,15 @@ export class CreateProductDto {
   type!: ProductType;
 
   @IsOptional()
-  @IsString()
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl()
   image?: string;
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(10)
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl({ each: true })
   images?: string[];
 
   @IsString()
@@ -90,16 +97,17 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsBoolean()
-  isActive?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
   isFeatured?: boolean;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  gameCommands?: string[];
+  @IsInt()
+  @Min(0)
+  order?: number;
+
+  // isActive и gameCommands в DTO НЕТ намеренно: новый товар всегда создаётся
+  // неактивным (ADR-0185 п. 6, активация — отдельным PATCH), а шаблоны команд
+  // выдачи редактируются только в 0.11 (ADR-0184 Р1). Поле в теле запроса —
+  // 400 «property … should not exist» (forbidNonWhitelisted).
 
   @IsOptional()
   @IsString()

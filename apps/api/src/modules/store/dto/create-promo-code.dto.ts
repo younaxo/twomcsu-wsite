@@ -5,13 +5,13 @@ import {
   IsEnum,
   IsISO8601,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   Length,
   Matches,
   Min,
 } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class CreatePromoCodeDto {
   @IsString()
@@ -30,9 +30,9 @@ export class CreatePromoCodeDto {
   @IsEnum(DiscountType)
   discountType!: DiscountType;
 
-  @IsNumber()
-  @Min(0)
-  discountValue!: number;
+  /// Decimal-строка; для PERCENT — 0 < значение <= 100 (проверяет сервис).
+  @IsDecimalInput()
+  discountValue!: string;
 
   @IsOptional()
   @IsInt()
@@ -53,9 +53,8 @@ export class CreatePromoCodeDto {
   applicableToTypes?: ProductType[];
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  minOrderAmount?: number;
+  @IsDecimalInput()
+  minOrderAmount?: string;
 
   @IsOptional()
   @IsBoolean()

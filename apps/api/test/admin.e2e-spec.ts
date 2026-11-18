@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { RedisService } from '../src/modules/redis/redis.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
@@ -64,6 +65,7 @@ describe('Admin backend (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 
@@ -246,6 +248,16 @@ describe('Admin backend (e2e)', () => {
       .set('Authorization', auth(admin))
       .expect(200);
     expect(res.body[key]).toBe('on');
+  });
+
+  it('settings (KV): store.offerVersion пустой или длиннее 32 символов — 400', async () => {
+    for (const value of ['', '   ', 'x'.repeat(33)]) {
+      await request(app.getHttpServer())
+        .patch('/admin/settings')
+        .set('Authorization', auth(admin))
+        .send({ settings: { 'store.offerVersion': value } })
+        .expect(400);
+    }
   });
 
   it('settings/site: singleton создаётся по первому GET, PATCH пишет audit-лог с diff', async () => {
@@ -441,10 +453,37 @@ describe('Admin backend (e2e)', () => {
     expect(entry).toBeTruthy();
     expect(entry.isBlocked).toBe(true);
     expect(entry.failedAttempts).toBe(5);
+    // lastip не выставлен (истёк/нет) — null, не пропущено.
+    expect(entry.lastIp).toBeNull();
 
     await redis.client.del(
       `bruteforce:login:${fakeIp}`,
       `bruteforce:blocked:${fakeIp}`,
+    );
+  });
+
+  it('security/suspicious: ip — ключ подсети /64, lastIp — последний полный адрес (Q21)', async () => {
+    const subnetKey = `v6:2001:db8:e2e:${Math.floor(Math.random() * 60000)}`;
+    const full = `${subnetKey.slice(3)}::beef`;
+    await redis.client.set(`bruteforce:login:${subnetKey}`, '4', 'EX', 60);
+    await redis.client.set(`bruteforce:lastip:${subnetKey}`, full, 'EX', 60);
+
+    const res = await request(app.getHttpServer())
+      .get('/admin/security/suspicious')
+      .set('Authorization', auth(admin))
+      .expect(200);
+    const entry = res.body.find((e: { ip: string }) => e.ip === subnetKey);
+    expect(entry).toBeTruthy();
+    expect(entry.lastIp).toBe(full);
+    expect(entry.failedAttempts).toBe(4);
+    // Ключ lastip сам отдельной строкой не появляется.
+    expect(
+      res.body.filter((e: { ip: string }) => e.ip.startsWith('lastip:')),
+    ).toHaveLength(0);
+
+    await redis.client.del(
+      `bruteforce:login:${subnetKey}`,
+      `bruteforce:lastip:${subnetKey}`,
     );
   });
 
