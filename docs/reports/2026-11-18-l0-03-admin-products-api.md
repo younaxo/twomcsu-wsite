@@ -68,3 +68,10 @@
 - **A6.** Добавлены `normalizeProductImageUrl` и `@NormalizeProductImageUrl()` (class-transformer; `ValidationPipe` с `transform: true`): в БД сохраняется `url.href` (регистр хоста, кодирование пути); невалидное значение возвращается как есть и отклоняется валидатором. Применено к `image`/`images` товара и `image`/`icon` категории. Юнит-тесты на нормализацию и DTO категорий.
 - Проверки: tsc apps/api чисто; Jest `src/modules/store src/modules/audit` — 9 suites, 123 tests; e2e (одноразовая БД, один прогон): store-admin-products 13/13, two-factor 7/7, store-catalog 8/8.
 - Риски: (1) `update`/`updateVariant` теперь в транзакции — при недоступности таблицы аудита правка цены даёт 500 (осознанно); (2) смена 400 -> 409 на удалении категории — UI шага 2 должен обрабатывать 409; (3) нормализация меняет вид сохранённых ссылок только у новых/изменяемых записей, старые не трогаются; (4) AuditInterceptor продолжает писать общее событие вне транзакции (best-effort) — это дополнение, а не замена; (5) миграций нет.
+
+## Исправление CI PR #181: 2FA персонала в e2e
+
+- Причина: после Q22 2FA персонала обязательна всегда, `PermissionsGuard` отдаёт 403 `admin_2fa_required` пользователю с правами и `twoFactorEnabled=false`. Тестовые сотрудники в `store-admin-products.e2e-spec.ts` создавались без этого флага, 13 тестов получали 403 вместо 200/201/400.
+- Исправление: в `createStaff` после выдачи роли и прав вызывается `markStaffTwoFactorEnabled(prisma, user.id)` (хелпер `apps/api/test/helpers/staff-two-factor.ts` из main). Логика проверок не менялась. `store-catalog` и `two-factor` уже используют хелпер.
+- Проверки (одноразовая БД `twomc_e2e`, на ветке с main): store-admin-products 13/13, store-catalog 8/8, store-cart 38/38, two-factor 7/7. Полный юнит-набор `jest --runInBand` в apps/api: 1972 passed, 6 skipped, 0 failed, 1978 total (112 suites passed, 1 skipped).
+- Примечание: перед прогоном потребовался `prisma generate` (сгенерированный клиент в общем node_modules был устаревшим относительно схемы с `bannedById`); миграций и изменений схемы нет.

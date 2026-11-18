@@ -8,6 +8,7 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { AuditService } from '../src/modules/audit/audit.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -73,6 +74,8 @@ describe('Store admin products (e2e)', () => {
     });
     await permissions.invalidateRole(role.id);
     await permissions.invalidateUser(user.id);
+    // 2FA персонала обязательна всегда (Q22): без неё право даёт 403.
+    await markStaffTwoFactorEnabled(prisma, user.id);
   }
 
   let admin: TestUser;
