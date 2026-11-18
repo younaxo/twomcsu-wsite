@@ -165,13 +165,13 @@ describe('корзина /shop/cart', () => {
     expect(screen.getByTestId('cart-item').textContent).toMatch(/Скидка за объём −.*20/);
   });
 
-  it('«Оформить» неактивна с пояснением (оплата — следующий этап)', async () => {
+  it('«Оформить заказ» — ссылка на /shop/checkout (0.5)', async () => {
     signIn();
     mocks.get.mockResolvedValue(cart());
     render(<CartPage />, { wrapper: Providers });
-    const button = await screen.findByRole('button', { name: /Оформить заказ/ });
-    expect(button).toHaveAttribute('aria-disabled', 'true');
-    expect(button).toHaveAccessibleDescription(/Оплата появится/);
+    const link = await screen.findByRole('link', { name: /Оформить заказ/ });
+    expect(link).toHaveAttribute('href', '/shop/checkout');
+    expect(link).toHaveAccessibleDescription(/Ник получателя и оплата/);
   });
 
   it('количество: «+» шлёт PATCH, показывается ответ сервера', async () => {
