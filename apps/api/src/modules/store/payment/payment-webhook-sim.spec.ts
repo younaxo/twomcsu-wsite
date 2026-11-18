@@ -5,7 +5,7 @@ import {
 } from '../../../../scripts/payment-webhook-sim';
 import { TestPaymentProvider } from './test-payment-provider.service';
 
-const SECRET = 'unit-sim-secret';
+const SECRET = 'unit-sim-secret-0123456789abcdef0123';
 
 describe('payment-webhook-sim', () => {
   it.each([undefined, '', 'production', 'staging'])(
