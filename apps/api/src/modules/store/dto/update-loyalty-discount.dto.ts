@@ -1,13 +1,12 @@
 import {
   IsBoolean,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   Length,
-  Max,
   Min,
 } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class UpdateLoyaltyDiscountDto {
   @IsOptional()
@@ -16,10 +15,8 @@ export class UpdateLoyaltyDiscountDto {
   minPurchases?: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  discountPercent?: number;
+  @IsDecimalInput()
+  discountPercent?: string;
 
   @IsOptional()
   @IsString()

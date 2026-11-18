@@ -436,6 +436,11 @@ export const PERMISSIONS = [
     module: 'store',
     description: 'Удаление скидки за лояльность',
   },
+  {
+    key: 'store.discounts.view',
+    module: 'store',
+    description: 'Просмотр всех скидок (включая неактивные) в админке',
+  },
   { key: 'store.currencies.view', module: 'store', description: 'Просмотр курсов валют в админке' },
   { key: 'store.currencies.create', module: 'store', description: 'Добавление курса валюты' },
   { key: 'store.currencies.edit', module: 'store', description: 'Редактирование курса валюты' },

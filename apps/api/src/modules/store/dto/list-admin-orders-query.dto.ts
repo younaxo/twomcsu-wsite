@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -30,7 +31,20 @@ export class ListAdminOrdersQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
+
+  /// Часть номера заказа (без учёта регистра).
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  orderNumber?: string;
+
+  /// Часть ника: логин покупателя или ник гостя.
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  nickname?: string;
 
   @IsOptional()
   @IsString()

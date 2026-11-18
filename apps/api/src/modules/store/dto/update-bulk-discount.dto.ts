@@ -1,12 +1,6 @@
 import { DiscountType } from '@prisma/client';
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class UpdateBulkDiscountDto {
   @IsOptional()
@@ -15,18 +9,16 @@ export class UpdateBulkDiscountDto {
   minQuantity?: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  minAmount?: number;
+  @IsDecimalInput()
+  minAmount?: string;
 
   @IsOptional()
   @IsEnum(DiscountType)
   discountType?: DiscountType;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  discountValue?: number;
+  @IsDecimalInput()
+  discountValue?: string;
 
   @IsOptional()
   @IsBoolean()

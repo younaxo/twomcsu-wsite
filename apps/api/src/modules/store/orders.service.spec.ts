@@ -51,9 +51,95 @@ function setup(order: unknown, movedCount = 1) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
   return { service, prisma, tx };
 }
+
+function setupCancel(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
+  const tx = {
+    $queryRaw: jest.fn().mockResolvedValue(rows),
+    order: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue(order),
+      update: jest.fn().mockResolvedValue({ id: 'o1', status: 'CANCELLED' }),
+    },
+  };
+  const prisma = {
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+  };
+  const audit = { log: jest.fn().mockResolvedValue(undefined) };
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    audit as never,
+    {} as never,
+  );
+  return { service, tx, audit };
+}
+
+describe('OrdersService.cancel (0.4)', () => {
+  it('PENDING: отмена с причиной, строгий аудит в той же транзакции', async () => {
+    const { service, tx, audit } = setupCancel(baseOrder());
+    await service.cancel('o1', { reason: '  завис  ' }, 'admin1');
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: OrderStatus.CANCELLED,
+          cancelReason: 'завис',
+        }),
+      }),
+    );
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'admin1',
+        action: 'orders.order.cancelled',
+        targetId: 'o1',
+        tx,
+        strict: true,
+      }),
+    );
+  });
+
+  it.each([
+    OrderStatus.COMPLETED,
+    OrderStatus.REFUNDED,
+    OrderStatus.FAILED,
+    OrderStatus.CANCELLED,
+  ])('%s: 409, запись и аудит не выполняются', async (status) => {
+    const { service, tx, audit } = setupCancel(baseOrder({ status }));
+    await expect(
+      service.cancel('o1', { reason: 'x' }, 'admin1'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(tx.order.update).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('заказа нет: 404', async () => {
+    const { service } = setupCancel(null, []);
+    await expect(
+      service.cancel('nope', { reason: 'x' }, 'admin1'),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('пустая после trim причина: 400, транзакция не открывается', async () => {
+    const { service } = setupCancel(baseOrder());
+    await expect(
+      service.cancel('o1', { reason: '   ' }, 'admin1'),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('сбой строгого аудита пробрасывается (откат транзакции)', async () => {
+    const { service, audit } = setupCancel(baseOrder());
+    audit.log.mockRejectedValueOnce(new Error('audit down'));
+    await expect(
+      service.cancel('o1', { reason: 'x' }, 'admin1'),
+    ).rejects.toThrow('audit down');
+  });
+});
 
 describe('OrdersService.handleWebhook (ADR-0157)', () => {
   it('успех: один переход, usedCount +1, usage для пользователя', async () => {
@@ -225,5 +311,93 @@ describe('OrdersService.handleWebhook (ADR-0157)', () => {
       await service.handleWebhook(provider, ev());
       expect(warn).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', () => {
+  function setupLate(
+    order: unknown,
+    system: { id: string } | null = { id: 'sys' },
+  ) {
+    const base = setup(order);
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const notifications = { create: jest.fn().mockResolvedValue({}) };
+    const prisma = base.prisma as unknown as Record<string, unknown>;
+    prisma.user = {
+      findFirst: jest.fn().mockResolvedValue(system),
+      findMany: jest.fn().mockResolvedValue([{ id: 's1' }, { id: 's2' }]),
+    };
+    const service = new OrdersService(
+      prisma as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      audit as never,
+      notifications as never,
+    );
+    return { service, prisma: base.prisma, audit, notifications };
+  }
+
+  it.each([OrderStatus.CANCELLED, OrderStatus.FAILED])(
+    '%s + succeeded: warn, аудит warning без ПДн, уведомления персоналу, статус не меняется',
+    async (status) => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const { service, prisma, audit, notifications } = setupLate(
+        baseOrder({ status }),
+      );
+      await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+        accepted: true,
+        reason: 'already_processed',
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.order.updateMany).not.toHaveBeenCalled();
+      expect(audit.log).toHaveBeenCalledWith({
+        actorId: 'sys',
+        action: 'orders.order.late_payment',
+        targetType: 'order',
+        targetId: 'o1',
+        changes: {
+          orderNumber: 'O-1',
+          orderStatus: status,
+          paymentId: 'pay-1',
+          provider: 'test',
+        },
+        severity: 'warning',
+      });
+      expect(notifications.create).toHaveBeenCalledTimes(2);
+      expect(notifications.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 's1', type: 'SYSTEM' }),
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('O-1'));
+      warn.mockRestore();
+    },
+  );
+
+  it('COMPLETED + succeeded и CANCELLED + failed: события нет', async () => {
+    const a = setupLate(baseOrder({ status: OrderStatus.COMPLETED }));
+    await a.service.handleWebhook(provider, ev());
+    const b = setupLate(baseOrder({ status: OrderStatus.CANCELLED }));
+    await b.service.handleWebhook(provider, ev({ status: 'failed' }));
+    expect(a.audit.log).not.toHaveBeenCalled();
+    expect(b.audit.log).not.toHaveBeenCalled();
+    expect(a.notifications.create).not.toHaveBeenCalled();
+    expect(b.notifications.create).not.toHaveBeenCalled();
+  });
+
+  it('сбой аудита/уведомлений не ломает ответ вебхука', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { service, audit } = setupLate(
+      baseOrder({ status: OrderStatus.CANCELLED }),
+    );
+    audit.log.mockRejectedValueOnce(new Error('down'));
+    await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+      accepted: true,
+      reason: 'already_processed',
+    });
+    warn.mockRestore();
   });
 });
