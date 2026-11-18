@@ -1,5 +1,6 @@
 import type { DecimalString } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { siteKeys } from '@/lib/site/hooks';
@@ -55,6 +56,9 @@ export const OFFER_DOC_HREF = '/legal/terms';
 export const REFUNDS_DOC_HREF = '/legal/refunds';
 
 export const ORDER_POLL_INTERVAL_MS = 3000;
+/// Потолок автоопроса PENDING: после него статус обновляется кнопкой.
+export const ORDER_POLL_MAX_MS = 10 * 60_000;
+export const ORDER_POLL_MAX_BACKOFF_MS = 30_000;
 
 export function orderHref(orderNumber: string): string {
   return `/shop/orders/${encodeURIComponent(orderNumber)}`;
@@ -106,19 +110,44 @@ export function useCreateOrder() {
 /// Статус заказа с опросом, пока он PENDING. Опрос прекращается на финальном
 /// статусе, при ответе 4xx (заказ не найден/чужой) и при размонтировании страницы
 /// (react-query снимает таймер вместе с подпиской).
+///
+/// Пауза растёт при подряд идущих сбоях (5xx/сеть): 3 с -> 6 с -> 12 с ... до 30 с.
+/// Опрос идёт не дольше ORDER_POLL_MAX_MS, затем `pollExpired`: страница предлагает
+/// обновить статус вручную (`resumePolling` запускает опрос заново).
+export function orderPollDelay(failures: number): number {
+  return Math.min(ORDER_POLL_INTERVAL_MS * 2 ** Math.max(failures, 0), ORDER_POLL_MAX_BACKOFF_MS);
+}
+
 export function useOrder(orderNumber: string) {
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
-  return useQuery({
+  const [pollExpired, setPollExpired] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+  const query = useQuery({
     queryKey: checkoutKeys.order(orderNumber),
     queryFn: () => api.get<OrderView>(`/store/orders/${encodeURIComponent(orderNumber)}`),
     enabled: authenticated && orderNumber !== '',
     retry: false,
-    refetchInterval: (query) => {
-      const error = query.state.error;
+    refetchInterval: (q) => {
+      const error = q.state.error;
       if (error instanceof ApiError && error.status < 500) return false;
-      return query.state.data?.status === 'PENDING' ? ORDER_POLL_INTERVAL_MS : false;
+      if (pollExpired || q.state.data?.status !== 'PENDING') return false;
+      return orderPollDelay(error ? q.state.fetchFailureCount : 0);
     },
   });
+
+  const pending = query.data?.status === 'PENDING';
+  useEffect(() => {
+    if (!pending) return undefined;
+    const timer = setTimeout(() => setPollExpired(true), ORDER_POLL_MAX_MS);
+    return () => clearTimeout(timer);
+  }, [pending, epoch]);
+
+  const resumePolling = () => {
+    setPollExpired(false);
+    setEpoch((value) => value + 1);
+    void query.refetch();
+  };
+  return { query, pollExpired: pollExpired && pending, resumePolling };
 }
 
 export const ORDER_STATUS_TEXT: Record<OrderStatus, { label: string; description: string }> = {

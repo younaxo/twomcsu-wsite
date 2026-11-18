@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useState, type FormEvent } from 'react';
+import { api } from '@/lib/api/client';
 import { FormErrorSummary, FormField, useFocusFirstInvalid } from '@/components/admin/form-field';
 import { ModuleGate } from '@/components/system/site-availability';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -134,6 +135,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
   const createOrder = useCreateOrder();
   const { containerRef, focusFirstInvalid } = useFocusFirstInvalid<HTMLFormElement>();
   const offerId = useId();
+  const unavailableId = useId();
   const [nick, setNick] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [nickError, setNickError] = useState<string | null>(null);
@@ -165,6 +167,38 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
       document.removeEventListener('visibilitychange', reset);
     };
   }, [redirecting]);
+
+  // Оплата недоступна: при возврате на вкладку тихо перепроверяем конфигурацию, чтобы
+  // кнопка ожила без перезагрузки. Сбой перепроверки состояние не меняет (обычный
+  // refetch перевёл бы страницу в экран ошибки), поэтому запрос идёт мимо useQuery-ошибки.
+  useEffect(() => {
+    if (!paymentOff) return undefined;
+    let inflight = false;
+    let cancelled = false;
+    const recheck = () => {
+      if (inflight || document.visibilityState !== 'visible') return;
+      inflight = true;
+      api
+        .get<CheckoutConfig>('/store/checkout-config', { auth: false })
+        .then((fresh) => {
+          if (cancelled) return;
+          client.setQueryData(checkoutKeys.config, fresh);
+          if (fresh.paymentAvailable)
+            setFailure((prev) => (prev?.paymentUnavailable ? null : prev));
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          inflight = false;
+        });
+    };
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, [paymentOff, client]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -302,6 +336,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
 
         {paymentOff ? (
           <div
+            id={unavailableId}
             role="alert"
             data-testid="checkout-payment-unavailable"
             className="flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm"
@@ -326,6 +361,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
             size="lg"
             loading={busy}
             disabled={paymentOff}
+            aria-describedby={paymentOff ? unavailableId : undefined}
             data-testid="checkout-submit"
           >
             <CreditCard />

@@ -4,7 +4,12 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
-import { ORDER_POLL_INTERVAL_MS } from '@/lib/store/checkout';
+import {
+  ORDER_POLL_INTERVAL_MS,
+  ORDER_POLL_MAX_BACKOFF_MS,
+  ORDER_POLL_MAX_MS,
+  orderPollDelay,
+} from '@/lib/store/checkout';
 import OrderPage from './page';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
@@ -168,6 +173,52 @@ describe('заказ /shop/orders/[orderNumber]', () => {
     }
     expect(screen.getByTestId('order-status-live').textContent).toMatch(/Оплачен/);
     expect(screen.queryByTestId('order-poll-error')).not.toBeInTheDocument();
+  });
+
+  it('backoff: при подряд идущих 5xx пауза между опросами растёт', () => {
+    expect(orderPollDelay(0)).toBe(ORDER_POLL_INTERVAL_MS);
+    expect(orderPollDelay(1)).toBe(ORDER_POLL_INTERVAL_MS * 2);
+    expect(orderPollDelay(2)).toBe(ORDER_POLL_INTERVAL_MS * 4);
+    expect(orderPollDelay(20)).toBe(ORDER_POLL_MAX_BACKOFF_MS);
+  });
+
+  it('5xx в опросе: следующий запрос не раньше удвоенной паузы', async () => {
+    vi.useFakeTimers();
+    mocks.get
+      .mockResolvedValueOnce(order('PENDING'))
+      .mockRejectedValueOnce(new ApiError(503, ['x']))
+      .mockResolvedValue(order('PENDING'));
+    render(<OrderPage />, { wrapper: Providers });
+    await flush(0);
+    await flush(ORDER_POLL_INTERVAL_MS);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    await flush(ORDER_POLL_INTERVAL_MS);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    await flush(ORDER_POLL_INTERVAL_MS);
+    expect(mocks.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('потолок опроса: через 10 минут PENDING останавливается, «Обновить» возобновляет', async () => {
+    vi.useFakeTimers();
+    mocks.get.mockResolvedValue(order('PENDING'));
+    render(<OrderPage />, { wrapper: Providers });
+    await flush(0);
+    expect(screen.queryByTestId('order-poll-expired')).not.toBeInTheDocument();
+    await flush(ORDER_POLL_MAX_MS + ORDER_POLL_INTERVAL_MS);
+    const notice = screen.getByTestId('order-poll-expired');
+    expect(notice).toHaveAttribute('role', 'status');
+    const calls = mocks.get.mock.calls.length;
+    await flush(ORDER_POLL_INTERVAL_MS * 5);
+    expect(mocks.get).toHaveBeenCalledTimes(calls);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Обновить' }).click();
+    });
+    await flush(0);
+    expect(mocks.get.mock.calls.length).toBeGreaterThan(calls);
+    expect(screen.queryByTestId('order-poll-expired')).not.toBeInTheDocument();
+    const resumed = mocks.get.mock.calls.length;
+    await flush(ORDER_POLL_INTERVAL_MS);
+    expect(mocks.get.mock.calls.length).toBeGreaterThan(resumed);
   });
 
   it('FAILED: не утверждает «деньги не списаны», отсылает в поддержку', async () => {

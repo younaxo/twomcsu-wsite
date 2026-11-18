@@ -287,6 +287,63 @@ describe('оформление /shop/checkout', () => {
     expect(screen.getByTestId('checkout-submit')).toBeDisabled();
     expect(mocks.push).not.toHaveBeenCalled();
   });
+
+  it('неактивная «Оплатить» связана с причиной через aria-describedby', async () => {
+    signIn();
+    route({ ...CONFIG, paymentAvailable: false });
+    render(<CheckoutPage />, { wrapper: Providers });
+    const reason = await screen.findByTestId('checkout-payment-unavailable');
+    const submit = screen.getByTestId('checkout-submit');
+    expect(reason.id).not.toBe('');
+    expect(submit).toHaveAttribute('aria-describedby', reason.id);
+    expect(submit).toHaveAccessibleDescription(/Оплата временно недоступна/);
+  });
+
+  it('503 при отправке: aria-describedby указывает на сообщение', async () => {
+    const user = userEvent.setup();
+    signIn();
+    route();
+    mocks.post.mockRejectedValue(
+      new ApiError(503, ['Оплата временно недоступна'], { code: 'payment_unavailable' } as never),
+    );
+    render(<CheckoutPage />, { wrapper: Providers });
+    await screen.findByTestId('checkout-nick');
+    expect(screen.getByTestId('checkout-submit')).not.toHaveAttribute('aria-describedby');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByTestId('checkout-submit'));
+    const reason = await screen.findByTestId('checkout-payment-unavailable');
+    expect(screen.getByTestId('checkout-submit')).toHaveAttribute('aria-describedby', reason.id);
+  });
+
+  it('возврат на вкладку перепроверяет конфигурацию: оплата снова доступна', async () => {
+    signIn();
+    route({ ...CONFIG, paymentAvailable: false });
+    render(<CheckoutPage />, { wrapper: Providers });
+    await screen.findByTestId('checkout-payment-unavailable');
+    expect(screen.getByTestId('checkout-submit')).toBeDisabled();
+    route(CONFIG);
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(screen.getByTestId('checkout-submit')).toBeEnabled());
+    expect(screen.queryByTestId('checkout-payment-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('сбой перепроверки конфигурации не ломает форму', async () => {
+    signIn();
+    route({ ...CONFIG, paymentAvailable: false });
+    render(<CheckoutPage />, { wrapper: Providers });
+    await screen.findByTestId('checkout-payment-unavailable');
+    const before = mocks.get.mock.calls.length;
+    mocks.get.mockRejectedValue(new ApiError(500, ['boom']));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await waitFor(() => expect(mocks.get.mock.calls.length).toBeGreaterThan(before));
+    expect(screen.getByTestId('checkout-payment-unavailable')).toBeInTheDocument();
+    expect(screen.getByTestId('checkout-submit')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Повторить/ })).not.toBeInTheDocument();
+  });
 });
 
 describe('логика оформления', () => {

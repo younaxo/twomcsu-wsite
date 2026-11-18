@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleCheck, CircleX, Clock, PackageSearch, UserRound } from 'lucide-react';
+import { CircleCheck, CircleX, Clock, PackageSearch, RefreshCw, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ModuleGate } from '@/components/system/site-availability';
@@ -50,7 +50,7 @@ function itemTitle(item: OrderItemView): string {
   return item.variant?.name ? `${base} · ${item.variant.name}` : base;
 }
 
-function OrderBody({ order }: { order: OrderView }) {
+function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: boolean }) {
   const { tone, Icon } = STATUS_VIEW[order.status];
   const text = ORDER_STATUS_TEXT[order.status];
   return (
@@ -66,7 +66,7 @@ function OrderBody({ order }: { order: OrderView }) {
         <p role="status" aria-live="polite" data-testid="order-status-live" className="text-sm">
           {text.label}. {text.description}
         </p>
-        {order.status === 'PENDING' ? (
+        {order.status === 'PENDING' && autoRefresh ? (
           <p className="text-xs text-muted-foreground">Статус обновляется автоматически.</p>
         ) : null}
         {order.status === 'FAILED' ? (
@@ -134,7 +134,7 @@ function OrderContent() {
   // useParams уже отдаёт декодированное значение: повторное декодирование ломает номера с «%».
   const orderNumber = params?.orderNumber ?? '';
   const status = useAuthStore((state) => state.status);
-  const query = useOrder(orderNumber);
+  const { query, pollExpired, resumePolling } = useOrder(orderNumber);
 
   let body;
   if (status === 'idle' || status === 'loading') {
@@ -171,7 +171,28 @@ function OrderContent() {
             Не удалось обновить статус, пробуем ещё раз.
           </p>
         ) : null}
-        <OrderBody order={query.data} />
+        {pollExpired ? (
+          <div
+            role="status"
+            data-testid="order-poll-expired"
+            className="flex max-w-3xl flex-wrap items-center gap-3 rounded-lg bg-warning-soft p-3 text-sm"
+          >
+            <p className="min-w-0 flex-1">
+              Автоматическое обновление остановлено: подтверждение оплаты всё ещё не пришло. Если вы
+              уже оплатили, нажмите «Обновить» чуть позже.
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={query.isFetching}
+              onClick={resumePolling}
+            >
+              <RefreshCw />
+              Обновить
+            </Button>
+          </div>
+        ) : null}
+        <OrderBody order={query.data} autoRefresh={!pollExpired} />
       </>
     );
   } else if (query.isError) {
