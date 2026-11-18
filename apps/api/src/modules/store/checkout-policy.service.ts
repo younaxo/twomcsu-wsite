@@ -10,6 +10,8 @@ import {
 
 /// Ключ настройки сайта с текущей версией оферты (`site_settings`).
 export const STORE_OFFER_VERSION_SETTING = 'store.offerVersion';
+/// Предел длины версии оферты: колонка Order.offerVersion — VARCHAR(32).
+export const STORE_OFFER_VERSION_MAX_LENGTH = 32;
 /// Пока владелец не задал версию настройкой, действует версия «1».
 export const STORE_OFFER_VERSION_DEFAULT = '1';
 

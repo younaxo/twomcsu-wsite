@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  STORE_OFFER_VERSION_MAX_LENGTH,
+  STORE_OFFER_VERSION_SETTING,
+} from '../store/checkout-policy.service';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -119,6 +123,19 @@ export class DashboardService {
   }
 
   async upsertSettings(dto: UpsertSettingsDto, actorId: string) {
+    const offerVersion = dto.settings[STORE_OFFER_VERSION_SETTING];
+    if (
+      offerVersion !== undefined &&
+      (typeof offerVersion !== 'string' ||
+        offerVersion.trim().length === 0 ||
+        offerVersion.trim().length > STORE_OFFER_VERSION_MAX_LENGTH)
+    ) {
+      // Версия оферты пишется в заказ (offerVersion VARCHAR(32)): пустая или
+      // длиннее лимита сломала бы оформление заказа.
+      throw new BadRequestException(
+        `${STORE_OFFER_VERSION_SETTING}: непустая строка не длиннее ${STORE_OFFER_VERSION_MAX_LENGTH} символов`,
+      );
+    }
     const before = await this.getSettings();
     await Promise.all(
       Object.entries(dto.settings).map(([key, value]) =>

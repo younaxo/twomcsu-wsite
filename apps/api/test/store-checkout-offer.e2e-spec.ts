@@ -307,7 +307,7 @@ describe('Store checkout 0.5: оферта, ник, статус, вебхук (
   describe('статус заказа и вебхук', () => {
     let orderNumber: string;
 
-    it('заказ создаётся PENDING, владелец читает статус, чужой — 403', async () => {
+    it('заказ создаётся PENDING, владелец читает статус, чужой — 404', async () => {
       await fillCart(bob);
       const created = await api()
         .post('/store/orders')
@@ -323,10 +323,34 @@ describe('Store checkout 0.5: оферта, ник, статус, вебхук (
         .set('Authorization', auth(bob))
         .expect(200);
       expect(own.body.status).toBe('PENDING');
-      await api()
+      const foreign = await api()
         .get(`/store/orders/${orderNumber}`)
         .set('Authorization', auth(alice))
-        .expect(403);
+        .expect(404);
+      const missing = await api()
+        .get('/store/orders/O-00000000-NOSUCH')
+        .set('Authorization', auth(alice))
+        .expect(404);
+      expect(foreign.body).toEqual(missing.body);
+      expect(foreign.body.message).toBe('Заказ не найден');
+    });
+
+    it('гостевой заказ (userId = NULL) неотличим от несуществующего', async () => {
+      const guest = await api()
+        .post('/store/quick-buy')
+        .send({ variantId, guestMinecraftNick: aliceNick, offerVersion: '1' })
+        .expect(201);
+      const guestNumber = guest.body.order.orderNumber;
+      const res = await api()
+        .get(`/store/orders/${guestNumber}`)
+        .set('Authorization', auth(alice))
+        .expect(404);
+      const missing = await api()
+        .get('/store/orders/O-00000000-NOSUCH')
+        .set('Authorization', auth(alice))
+        .expect(404);
+      expect(res.body).toEqual(missing.body);
+      await prisma.order.delete({ where: { orderNumber: guestNumber } });
     });
 
     it('неверная подпись — 401, статус не меняется', async () => {

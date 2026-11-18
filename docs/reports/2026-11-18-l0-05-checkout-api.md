@@ -40,6 +40,9 @@ Expand-only: две nullable-колонки без DEFAULT, без обратн�
 - R163. Смена `store.offerVersion` инвалидирует уже открытые страницы оформления (400 `offer_version_mismatch`); клиент должен перечитать оферту.
 - R164. В production `QUICK_BUY_ENABLED=false` по умолчанию; включает владелец в `.env` вместе с боевым запуском.
 - R165. Ошибка `typecheck` в `audit.service.spec.ts` и prettier в `promocodes-admin.controller.ts` — не от 0.5; должны исчезнуть после слияния соседних веток стека.
+- R166. ADR-0186 Р1–Р3 (лимиты на отказы по нику, Turnstile, выравнивание времени ответа, TTL и потолок PENDING-заказов) обязательны до включения платёжного провайдера в production; до их реализации провайдер и `QUICK_BUY_ENABLED` в production не включать.
+- Отклонение от плана: у вошедшего пользователя с привязанным ником `targetMinecraftNick` необязателен (берётся привязанный ник); без привязки и без явного ника — 400 `nick_required`.
+- Ревью Q&S 0.5 (доработка): `GET /store/orders/:orderNumber` для чужого и гостевого заказа теперь 404 «Заказ не найден» (идентично несуществующему, было 403); `PATCH /admin/settings` проверяет `store.offerVersion` (непусто, <= 32 символов); добавлен dev-симулятор вебхука (`docs/runbooks/payment-webhook-sim.md`, подпись — общая функция `computeWebhookSignature`); `prisma format` выровнял `cancelledAt` (только форматирование).
 
 CHANGELOG: «0.5: акцепт оферты (offerVersion/offerAcceptedAt), проверка ника получателя, флаг QUICK_BUY_ENABLED, GET /store/checkout-config, 503 payment_unavailable без висячих заказов; миграция 20261118090000 (expand-only)».
 

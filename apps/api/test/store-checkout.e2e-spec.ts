@@ -433,7 +433,7 @@ describe('Store checkout (e2e)', () => {
     await request(app.getHttpServer())
       .get(`/store/orders/${orderNumber}`)
       .set('Authorization', auth(bob))
-      .expect(403);
+      .expect(404);
   });
 
   it('вебхук: без подписи, с чужой подписью и подменой тела — 401, заказ не меняется', async () => {

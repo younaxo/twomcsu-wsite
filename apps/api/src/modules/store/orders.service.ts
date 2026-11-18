@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -365,11 +364,10 @@ export class OrdersService {
       where: { orderNumber },
       include: ORDER_INCLUDE,
     });
-    if (!order) {
+    // Чужой и гостевой (userId = NULL) заказ неотличим от несуществующего:
+    // тот же 404 и то же тело, номер заказа не подтверждается постороннему.
+    if (!order || order.userId === null || order.userId !== userId) {
       throw new NotFoundException('Заказ не найден');
-    }
-    if (order.userId !== userId) {
-      throw new ForbiddenException('Это не ваш заказ');
     }
     return order;
   }
