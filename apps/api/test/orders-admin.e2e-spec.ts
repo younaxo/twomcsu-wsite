@@ -8,6 +8,7 @@ import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
 import { signPaymentWebhook } from './helpers/sign-payment-webhook';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 
 jest.setTimeout(20_000);
 
@@ -68,6 +69,7 @@ describe('Orders admin (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: user.id, roleId: role.id },
     });
+    await markStaffTwoFactorEnabled(prisma, user.id);
     const records = await prisma.permission.findMany({
       where: { key: { in: keys } },
     });
@@ -81,7 +83,9 @@ describe('Orders admin (e2e)', () => {
   let admin: TestUser;
   let viewer: TestUser;
   let nobody: TestUser;
-  const allUserIds = () => [admin, viewer, nobody].map((u) => u.id);
+  const extraUserIds: string[] = [];
+  const allUserIds = () =>
+    [admin, viewer, nobody].map((u) => u.id).concat(extraUserIds);
   const auth = (u: TestUser) => `Bearer ${u.accessToken}`;
   const http = () => request(app.getHttpServer());
   const orderNo = (n: string) => `E2E${unique}${n}`;
@@ -713,5 +717,137 @@ describe('Orders admin (e2e)', () => {
         },
       }),
     ).toBe(1);
+  });
+
+  it('M1: поздний succeeded по отменённому заказу — заказ остаётся CANCELLED, аудит warning и уведомление персоналу', async () => {
+    // Аудит поздней оплаты пишется от системного аккаунта (#0); на одноразовой
+    // БД seed его не создаёт без BOOTSTRAP_SYSTEM_PASSWORD — заводим на время теста.
+    if (!(await prisma.user.findFirst({ where: { accountType: 'SYSTEM' } }))) {
+      const sys = await createUser('sys');
+      await prisma.user.update({
+        where: { id: sys.id },
+        data: { accountType: 'SYSTEM' },
+      });
+      extraUserIds.push(sys.id);
+    }
+    const paymentId = `late-${unique}`;
+    const order = await makeOrder('L1', 'PENDING', {
+      paymentProvider: 'test',
+      paymentId,
+    });
+    await http()
+      .patch(`/admin/orders/${order.id}/cancel`)
+      .set('Authorization', auth(admin))
+      .send({ reason: 'клиент передумал' })
+      .expect(200);
+
+    const signed = signPaymentWebhook(E2E_PAYMENT_WEBHOOK_SECRET, {
+      orderNumber: order.orderNumber,
+      paymentId,
+      status: 'succeeded',
+      amount: '100.00',
+      currency: 'RUB',
+    });
+    const hook = await http()
+      .post('/webhooks/payments/test')
+      .set('Content-Type', 'application/json')
+      .set(signed.headers)
+      .send(signed.rawBody)
+      .expect(200);
+    expect(hook.body.reason).toBe('already_processed');
+
+    const final = await prisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+    });
+    expect(final.status).toBe('CANCELLED');
+    expect(final.paidAt).toBeNull();
+
+    const events = await prisma.auditLog.findMany({
+      where: { action: 'orders.order.late_payment', targetId: order.id },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0].severity).toBe('warning');
+    expect(events[0].changes).toEqual({
+      orderNumber: order.orderNumber,
+      orderStatus: 'CANCELLED',
+      paymentId,
+      provider: 'test',
+    });
+
+    const note = await prisma.notification.findFirst({
+      where: {
+        userId: admin.id,
+        type: 'SYSTEM',
+        message: { contains: order.orderNumber },
+      },
+    });
+    expect(note).not.toBeNull();
+    // Наблюдатель без права orders.view уведомления не получает.
+    expect(
+      await prisma.notification.count({
+        where: { userId: nobody.id, message: { contains: order.orderNumber } },
+      }),
+    ).toBe(0);
+
+    await prisma.auditLog.deleteMany({
+      where: { action: 'orders.order.late_payment', targetId: order.id },
+    });
+  });
+
+  it('Q83: скидка и промокод на 100% — отдельное событие аудита warning «скидка 100%»', async () => {
+    const code = `E2E-${unique.toUpperCase()}-FULL`;
+    const promo = await http()
+      .post('/admin/promocodes')
+      .set('Authorization', auth(admin))
+      .send({ code, discountType: 'PERCENT', discountValue: '100' })
+      .expect(201);
+    const promoEvent = await prisma.auditLog.findFirst({
+      where: {
+        action: 'store.promocode.full_percent',
+        targetId: promo.body.id,
+      },
+    });
+    expect(promoEvent?.severity).toBe('warning');
+    expect(JSON.stringify(promoEvent?.changes)).toContain('скидка 100%');
+
+    const partial = await http()
+      .post('/admin/promocodes')
+      .set('Authorization', auth(admin))
+      .send({ code: `${code}2`, discountType: 'PERCENT', discountValue: '99' })
+      .expect(201);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          action: 'store.promocode.full_percent',
+          targetId: partial.body.id,
+        },
+      }),
+    ).toBe(0);
+    // Изменение до 100% тоже фиксируется.
+    await http()
+      .patch(`/admin/promocodes/${partial.body.id}`)
+      .set('Authorization', auth(admin))
+      .send({ discountValue: '100' })
+      .expect(200);
+    expect(
+      await prisma.auditLog.count({
+        where: {
+          action: 'store.promocode.full_percent',
+          targetId: partial.body.id,
+        },
+      }),
+    ).toBe(1);
+
+    const bulk = await http()
+      .post('/admin/store/discounts/bulk')
+      .set('Authorization', auth(admin))
+      .send({ discountType: 'PERCENT', discountValue: '100', minQuantity: 2 })
+      .expect(201);
+    cleanupBulkIds.push(bulk.body.id);
+    const bulkEvent = await prisma.auditLog.findFirst({
+      where: { action: 'store.discount.full_percent', targetId: bulk.body.id },
+    });
+    expect(bulkEvent?.severity).toBe('warning');
+    expect(JSON.stringify(bulkEvent?.changes)).toContain('скидка 100%');
   });
 });

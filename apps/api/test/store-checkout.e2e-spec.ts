@@ -13,6 +13,7 @@ import { PaymentsWebhookController } from '../src/modules/store/payments-webhook
 import { PaymentProviderRegistry } from '../src/modules/store/payment/payment-provider.registry';
 import { TestPaymentProvider } from '../src/modules/store/payment/test-payment-provider.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -87,6 +88,7 @@ describe('Store checkout (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 

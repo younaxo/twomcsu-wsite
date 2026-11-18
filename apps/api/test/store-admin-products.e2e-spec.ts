@@ -8,6 +8,7 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { AuditService } from '../src/modules/audit/audit.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -65,6 +66,7 @@ describe('Store admin products (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: user.id, roleId: role.id },
     });
+    await markStaffTwoFactorEnabled(prisma, user.id);
     const records = await prisma.permission.findMany({
       where: { key: { in: keys } },
     });

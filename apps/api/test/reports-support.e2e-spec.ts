@@ -6,6 +6,7 @@ import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { REPORT_MESSAGE_LIMIT } from '../src/modules/reports/report-constants';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -81,6 +82,7 @@ describe('Reports support (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 
