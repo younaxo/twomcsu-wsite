@@ -646,11 +646,15 @@ export class OrdersService {
             });
           }
         }
-        // Outbox (ADR-0184 п. 3): задания выдачи в той же транзакции, только
-        // при moved.count === 1. Повторный вебхук сюда не доходит.
-        await this.delivery.createTasksForOrder(tx, order.id);
         return true;
       });
+      if (transitioned) {
+        // ADR-0184, «Реализация 0.7»: задания выдачи создаются ПОСЛЕ коммита
+        // COMPLETED отдельным шагом (только у победителя перехода). Ошибка
+        // здесь логируется внутри и не отменяет оплату: недостающие задания
+        // досоздаёт фоновая сверка.
+        await this.delivery.createTasksAfterPayment(order.id);
+      }
       return transitioned
         ? { accepted: true }
         : { accepted: true, reason: 'already_processed' };

@@ -357,4 +357,8 @@ export const envValidationSchema = Joi.object({
   /// Значение не требует перезапуска только в смысле настройки; смена
   /// переменной — перезапуск процесса.
   STORE_DELIVERY_ENABLED: Joi.boolean().optional(),
+  /// Фоновая сверка заданий выдачи (ADR-0184, «Реализация 0.7»): досоздаёт
+  /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
+  /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
+  DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
 }).unknown(true);

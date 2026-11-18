@@ -24,6 +24,18 @@ export const DELIVERY_LEASE_MARGIN_MS = 30_000;
 export const DELIVERY_POLL_INTERVAL_MS = 15_000;
 export const DELIVERY_BATCH_SIZE = 10;
 
+/// Env `DELIVERY_RECONCILE_ENABLED`: явный false выключает фоновую сверку.
+export const DELIVERY_RECONCILE_ENV_FLAG = 'DELIVERY_RECONCILE_ENABLED';
+/// Период фоновой сверки заданий выдачи.
+export const DELIVERY_RECONCILE_INTERVAL_MS = 60_000;
+/// Размер пачки сверки (заказов за проход).
+export const DELIVERY_RECONCILE_BATCH_SIZE = 50;
+/// Заказ моложе этого не трогаем: шаг после коммита вебхука ещё может идти.
+export const DELIVERY_RECONCILE_GRACE_MS = 60_000;
+/// Окно сверки: старше не досоздаём (защита от выдачи по историческим заказам
+/// до 0.7, у которых заданий нет намеренно).
+export const DELIVERY_RECONCILE_LOOKBACK_MS = 72 * 3_600_000;
+
 export const EXECUTOR_MANUAL = 'manual';
 export const EXECUTOR_SITE = 'site';
 export const EXECUTOR_COMMAND = 'command';

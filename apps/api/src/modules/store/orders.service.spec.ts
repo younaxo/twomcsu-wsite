@@ -47,7 +47,7 @@ function setup(order: unknown, movedCount = 1) {
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const delivery = {
-    createTasksForOrder: jest.fn().mockResolvedValue(1),
+    createTasksAfterPayment: jest.fn().mockResolvedValue(true),
   };
   const service = new OrdersService(
     prisma as never,
@@ -179,28 +179,40 @@ describe('OrdersService.handleWebhook (ADR-0157)', () => {
       reason: 'already_processed',
     });
     expect(tx.promoCode.update).not.toHaveBeenCalled();
-    expect(delivery.createTasksForOrder).not.toHaveBeenCalled();
+    expect(delivery.createTasksAfterPayment).not.toHaveBeenCalled();
   });
 
-  it('0.7: задания выдачи создаются в той же транзакции и только при moved.count === 1', async () => {
+  it('0.7: задания выдачи создаются отдельным шагом ПОСЛЕ коммита и только при moved.count === 1', async () => {
     const { service, tx, delivery } = setup(baseOrder());
+    const order: string[] = [];
+    tx.order.updateMany.mockImplementationOnce(async () => {
+      order.push('tx');
+      return { count: 1 };
+    });
+    delivery.createTasksAfterPayment.mockImplementationOnce(async () => {
+      order.push('tasks');
+      return true;
+    });
     await service.handleWebhook(provider, ev());
-    expect(delivery.createTasksForOrder).toHaveBeenCalledTimes(1);
-    expect(delivery.createTasksForOrder).toHaveBeenCalledWith(tx, 'o1');
+    expect(delivery.createTasksAfterPayment).toHaveBeenCalledTimes(1);
+    expect(delivery.createTasksAfterPayment).toHaveBeenCalledWith('o1');
+    expect(order).toEqual(['tx', 'tasks']);
   });
 
   it('0.7: отказ платежа (failed) заданий не создаёт', async () => {
     const { service, delivery } = setup(baseOrder());
     await service.handleWebhook(provider, ev({ status: 'failed' }));
-    expect(delivery.createTasksForOrder).not.toHaveBeenCalled();
+    expect(delivery.createTasksAfterPayment).not.toHaveBeenCalled();
   });
 
-  it('0.7: сбой создания заданий откатывает транзакцию (ошибка пробрасывается)', async () => {
-    const { service, delivery } = setup(baseOrder());
-    delivery.createTasksForOrder.mockRejectedValueOnce(new Error('db down'));
-    await expect(service.handleWebhook(provider, ev())).rejects.toThrow(
-      'db down',
-    );
+  it('0.7: сбой создания заданий не отменяет оплату (переход закоммичен, ответ успешен)', async () => {
+    const { service, delivery, tx } = setup(baseOrder());
+    // createTasksAfterPayment сам глотает ошибку и возвращает false.
+    delivery.createTasksAfterPayment.mockResolvedValueOnce(false);
+    await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+      accepted: true,
+    });
+    expect(tx.order.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it('повтор по уже обработанному заказу: already_processed без записи', async () => {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DeliveryAdminController } from './delivery-admin.controller';
+import { DeliveryReconcileScheduler } from './delivery-reconcile.scheduler';
 import { DeliveryWorkerScheduler } from './delivery-worker.scheduler';
 import { DeliveryService } from './delivery.service';
 import { CommandExecutor } from './executors/command.executor';
@@ -14,6 +15,7 @@ import { SiteExecutor } from './executors/site.executor';
   providers: [
     DeliveryService,
     DeliveryWorkerScheduler,
+    DeliveryReconcileScheduler,
     ManualExecutor,
     SiteExecutor,
     CommandExecutor,

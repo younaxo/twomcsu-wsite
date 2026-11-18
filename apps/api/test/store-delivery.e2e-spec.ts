@@ -1131,4 +1131,71 @@ describe('Выдача купленного (0.7, e2e)', () => {
       }
     });
   });
+
+  // ------------------------------- устойчивость к сбою создания заданий
+
+  describe('сбой создания заданий при вебхуке и фоновая сверка', () => {
+    let orderNo: string;
+    const later = () => new Date(Date.now() + 5 * 60_000);
+
+    it('сбой вставки: вебхук 200, заказ COMPLETED, оплата зафиксирована, заданий нет', async () => {
+      orderNo = await makeOrder(alice, [
+        { productId: gameProductId },
+        { productId: decoProductId },
+      ]);
+      const spy = jest
+        .spyOn(delivery, 'createTasksForOrder')
+        .mockRejectedValueOnce(new Error('simulated insert failure'));
+      try {
+        const res = await payment(orderNo);
+        expect(res.body).toMatchObject({ accepted: true });
+        expect(res.body.reason).toBeUndefined();
+      } finally {
+        spy.mockRestore();
+      }
+      const order = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber: orderNo },
+      });
+      expect(order.status).toBe('COMPLETED');
+      expect(order.paidAt).not.toBeNull();
+      expect(order.paymentWebhookVerifiedAt).not.toBeNull();
+      expect(await tasksOf(orderNo)).toHaveLength(0);
+    });
+
+    it('сверка досоздаёт недостающие задания (выдача догоняется)', async () => {
+      const created = await delivery.reconcileMissingTasks({ now: later() });
+      expect(created).toBeGreaterThanOrEqual(2);
+      const tasks = await tasksOf(orderNo);
+      expect(tasks).toHaveLength(2);
+      expect(tasks.map((t) => t.executor).sort()).toEqual(['manual', 'site']);
+      expect(tasks.every((t) => t.step === 1)).toBe(true);
+    });
+
+    it('повторная сверка и повторный вебхук не создают дублей', async () => {
+      await delivery.reconcileMissingTasks({ now: later() });
+      await delivery.reconcileMissingTasks({ now: later() });
+      const res = await payment(orderNo);
+      expect(res.body).toMatchObject({
+        accepted: true,
+        reason: 'already_processed',
+      });
+      expect(await tasksOf(orderNo)).toHaveLength(2);
+    });
+
+    it('сверка не трогает заказ моложе периода ожидания', async () => {
+      const fresh = await makeOrder(alice, [{ productId: gameProductId }]);
+      const spy = jest
+        .spyOn(delivery, 'createTasksForOrder')
+        .mockRejectedValueOnce(new Error('simulated insert failure'));
+      try {
+        await payment(fresh);
+      } finally {
+        spy.mockRestore();
+      }
+      await delivery.reconcileMissingTasks();
+      expect(await tasksOf(fresh)).toHaveLength(0);
+      await delivery.reconcileMissingTasks({ now: later() });
+      expect(await tasksOf(fresh)).toHaveLength(1);
+    });
+  });
 });

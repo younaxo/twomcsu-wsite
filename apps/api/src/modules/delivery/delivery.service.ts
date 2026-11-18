@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeliveryTaskStatus, Prisma } from '@prisma/client';
+import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListDeliveryTasksQueryDto } from './dto/list-delivery-tasks-query.dto';
@@ -27,6 +27,10 @@ import {
   DELIVERY_EXECUTOR_TIMEOUT_MS,
   DELIVERY_LEASE_MARGIN_MS,
   DELIVERY_MAX_ATTEMPTS_SETTING,
+  DELIVERY_RECONCILE_BATCH_SIZE,
+  DELIVERY_RECONCILE_ENV_FLAG,
+  DELIVERY_RECONCILE_GRACE_MS,
+  DELIVERY_RECONCILE_LOOKBACK_MS,
   DELIVERY_SETTINGS_CACHE_MS,
   DONE_STATUSES,
   EXECUTOR_COMMAND,
@@ -156,8 +160,10 @@ export class DeliveryService {
     return decorationId ? EXECUTOR_SITE : EXECUTOR_MANUAL;
   }
 
-  /// Создаёт задания заказа В ТОЙ ЖЕ транзакции, что и переход в COMPLETED
-  /// (outbox). Вызывать только при `moved.count === 1`. Идемпотентно по
+  /// Создаёт задания заказа (минимум: чтение заказа и ников получателей
+  /// подарков, одна вставка, без внешних вызовов). Вызывается отдельным шагом
+  /// ПОСЛЕ коммита перехода в COMPLETED (`createTasksAfterPayment`) и из
+  /// фоновой сверки; в транзакцию вебхука больше не входит. Идемпотентно по
   /// UNIQUE (orderItemId, step): повторный вызов дублей не создаёт.
   /// Подарок выдаётся получателю (`giftToUserId`), не покупателю. Флаг
   /// доставки не влияет на создание: он управляет только обработкой.
@@ -220,6 +226,90 @@ export class DeliveryService {
       skipDuplicates: true,
     });
     return created.count;
+  }
+
+  /// Шаг ПОСЛЕ коммита вебхука оплаты: заказ уже COMPLETED и деньги
+  /// зафиксированы. Любая ошибка создания заданий только логируется и НЕ
+  /// пробрасывается: оплата не теряется, недостающие задания досоздаёт
+  /// фоновая сверка (`reconcileMissingTasks`). Без внешних вызовов, один
+  /// путь с общей идемпотентностью UNIQUE (orderItemId, step).
+  /// Возвращает true, если шаг прошёл без ошибки.
+  async createTasksAfterPayment(orderId: string): Promise<boolean> {
+    try {
+      await this.createTasksForOrder(this.prisma, orderId);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Сбой создания заданий выдачи после оплаты: order=${orderId} (${sanitizeDeliveryError(error)}); задания досоздаст сверка`,
+      );
+      return false;
+    }
+  }
+
+  /// Фоновая сверка: находит COMPLETED-заказы с позициями без заданий и
+  /// создаёт недостающие тем же `createTasksForOrder`. Каждый заказ в своей
+  /// короткой транзакции под `pg_try_advisory_xact_lock(order)`: параллельные
+  /// инстансы не дублируют работу, а сбой одного заказа не абортит остальные
+  /// (в PostgreSQL ошибка рвёт всю транзакцию). Системное досоздание не пишет
+  /// в аудит (нет актора; действие восстанавливающее и идемпотентное), только
+  /// info-лог с числом. Возвращает число созданных заданий.
+  async reconcileMissingTasks(
+    options: {
+      now?: Date;
+      limit?: number;
+      graceMs?: number;
+      lookbackMs?: number;
+    } = {},
+  ): Promise<number> {
+    if (this.reconcileHardDisabled()) return 0;
+    const now = options.now ?? new Date();
+    const limit = options.limit ?? DELIVERY_RECONCILE_BATCH_SIZE;
+    const paidBefore = new Date(
+      now.getTime() - (options.graceMs ?? DELIVERY_RECONCILE_GRACE_MS),
+    );
+    const paidAfter = new Date(
+      now.getTime() - (options.lookbackMs ?? DELIVERY_RECONCILE_LOOKBACK_MS),
+    );
+    const candidates = await this.prisma.order.findMany({
+      where: {
+        status: OrderStatus.COMPLETED,
+        paidAt: { gte: paidAfter, lte: paidBefore },
+        items: { some: { deliveryTasks: { none: {} } } },
+      },
+      select: { id: true },
+      orderBy: { paidAt: 'asc' },
+      take: limit,
+    });
+    let created = 0;
+    for (const { id } of candidates) {
+      try {
+        created += await this.prisma.$transaction(async (tx) => {
+          const rows = await tx.$queryRaw<{ locked: boolean }[]>(
+            Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${`delivery-reconcile:${id}`})) AS locked`,
+          );
+          if (!rows[0]?.locked) return 0;
+          return this.createTasksForOrder(tx, id);
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Сверка заданий выдачи: order=${id} не обработан (${sanitizeDeliveryError(error)})`,
+        );
+      }
+    }
+    if (created > 0) {
+      this.logger.log(
+        `Сверка заданий выдачи: досоздано ${created} (заказов в пачке ${candidates.length})`,
+      );
+    }
+    return created;
+  }
+
+  /// Env `DELIVERY_RECONCILE_ENABLED` явно false: сверка выключена.
+  reconcileHardDisabled(): boolean {
+    const raw = this.config.get<boolean | string | undefined>(
+      DELIVERY_RECONCILE_ENV_FLAG,
+    );
+    return raw === false || raw === 'false';
   }
 
   // --------------------------------------------------- воркер и захват

@@ -822,3 +822,94 @@ describe('DeliveryService.cancelOpenTasks (возврат, Р5)', () => {
     expect(arg.data.leaseToken).toBeNull();
   });
 });
+
+describe('DeliveryService.createTasksAfterPayment (шаг после коммита)', () => {
+  it('успех: вставка идёт не в транзакции, возвращает true', async () => {
+    const { service, prisma, tx } = setup();
+    (prisma as unknown as Record<string, unknown>).order = {
+      findUnique: tx.order.findUnique,
+    };
+    (prisma as unknown as Record<string, unknown>).minecraftAccount =
+      tx.minecraftAccount;
+    (prisma.deliveryTask as unknown as Record<string, unknown>).createMany =
+      tx.deliveryTask.createMany;
+    tx.order.findUnique.mockResolvedValue(orderOf());
+    await expect(service.createTasksAfterPayment('o1')).resolves.toBe(true);
+    expect(tx.deliveryTask.createMany).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('сбой вставки не пробрасывается: false (догонит сверка)', async () => {
+    const { service, prisma, tx } = setup();
+    (prisma as unknown as Record<string, unknown>).order = {
+      findUnique: tx.order.findUnique,
+    };
+    tx.order.findUnique.mockRejectedValue(new Error('db down'));
+    await expect(service.createTasksAfterPayment('o1')).resolves.toBe(false);
+  });
+});
+
+describe('DeliveryService.reconcileMissingTasks (сверка)', () => {
+  const now = new Date('2026-11-18T12:00:00Z');
+
+  function withOrders(ids: string[], opts: Opts = {}) {
+    const ctx = setup(opts);
+    const orderFindMany = jest
+      .fn()
+      .mockResolvedValue(ids.map((id) => ({ id })));
+    (ctx.prisma as unknown as Record<string, unknown>).order = {
+      findMany: orderFindMany,
+    };
+    ctx.tx.$queryRaw.mockResolvedValue([{ locked: true }]);
+    ctx.tx.order.findUnique.mockResolvedValue(orderOf());
+    return { ...ctx, orderFindMany };
+  }
+
+  it('ищет COMPLETED-заказы без заданий в окне, пачкой, старые первыми', async () => {
+    const { service, orderFindMany } = withOrders([]);
+    await service.reconcileMissingTasks({ now, limit: 7 });
+    const arg = orderFindMany.mock.calls[0][0];
+    expect(arg.where.status).toBe('COMPLETED');
+    expect(arg.where.items).toEqual({
+      some: { deliveryTasks: { none: {} } },
+    });
+    expect(arg.where.paidAt.lte).toEqual(new Date(now.getTime() - 60_000));
+    expect(arg.where.paidAt.gte).toEqual(
+      new Date(now.getTime() - 72 * 3_600_000),
+    );
+    expect(arg.take).toBe(7);
+    expect(arg.orderBy).toEqual({ paidAt: 'asc' });
+  });
+
+  it('создаёт недостающие задания и суммирует число', async () => {
+    const { service, tx, prisma } = withOrders(['o1', 'o2']);
+    tx.deliveryTask.createMany.mockResolvedValue({ count: 2 });
+    await expect(service.reconcileMissingTasks({ now })).resolves.toBe(4);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('чужой advisory lock: заказ пропускается без вставки', async () => {
+    const { service, tx } = withOrders(['o1']);
+    tx.$queryRaw.mockResolvedValue([{ locked: false }]);
+    await expect(service.reconcileMissingTasks({ now })).resolves.toBe(0);
+    expect(tx.deliveryTask.createMany).not.toHaveBeenCalled();
+  });
+
+  it('сбой одного заказа не мешает остальным', async () => {
+    const { service, tx } = withOrders(['bad', 'good']);
+    tx.order.findUnique
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(orderOf({ id: 'good' }));
+    tx.deliveryTask.createMany.mockResolvedValue({ count: 1 });
+    await expect(service.reconcileMissingTasks({ now })).resolves.toBe(1);
+  });
+
+  it('env DELIVERY_RECONCILE_ENABLED=false: ничего не делает', async () => {
+    const ctx = withOrders(['o1']);
+    ctx.config.get.mockImplementation((key: string) =>
+      key === 'DELIVERY_RECONCILE_ENABLED' ? false : undefined,
+    );
+    await expect(ctx.service.reconcileMissingTasks({ now })).resolves.toBe(0);
+    expect(ctx.orderFindMany).not.toHaveBeenCalled();
+  });
+});
