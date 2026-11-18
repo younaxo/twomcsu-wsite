@@ -18,6 +18,8 @@ interface TestApp {
   redis: RedisService;
 }
 
+const rawClients = new WeakMap<RedisService, RedisService['client']>();
+
 async function createApp(trustProxy: string | undefined): Promise<TestApp> {
   const previous = process.env.TRUST_PROXY;
   const previousTurnstile = process.env.TURNSTILE_DISABLED;
@@ -52,6 +54,18 @@ async function createApp(trustProxy: string | undefined): Promise<TestApp> {
     const app = moduleRef.createNestApplication();
     loaded.configureApp(app);
     await app.init();
+    // Изоляция от параллельных наборов (jest-воркеры, общий Redis): адрес
+    // соединения 127.0.0.1 общий у всех наборов, а их сброс/успешный вход
+    // меняет тот же счётчик. Свой клиент с keyPrefix даёт этому приложению
+    // собственное пространство ключей: чужие записи нам не видны, наш сброс
+    // чужих ключей не трогает.
+    const redisService = app.get(loaded.RedisService);
+    const isolated = redisService.client.duplicate({
+      keyPrefix: `e2e:tp:${randomUUID()}:`,
+    });
+    await isolated.connect();
+    rawClients.set(redisService, redisService.client);
+    (redisService as { client: typeof isolated }).client = isolated;
     return {
       app,
       prisma: app.get(loaded.PrismaService),
@@ -65,9 +79,23 @@ async function createApp(trustProxy: string | undefined): Promise<TestApp> {
   }
 }
 
+// ioredis не добавляет keyPrefix к шаблону keys() и возвращает полные ключи:
+// префикс подставляем сами и снимаем из результата, чтобы get/del не удвоили его.
+async function keysOf(redis: RedisService, pattern: string): Promise<string[]> {
+  const prefix = redis.client.options.keyPrefix ?? '';
+  const keys = await redis.client.keys(`${prefix}${pattern}`);
+  return keys.map((k) => (k.startsWith(prefix) ? k.slice(prefix.length) : k));
+}
+
 async function flushBruteForce(redis: RedisService): Promise<void> {
-  const keys = await redis.client.keys('bruteforce:*');
+  const keys = await keysOf(redis, 'bruteforce:*');
   if (keys.length > 0) await redis.client.del(...keys);
+}
+
+async function closeApp(app: INestApplication, redis: RedisService) {
+  // app.close() отключает текущий (изолированный) клиент; исходный — вручную.
+  await app.close();
+  rawClients.get(redis)?.disconnect();
 }
 
 describe('TRUST_PROXY (e2e)', () => {
@@ -116,7 +144,7 @@ describe('TRUST_PROXY (e2e)', () => {
       await flushBruteForce(redis);
       await prisma.auditLog.deleteMany({ where: { actor: { email } } });
       await prisma.user.deleteMany({ where: { email } });
-      await app.close();
+      await closeApp(app, redis);
     });
 
     it('10 неудач с IP A блокируют A, а клиент B входит', async () => {
@@ -178,7 +206,7 @@ describe('TRUST_PROXY (e2e)', () => {
       expect(
         await redis.client.get(`bruteforce:blocked:${plain}`),
       ).not.toBeNull();
-      expect(await redis.client.keys('bruteforce:*ffff*')).toEqual([]);
+      expect(await keysOf(redis, 'bruteforce:*ffff*')).toEqual([]);
     });
   });
 
@@ -193,7 +221,7 @@ describe('TRUST_PROXY (e2e)', () => {
 
     afterAll(async () => {
       await flushBruteForce(redis);
-      await app.close();
+      await closeApp(app, redis);
     });
 
     it('«a, b»: клиент добавил a, прокси добавил b — счётчик по правому b', async () => {
@@ -230,7 +258,7 @@ describe('TRUST_PROXY (e2e)', () => {
 
     afterAll(async () => {
       await flushBruteForce(redis);
-      await app.close();
+      await closeApp(app, redis);
     });
 
     it('X-Forwarded-For игнорируется: счётчик на адресе соединения', async () => {
@@ -241,7 +269,7 @@ describe('TRUST_PROXY (e2e)', () => {
           .send({ emailOrUsername: email, password: 'wrong-password' })
           .expect(401);
       }
-      const keys = await redis.client.keys('bruteforce:login:*');
+      const keys = await keysOf(redis, 'bruteforce:login:*');
       expect(keys).toHaveLength(1);
       expect(keys[0]).toMatch(/^bruteforce:login:(127\.0\.0\.1|::1)$/);
       const counter = await redis.client.get(keys[0]);
