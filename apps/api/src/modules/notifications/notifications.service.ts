@@ -15,6 +15,7 @@ import { PushService } from './push.service';
 import { PushSubscribeDto } from './dto/push-subscribe.dto';
 import { buildPushPayload, shouldSendPush } from './push-policy';
 import { escapeToHtml } from '../../common/html.util';
+import { maskReportAuthorSender } from './report-author-privacy';
 
 export interface CreateNotificationInput {
   userId: string;
@@ -60,7 +61,7 @@ export class NotificationsService {
       return null;
     }
 
-    const notification = await this.prisma.notification.create({
+    const created = await this.prisma.notification.create({
       data: {
         userId: input.userId,
         type: input.type,
@@ -76,6 +77,10 @@ export class NotificationsService {
         actionLabel: input.actionLabel,
       },
     });
+
+    // Страховка приватности (Q51): даже если вызывающий передал fromUserId,
+    // автору обращения он не уходит ни в WS, ни в push-превью.
+    const notification = maskReportAuthorSender(created);
 
     // WS realtime — всегда, это отражение состояния UI, а не канал доставки
     // в смысле email/push/discord (на которые распространяются quiet hours).
@@ -225,7 +230,8 @@ export class NotificationsService {
       this.prisma.notification.count({ where }),
     ]);
     return {
-      items: items.map((item) =>
+      // Уведомления автору обращения: модератор скрыт и в старых записях (R44).
+      items: items.map(maskReportAuthorSender).map((item) =>
         item.fromUser
           ? {
               ...item,
@@ -270,7 +276,7 @@ export class NotificationsService {
           data: { isRead: true, readAt: new Date() },
         });
     await this.notifyChanged(userId);
-    return updated;
+    return maskReportAuthorSender(updated);
   }
 
   async markUnread(userId: string, id: string) {
@@ -280,7 +286,7 @@ export class NotificationsService {
       data: { isRead: false, readAt: null },
     });
     await this.notifyChanged(userId);
-    return updated;
+    return maskReportAuthorSender(updated);
   }
 
   async markAllRead(userId: string): Promise<{ count: number }> {

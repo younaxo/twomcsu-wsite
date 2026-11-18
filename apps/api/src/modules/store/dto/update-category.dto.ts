@@ -6,6 +6,10 @@ import {
   Length,
   Min,
 } from 'class-validator';
+import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
 
 export class UpdateCategoryDto {
   @IsOptional()
@@ -19,11 +23,13 @@ export class UpdateCategoryDto {
   description?: string;
 
   @IsOptional()
-  @IsString()
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl()
   icon?: string;
 
   @IsOptional()
-  @IsString()
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl()
   image?: string;
 
   @IsOptional()

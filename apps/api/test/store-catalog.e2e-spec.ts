@@ -11,6 +11,22 @@ import { PermissionService } from '../src/modules/roles/permission.service';
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
 
+/// Служебные поля товара не должны попадать в публичные ответы (S1).
+const SERVICE_FIELDS = [
+  'gameCommands',
+  'server',
+  'currencyType',
+  'currencyAmount',
+  'positionId',
+  'decorationId',
+];
+function expectNoServiceFields(body: unknown) {
+  const json = JSON.stringify(body);
+  for (const field of SERVICE_FIELDS) {
+    expect(json).not.toContain(`"${field}"`);
+  }
+}
+
 describe('Store catalog (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -209,9 +225,10 @@ describe('Store catalog (e2e)', () => {
         slug: productSlug,
         type: 'PRIVILEGE',
         categoryId,
+        server: 'e2e-server',
         variants: [
-          { duration: 'MONTH_1', price: 100 },
-          { duration: 'FOREVER', price: 900 },
+          { duration: 'MONTH_1', price: '100.00' },
+          { duration: 'FOREVER', price: '900.00' },
         ],
       })
       .expect(201);
@@ -220,12 +237,29 @@ describe('Store catalog (e2e)', () => {
       (v: { duration: string }) => v.duration === 'MONTH_1',
     ).id;
     expect(created.body.variants).toHaveLength(2);
+    // ADR-0185: новый товар неактивен и не виден в каталоге, пока админ не включит.
+    expect(created.body.isActive).toBe(false);
+    await request(app.getHttpServer())
+      .get(`/store/products/${productSlug}`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(`/admin/store/products/${productId}`)
+      .set('Authorization', auth(admin))
+      .send({ isActive: true })
+      .expect(200);
+    // gameCommands для публичной проверки S1 кладём напрямую в БД
+    // (через API шаблоны не редактируются — ADR-0184 Р1).
+    await prisma.product.update({
+      where: { id: productId },
+      data: { gameCommands: ['lp user {player} parent add e2e'] },
+    });
 
     const detail = await request(app.getHttpServer())
       .get(`/store/products/${productSlug}`)
       .expect(200);
     expect(detail.body.id).toBe(productId);
     expect(detail.body.inWishlist).toBe(false);
+    expectNoServiceFields(detail.body);
 
     const list = await request(app.getHttpServer())
       .get('/store/products')
@@ -233,19 +267,29 @@ describe('Store catalog (e2e)', () => {
     expect(
       list.body.items.some((p: { id: string }) => p.id === productId),
     ).toBe(true);
+    expectNoServiceFields(list.body);
+
+    // S3: bought-together для несуществующего товара — 404, как и для скрытого.
+    await request(app.getHttpServer())
+      .get('/store/products/e2e-no-such-product/bought-together')
+      .expect(404);
+    const together = await request(app.getHttpServer())
+      .get(`/store/products/${productSlug}/bought-together`)
+      .expect(200);
+    expectNoServiceFields(together.body);
   });
 
   it('товары: доп. вариант через отдельный эндпоинт, обновление и удаление варианта', async () => {
     const variant = await request(app.getHttpServer())
       .post(`/admin/store/products/${productId}/variants`)
       .set('Authorization', auth(admin))
-      .send({ duration: 'WEEK_1', price: 30 })
+      .send({ duration: 'WEEK_1', price: '30.00' })
       .expect(201);
 
     await request(app.getHttpServer())
       .patch(`/admin/store/products/${productId}/variants/${variant.body.id}`)
       .set('Authorization', auth(admin))
-      .send({ price: 25 })
+      .send({ price: '25.00' })
       .expect(200);
 
     await request(app.getHttpServer())
@@ -272,6 +316,7 @@ describe('Store catalog (e2e)', () => {
       .get(`/store/bundles/${bundleSlug}`)
       .expect(200);
     expect(detail.body.slug).toBe(bundleSlug);
+    expectNoServiceFields(detail.body);
 
     const list = await request(app.getHttpServer())
       .get('/store/bundles')
@@ -382,6 +427,6 @@ describe('Store catalog (e2e)', () => {
     await request(app.getHttpServer())
       .delete(`/admin/store/categories/${categoryId}`)
       .set('Authorization', auth(admin))
-      .expect(400);
+      .expect(409);
   });
 });
