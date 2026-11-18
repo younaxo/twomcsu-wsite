@@ -98,6 +98,21 @@ describe('admin navigation', () => {
     expect(resolveNavItem(content, (r) => checkPermissions(newsOnly, r)).href).toBe('/admin/news');
   });
 
+  it('«Выдача» в «Магазине» видна только с правом store.delivery.view', () => {
+    const store = findNavItem('/admin/store/delivery')!;
+    expect(store.label).toBe('Товары магазина');
+    const hasDelivery = (perms: string[]) =>
+      resolveNavItem(store, (r) => checkPermissions(effective(perms), r)).sections?.map(
+        (s) => s.href,
+      ) ?? [];
+    expect(hasDelivery(['store.delivery.view'])).toEqual(['/admin/store/delivery']);
+    expect(hasDelivery(['orders.view'])).not.toContain('/admin/store/delivery');
+    expect(hasDelivery([])).not.toContain('/admin/store/delivery');
+    expect(checkPermissions(effective(['store.delivery.view']), ADMIN_ENTRY_REQUIREMENT)).toBe(
+      true,
+    );
+  });
+
   it('темы и голосование — подразделы «Контента» (ADR-0144, ADR-0145)', () => {
     expect(findNavItem('/admin/topics/abc')?.label).toBe('Контент');
     expect(findNavItem('/admin/voting')?.label).toBe('Контент');

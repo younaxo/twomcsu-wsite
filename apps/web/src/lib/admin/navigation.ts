@@ -197,8 +197,10 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'orders.view',
           'promocodes.view',
           'store.discounts.view',
+          'store.delivery.view',
         ],
         keywords: [
+          'выдача',
           'магазин',
           'товары',
           'варианты',
@@ -218,6 +220,11 @@ export const ADMIN_NAV: AdminNavGroup[] = [
             requirement: 'store.categories.view',
           },
           { href: '/admin/store/orders', label: 'Заказы', requirement: 'orders.view' },
+          {
+            href: '/admin/store/delivery',
+            label: 'Выдача',
+            requirement: 'store.delivery.view',
+          },
           { href: '/admin/store/promocodes', label: 'Промокоды', requirement: 'promocodes.view' },
           { href: '/admin/store/discounts', label: 'Скидки', requirement: 'store.discounts.view' },
         ],

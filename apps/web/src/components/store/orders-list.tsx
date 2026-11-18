@@ -3,6 +3,7 @@
 import { ChevronRight, ShoppingBag, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { DeliveryStatusBadge } from '@/components/store/delivery-status-badge';
 import { OrderStatusBadge } from '@/components/store/order-status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -40,6 +41,7 @@ function OrderRow({ order }: { order: OrderView }) {
         </span>
         <span className="text-sm font-semibold tabular">{formatMoney(order.total)}</span>
         <OrderStatusBadge status={order.status} />
+        <DeliveryStatusBadge status={order.deliveryStatus} />
         <ChevronRight aria-hidden className="size-4 text-subtle-foreground" />
       </Link>
     </li>
@@ -47,8 +49,8 @@ function OrderRow({ order }: { order: OrderView }) {
 }
 
 /// Список своих заказов: номер, дата, сумма, статус оплаты, ссылка на карточку.
-/// Только заказы текущего пользователя (фильтрует сервер). Статус выдачи
-/// появится после подэтапа 0.7. `onPageChange` не задан — без пагинации
+/// Только заказы текущего пользователя (фильтрует сервер). Статус выдачи (0.7):
+/// ожидает / выдано / ошибка, без внутренних деталей. `onPageChange` не задан — без пагинации
 /// (краткий срез в настройках) и со ссылкой «Все заказы».
 export function OrdersList({
   page = 1,
