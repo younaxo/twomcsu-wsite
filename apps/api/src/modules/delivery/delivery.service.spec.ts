@@ -807,3 +807,18 @@ describe('DeliveryService ручные действия админа', () => {
     },
   );
 });
+
+describe('DeliveryService.cancelOpenTasks (возврат, Р5)', () => {
+  it('отменяет только невыданные статусы и сбрасывает аренду', async () => {
+    const { service, tx } = setup();
+    tx.deliveryTask.updateMany.mockResolvedValueOnce({ count: 2 });
+    await expect(service.cancelOpenTasks(tx as never, 'o1')).resolves.toBe(2);
+    const arg = tx.deliveryTask.updateMany.mock.calls[0][0];
+    expect([...arg.where.status.in].sort()).toEqual(
+      [S.PENDING, S.RETRY_WAIT, S.FAILED, S.AWAITING_MANUAL].sort(),
+    );
+    expect(arg.where.orderItem).toEqual({ orderId: 'o1' });
+    expect(arg.data.status).toBe(S.CANCELLED);
+    expect(arg.data.leaseToken).toBeNull();
+  });
+});

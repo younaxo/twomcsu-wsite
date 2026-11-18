@@ -766,6 +766,35 @@ export class DeliveryService {
     );
   }
 
+  /// Отмена невыданных заданий заказа при возврате (ADR-0184 Р5): PENDING,
+  /// RETRY_WAIT, FAILED, AWAITING_MANUAL -> CANCELLED. Вызывать после
+  /// `assertRefundAllowed` в той же транзакции (строки уже заблокированы).
+  async cancelOpenTasks(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+  ): Promise<number> {
+    const res = await tx.deliveryTask.updateMany({
+      where: {
+        orderItem: { orderId },
+        status: {
+          in: [
+            DeliveryTaskStatus.PENDING,
+            DeliveryTaskStatus.RETRY_WAIT,
+            DeliveryTaskStatus.FAILED,
+            DeliveryTaskStatus.AWAITING_MANUAL,
+          ],
+        },
+      },
+      data: {
+        status: DeliveryTaskStatus.CANCELLED,
+        lastError: 'refunded',
+        leaseToken: null,
+        leaseUntil: null,
+      },
+    });
+    return res.count;
+  }
+
   /// Отзыв сайтовой выдачи (вызов из 0.9): удаляет только украшения с
   /// источником PURCHASE и этим заказом (ADMIN и LEGACY не трогает), снимает
   /// выбор украшения, переводит сайтовые задания в CANCELLED и пересчитывает

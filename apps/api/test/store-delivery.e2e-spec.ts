@@ -10,6 +10,7 @@ import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { DeliveryService } from '../src/modules/delivery/delivery.service';
+import { OrdersService } from '../src/modules/store/orders.service';
 
 jest.setTimeout(30_000);
 
@@ -24,6 +25,7 @@ describe('Выдача купленного (0.7, e2e)', () => {
   let prisma: PrismaService;
   let permissions: PermissionService;
   let delivery: DeliveryService;
+  let orders: OrdersService;
   const unique = randomUUID().slice(0, 8);
   const password = 'Sup3rSecretPassw0rd!';
   const cleanupRoleSlugs: string[] = [];
@@ -185,6 +187,7 @@ describe('Выдача купленного (0.7, e2e)', () => {
     prisma = app.get(PrismaService);
     permissions = app.get(PermissionService);
     delivery = app.get(DeliveryService);
+    orders = app.get(OrdersService);
     await setFlag(null);
 
     alice = await createUser('alice');
@@ -1045,6 +1048,86 @@ describe('Выдача купленного (0.7, e2e)', () => {
         await prisma.refreshToken.deleteMany({ where: { userId: carol.id } });
         await prisma.auditLog.deleteMany({ where: { actorId: carol.id } });
         await prisma.user.deleteMany({ where: { id: carol.id } });
+      }
+    });
+  });
+
+  describe('возврат заказа через OrdersService.refund (M1, Р4/Р5)', () => {
+    it('выданное задание: 409 refund_after_delivery, статус заказа не меняется', async () => {
+      await setFlag('false');
+      const no = await makeOrder(alice, [{ productId: gameProductId }]);
+      await payment(no);
+      const [task] = await tasksOf(no);
+      await prisma.deliveryTask.update({
+        where: { id: task.id },
+        data: { status: 'DELIVERED' },
+      });
+      const order = await prisma.order.findUniqueOrThrow({
+        where: { orderNumber: no },
+      });
+      await expect(
+        orders.refund(order.id, { reason: 'тест' }, admin.id),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: expect.objectContaining({ code: 'refund_after_delivery' }),
+      });
+      const after = await prisma.order.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+      expect(after.status).toBe('COMPLETED');
+      expect((await tasksOf(no))[0].status).toBe('DELIVERED');
+    });
+
+    it('невыданное: задания CANCELLED, сайтовая выдача отозвана, заказ REFUNDED', async () => {
+      const dave = await createUser('dave');
+      try {
+        await setFlag('false');
+        const no = await makeOrder(
+          dave,
+          [{ productId: decoProductId }],
+          aliceNick,
+        );
+        await payment(no);
+        const order = await prisma.order.findUniqueOrThrow({
+          where: { orderNumber: no },
+        });
+        expect(order.status).toBe('COMPLETED');
+        await prisma.userDecoration.create({
+          data: {
+            userId: dave.id,
+            decorationId,
+            source: 'PURCHASE',
+            orderId: order.id,
+          },
+        });
+        await prisma.user.update({
+          where: { id: dave.id },
+          data: { selectedDecorationId: decorationId },
+        });
+
+        const refunded = await orders.refund(
+          order.id,
+          { reason: 'тест' },
+          admin.id,
+        );
+        expect(refunded.status).toBe('REFUNDED');
+        const tasks = await tasksOf(no);
+        expect(tasks.length).toBeGreaterThan(0);
+        expect(tasks.every((t) => t.status === 'CANCELLED')).toBe(true);
+        expect(
+          await prisma.userDecoration.count({
+            where: { userId: dave.id, orderId: order.id },
+          }),
+        ).toBe(0);
+        expect(
+          (await prisma.user.findUniqueOrThrow({ where: { id: dave.id } }))
+            .selectedDecorationId,
+        ).toBeNull();
+      } finally {
+        await prisma.order.deleteMany({ where: { userId: dave.id } });
+        await prisma.refreshToken.deleteMany({ where: { userId: dave.id } });
+        await prisma.auditLog.deleteMany({ where: { actorId: dave.id } });
+        await prisma.user.deleteMany({ where: { id: dave.id } });
       }
     });
   });

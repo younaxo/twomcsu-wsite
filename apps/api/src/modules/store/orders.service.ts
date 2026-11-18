@@ -771,14 +771,6 @@ export class OrdersService {
     };
   }
 
-  private async requireOrder(id: string) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) {
-      throw new NotFoundException('Заказ не найден');
-    }
-    return order;
-  }
-
   /// Отмена только PENDING (0.4). Статус перечитывается под блокировкой строки
   /// (FOR UPDATE): параллельный вебхук оплаты не пройдёт между проверкой и
   /// записью. Оплаченный/завершённый/возвращённый/неуспешный заказ — 409.
@@ -833,20 +825,38 @@ export class OrdersService {
     );
   }
 
-  async refund(id: string, dto: RefundOrderDto) {
-    const order = await this.requireOrder(id);
-    if (order.status !== OrderStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Возврат возможен только для завершённого заказа',
-      );
-    }
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.REFUNDED,
-        refundedAt: new Date(),
-        cancelReason: dto.reason,
+  /// Возврат (0.7, ADR-0184 Р4/Р5): запрещён (409), если любое задание
+  /// выдачи в DELIVERED/MANUAL_DONE/IN_PROGRESS/NEEDS_ATTENTION. Иначе в одной
+  /// транзакции: блокировка заказа и заданий, отмена невыданных заданий,
+  /// отзыв сайтовой выдачи, смена статуса. Деньги провайдер не возвращает
+  /// (это 0.9): меняется только статус.
+  async refund(id: string, dto: RefundOrderDto, actorId?: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id = ${id} FOR UPDATE`;
+        if (locked.length === 0) {
+          throw new NotFoundException('Заказ не найден');
+        }
+        const order = await tx.order.findUniqueOrThrow({ where: { id } });
+        if (order.status !== OrderStatus.COMPLETED) {
+          throw new BadRequestException(
+            'Возврат возможен только для завершённого заказа',
+          );
+        }
+        await this.delivery.assertRefundAllowed(tx, id);
+        await this.delivery.cancelOpenTasks(tx, id);
+        await this.delivery.revokeSiteGrants(tx, id, actorId);
+        return tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.REFUNDED,
+            refundedAt: new Date(),
+            cancelReason: dto.reason,
+          },
+        });
       },
-    });
+      { maxWait: 10_000, timeout: 10_000 },
+    );
   }
 }

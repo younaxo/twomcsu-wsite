@@ -17,15 +17,17 @@
 
 - `tsc --noEmit` (apps/api): без ошибок.
 - ESLint по delivery/store/config и новому e2e: ошибок нет в изменённых файлах, кроме уже существовавшей prettier-ошибки в `promocodes-admin.controller.ts` (файл не менялся в этой ветке).
-- Полный jest (apps/api): 123 набора passed, 1 skipped; 2189 тестов passed, 6 skipped, 2195 всего.
-- e2e на одноразовой БД `twomc_e2e`: `store-delivery` 31 passed; `store-checkout` 19 passed. Регрессионные store/orders e2e: orders-admin 12, store-admin-2fa 1, store-admin-products 13, store-cart 38, store-checkout-offer 14, store-checkout-unavailable 4, store-my-orders 8 - все passed.
+- Полный jest (apps/api): 123 набора passed, 1 skipped; 2194 теста passed, 6 skipped, 2200 всего. Шесть «непроходящих» тестов - skipped (по выводу jest), failed нет.
+- ESLint по всему apps/api: 14 prettier-ошибок в файлах вне изменений этой ветки (те же 14 без наших правок); изменённые файлы чистые.
+- e2e на одноразовой БД `twomc_e2e` (после исправления M1): `store-delivery` 33 passed; `orders-admin` 12 passed; `store-checkout` 19 passed.
+- Ранее (до M1): `store-delivery` 31 passed; `store-checkout` 19 passed. Регрессионные store/orders e2e: orders-admin 12, store-admin-2fa 1, store-admin-products 13, store-cart 38, store-checkout-offer 14, store-checkout-unavailable 4, store-my-orders 8 - все passed.
 
 ## Допущения
 
 1. При выключенном флаге задания СОЗДАЮТСЯ (outbox не теряет заказы), флаг управляет только обработкой воркером. Включение позже обработает накопленное. Альтернатива (не создавать) теряла бы выдачу оплаченных заказов.
 2. Исполнитель `command` по умолчанию выключен отдельной настройкой `store.delivery.executor.command.enabled`; шаблонов команд в 0.7 нет, реальный транспорт (Bridge) подключается в 2.2.
 3. Env `STORE_DELIVERY_ENABLED` имеет приоритет только как запрет; включить доставку одной env нельзя.
-4. Возврат запрещён при заданиях в DELIVERED, MANUAL_DONE, IN_PROGRESS, NEEDS_ATTENTION (ADR-0184 Р4).
+4. `OrdersService.refund` (PATCH /admin/orders/:id/refund) в одной транзакции блокирует заказ и задания (FOR UPDATE) и вызывает `assertRefundAllowed`: если любое задание позиции в DELIVERED, MANUAL_DONE, IN_PROGRESS или NEEDS_ATTENTION - 409 (`refund_after_delivery` либо `delivery_in_progress`), заказ не меняется (ADR-0184 Р4). При разрешённом возврате там же: невыданные задания (PENDING, RETRY_WAIT, FAILED, AWAITING_MANUAL) -> CANCELLED, вызывается `revokeSiteGrants` (Р5), затем статус REFUNDED. Деньги провайдер в 0.7 не возвращает (это 0.9): меняется только статус.
 5. Политика backoff: 1, 5, 30 минут, 2 часа; потолок 5 попыток (настраиваемо).
 6. Статус выдачи покупателю `null` для незавершённого заказа.
 

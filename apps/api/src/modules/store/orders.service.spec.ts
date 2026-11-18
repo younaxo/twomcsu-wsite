@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { OrdersService } from './orders.service';
 import {
@@ -430,5 +430,85 @@ describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', (
       reason: 'already_processed',
     });
     warn.mockRestore();
+  });
+});
+
+function setupRefund(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
+  const tx = {
+    $queryRaw: jest.fn().mockResolvedValue(rows),
+    order: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue(order),
+      update: jest.fn().mockResolvedValue({ id: 'o1', status: 'REFUNDED' }),
+    },
+  };
+  const prisma = {
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+  };
+  const delivery = {
+    assertRefundAllowed: jest.fn().mockResolvedValue(undefined),
+    cancelOpenTasks: jest.fn().mockResolvedValue(1),
+    revokeSiteGrants: jest.fn().mockResolvedValue({}),
+  };
+  const service = new OrdersService(
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    delivery as never,
+  );
+  return { service, tx, delivery };
+}
+
+describe('OrdersService.refund (0.7, M1: Р4/Р5)', () => {
+  it('разрешённый возврат: проверка, отмена заданий и отзыв выдачи в одной транзакции до смены статуса', async () => {
+    const { service, tx, delivery } = setupRefund(
+      baseOrder({ status: OrderStatus.COMPLETED }),
+    );
+    const res = await service.refund('o1', { reason: 'r' }, 'admin1');
+    expect(res.status).toBe('REFUNDED');
+    expect(delivery.assertRefundAllowed).toHaveBeenCalledWith(tx, 'o1');
+    expect(delivery.cancelOpenTasks).toHaveBeenCalledWith(tx, 'o1');
+    expect(delivery.revokeSiteGrants).toHaveBeenCalledWith(tx, 'o1', 'admin1');
+    expect(
+      delivery.assertRefundAllowed.mock.invocationCallOrder[0],
+    ).toBeLessThan(delivery.cancelOpenTasks.mock.invocationCallOrder[0]);
+    expect(delivery.cancelOpenTasks.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.order.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('выдача запрещает возврат: 409 пробрасывается, статус не меняется, задания не отменяются', async () => {
+    const { service, tx, delivery } = setupRefund(
+      baseOrder({ status: OrderStatus.COMPLETED }),
+    );
+    delivery.assertRefundAllowed.mockRejectedValueOnce(
+      new ConflictException({ code: 'refund_after_delivery' }),
+    );
+    await expect(
+      service.refund('o1', { reason: 'r' }, 'admin1'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(delivery.cancelOpenTasks).not.toHaveBeenCalled();
+    expect(delivery.revokeSiteGrants).not.toHaveBeenCalled();
+    expect(tx.order.update).not.toHaveBeenCalled();
+  });
+
+  it('не COMPLETED: 400, проверок выдачи нет', async () => {
+    const { service, delivery } = setupRefund(
+      baseOrder({ status: OrderStatus.PENDING }),
+    );
+    await expect(service.refund('o1', { reason: 'r' })).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(delivery.assertRefundAllowed).not.toHaveBeenCalled();
+  });
+
+  it('заказа нет: 404', async () => {
+    const { service } = setupRefund(null, []);
+    await expect(service.refund('nope', { reason: 'r' })).rejects.toMatchObject(
+      { status: 404 },
+    );
   });
 });
