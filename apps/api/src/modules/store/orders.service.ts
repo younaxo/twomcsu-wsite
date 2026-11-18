@@ -1,11 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -22,6 +20,7 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
+import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import {
@@ -36,7 +35,8 @@ import {
   PUBLIC_PRODUCT_BRIEF_SELECT,
   PUBLIC_VARIANT_SELECT,
 } from './public-product';
-import { badRequest, StoreCartError } from './store-errors';
+import { CheckoutPolicyService } from './checkout-policy.service';
+import { badRequest, paymentUnavailable, StoreCartError } from './store-errors';
 
 function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
   return lines.map((l) => ({
@@ -55,11 +55,34 @@ const ORDER_INCLUDE = {
     include: {
       product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
       variant: { select: PUBLIC_VARIANT_SELECT },
-      bundle: true,
+      bundle: {
+        select: { id: true, name: true, slug: true, image: true },
+      },
       giftToUser: { select: PUBLIC_USER_SELECT },
     },
   },
 } as const;
+
+/// Внутренние платёжные поля заказа: покупателю не отдаются (0.6, N1 ревью S1).
+/// Статус оплаты и время — `status` и `paidAt`.
+const BUYER_HIDDEN_ORDER_FIELDS = [
+  'paymentId',
+  'paymentProvider',
+  'paymentWebhookVerifiedAt',
+  'promoCodeId',
+] as const;
+
+/// Ответ покупателю: заказ без внутренних платёжных полей. Админские
+/// эндпоинты этим не пользуются — им поля нужны.
+export function toBuyerOrder<T extends object>(
+  order: T,
+): Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]> {
+  const copy = { ...order } as Record<string, unknown>;
+  for (const field of BUYER_HIDDEN_ORDER_FIELDS) {
+    delete copy[field];
+  }
+  return copy as Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]>;
+}
 
 /// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
 /// Скалярные поля позиции сохранены (контракт AdminOrderDto); товар, вариант и
@@ -122,6 +145,7 @@ export class OrdersService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly checkout: CheckoutPolicyService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -176,22 +200,29 @@ export class OrdersService {
       total: Prisma.Decimal;
     },
     promoCodeId: string | null,
+    acceptedOfferVersion: string | undefined,
   ) {
-    await this.assertNotAlreadyOwned(userId, lines);
-
+    // Провайдера нет (production без PAYMENT_PROVIDER) — честный 503 ДО любой
+    // записи: «висячих» PENDING-заказов без платежа не появляется.
     const provider = this.payments.getConfigured();
     if (!provider) {
-      throw new ServiceUnavailableException(
-        'Платёжный провайдер не настроен — оформление заказов временно недоступно',
-      );
+      throw paymentUnavailable();
     }
+    const offer = await this.checkout.assertOfferAccepted(acceptedOfferVersion);
+    const recipientNick = await this.checkout.resolveRecipientNick(
+      userId,
+      guestMinecraftNick ?? undefined,
+    );
+    await this.assertNotAlreadyOwned(userId, lines);
 
     const orderNumber = await this.generateOrderNumber();
     const order = await this.prisma.order.create({
       data: {
         orderNumber,
         userId: userId ?? undefined,
-        guestMinecraftNick: guestMinecraftNick ?? undefined,
+        guestMinecraftNick: recipientNick,
+        offerVersion: offer.offerVersion,
+        offerAcceptedAt: offer.offerAcceptedAt,
         subtotal: totals.subtotal,
         discountAmount: totals.discountAmount,
         promoCodeId: promoCodeId ?? undefined,
@@ -212,18 +243,31 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
 
-    const payment = await provider.createPayment(
-      orderNumber,
-      totals.total,
-      `Заказ ${orderNumber}`,
-    );
+    let payment: Awaited<ReturnType<PaymentProvider['createPayment']>>;
+    try {
+      payment = await provider.createPayment(
+        orderNumber,
+        totals.total,
+        `Заказ ${orderNumber}`,
+      );
+    } catch (error) {
+      // Платёж не создан: заказ не остаётся PENDING без платежа.
+      this.logger.warn(
+        `Не удалось создать платёж ${orderNumber}: ${(error as Error).message}`,
+      );
+      await this.prisma.order.updateMany({
+        where: { id: order.id, status: OrderStatus.PENDING },
+        data: { status: OrderStatus.FAILED },
+      });
+      throw paymentUnavailable();
+    }
     const completed = await this.prisma.order.update({
       where: { id: order.id },
       data: { paymentId: payment.paymentId, paymentProvider: provider.name },
       include: ORDER_INCLUDE,
     });
 
-    return { order: completed, paymentUrl: payment.paymentUrl };
+    return { order: toBuyerOrder(completed), paymentUrl: payment.paymentUrl };
   }
 
   async createFromCart(userId: string, dto: CreateOrderDto) {
@@ -257,6 +301,7 @@ export class OrdersService {
       totals.lines,
       totals,
       cart.promoCode?.id ?? null,
+      dto.offerVersion,
     );
 
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -269,6 +314,7 @@ export class OrdersService {
   }
 
   async quickBuy(dto: QuickBuyDto) {
+    this.checkout.assertQuickBuyEnabled();
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: dto.variantId },
       include: { product: true },
@@ -313,16 +359,41 @@ export class OrdersService {
       totals.lines,
       totals,
       null,
+      dto.offerVersion,
     );
   }
 
-  async listMine(userId: string) {
-    const items = await this.prisma.order.findMany({
-      where: { userId },
-      include: ORDER_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
-    return { items, total: items.length };
+  /// Публичные параметры оформления для страницы /shop/checkout (0.5): версия
+  /// оферты, доступна ли оплата (иначе клиент показывает 503-состояние с
+  /// неактивной кнопкой) и включён ли анонимный quick-buy. Без секретов.
+  async checkoutConfig() {
+    return {
+      offerVersion: await this.checkout.currentOfferVersion(),
+      paymentAvailable: this.payments.getConfigured() !== undefined,
+      quickBuyEnabled: this.checkout.isQuickBuyEnabled(),
+    };
+  }
+
+  /// Только заказы текущего пользователя (`userId` из токена, не из запроса).
+  async listMine(userId: string, query: ListMyOrdersQueryDto = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where: Prisma.OrderWhereInput = {
+      userId,
+      ...(query.status ? { status: query.status } : {}),
+    };
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: ORDER_INCLUDE,
+        // Второй ключ — стабильная пагинация при одинаковом createdAt.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { items: orders.map((o) => toBuyerOrder(o)), total, page, limit };
   }
 
   async getByOrderNumber(orderNumber: string, userId: string) {
@@ -330,13 +401,12 @@ export class OrdersService {
       where: { orderNumber },
       include: ORDER_INCLUDE,
     });
-    if (!order) {
+    // Чужой и гостевой (userId = NULL) заказ неотличим от несуществующего:
+    // тот же 404 и то же тело, номер заказа не подтверждается постороннему.
+    if (!order || order.userId === null || order.userId !== userId) {
       throw new NotFoundException('Заказ не найден');
     }
-    if (order.userId !== userId) {
-      throw new ForbiddenException('Это не ваш заказ');
-    }
-    return order;
+    return toBuyerOrder(order);
   }
 
   async recentPurchases(): Promise<unknown[]> {

@@ -186,8 +186,10 @@ describe('заказ покупателя: без служебных полей'
   it('ORDER_INCLUDE ограничивает товар, вариант и получателя подарка', async () => {
     const { OrdersService } = await import('./orders.service');
     const findMany = jest.fn().mockResolvedValue([]);
+    const count = jest.fn().mockResolvedValue(0);
     const service = new OrdersService(
-      { order: { findMany } } as never,
+      { order: { findMany, count } } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -217,6 +219,7 @@ describe('заказ покупателя: без служебных полей'
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     await service.listAdmin({});
     const include = findMany.mock.calls[0][0].include;
@@ -239,5 +242,81 @@ describe('заказ покупателя: без служебных полей'
       'tag',
       'username',
     ]);
+  });
+});
+
+describe('мои заказы (0.6): только свои, пагинация, без платёжных полей', () => {
+  const RAW_ORDER = {
+    id: 'o1',
+    orderNumber: 'TW-1',
+    userId: 'u1',
+    status: 'COMPLETED',
+    paidAt: new Date('2026-11-18T10:00:00Z'),
+    paymentId: 'pay_secret',
+    paymentProvider: 'test',
+    paymentWebhookVerifiedAt: new Date('2026-11-18T10:00:00Z'),
+    promoCodeId: 'promo1',
+    items: [],
+  };
+
+  async function build() {
+    const { OrdersService } = await import('./orders.service');
+    const findMany = jest.fn().mockResolvedValue([RAW_ORDER]);
+    const count = jest.fn().mockResolvedValue(41);
+    const findUnique = jest.fn().mockResolvedValue(RAW_ORDER);
+    const service = new OrdersService(
+      { order: { findMany, count, findUnique } } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, findMany, count };
+  }
+
+  it('where — userId из токена и статус; skip/take по странице', async () => {
+    const { service, findMany, count } = await build();
+    const res = await service.listMine('u1', {
+      page: 3,
+      limit: 10,
+      status: 'COMPLETED',
+    });
+    const args = findMany.mock.calls[0][0];
+    expect(args.where).toEqual({ userId: 'u1', status: 'COMPLETED' });
+    expect(args.skip).toBe(20);
+    expect(args.take).toBe(10);
+    expect(count.mock.calls[0][0].where).toEqual({
+      userId: 'u1',
+      status: 'COMPLETED',
+    });
+    expect(res).toMatchObject({ total: 41, page: 3, limit: 10 });
+  });
+
+  it('список и карточка не содержат внутренних платёжных полей', async () => {
+    const { service } = await build();
+    const list = await service.listMine('u1');
+    const card = await service.getByOrderNumber('TW-1', 'u1');
+    for (const body of [list, card]) {
+      const json = JSON.stringify(body);
+      for (const f of [
+        'paymentId',
+        'paymentProvider',
+        'paymentWebhookVerifiedAt',
+        'promoCodeId',
+      ]) {
+        expect(json).not.toContain(`"${f}"`);
+      }
+    }
+    expect(card).toMatchObject({ status: 'COMPLETED' });
+    expect(card).toHaveProperty('paidAt');
+  });
+
+  it('чужой заказ — 404', async () => {
+    const { service } = await build();
+    await expect(service.getByOrderNumber('TW-1', 'u2')).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });

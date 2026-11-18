@@ -250,6 +250,16 @@ describe('Admin backend (e2e)', () => {
     expect(res.body[key]).toBe('on');
   });
 
+  it('settings (KV): store.offerVersion пустой или длиннее 32 символов — 400', async () => {
+    for (const value of ['', '   ', 'x'.repeat(33)]) {
+      await request(app.getHttpServer())
+        .patch('/admin/settings')
+        .set('Authorization', auth(admin))
+        .send({ settings: { 'store.offerVersion': value } })
+        .expect(400);
+    }
+  });
+
   it('settings/site: singleton создаётся по первому GET, PATCH пишет audit-лог с diff', async () => {
     const before = await request(app.getHttpServer())
       .get('/admin/settings/site')
