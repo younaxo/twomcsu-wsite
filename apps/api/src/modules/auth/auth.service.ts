@@ -13,6 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AccountType, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
+import { maskIp } from '../../common/privacy.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { publicTag } from '../users/public-tag';
 import { EmailService } from '../email/email.service';
@@ -46,6 +47,7 @@ export interface TokenPair {
 export interface SessionSummary {
   id: string;
   userAgent: string | null;
+  /// Маскированный IP (`203.0.*.*`), не полный адрес.
   ipAddress: string | null;
   createdAt: Date;
   expiresAt: Date;
@@ -483,8 +485,10 @@ export class AuthService {
         expiresAt: true,
       },
     });
+    // Свой журнал: IP маскируется (полный адрес — только персоналу, Q21).
     return sessions.map((session) => ({
       ...session,
+      ipAddress: maskIp(session.ipAddress),
       current: session.id === currentSessionId,
     }));
   }
