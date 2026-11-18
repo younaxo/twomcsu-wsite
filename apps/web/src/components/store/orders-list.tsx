@@ -2,6 +2,7 @@
 
 import { ChevronRight, ShoppingBag, UserRound } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { OrderStatusBadge } from '@/components/store/order-status-badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -61,6 +62,7 @@ export function OrdersList({
   skeletonRows?: number;
 }) {
   const status = useAuthStore((state) => state.status);
+  const pathname = usePathname();
   const query = useMyOrders(page, limit);
 
   if (status === 'idle' || status === 'loading') return <OrdersSkeleton rows={skeletonRows} />;
@@ -72,7 +74,9 @@ export function OrdersList({
         description="Заказы доступны только их владельцу."
         action={
           <Button asChild>
-            <Link href={`/login?next=${encodeURIComponent('/shop/orders')}`}>Войти</Link>
+            <Link href={`/login?next=${encodeURIComponent(pathname || '/shop/orders')}`}>
+              Войти
+            </Link>
           </Button>
         }
       />

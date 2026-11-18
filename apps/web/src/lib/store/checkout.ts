@@ -102,6 +102,8 @@ export function useCreateOrder() {
       api.post<CreateOrderResult>('/store/orders', input),
     onSuccess: (result) => {
       client.setQueryData(checkoutKeys.order(result.order.orderNumber), result.order);
+      // Список «Мои заказы» устарел: новый заказ должен появиться без ожидания staleTime.
+      void client.invalidateQueries({ queryKey: ['store', 'orders'] });
       // Сервер очистил корзину: перечитываем, а не показываем устаревшую.
       void client.invalidateQueries({ queryKey: siteKeys.cart });
     },

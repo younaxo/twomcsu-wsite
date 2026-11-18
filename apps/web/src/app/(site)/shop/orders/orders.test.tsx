@@ -4,18 +4,25 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/errors';
+import { OrdersList } from '@/components/store/orders-list';
 import { useAuthStore } from '@/lib/auth/store';
+import { useCreateOrder } from '@/lib/store/checkout';
 import OrdersPage from './page';
 import PurchasesSettingsPage from '../../settings/purchases/page';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), module: { reason: null as string | null } }));
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  module: { reason: null as string | null },
+  pathname: '/shop/orders',
+}));
 
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
-  api: { get: mocks.get },
+  api: { get: mocks.get, post: mocks.post },
 }));
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/shop/orders',
+  usePathname: () => mocks.pathname,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock('@/lib/site/status', () => ({
@@ -51,7 +58,9 @@ function Providers({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   mocks.get.mockReset();
+  mocks.post.mockReset();
   mocks.module.reason = null;
+  mocks.pathname = '/shop/orders';
   useAuthStore.setState({ status: 'authenticated', user: { id: 'u1', username: 'p' } as never });
 });
 
@@ -107,6 +116,46 @@ describe('/shop/orders', () => {
     render(<OrdersPage />, { wrapper: Providers });
     expect(await screen.findByText('Войдите, чтобы увидеть заказы')).toBeInTheDocument();
     expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it('аноним: «Войти» ведёт с next = текущий путь', async () => {
+    mocks.pathname = '/settings/purchases';
+    useAuthStore.setState({ status: 'anonymous', user: null });
+    render(<OrdersList limit={5} />, { wrapper: Providers });
+    expect(await screen.findByRole('link', { name: 'Войти' })).toHaveAttribute(
+      'href',
+      '/login?next=%2Fsettings%2Fpurchases',
+    );
+  });
+
+  it('новый заказ виден в списке сразу после оформления', async () => {
+    const created = order(2, 'PENDING');
+    let orders = [order(1)];
+    mocks.get.mockImplementation(async () => ({
+      items: orders,
+      total: orders.length,
+      page: 1,
+      limit: 20,
+    }));
+    mocks.post.mockImplementation(async () => {
+      orders = [created, ...orders];
+      return { order: created, paymentUrl: null };
+    });
+    const user = userEvent.setup();
+    function Harness() {
+      const create = useCreateOrder();
+      return (
+        <>
+          <button onClick={() => create.mutate({ offerVersion: '1' })}>Оформить</button>
+          <OrdersList page={1} limit={20} />
+        </>
+      );
+    }
+    render(<Harness />, { wrapper: Providers });
+    expect(await screen.findAllByTestId('order-row')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Оформить' }));
+    await waitFor(() => expect(screen.getAllByTestId('order-row')).toHaveLength(2));
+    expect(screen.getByText(/TW-2/)).toBeInTheDocument();
   });
 
   it('модуль магазина выключен — страница недоступна, запрос не уходит', () => {
