@@ -312,6 +312,10 @@ export interface ListAdminOrdersQuery extends PaginationQuery {
   userId?: string;
   dateFrom?: IsoDateString;
   dateTo?: IsoDateString;
+  /// Часть номера заказа (0.4, GET /admin/orders).
+  orderNumber?: string;
+  /// Часть ника: логин покупателя или ник гостя (0.4, GET /admin/orders).
+  nickname?: string;
 }
 
 // --- CSV-экспорт ---------------------------------------------------------------
