@@ -1,11 +1,9 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
@@ -36,7 +34,8 @@ import {
   PUBLIC_PRODUCT_BRIEF_SELECT,
   PUBLIC_VARIANT_SELECT,
 } from './public-product';
-import { badRequest, StoreCartError } from './store-errors';
+import { CheckoutPolicyService } from './checkout-policy.service';
+import { badRequest, paymentUnavailable, StoreCartError } from './store-errors';
 
 function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
   return lines.map((l) => ({
@@ -122,6 +121,7 @@ export class OrdersService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly checkout: CheckoutPolicyService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -176,22 +176,29 @@ export class OrdersService {
       total: Prisma.Decimal;
     },
     promoCodeId: string | null,
+    acceptedOfferVersion: string | undefined,
   ) {
-    await this.assertNotAlreadyOwned(userId, lines);
-
+    // Провайдера нет (production без PAYMENT_PROVIDER) — честный 503 ДО любой
+    // записи: «висячих» PENDING-заказов без платежа не появляется.
     const provider = this.payments.getConfigured();
     if (!provider) {
-      throw new ServiceUnavailableException(
-        'Платёжный провайдер не настроен — оформление заказов временно недоступно',
-      );
+      throw paymentUnavailable();
     }
+    const offer = await this.checkout.assertOfferAccepted(acceptedOfferVersion);
+    const recipientNick = await this.checkout.resolveRecipientNick(
+      userId,
+      guestMinecraftNick ?? undefined,
+    );
+    await this.assertNotAlreadyOwned(userId, lines);
 
     const orderNumber = await this.generateOrderNumber();
     const order = await this.prisma.order.create({
       data: {
         orderNumber,
         userId: userId ?? undefined,
-        guestMinecraftNick: guestMinecraftNick ?? undefined,
+        guestMinecraftNick: recipientNick,
+        offerVersion: offer.offerVersion,
+        offerAcceptedAt: offer.offerAcceptedAt,
         subtotal: totals.subtotal,
         discountAmount: totals.discountAmount,
         promoCodeId: promoCodeId ?? undefined,
@@ -212,11 +219,24 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
 
-    const payment = await provider.createPayment(
-      orderNumber,
-      totals.total,
-      `Заказ ${orderNumber}`,
-    );
+    let payment: Awaited<ReturnType<PaymentProvider['createPayment']>>;
+    try {
+      payment = await provider.createPayment(
+        orderNumber,
+        totals.total,
+        `Заказ ${orderNumber}`,
+      );
+    } catch (error) {
+      // Платёж не создан: заказ не остаётся PENDING без платежа.
+      this.logger.warn(
+        `Не удалось создать платёж ${orderNumber}: ${(error as Error).message}`,
+      );
+      await this.prisma.order.updateMany({
+        where: { id: order.id, status: OrderStatus.PENDING },
+        data: { status: OrderStatus.FAILED },
+      });
+      throw paymentUnavailable();
+    }
     const completed = await this.prisma.order.update({
       where: { id: order.id },
       data: { paymentId: payment.paymentId, paymentProvider: provider.name },
@@ -257,6 +277,7 @@ export class OrdersService {
       totals.lines,
       totals,
       cart.promoCode?.id ?? null,
+      dto.offerVersion,
     );
 
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -269,6 +290,7 @@ export class OrdersService {
   }
 
   async quickBuy(dto: QuickBuyDto) {
+    this.checkout.assertQuickBuyEnabled();
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: dto.variantId },
       include: { product: true },
@@ -313,7 +335,19 @@ export class OrdersService {
       totals.lines,
       totals,
       null,
+      dto.offerVersion,
     );
+  }
+
+  /// Публичные параметры оформления для страницы /shop/checkout (0.5): версия
+  /// оферты, доступна ли оплата (иначе клиент показывает 503-состояние с
+  /// неактивной кнопкой) и включён ли анонимный quick-buy. Без секретов.
+  async checkoutConfig() {
+    return {
+      offerVersion: await this.checkout.currentOfferVersion(),
+      paymentAvailable: this.payments.getConfigured() !== undefined,
+      quickBuyEnabled: this.checkout.isQuickBuyEnabled(),
+    };
   }
 
   async listMine(userId: string) {
@@ -330,11 +364,10 @@ export class OrdersService {
       where: { orderNumber },
       include: ORDER_INCLUDE,
     });
-    if (!order) {
+    // Чужой и гостевой (userId = NULL) заказ неотличим от несуществующего:
+    // тот же 404 и то же тело, номер заказа не подтверждается постороннему.
+    if (!order || order.userId === null || order.userId !== userId) {
       throw new NotFoundException('Заказ не найден');
-    }
-    if (order.userId !== userId) {
-      throw new ForbiddenException('Это не ваш заказ');
     }
     return order;
   }

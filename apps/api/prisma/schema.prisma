@@ -1357,6 +1357,9 @@ model Order {
   paymentProvider          String?
   /// Проставляется только после проверки подписи вебхука провайдера (ADR-0009).
   paymentWebhookVerifiedAt DateTime?
+  /// Версия оферты, принятая при оформлении, и время акцепта (0.5). Для старых заказов null.
+  offerVersion             String?     @db.VarChar(32)
+  offerAcceptedAt          DateTime?
   paidAt                   DateTime?
   cancelledAt              DateTime?
   refundedAt               DateTime?
