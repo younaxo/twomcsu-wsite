@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { createServer, Server } from 'http';
 import { Prisma } from '@prisma/client';
 import { MockPaymentProvider } from '../../../../test/helpers/mock-payment-provider';
 import {
@@ -186,5 +187,50 @@ describe('MockHttpPaymentProvider на мок-сервере (0.8a)', () => {
     expect((await errorOf(none.getPaymentStatus('x'))).code).toBe(
       'not_configured',
     );
+  });
+
+  it('idempotencyKey: пустой, длиннее 128 и недопустимый формат — rejected без запроса', async () => {
+    const { paymentId } = await provider.createPayment('O-6', D('10'), 'x');
+    mock.succeed(paymentId);
+    const before = mock.requests.length;
+    for (const key of ['', 'k'.repeat(129), 'bad key', 'k\nx', 'ключ']) {
+      const error = await errorOf(provider.refund(paymentId, D('1'), key));
+      expect(error.code).toBe('rejected');
+      expect(error.message).toBe('idempotency_key_invalid');
+    }
+    expect(mock.requests).toHaveLength(before);
+    const ok = await provider.refund(paymentId, D('1'), 'k'.repeat(128));
+    expect(ok.status).toBe('succeeded');
+  });
+
+  it('редирект 3xx не выполняется и считается ошибкой', async () => {
+    const hits: string[] = [];
+    const target: Server = createServer((req, res) => {
+      hits.push(req.url ?? '');
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((r) => target.listen(0, '127.0.0.1', r));
+    const targetPort = (target.address() as { port: number }).port;
+    const redirector: Server = createServer((_req, res) => {
+      res.writeHead(302, { location: `http://127.0.0.1:${targetPort}/x` });
+      res.end();
+    });
+    await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', r));
+    const port = (redirector.address() as { port: number }).port;
+    try {
+      const p = adapter({
+        ...env,
+        PAYMENT_MOCK_BASE_URL: `http://127.0.0.1:${port}`,
+      });
+      const error = await errorOf(p.getPaymentStatus('any'));
+      expect(error.code).toBe('rejected');
+      expect(error.message).toBe('redirect_not_allowed');
+      expect(error.retryable).toBe(false);
+      expect(hits).toHaveLength(0);
+    } finally {
+      await new Promise((r) => redirector.close(r));
+      await new Promise((r) => target.close(r));
+    }
   });
 });

@@ -18,6 +18,8 @@ import {
 import { readWebhookSecrets, verifySignedWebhook } from './webhook-signature';
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+const IDEMPOTENCY_KEY_FORMAT = /^[A-Za-z0-9._:-]+$/;
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 200;
@@ -141,9 +143,7 @@ export class MockHttpPaymentProvider implements PaymentProvider {
     amount: Prisma.Decimal,
     idempotencyKey: string,
   ): Promise<ProviderRefund> {
-    if (!idempotencyKey) {
-      throw new PaymentProviderError('rejected', 'idempotency_key_invalid');
-    }
+    assertIdempotencyKey(idempotencyKey);
     const body = await this.request(
       'POST',
       `/payments/${encodeURIComponent(paymentId)}/refunds`,
@@ -223,6 +223,7 @@ export class MockHttpPaymentProvider implements PaymentProvider {
       headers['content-type'] = 'application/json';
     }
     if (idempotencyKey) {
+      assertIdempotencyKey(idempotencyKey);
       headers['idempotency-key'] = idempotencyKey;
     }
     const apiKey = this.config.get<string>('PAYMENT_API_KEY') ?? '';
@@ -239,6 +240,9 @@ export class MockHttpPaymentProvider implements PaymentProvider {
         headers,
         body: payload ? JSON.stringify(payload) : undefined,
         signal: controller.signal,
+        // Редиректы не выполняем: мок-сервер не должен уводить адаптер за
+        // пределы loopback (SSRF).
+        redirect: 'manual',
       });
       text = await response.text();
     } catch (error) {
@@ -247,6 +251,12 @@ export class MockHttpPaymentProvider implements PaymentProvider {
       throw new PaymentProviderError(aborted ? 'timeout' : 'unavailable');
     } finally {
       clearTimeout(timer);
+    }
+    if (
+      response.type === 'opaqueredirect' ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      throw new PaymentProviderError('rejected', 'redirect_not_allowed');
     }
     const parsed = parseJsonObject(text);
     if (response.ok) {
@@ -264,6 +274,18 @@ export class MockHttpPaymentProvider implements PaymentProvider {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0
       ? value
       : fallback;
+  }
+}
+
+/// Ключ идемпотентности: 1..128 символов, только [A-Za-z0-9._:-] (как в ledger
+/// по длине; формат строже, чтобы ключ был безопасен для заголовка).
+function assertIdempotencyKey(key: string): void {
+  if (
+    !key ||
+    key.length > MAX_IDEMPOTENCY_KEY_LENGTH ||
+    !IDEMPOTENCY_KEY_FORMAT.test(key)
+  ) {
+    throw new PaymentProviderError('rejected', 'idempotency_key_invalid');
   }
 }
 

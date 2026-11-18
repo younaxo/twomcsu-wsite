@@ -27,13 +27,17 @@ describe('PaymentProviderRegistry (ADR-0157, ADR-0187)', () => {
   it.each(['development', 'test'])(
     'NODE_ENV=%s: тестовый провайдер есть (при наличии секрета)',
     (env) => {
-      const r = registry(env, { PAYMENT_WEBHOOK_SECRET: SECRET });
+      const r = registry(env, {
+        PAYMENT_WEBHOOK_SECRET: SECRET,
+        PAYMENT_MOCK_BASE_URL: 'http://127.0.0.1:1',
+      });
       expect(r.get('test')).toBeDefined();
+      expect(r.get('mock-http')).toBeDefined();
       expect(r.getConfigured()?.name).toBe('test');
     },
   );
 
-  it.each(['production', 'staging', 'weird', undefined])(
+  it.each(['', 'staging', 'Test', 'production', 'weird', undefined])(
     'NODE_ENV=%s: тестового провайдера нет, mock-http нет',
     (env) => {
       const r = registry(env, {

@@ -9,7 +9,7 @@
 - Интерфейс PaymentProvider: getPaymentStatus, refund(paymentId, amount, idempotencyKey), единый PaymentProviderError (unavailable, timeout, rejected, not_found, refund_not_allowed, invalid_response, not_configured).
 - Адаптер mock-http (только development/test): таймаут, ретраи временных сбоев, заголовок Idempotency-Key, Bearer-ключ.
 - Реестр: пустой PAYMENT_PROVIDER или пустые секреты -> провайдера нет -> 503 payment_unavailable; в production test и mock-http не регистрируются.
-- Вебхук: поздний succeeded по FAILED переводит заказ в COMPLETED (после проверок суммы, валюты, paymentId); по CANCELLED только предупреждение; повтор идемпотентен.
+- Вебхук: поздний succeeded по FAILED переводит заказ в COMPLETED (после проверок суммы, валюты, paymentId); по CANCELLED заказ не восстанавливается: пишется лог и отправляется уведомление приоритета HIGH (bypassPreferences) персоналу с правом orders.view (и суперпользователям), до 50 получателей; повтор идемпотентен.
 - Подпись вебхука: два секрета (текущий и предыдущий), минимум 32 символа, постоянное время сравнения.
 - Мок-сервер и хелперы для тестов: apps/api/test/helpers/mock-payment-provider.ts, mock-payment-env.ts. In-memory реестр платежей payment-ledger.
 - ADR-0187 (Proposed) в docs/implementation/DECISIONS.md.
@@ -27,7 +27,7 @@ PR не открыт, push не выполнялся. Миграций и изм
 
 ## 4. Проверки
 
-- jest (apps/api, полный): 126 из 127 наборов пройдено, 1 пропущен; тестов 2327 пройдено, 6 пропущено, 0 упавших.
+- jest (apps/api, полный): 126 из 127 наборов пройдено, 1 пропущен; тестов 2331 пройдено, 6 пропущено, 0 упавших (после доработок по ревью; store: 15 наборов, 256 тестов).
 - Юниты затронутых файлов (config + store): 22 набора, 402 теста, все зелёные.
 - tsc --noEmit: чисто.
 - eslint по всем изменённым файлам: чисто. eslint по src и test целиком: 14 ошибок prettier в 9 файлах, не входящих в 0.8a (bridge-*, prisma.service.client-options.spec.ts, promocodes-admin.controller.ts); не трогал, чужая область.
@@ -47,7 +47,7 @@ PR не открыт, push не выполнялся. Миграций и изм
 ## 7. Риски и расхождения
 
 - R29: шторм повторов при сбое провайдера ограничен (по умолчанию 2 повтора, максимум 5, отдельно от лимита quick-buy 10/мин).
-- Поздний succeeded по CANCELLED не восстанавливает заказ (ручной разбор по логу).
+- Поздний succeeded по CANCELLED не восстанавливает заказ: лог + HIGH-уведомление персоналу с правом orders.view; решение о возврате принимает человек.
 - Идемпотентность возвратов на стороне платформы пока не персистентна (до 0.9).
 - Возможный конфликт DECISIONS.md при слиянии с ветками ADR-0184-0186.
 
@@ -57,5 +57,9 @@ PR не открыт, push не выполнялся. Миграций и изм
 
 ## К переносу
 
-Риски (RISKS.md): R29 (ограничен лимитом ретраев провайдера, ADR-0187); новый: нет персистентной идемпотентности возвратов до 0.9; поздний succeeded по CANCELLED только лог.
+Риски (RISKS.md): R29 (ограничен лимитом ретраев провайдера, ADR-0187); новый: нет персистентной идемпотентности возвратов до 0.9; поздний succeeded по CANCELLED — лог и HIGH-уведомление персоналу с orders.view (без авто-восстановления).
 CHANGELOG: 0.8a — расширенный PaymentProvider (getPaymentStatus, refund с idempotencyKey), адаптер mock-http (dev/test), fail-closed, FAILED -> COMPLETED при позднем succeeded, ротация секрета вебхука (два секрета, минимум 32 символа), ADR-0187.
+
+Для 0.8b (по ревью, пункт №6): общий deadline на весь вызов провайдера (сумма таймаутов и повторов в createPayment/refund), чтобы худший случай не превышал заданный предел; сейчас лимит только на каждую попытку (таймаут × (1+retries) + паузы).
+
+Доработки по ревью 2026-11-18 (№2, №4, №5): тест матрицы NODE_ENV ('', staging, Test, production, weird, незаданный — без test и mock-http; development, test — оба провайдера); mock-http: fetch с redirect manual, любой 3xx = rejected redirect_not_allowed; idempotencyKey 1..128 символов формата [A-Za-z0-9._:-] проверяется в адаптере.
