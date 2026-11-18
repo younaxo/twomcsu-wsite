@@ -28,6 +28,7 @@ import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { durationLabel } from '@/lib/store/catalog';
 import { CancelOrderDialog } from '../_components/cancel-order-dialog';
+import { OrderDeliveryPanel } from '../_components/order-delivery-panel';
 
 /// Карточка заказа (слой 0, 0.4): позиции, суммы, сводка оплаты, отмена
 /// PENDING. Журнала событий вебхука в БД нет — показывается итог проверки
@@ -197,6 +198,8 @@ function OrderCard({ order }: { order: AdminOrderCard }) {
           caption="Позиции заказа: товар или набор, количество, цена, сумма, выдача"
         />
       </PageSection>
+
+      {can('store.delivery.view') ? <OrderDeliveryPanel orderNumber={order.orderNumber} /> : null}
 
       {cancelOpen ? (
         <CancelOrderDialog

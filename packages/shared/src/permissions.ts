@@ -452,6 +452,16 @@ export const PERMISSIONS = [
   { key: 'orders.stats', module: 'orders', description: 'Просмотр статистики заказов' },
   { key: 'orders.cancel', module: 'orders', description: 'Отмена заказа' },
   { key: 'orders.refund', module: 'orders', description: 'Возврат средств по заказу' },
+  {
+    key: 'store.delivery.view',
+    module: 'store',
+    description: 'Просмотр заданий выдачи купленного в админке',
+  },
+  {
+    key: 'store.delivery.manage',
+    module: 'store',
+    description: 'Ручная отметка выдачи и повтор выдачи купленного',
+  },
   { key: 'store.stats', module: 'store', description: 'Просмотр общей статистики магазина' },
   {
     key: 'store.stats.overview.view',
