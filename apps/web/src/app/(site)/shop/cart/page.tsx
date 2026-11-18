@@ -1,8 +1,8 @@
 'use client';
 
 import {
+  CreditCard,
   Gift,
-  Lock,
   Minus,
   Plus,
   ShoppingBag,
@@ -523,18 +523,14 @@ function Summary({
           <span className="font-display text-2xl font-bold tabular">{formatMoney(cart.total)}</span>
         </div>
         <div className="flex flex-col gap-2">
-          <Button
-            type="button"
-            size="lg"
-            aria-disabled="true"
-            aria-describedby={hintId}
-            onClick={(event) => event.preventDefault()}
-          >
-            <Lock />
-            Оформить заказ
+          <Button asChild size="lg">
+            <Link href="/shop/checkout" aria-describedby={hintId}>
+              <CreditCard />
+              Оформить заказ
+            </Link>
           </Button>
           <p id={hintId} className="text-xs text-muted-foreground">
-            Оплата появится в ближайшем обновлении. Корзина сохраняется в вашем аккаунте.
+            Ник получателя и оплата — на следующем шаге. Корзина сохраняется в вашем аккаунте.
           </p>
         </div>
       </Card>
@@ -724,8 +720,7 @@ function CartContent() {
 }
 
 /// Корзина: реальный API `/store/cart`. Суммы и скидки — только из ответа сервера
-/// (клиент ничего не считает). Оформление заказа — подэтап 0.5, пока кнопка
-/// неактивна с пояснением. Модуль «store» выключен — ModuleGate.
+/// (клиент ничего не считает). «Оформить заказ» ведёт на /shop/checkout (0.5). Модуль «store» выключен — ModuleGate.
 export default function CartPage() {
   return (
     <ModuleGate module="store">

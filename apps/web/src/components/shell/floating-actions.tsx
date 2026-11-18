@@ -120,7 +120,7 @@ export function CartButton({ className }: { className?: string }) {
                 <Link href="/shop/cart">Перейти в корзину</Link>
               </Button>
               <Button asChild size="sm" className="flex-1">
-                <Link href="/shop/cart#checkout">Оформить</Link>
+                <Link href="/shop/checkout">Оформить</Link>
               </Button>
             </div>
           </>
