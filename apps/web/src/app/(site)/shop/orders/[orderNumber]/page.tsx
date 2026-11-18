@@ -131,7 +131,8 @@ function OrderBody({ order }: { order: OrderView }) {
 
 function OrderContent() {
   const params = useParams<{ orderNumber: string }>();
-  const orderNumber = decodeURIComponent(params?.orderNumber ?? '');
+  // useParams уже отдаёт декодированное значение: повторное декодирование ломает номера с «%».
+  const orderNumber = params?.orderNumber ?? '';
   const status = useAuthStore((state) => state.status);
   const query = useOrder(orderNumber);
 
@@ -153,6 +154,26 @@ function OrderContent() {
     );
   } else if (query.isPending) {
     body = <OrderSkeleton />;
+  } else if (
+    query.data &&
+    !(
+      query.isError &&
+      query.error instanceof ApiError &&
+      (query.error.status === 404 || query.error.status === 403)
+    )
+  ) {
+    // Уже показанный заказ не заменяем экраном ошибки из-за разового сбоя опроса (5xx/сеть):
+    // опрос продолжается сам, пользователю даём ненавязчивое сообщение.
+    body = (
+      <>
+        {query.isError ? (
+          <p data-testid="order-poll-error" className="text-xs text-muted-foreground">
+            Не удалось обновить статус, пробуем ещё раз.
+          </p>
+        ) : null}
+        <OrderBody order={query.data} />
+      </>
+    );
   } else if (query.isError) {
     const error = query.error;
     // Чужой заказ (403) показываем так же, как отсутствующий: номер чужого заказа не раскрываем.
@@ -172,7 +193,7 @@ function OrderContent() {
       <ErrorState error={error} onRetry={() => query.refetch()} retrying={query.isFetching} />
     );
   } else {
-    body = <OrderBody order={query.data} />;
+    body = <OrderSkeleton />;
   }
 
   return (

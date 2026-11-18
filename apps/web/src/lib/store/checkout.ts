@@ -60,13 +60,16 @@ export function orderHref(orderNumber: string): string {
   return `/shop/orders/${encodeURIComponent(orderNumber)}`;
 }
 
-/// Переходить можно только на http(s)-адрес оплаты: любую другую схему
-/// (javascript:, data:) отбрасываем, остаёмся на странице заказа.
+/// Переходить можно только на https-адрес оплаты (http допустим лишь для localhost,
+/// тестовый провайдер в разработке): любую другую схему (javascript:, data:) и
+/// небезопасный http отбрасываем, остаёмся на странице заказа.
 export function safePaymentUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
+    if (parsed.protocol === 'https:') return parsed.toString();
+    const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    return parsed.protocol === 'http:' && local ? parsed.toString() : null;
   } catch {
     return null;
   }
@@ -130,7 +133,7 @@ export const ORDER_STATUS_TEXT: Record<OrderStatus, { label: string; description
   FAILED: {
     label: 'Оплата не прошла',
     description:
-      'Оплата не завершилась. Деньги не списаны: вернитесь в корзину и оформите заказ заново.',
+      'Если средства были списаны, обратитесь в поддержку. Заказ можно оформить заново из корзины.',
   },
   CANCELLED: {
     label: 'Отменён',

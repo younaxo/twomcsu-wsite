@@ -4,7 +4,7 @@ import { CircleAlert, CreditCard, ShoppingCart, TriangleAlert, UserRound } from 
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { FormErrorSummary, FormField, useFocusFirstInvalid } from '@/components/admin/form-field';
 import { ModuleGate } from '@/components/system/site-availability';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
@@ -147,6 +147,24 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
       : null;
   const paymentOff = !config.paymentAvailable || failure?.paymentUnavailable === true;
   const busy = createOrder.isPending || redirecting;
+
+  // Возврат кнопкой «Назад» (bfcache) или переключением вкладки: страница снова живая,
+  // кнопка оплаты не должна оставаться заблокированной.
+  useEffect(() => {
+    if (!redirecting) return undefined;
+    const reset = () => {
+      if (document.visibilityState === 'visible') setRedirecting(false);
+    };
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setRedirecting(false);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', reset);
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', reset);
+    };
+  }, [redirecting]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

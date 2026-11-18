@@ -146,6 +146,38 @@ describe('заказ /shop/orders/[orderNumber]', () => {
     expect(screen.queryByText(/не ваш/)).not.toBeInTheDocument();
   });
 
+  it('разовый 5xx при опросе не заменяет показанный заказ, опрос продолжается', async () => {
+    vi.useFakeTimers();
+    mocks.get
+      .mockResolvedValueOnce(order('PENDING'))
+      .mockRejectedValueOnce(new ApiError(500, ['boom']))
+      .mockResolvedValue(order('COMPLETED'));
+    render(<OrderPage />, { wrapper: Providers });
+    await flush(0);
+    expect(screen.getByTestId('order-status-live').textContent).toMatch(/Ожидает оплаты/);
+    // Мелкими шагами, чтобы поймать короткое окно между сбоем и следующим опросом.
+    for (let i = 0; i < 12 && !screen.queryByTestId('order-poll-error'); i += 1) {
+      await flush(500);
+    }
+    expect(screen.getByTestId('order-poll-error')).toBeInTheDocument();
+    expect(screen.getByTestId('order-total').textContent).toMatch(/150/);
+    expect(screen.getByTestId('order-status-live').textContent).toMatch(/Ожидает оплаты/);
+    expect(screen.queryByRole('button', { name: /Повторить/ })).not.toBeInTheDocument();
+    for (let i = 0; i < 12 && screen.queryByTestId('order-poll-error'); i += 1) {
+      await flush(500);
+    }
+    expect(screen.getByTestId('order-status-live').textContent).toMatch(/Оплачен/);
+    expect(screen.queryByTestId('order-poll-error')).not.toBeInTheDocument();
+  });
+
+  it('FAILED: не утверждает «деньги не списаны», отсылает в поддержку', async () => {
+    mocks.get.mockResolvedValue(order('FAILED'));
+    render(<OrderPage />, { wrapper: Providers });
+    const live = await screen.findByTestId('order-status-live');
+    expect(live.textContent).not.toMatch(/Деньги не списаны/i);
+    expect(live.textContent).toMatch(/обратитесь в поддержку/);
+  });
+
   it('ошибка сервера: состояние ошибки с повтором', async () => {
     mocks.get.mockRejectedValue(new ApiError(500, ['boom']));
     render(<OrderPage />, { wrapper: Providers });

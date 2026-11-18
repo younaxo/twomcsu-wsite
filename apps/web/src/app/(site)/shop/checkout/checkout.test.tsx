@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import type { CartView } from '@/lib/store/cart';
@@ -166,6 +166,56 @@ describe('оформление /shop/checkout', () => {
     });
   });
 
+  describe('переход на paymentUrl', () => {
+    const assign = vi.fn();
+    beforeEach(() => {
+      assign.mockReset();
+      vi.stubGlobal('location', { ...window.location, assign });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    async function pay(paymentUrl: string) {
+      const user = userEvent.setup();
+      signIn();
+      route();
+      mocks.post.mockResolvedValue({ order: { orderNumber: 'TW-9' }, paymentUrl });
+      render(<CheckoutPage />, { wrapper: Providers });
+      await screen.findByTestId('checkout-nick');
+      await user.click(screen.getByRole('checkbox'));
+      await user.click(screen.getByTestId('checkout-submit'));
+      await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    }
+
+    it('https-адрес: переход к провайдеру, кнопка заблокирована, push нет', async () => {
+      await pay('https://pay.example/x');
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('https://pay.example/x'));
+      expect(mocks.push).not.toHaveBeenCalled();
+      expect(screen.getByTestId('checkout-submit')).toBeDisabled();
+    });
+
+    it.each([
+      'javascript:alert(1)',
+      'http://pay.example/x',
+      'data:text/html,x',
+      'HTTP://evil.test',
+    ])('небезопасный адрес %s отвергается: перехода нет, страница заказа', async (url) => {
+      await pay(url);
+      await waitFor(() => expect(mocks.push).toHaveBeenCalledWith('/shop/orders/TW-9'));
+      expect(assign).not.toHaveBeenCalled();
+    });
+
+    it('возврат на страницу (pageshow из bfcache) снимает блокировку кнопки', async () => {
+      await pay('https://pay.example/x');
+      await waitFor(() => expect(screen.getByTestId('checkout-submit')).toBeDisabled());
+      act(() => {
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      });
+      await waitFor(() => expect(screen.getByTestId('checkout-submit')).not.toBeDisabled());
+    });
+  });
+
   it('пустой ник не отправляется (сервер берёт привязанный)', async () => {
     const user = userEvent.setup();
     signIn();
@@ -250,7 +300,9 @@ describe('логика оформления', () => {
     expect(describeCheckoutError(new Error('x')).message).toBe('Не удалось оформить заказ.');
   });
 
-  it('safePaymentUrl пропускает только http(s)', () => {
+  it('safePaymentUrl пропускает только https (http лишь для localhost)', () => {
+    expect(safePaymentUrl('http://pay.example/x')).toBeNull();
+    expect(safePaymentUrl('http://localhost:3000/pay')).toBe('http://localhost:3000/pay');
     expect(safePaymentUrl(null)).toBeNull();
     expect(safePaymentUrl('javascript:alert(1)')).toBeNull();
     expect(safePaymentUrl('not a url')).toBeNull();
