@@ -29,7 +29,7 @@ export const DELIVERY_STATUS_TEXT: Record<DeliveryStatus, { label: string; descr
   {
     pending: {
       label: 'Ожидает выдачи',
-      description: 'Покупка скоро будет выдана. Перезагружать страницу не нужно.',
+      description: 'Покупка ожидает выдачи. Статус обновится здесь, когда выдача завершится.',
     },
     delivered: {
       label: 'Выдано',

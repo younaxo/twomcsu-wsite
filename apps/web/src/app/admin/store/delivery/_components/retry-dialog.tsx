@@ -75,7 +75,14 @@ export function RetryDialog({
           toast.success('Выдача поставлена на повтор');
           onOpenChange(false);
         },
-        onError: (error) => setFailure(describeDeliveryError(error)),
+        onError: (error) => {
+          const info = describeDeliveryError(error);
+          setFailure(info);
+          if (info.reasonError) {
+            setReasonError(info.reasonError);
+            focusFirstInvalid();
+          }
+        },
       },
     );
   };

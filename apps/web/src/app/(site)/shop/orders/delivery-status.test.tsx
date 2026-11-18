@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeliveryStatusBadge } from '@/components/store/delivery-status-badge';
 import { useAuthStore } from '@/lib/auth/store';
-import { readDeliveryStatus } from '@/lib/store/checkout';
+import { DELIVERY_STATUS_TEXT, readDeliveryStatus } from '@/lib/store/checkout';
 import OrdersPage from './page';
 import OrderPage from './[orderNumber]/page';
 
@@ -97,6 +97,12 @@ describe('статус выдачи: страница заказа', () => {
     expect(block).toHaveTextContent(label);
     const item = screen.getByTestId('order-item');
     expect(within(item).getByTestId('delivery-status')).toHaveTextContent(label);
+  });
+
+  it('«ожидает выдачи»: нет обещания, что перезагрузка не нужна', () => {
+    const { description } = DELIVERY_STATUS_TEXT.pending;
+    expect(description).toMatch(/ожидает выдачи/);
+    expect(description).not.toMatch(/Перезагружать|не нужно/i);
   });
 
   it('внутренних деталей нет: ни ошибки транспорта, ни id задания', async () => {

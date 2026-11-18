@@ -341,6 +341,58 @@ describe('Выдача: карточка и действия', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
+  it('«Повторить»: непустая причина уходит в запрос обрезанной', async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    mocks.post.mockResolvedValue(card());
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('task-summary');
+    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox'));
+    await user.type(within(dialog).getByLabelText(/Причина/), '  Сервер был недоступен ');
+    await user.click(within(dialog).getByRole('button', { name: 'Повторить выдачу' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('/admin/delivery/tasks/T1/retry', {
+        confirmed: true,
+        reason: 'Сервер был недоступен',
+      }),
+    );
+  });
+
+  it('«Повторить»: 400 по причине показывается у поля, окно остаётся открытым', async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    mocks.post.mockRejectedValueOnce(new ApiError(400, ['reason: слишком длинная причина']));
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('task-summary');
+    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('checkbox'));
+    const field = within(dialog).getByLabelText(/Причина/);
+    await user.type(field, 'Причина');
+    await user.click(within(dialog).getByRole('button', { name: 'Повторить выдачу' }));
+    await waitFor(() => expect(field).toHaveAttribute('aria-invalid', 'true'));
+    expect(within(dialog).getAllByText(/слишком длинная причина/).length).toBeGreaterThan(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('«Повторить»: после закрытия по Esc фокус возвращается на кнопку', async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('task-summary');
+    const opener = screen.getByRole('button', { name: 'Повторить' });
+    await user.click(opener);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(opener).toHaveFocus();
+  });
+
   it('409: понятная ошибка в окне, кнопка действия скрыта, остаётся «Закрыть»', async () => {
     mocks.granted.add('store.delivery.view');
     mocks.granted.add('store.delivery.manage');
