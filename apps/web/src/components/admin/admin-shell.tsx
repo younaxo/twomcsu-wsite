@@ -19,6 +19,7 @@ import {
   Search,
   Settings,
   Shield,
+  ShoppingBag,
   Sparkles,
   type LucideIcon,
   UserRound,
@@ -92,6 +93,7 @@ const ICONS: Record<AdminIconName, LucideIcon> = {
   wrench: Wrench,
   award: Award,
   briefcase: BriefcaseBusiness,
+  store: ShoppingBag,
 };
 
 /// Навигация, отфильтрованная по правам текущего пользователя. Группы без

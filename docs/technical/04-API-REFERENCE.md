@@ -399,7 +399,7 @@
 - Min RoleGroup: `ADMIN`; Proposed permission: `users.bulk.edit`
 - Body DTO: `BulkUsersDto`
 - Service call: `users.bulkUpdate()`
-- Response type: не аннотирован; см. сервис
+- Response type: не аннотирован; см. сервис. Q48/ADR-0173: при `UNBAN` для каждого пользователя действует единое правило снятия санкции; отказ — запись в `failed` с `code: "sanction_revoke_forbidden"`.
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
 ### GET `/admin/users/:id/full`
@@ -3653,34 +3653,45 @@
 
 ### PATCH `/moderation/reports/:reportNumber/notes/:noteId`
 
-- Handler: `ReportsController.updateModeratorNote()` — `reports/reports.controller.ts:322`
-- Authentication: **required**; guards: `JwtAuthGuard`, `RolesGuard`
-- Min RoleGroup: `HELPER`; Proposed permission: `reports.notes`
+- Handler: `ReportsModerationController.updateNote()` — `reports/reports-moderation.controller.ts`
+- Authentication: **required**; guards: `JwtAuthGuard`, `PermissionsGuard`
+- Permission: `reports.notes`; правка чужой заметки дополнительно требует `reports.notes.edit` (проверяет сервис; автор всегда правит свою)
 - Path params: `reportNumber`, `noteId`
 - Body DTO: `UpdateModeratorNoteDto`
-- Service call: `reports.updateModeratorNote()`
+- Service call: `moderation.updateModeratorNote()`
 - Response type: `Promise<ReportDetails>`
-- Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
+- Errors: 401, 403 (нет права / чужая заметка без `reports.notes.edit` / нет 2FA персонала), 400 (validation), 404.
 
 ### DELETE `/moderation/reports/:reportNumber/notes/:noteId`
 
-- Handler: `ReportsController.deleteModeratorNote()` — `reports/reports.controller.ts:340`
-- Authentication: **required**; guards: `JwtAuthGuard`, `RolesGuard`
-- Min RoleGroup: `HELPER`; Proposed permission: `reports.notes`
+- Handler: `ReportsModerationController.deleteNote()` — `reports/reports-moderation.controller.ts`
+- Authentication: **required**; guards: `JwtAuthGuard`, `PermissionsGuard`
+- Permission: `reports.notes`
 - Path params: `reportNumber`, `noteId`
-- Service call: `reports.deleteModeratorNote()`
+- Service call: `moderation.deleteModeratorNote()`
 - Response type: `Promise<ReportDetails>`
-- Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
+- Errors: 401, 403, 404.
 
 ### PATCH `/moderation/reports/:reportNumber/notes/:noteId/pin`
 
-- Handler: `ReportsController.pinModeratorNote()` — `reports/reports.controller.ts:351`
-- Authentication: **required**; guards: `JwtAuthGuard`, `RolesGuard`
-- Min RoleGroup: `HELPER`; Proposed permission: `reports.notes.pin`
+- Handler: `ReportsModerationController.pinNote()` — `reports/reports-moderation.controller.ts`
+- Authentication: **required**; guards: `JwtAuthGuard`, `PermissionsGuard`
+- Permission: `reports.notes.pin`
 - Path params: `reportNumber`, `noteId`
-- Service call: `reports.pinModeratorNote()`
+- Body DTO: `PinModeratorNoteDto` (необязательное `pinned`). Эндпоинт **только закрепляет**: пустое тело и `{ "pinned": true }` закрепляют; `{ "pinned": false }` отвергается с 400 (открепление — только `DELETE` ниже под `reports.notes.unpin`).
+- Service call: `moderation.pinModeratorNote(reportNumber, noteId, true)`
 - Response type: `Promise<ReportDetails>`
-- Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
+- Errors: 401, 403, 400 (в том числе `pinned:false`), 404.
+
+### DELETE `/moderation/reports/:reportNumber/notes/:noteId/pin`
+
+- Handler: `ReportsModerationController.unpinNote()` — `reports/reports-moderation.controller.ts`
+- Authentication: **required**; guards: `JwtAuthGuard`, `PermissionsGuard`
+- Permission: `reports.notes.unpin` (право `reports.notes.pin` не требуется и не заменяет его)
+- Path params: `reportNumber`, `noteId`
+- Service call: `moderation.pinModeratorNote(reportNumber, noteId, false)`
+- Response type: `Promise<ReportDetails>`
+- Errors: 401, 403, 404.
 
 ### POST `/moderation/reports/:reportNumber/lock`
 
@@ -3771,7 +3782,7 @@
 - Min RoleGroup: `ADMIN`; Proposed permission: `reports.ban`
 - Path params: `userId`
 - Service call: `reports.unbanUser()`
-- Response type: `Promise<void>`
+- Response type: `Promise<void>`. Q48/ADR-0173: правило снятия санкции проверяется для каждого активного бана; отказ — 403 `sanction_revoke_forbidden`, ничего не снимается.
 - Errors: 401 (если `required`), 403 (если RoleGroup/владение), 400 (validation), 429 (throttle); бизнес-ошибки 404/409 — см. сервис.
 
 ### POST `/support/donation-problem`

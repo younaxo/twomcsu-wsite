@@ -152,6 +152,23 @@ describe('TRUST_PROXY (e2e)', () => {
       expect(await redis.client.get('bruteforce:login:192.0.2.99')).toBeNull();
     });
 
+    it('IPv6: соседи по /64 — один счётчик, lastip хранит последний полный адрес (Q21)', async () => {
+      // Окружение: TRUST_PROXY=loopback, req.ip берётся из X-Forwarded-For.
+      const first = '2001:db8:b:1::1';
+      const last = '2001:db8:b:1:aaaa:bbbb:cccc:dddd';
+      await login(first).expect(401);
+      await login(last).expect(401);
+      expect(await redis.client.get('bruteforce:login:v6:2001:db8:b:1')).toBe(
+        '2',
+      );
+      expect(await redis.client.get('bruteforce:lastip:v6:2001:db8:b:1')).toBe(
+        last,
+      );
+      const ttl = await redis.client.ttl('bruteforce:lastip:v6:2001:db8:b:1');
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(900);
+    });
+
     it('::ffff: и обычная форма одного адреса — один счётчик', async () => {
       const plain = '203.0.113.30';
       for (let i = 0; i < 5; i += 1) {

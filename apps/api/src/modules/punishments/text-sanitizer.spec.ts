@@ -1,0 +1,658 @@
+import {
+  isReasonMasked,
+  MAX_REASON_LENGTH,
+  publicReason,
+  REDACTED,
+  sanitizeLabel,
+  sanitizeReason,
+  sanitizeReasonDetailed,
+} from './text-sanitizer';
+
+/// Всё, что считается IP или контактом, обязано исчезнуть из вывода.
+function expectHidden(input: string, leaks: string[]) {
+  const out = sanitizeReason(input) ?? '';
+  for (const leak of leaks) {
+    expect(out).not.toContain(leak);
+  }
+  expect(out).toContain(REDACTED);
+}
+
+describe('sanitizeReason: базовое поведение', () => {
+  it('null, undefined и пустая строка дают null', () => {
+    expect(sanitizeReason(null)).toBeNull();
+    expect(sanitizeReason(undefined)).toBeNull();
+    expect(sanitizeReason('')).toBeNull();
+    expect(sanitizeReason('   \n\t ')).toBeNull();
+  });
+
+  it('обычный текст не меняется', () => {
+    expect(sanitizeReason('Использование читов (killaura)')).toBe(
+      'Использование читов (killaura)',
+    );
+  });
+
+  it('сохраняет переводы строк и убирает лишние пустые', () => {
+    expect(sanitizeReason('Первая\r\nвторая\n\n\n\nтретья')).toBe(
+      'Первая\nвторая\n\nтретья',
+    );
+  });
+
+  it('обрезает до 2048 символов', () => {
+    const out = sanitizeReason('а'.repeat(5000)) as string;
+    expect(Array.from(out).length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
+    expect(Array.from(out).length).toBe(MAX_REASON_LENGTH);
+  });
+
+  it('не рвёт суррогатные пары при обрезке', () => {
+    const out = sanitizeReason('😀'.repeat(3000)) as string;
+    expect(Array.from(out).length).toBe(MAX_REASON_LENGTH);
+    expect(out).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+});
+
+describe('sanitizeReason: цветовые коды', () => {
+  it.each([
+    ['&cКрасный &lжирный&r конец', 'Красный жирный конец'],
+    ['§aЗелёный§r', 'Зелёный'],
+    ['&#FF8800Оранжевый', 'Оранжевый'],
+    ['&x&f&f&8&8&0&0Hex', 'Hex'],
+    ['§x§f§f§8§8§0§0Hex', 'Hex'],
+    ['<#ff8800>Hex<#00ff00>', 'Hex'],
+    ['{#ff8800}Hex', 'Hex'],
+    ['одиночный § знак', 'одиночный знак'],
+    ['＆cПолноширинный амперсанд', 'Полноширинный амперсанд'],
+    ['&\u200Bc обход нулевой шириной', 'обход нулевой шириной'],
+  ])('%p', (input, expected) => {
+    expect(sanitizeReason(input)).toBe(expected);
+  });
+});
+
+describe('sanitizeReason: управляющие и bidi-символы', () => {
+  it.each([
+    ['a\u202Ebc', 'abc'],
+    ['a\u202Abc\u202C', 'abc'],
+    ['a\u2066b\u2069c', 'abc'],
+    ['a\u200Bb\u200Cc\u200Dd\uFEFFe', 'abcde'],
+    ['a\u200Eb\u200Fc', 'abc'],
+    ['a\u0000b\u0007c\u001Bd\u007Fe', 'abcde'],
+    ['a\u0085b', 'a\nb'],
+    ['мягкий\u00ADперенос', 'мягкийперенос'],
+    ['a\u2060b', 'ab'],
+    ['a\u{E0041}b', 'ab'],
+    ['a\uFE0Fb', 'ab'],
+  ])('%p -> %p', (input, expected) => {
+    expect(sanitizeReason(input)).toBe(expected);
+  });
+
+  it('табуляция становится пробелом', () => {
+    expect(sanitizeReason('a\tb')).toBe('a b');
+  });
+});
+
+describe('sanitizeReason: IPv4', () => {
+  it.each([
+    ['бан за 192.168.0.1 вход', ['192.168.0.1']],
+    ['ip 8.8.8.8', ['8.8.8.8']],
+    ['IP:127.0.0.1', ['127.0.0.1']],
+    ['с адреса 10.0.0.255:25565 зашёл', ['10.0.0.255', '25565']],
+    ['сеть 192.168.1.0/24', ['192.168.1.0', '/24']],
+    ['192 . 168 . 0 . 1', ['192', '168']],
+    ['192,168,0,1', ['192,168']],
+    ['192[.]168[.]0[.]1', ['192']],
+    ['192(.)168(.)0(.)1', ['168']],
+    ['192{dot}168{dot}0{dot}1', ['168']],
+    ['192[dot]168[dot]0[dot]1', ['168']],
+    ['192．168．0．1', ['168']],
+    ['192。168。0。1', ['168']],
+    ['192․168․0․1', ['168']],
+    ['192·168·0·1', ['168']],
+    ['１９２.１６８.０.１', ['168']],
+    ['١٩٢.١٦٨.٠.١', ['168']],
+    ['192\u200B.168.0.\u200B1', ['168']],
+    ['1́.2.3.4', ['2.3']],
+    ['&c192.&a168.&e0.&f1', ['168']],
+    ['IP.1.2.3.4', ['1.2.3.4']],
+    ['001.002.003.004', ['002']],
+    ['маска 127.0.0.%', ['127.0.0']],
+    ['маска 10.0.*', ['10.0']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('не трогает версии из трёх чисел и обычные числа', () => {
+    expect(sanitizeReason('версия 1.20.4, 3 дня')).toBe('версия 1.20.4, 3 дня');
+    expect(sanitizeReason('мут на 24 часа')).toBe('мут на 24 часа');
+  });
+});
+
+describe('sanitizeReason: IPv6', () => {
+  it.each([
+    ['2001:0db8:85a3:0000:0000:8a2e:0370:7334', ['2001', '7334']],
+    ['2001:db8::1', ['db8']],
+    ['ip 2001:db8:85a3::8a2e:370:7334 бан', ['85a3']],
+    ['fe80::1', ['fe80']],
+    ['::1', ['::1']],
+    ['[2001:db8::1]:25565', ['db8', '25565']],
+    ['[::1]', ['::1']],
+    ['::ffff:192.168.0.1', ['192.168']],
+    ['fe80::1%eth0', ['fe80', 'eth0']],
+    ['ip:2001:db8::1', ['db8']],
+    ['2001:DB8::ABCD', ['DB8']],
+    ['2001：db8：：1', ['db8']],
+    ['1:2:3:4:5:6:7:8', ['1:2:3']],
+    ['2001:db8:0:0:0:0:0:1', ['db8']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('не трогает время и двоеточия в тексте', () => {
+    expect(sanitizeReason('в 12:30:45 по МСК')).toBe('в 12:30:45 по МСК');
+    expect(sanitizeReason('Причина: читы')).toBe('Причина: читы');
+    expect(sanitizeReason('Примечание:: см. правила')).toBe(
+      'Примечание:: см. правила',
+    );
+  });
+});
+
+describe('sanitizeReason: e-mail', () => {
+  it.each([
+    ['пиши user@example.com', ['user@', 'example']],
+    ['USER.name+tag@Mail.Example.Org', ['USER', 'Example']],
+    ['user [at] example [dot] com', ['example']],
+    ['user(at)example(dot)com', ['example']],
+    ['user{at}example{.}com', ['example']],
+    ['user[@]example[.]com', ['example']],
+    ['user ＠ example ． com', ['example']],
+    ['user@пример.рф', ['пример']],
+    ['u@x.co', ['u@x']],
+    ['user\u200B@exa\u200Bmple.com', ['exa']],
+    ['user@mail.ru, пиши', ['mail']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+});
+
+describe('sanitizeReason: URL и домены', () => {
+  it.each([
+    ['см. https://example.com/path?x=1', ['example', 'path']],
+    ['http://1.2.3.4:8080/a', ['1.2.3.4']],
+    ['hxxp://evil[.]com', ['evil']],
+    ['www.example.com', ['example']],
+    ['example.com', ['example']],
+    ['EXAMPLE.COM', ['EXAMPLE']],
+    ['пример.рф', ['пример']],
+    ['заходи на cheats.ru/buy', ['cheats']],
+    ['example[.]com', ['example']],
+    ['example (dot) com', ['example']],
+    ['example . com', ['example']],
+    ['example。com', ['example']],
+    ['sub.domain.example.org', ['domain']],
+    ['discord.gg/abcdef', ['discord.gg', 'abcdef']],
+    ['t.me/someone', ['someone']],
+    ['vk.com/id123', ['id123']],
+    ['mc.server.su:25565', ['server']],
+    ['mailto:user@example.com', ['user@']],
+    ['ftp://files.example.net', ['files']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('не трогает слова с точкой без доменной зоны', () => {
+    expect(sanitizeReason('т.е. нарушение правил')).toBe(
+      'т.е. нарушение правил',
+    );
+    expect(sanitizeReason('Нарушение. Повторное')).toBe('Нарушение. Повторное');
+  });
+});
+
+describe('sanitizeReason: телефоны', () => {
+  it.each([
+    ['+7 (999) 123-45-67', ['999', '123']],
+    ['8 999 123 45 67', ['999']],
+    ['89991234567', ['9991234567']],
+    ['+7.999.123.45.67', ['999']],
+    ['+79991234567', ['9991234567']],
+    ['+7-999-123-4567', ['999']],
+    ['+٧ ٩٩٩ ١٢٣ ٤٥ ٦٧', ['999']],
+    ['８９９９１２３４５６７', ['9991234567']],
+    ['+1 555 1234', ['555']],
+    ['звони 7 999 123 45 67 срочно', ['999']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('не трогает короткие числа и даты', () => {
+    expect(sanitizeReason('бан на 30 дней')).toBe('бан на 30 дней');
+    expect(sanitizeReason('дата 17.11.2026')).toBe('дата 17.11.2026');
+    expect(sanitizeReason('дата 2026-11-17')).toBe('дата 2026-11-17');
+  });
+});
+
+describe('sanitizeReason: контактные идентификаторы', () => {
+  it.each([
+    ['discord: SomeUser', ['SomeUser']],
+    ['Discord - some_user', ['some_user']],
+    ['дискорд: user', ['user']],
+    ['дс = игрок2', ['игрок2']],
+    ['тг @someone', ['someone']],
+    ['tg: @someone_01', ['someone_01']],
+    ['telegram:someone', ['someone']],
+    ['вк: id12345', ['id12345']],
+    ['skype: live.nick', ['live.nick']],
+    ['whatsapp +123456789', ['123456789']],
+    ['Player#1234', ['Player', '1234']],
+    ['пиши @someone', ['someone']],
+    ['@some.user_1', ['some.user_1']],
+    ['почта: вася', ['вася']],
+    ['телефон: 12345', ['12345']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('не прячет обычные слова, совпадающие с названиями платформ без идентификатора', () => {
+    expect(sanitizeReason('спам про discord в чате')).toBe(
+      'спам про discord в чате',
+    );
+  });
+});
+
+describe('sanitizeReason: комбинации и устойчивость', () => {
+  it('прячет несколько контактов в одном тексте', () => {
+    const out = sanitizeReason(
+      '&cЧиты. ip 1.2.3.4, mail a@b.com, дс: user, +7 999 123 45 67, https://x.io',
+    ) as string;
+    for (const leak of ['1.2.3.4', 'a@b', 'user', '999', 'x.io']) {
+      expect(out).not.toContain(leak);
+    }
+    expect(out.startsWith('Читы.')).toBe(true);
+  });
+
+  it('вывод идемпотентен', () => {
+    const once = sanitizeReason('ip 1.2.3.4 и &cчиты') as string;
+    expect(sanitizeReason(once)).toBe(once);
+  });
+
+  it('контакт на границе обрезки входа не остаётся хвостом', () => {
+    const out = sanitizeReason(`${'а '.repeat(2100)}user@example.com`) ?? '';
+    expect(out).not.toContain('example');
+  });
+
+  it('вывод не содержит управляющих и bidi-символов', () => {
+    const out = sanitizeReason('a\u202Eb\u0000c\u2067d\u200Be') as string;
+    // eslint-disable-next-line no-control-regex
+    expect(out).not.toMatch(
+      /[\u0000-\u0008\u200B-\u200F\u202A-\u202E\u2066-\u2069]/,
+    );
+  });
+
+  it.each([
+    ['длинное слово', 'a'.repeat(4096)],
+    ['цепочка меток', 'a.'.repeat(2048)],
+    ['цифры и пробелы', '1 '.repeat(2048)],
+    ['двоеточия', ':'.repeat(4096)],
+    ['группы', 'ab:'.repeat(1365)],
+    ['собаки', 'a@'.repeat(2048)],
+    ['скобки', '[.'.repeat(2048)],
+    ['цифры с точками', '1.'.repeat(2048)],
+    ['метки платформ', 'ds '.repeat(1365)],
+  ])('не зависает на %s', (_name, input) => {
+    const started = Date.now();
+    sanitizeReason(input);
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+});
+
+describe('sanitizeLabel', () => {
+  it('склеивает строки в одну и убирает цвета и bidi', () => {
+    expect(sanitizeLabel('&cAdmin\u202E\nName')).toBe('Admin Name');
+  });
+
+  it('прячет контакты в имени выдавшего', () => {
+    expect(sanitizeLabel('Admin user@example.com') ?? '').not.toContain(
+      'example',
+    );
+  });
+
+  it('обрезает до 128 и возвращает null для пустого', () => {
+    expect(Array.from(sanitizeLabel('x'.repeat(500)) as string).length).toBe(
+      128,
+    );
+    expect(sanitizeLabel('&c')).toBeNull();
+  });
+
+  it('обычный ник не меняется', () => {
+    expect(sanitizeLabel('TestPlayer_001')).toBe('TestPlayer_001');
+  });
+});
+
+describe('sanitizeReason: IPv6 со встроенным IPv4 и портом (ревью HIGH-1)', () => {
+  it.each([
+    ['::ffff:1.2.3.4', ['1.2.3.4', 'ffff']],
+    ['::ffff:10.0.0.5', ['10.0.0.5', '0.5']],
+    ['64:ff9b::192.0.2.1', ['192.0.2.1', '2.1', '64:ff9b']],
+    ['::192.0.2.1', ['192.0.2.1', '2.1']],
+    ['[::ffff:1.2.3.4]:25565', ['1.2.3.4', '25565', '.4']],
+    ['2001:db8::1:25565', ['25565', '2001', ':5']],
+  ])('%p', (input, leaks) => {
+    const out = sanitizeReason(input) ?? '';
+    expect(out).toBe(REDACTED);
+    for (const leak of leaks) expect(out).not.toContain(leak);
+  });
+
+  it('IPv6 внутри текста скрывается целиком, без хвоста', () => {
+    expect(sanitizeReason('ip ::ffff:1.2.3.4 бан')).toBe(`ip ${REDACTED} бан`);
+  });
+});
+
+describe('sanitizeReason: домены с любыми зонами (ревью MEDIUM-2)', () => {
+  it.each([
+    'a.fm',
+    'a.gd',
+    'a.sk',
+    'a.fi',
+    'a.se',
+    'a.no',
+    'a.dk',
+    'a.at',
+    'a.ch',
+    'a.is',
+    'a.moe',
+    'a.lol',
+    'a.page',
+    'a.zip',
+    'a.mov',
+    'a.gay',
+    'site.xn--p1ai',
+    'cheats.zz',
+  ])('%p скрывается', (input) => {
+    expect(sanitizeReason(`заходи на ${input} там`)).toBe(
+      `заходи на ${REDACTED} там`,
+    );
+  });
+
+  it('обычный текст с точками не затрагивается', () => {
+    expect(sanitizeReason('ban for hacking.')).toBe('ban for hacking.');
+    expect(sanitizeReason('Banned for hacking. Appeal later.')).toBe(
+      'Banned for hacking. Appeal later.',
+    );
+    expect(sanitizeReason('Грубое нарушение. Повторно.')).toBe(
+      'Грубое нарушение. Повторно.',
+    );
+    expect(sanitizeReason('e.g. fly hacks, i.e. cheats')).toBe(
+      'e.g. fly hacks, i.e. cheats',
+    );
+    expect(sanitizeReason('версия 1.20.4')).toBe('версия 1.20.4');
+  });
+});
+
+describe('sanitizeReason: IPv4 с разделителями (ревью MEDIUM-3)', () => {
+  it.each([
+    ['192 168 1 1', ['192', '168']],
+    ['1 9 2 . 1 6 8 . 0 . 1', ['1 9 2', '1 6 8']],
+    ['192 dot 168 dot 0 dot 1', ['192', '168']],
+    ['192-168-0-1', ['192', '168']],
+    ['192_168_0_1', ['192', '168']],
+    ['192/168/0/1', ['192', '168']],
+    ['192 . 168 . 0 . 1', ['192', '168']],
+  ])('%p', (input, leaks) => {
+    const out = sanitizeReason(`ip ${input} бан`) ?? '';
+    expect(out).toBe(`ip ${REDACTED} бан`);
+    for (const leak of leaks) expect(out).not.toContain(leak);
+  });
+
+  it('обычные числа и даты не затрагиваются', () => {
+    expect(sanitizeReason('бан на 1 2 3 4 дня')).toBe('бан на 1 2 3 4 дня');
+    expect(sanitizeReason('дата 17-11-2024')).toBe('дата 17-11-2024');
+    expect(sanitizeReason('счёт 2024 10 12')).toBe('счёт 2024 10 12');
+    expect(sanitizeReason('значения 300 400 500')).toBe('значения 300 400 500');
+  });
+});
+
+/// Каждая запись обязана быть скрыта целиком, без хвоста, в обычном тексте.
+function expectWholeHidden(prefix: string, input: string, suffix: string) {
+  expect(sanitizeReason(`${prefix} ${input} ${suffix}`)).toBe(
+    `${prefix} ${REDACTED} ${suffix}`,
+  );
+}
+
+describe('sanitizeReason: повторное ревью M1, телефоны с косой чертой, _ и тире', () => {
+  it.each([
+    '8/999/123/45/67',
+    '8_999_123_45_67',
+    '8–999–123–45–67',
+    '8—999—123—45—67',
+    '8‑999‑123‑45‑67',
+    '+7/999/123/45/67',
+  ])('%p', (input) => {
+    expectWholeHidden('звони', input, 'срочно');
+  });
+
+  it('IPv4 с en dash и em dash тоже скрывается', () => {
+    expectWholeHidden('ip', '192–168–0–1', 'бан');
+    expectWholeHidden('ip', '192—168—0—1', 'бан');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M2, символы-двойники точки', () => {
+  it.each([
+    '192‧168‧0‧1',
+    '192•168•0•1',
+    '192։168։0։1',
+    '192 • 168 • 0 • 1',
+    '192∙168∙0∙1',
+    '192⸱168⸱0⸱1',
+    '192･168･0･1',
+    '192ꓸ168ꓸ0ꓸ1',
+    '192●168●0●1',
+    '192◦168◦0◦1',
+  ])('%p', (input) => {
+    expectWholeHidden('ip', input, 'бан');
+  });
+
+  it('маркер списка в начале строки не превращается в точку', () => {
+    expect(sanitizeReason('• первое\n• второе')).toBe('• первое\n• второе');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M3, кириллические и длинные зоны', () => {
+  it.each([
+    'пример.москва',
+    'пример.онлайн',
+    'пример.сайт',
+    'example.museum',
+    'example.tokyo',
+    'EXAMPLE.TOKYO',
+    '.tokyo',
+    '.москва',
+  ])('%p', (input) => {
+    expectWholeHidden('заходи на', input, 'там');
+  });
+
+  it('точка в конце предложения не считается зоной', () => {
+    expect(sanitizeReason('Нарушение. Токио далеко')).toBe(
+      'Нарушение. Токио далеко',
+    );
+    expect(sanitizeReason('ждём... tokyo')).toBe('ждём... tokyo');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M4, пробелы вокруг слеша', () => {
+  it.each(['t . me / user', 'discord. gg /abc', 't.me / user', 't . me/user'])(
+    '%p',
+    (input) => {
+      expectWholeHidden('пиши', input, 'сюда');
+    },
+  );
+
+  it('несколько сегментов пути скрываются целиком', () => {
+    expectWholeHidden('см', 'example.com/a / b/c', 'конец');
+  });
+});
+
+describe('sanitizeReason: повторное ревью M5, метки платформ и e-mail без зоны', () => {
+  it.each([
+    ['snap: foo', ['foo']],
+    ['ig: foo', ['foo']],
+    ['vk id 12345', ['12345']],
+    ['vk id: 12345', ['12345']],
+    ['ds user', ['user']],
+    ['add me tg vasya', ['vasya']],
+    ['user@gmail', ['user', 'gmail']],
+    ['дискорд ник вася', ['вася']],
+    ['insta foo', ['foo']],
+  ])('%p', (input, leaks) => {
+    expectHidden(input, leaks);
+  });
+
+  it('add me tg vasya: скрыт только идентификатор с меткой', () => {
+    expect(sanitizeReason('add me tg vasya')).toBe(`add me ${REDACTED}`);
+  });
+
+  it('известные ложные срабатывания допустимы, обычные слова не затронуты', () => {
+    // Число перед меткой: денежная сумма, не контакт.
+    expect(sanitizeReason('штраф 5000 тг штраф')).toBe('штраф 5000 тг штраф');
+    expect(sanitizeReason('спам про discord в чате')).toBe(
+      'спам про discord в чате',
+    );
+  });
+});
+
+describe('sanitizeReason: повторное ревью L1, обрезка', () => {
+  it('обрезка не оставляет часть адреса: 1.2.3.4567 -> 1.2.3.45', () => {
+    const out = sanitizeReason(`${'а'.repeat(2039)} 1.2.3.4567`) as string;
+    expect(out).not.toContain('1.2.3.45');
+    expect(out.endsWith(REDACTED)).toBe(true);
+    expect(Array.from(out).length).toBeLessThanOrEqual(MAX_REASON_LENGTH + 1);
+  });
+
+  it('маркер скрытия не обрезается посередине', () => {
+    const out = sanitizeReason(`${'а'.repeat(2045)} 1.2.3.4`) as string;
+    expect(out).not.toMatch(/\[[скрыто]{0,6}$/u);
+    expect(Array.from(out).length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
+  });
+});
+
+describe('sanitizeReason: признак маскировки (Q59, допущение)', () => {
+  it('sanitizeReasonDetailed возвращает masked', () => {
+    expect(sanitizeReasonDetailed('читы 1.2.3.4')).toEqual({
+      text: `читы ${REDACTED}`,
+      masked: true,
+    });
+    expect(sanitizeReasonDetailed('читы')).toEqual({
+      text: 'читы',
+      masked: false,
+    });
+    expect(sanitizeReasonDetailed(null)).toEqual({ text: null, masked: false });
+  });
+
+  it('masked выставлен, даже если маркер отсечён обрезкой', () => {
+    const r = sanitizeReasonDetailed(`1.2.3.4 ${'а'.repeat(3000)}`);
+    expect(r.masked).toBe(true);
+  });
+
+  it('isReasonMasked и publicReason: причина с маскировкой скрывается целиком', () => {
+    expect(isReasonMasked(`читы ${REDACTED}`)).toBe(true);
+    expect(isReasonMasked('читы')).toBe(false);
+    expect(isReasonMasked(null)).toBe(false);
+    expect(publicReason(`читы ${REDACTED}`)).toBeNull();
+    expect(publicReason('читы')).toBe('читы');
+    expect(publicReason(null)).toBeNull();
+  });
+});
+
+describe('sanitizeReason: склонения и описательные формы платформ (N1)', () => {
+  const cases: Array<[string, string]> = [
+    ['ник в дискорде: vasya', 'vasya'],
+    ['my discord is vasya', 'vasya'],
+    ['discord→vasya', 'vasya'],
+    ['discord -> vasya', 'vasya'],
+    ['пиши в телеге vasya', 'vasya'],
+    ['мой телеграм: vasya', 'vasya'],
+    ['в телеграмме vasya', 'vasya'],
+    ['в телеграмме: vasya', 'vasya'],
+    ['пиши в инсте vasya', 'vasya'],
+    ['инста это vasya', 'vasya'],
+    ['в инстаграме: vasya', 'vasya'],
+    ['в ватсапе vasya', 'vasya'],
+    ['ватсап: vasya', 'vasya'],
+    ['в вацапе vasya', 'vasya'],
+    ['в скайпе vasya', 'vasya'],
+    ['скайп - vasya', 'vasya'],
+    ['в вк vasya', 'vasya'],
+    ['вк→vasya', 'vasya'],
+    ['в вайбере vasya', 'vasya'],
+    ['через дискорд vasya', 'vasya'],
+    ['на дискорду vasya', 'vasya'],
+    ['tg→vasya', 'vasya'],
+    ['in discord vasya', 'vasya'],
+    ['telegram is vasya', 'vasya'],
+    ['tiktok: vasya', 'vasya'],
+    ['в тиктоке vasya', 'vasya'],
+    ['в вконтакте vasya', 'vasya'],
+  ];
+  it.each(cases)('%s: идентификатор скрыт', (input, leak) => {
+    expectHidden(input, [leak]);
+  });
+
+  it('идентификатор скрыт и в середине текста, остальное сохраняется', () => {
+    const out =
+      sanitizeReason('Оскорбления, писал в дискорде: vasya, бан') ?? '';
+    expect(out).not.toContain('vasya');
+    expect(out.startsWith('Оскорбления')).toBe(true);
+    expect(out.endsWith('бан')).toBe(true);
+  });
+
+  it('обычные слова без платформы не затрагиваются', () => {
+    expect(sanitizeReason('институт и инструкция')).toBe(
+      'институт и инструкция',
+    );
+    expect(sanitizeReason('телевизор и телефонная связь')).not.toContain(
+      REDACTED,
+    );
+  });
+});
+
+describe('sanitizeReason: секреты в причине (N5)', () => {
+  const cases: Array<[string, string]> = [
+    ['password: hunter2', 'hunter2'],
+    ['Password=Qwerty!1', 'Qwerty'],
+    ['passwd - secretvalue', 'secretvalue'],
+    ['пароль: vasya123', 'vasya123'],
+    ['пароль это qwerty', 'qwerty'],
+    ['password is hunter2', 'hunter2'],
+    ['пароль vasya123', 'vasya123'],
+    ['его пароль vasya_pass!', 'vasya_pass'],
+    ['pass: zzzz', 'zzzz'],
+    ['pin=4821', '4821'],
+    ['token: abc', 'abc'],
+    ['токен: abcdef', 'abcdef'],
+    ['api key: AbCdEf12', 'AbCdEf12'],
+    ['Authorization: Bearer abcdefgh12345678', 'abcdefgh12345678'],
+    ['Basic dXNlcjpwYXNzd29yZA==', 'dXNlcjpwYXNzd29yZA'],
+    [`ghp_${'a1B2'.repeat(9)}`, 'a1B2a1B2'],
+    ['github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuv', 'ABCDEFG0'],
+    [`sk-${'Ab3'.repeat(10)}`, 'Ab3Ab3'],
+    ['xoxb-1234567890-abcdefghij', '1234567890'],
+    ['AKIAIOSFODNN7EXAMPLE', 'AKIAIOSFODNN7'],
+    ['eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4', 'eyJhbGci'],
+    ['d41d8cd98f00b204e9800998ecf8427e', 'd41d8cd98f'],
+    [`ключ ${'Zx9'.repeat(14)}=`, 'Zx9Zx9Zx9'],
+  ];
+  it.each(cases)('%s: секрет скрыт', (input, leak) => {
+    expectHidden(input, [leak]);
+  });
+
+  it('длинная строка без цифр (одного регистра) секретом не считается', () => {
+    const word = 'а'.repeat(40);
+    expect(sanitizeReason(word)).toBe(word);
+    const latin = 'abcdefghijklmnopqrstuvwxyzabcdefghij';
+    expect(sanitizeReason(latin)).toBe(latin);
+  });
+
+  it('обычные слова pass/пароль без значения не скрываются', () => {
+    expect(sanitizeReason('украл пароль у игрока')).toBe(
+      'украл пароль у игрока',
+    );
+    expect(sanitizeReason('pass the ball')).toBe('pass the ball');
+  });
+});

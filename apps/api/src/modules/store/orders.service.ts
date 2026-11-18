@@ -509,41 +509,34 @@ export class OrdersService {
         );
         return { accepted: false, reason: 'amount_mismatch' };
       }
-      const transitioned = await this.prisma.$transaction(
-        async (tx) => {
-          const now = new Date();
-          const moved = await tx.order.updateMany({
-            where: { id: order.id, status: OrderStatus.PENDING },
-            data: {
-              status: OrderStatus.COMPLETED,
-              paidAt: now,
-              paymentWebhookVerifiedAt: now,
-              ...(order.paymentId ? {} : { paymentId: event.paymentId }),
-            },
+      const transitioned = await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const moved = await tx.order.updateMany({
+          where: { id: order.id, status: OrderStatus.PENDING },
+          data: {
+            status: OrderStatus.COMPLETED,
+            paidAt: now,
+            paymentWebhookVerifiedAt: now,
+            ...(order.paymentId ? {} : { paymentId: event.paymentId }),
+          },
+        });
+        if (moved.count !== 1) {
+          return false;
+        }
+        if (order.promoCodeId) {
+          await tx.promoCode.update({
+            where: { id: order.promoCodeId },
+            data: { usedCount: { increment: 1 } },
           });
-          if (moved.count !== 1) {
-            return false;
-          }
-          if (order.promoCodeId) {
-            await tx.promoCode.update({
-              where: { id: order.promoCodeId },
-              data: { usedCount: { increment: 1 } },
+          if (order.userId) {
+            await tx.promoCodeUsage.createMany({
+              data: [{ promoCodeId: order.promoCodeId, userId: order.userId }],
+              skipDuplicates: true,
             });
-            if (order.userId) {
-              await tx.promoCodeUsage.createMany({
-                data: [
-                  { promoCodeId: order.promoCodeId, userId: order.userId },
-                ],
-                skipDuplicates: true,
-              });
-            }
           }
-          return true;
-        },
-        // Параллельные ретраи вебхука ждут блокировку строки заказа, удерживая
-        // соединения пула: дефолтные 2 с на старт транзакции не хватает (500).
-        { maxWait: 10_000, timeout: 10_000 },
-      );
+        }
+        return true;
+      });
       return transitioned
         ? { accepted: true }
         : { accepted: true, reason: 'already_processed' };

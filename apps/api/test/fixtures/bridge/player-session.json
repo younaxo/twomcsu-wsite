@@ -1,0 +1,25 @@
+{
+  "name": "player-session",
+  "streamId": "player-0001",
+  "steps": [
+    {
+      "type": "player.join",
+      "data": {
+        "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "name": "TestPlayer001",
+        "sessionId": "sess-0001",
+        "onlineMode": true,
+        "proxy": null
+      }
+    },
+    {
+      "type": "player.quit",
+      "data": {
+        "uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+        "sessionId": "sess-0001",
+        "reason": "disconnect",
+        "playedSeconds": 120
+      }
+    }
+  ]
+}

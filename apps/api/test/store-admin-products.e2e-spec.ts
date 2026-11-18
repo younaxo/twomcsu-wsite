@@ -75,6 +75,8 @@ describe('Store admin products (e2e)', () => {
     });
     await permissions.invalidateRole(role.id);
     await permissions.invalidateUser(user.id);
+    // 2FA персонала обязательна всегда (Q22): без неё право даёт 403.
+    await markStaffTwoFactorEnabled(prisma, user.id);
   }
 
   let admin: TestUser;
