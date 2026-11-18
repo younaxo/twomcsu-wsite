@@ -1,13 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import {
   isDateRangeInverted,
@@ -15,6 +13,11 @@ import {
 } from '../../common/date-range.util';
 import { maskNickname } from '../../common/privacy.util';
 import { AuditService } from '../audit/audit.service';
+import {
+  BuyerDeliveryStatus,
+  buyerDeliveryStatus,
+} from '../delivery/delivery-status';
+import { DeliveryService } from '../delivery/delivery.service';
 import { StorageService } from '../files/storage.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,6 +25,7 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
+import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import {
@@ -36,7 +40,8 @@ import {
   PUBLIC_PRODUCT_BRIEF_SELECT,
   PUBLIC_VARIANT_SELECT,
 } from './public-product';
-import { badRequest, StoreCartError } from './store-errors';
+import { CheckoutPolicyService } from './checkout-policy.service';
+import { badRequest, paymentUnavailable, StoreCartError } from './store-errors';
 
 function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
   return lines.map((l) => ({
@@ -55,11 +60,69 @@ const ORDER_INCLUDE = {
     include: {
       product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
       variant: { select: PUBLIC_VARIANT_SELECT },
-      bundle: true,
+      bundle: {
+        select: { id: true, name: true, slug: true, image: true },
+      },
       giftToUser: { select: PUBLIC_USER_SELECT },
+      // Только статусы: из них считается деталь-свободный статус выдачи (0.7).
+      deliveryTasks: { select: { status: true } },
     },
   },
 } as const;
+
+/// Внутренние платёжные поля заказа: покупателю не отдаются (0.6, N1 ревью S1).
+/// Статус оплаты и время — `status` и `paidAt`.
+const BUYER_HIDDEN_ORDER_FIELDS = [
+  'paymentId',
+  'paymentProvider',
+  'paymentWebhookVerifiedAt',
+  'promoCodeId',
+] as const;
+
+type BuyerItems<T> = T extends { items: readonly (infer I)[] }
+  ? {
+      items: Array<
+        Omit<I, 'deliveryTasks'> & {
+          deliveryStatus: BuyerDeliveryStatus | null;
+        }
+      >;
+    }
+  : unknown;
+
+export type BuyerOrder<T> = Omit<
+  T,
+  (typeof BUYER_HIDDEN_ORDER_FIELDS)[number] | 'items'
+> & { deliveryStatus: BuyerDeliveryStatus | null } & BuyerItems<T>;
+
+/// Ответ покупателю: заказ без внутренних платёжных полей и со статусом
+/// выдачи (0.7): `pending` | `delivered` | `failed` — без внутренних деталей
+/// (исполнитель, попытки, ошибки не отдаются). Для незавершённого заказа
+/// статус выдачи `null`. Админские эндпоинты этим не пользуются.
+export function toBuyerOrder<T extends object>(order: T): BuyerOrder<T> {
+  const copy = { ...order } as Record<string, unknown>;
+  for (const field of BUYER_HIDDEN_ORDER_FIELDS) {
+    delete copy[field];
+  }
+  const completed = copy.status === OrderStatus.COMPLETED;
+  const allStatuses: DeliveryTaskStatus[] = [];
+  if (Array.isArray(copy.items)) {
+    copy.items = copy.items.map((raw: Record<string, unknown>) => {
+      const { deliveryTasks, ...rest } = raw;
+      const statuses = Array.isArray(deliveryTasks)
+        ? (deliveryTasks as Array<{ status: DeliveryTaskStatus }>).map(
+            (t) => t.status,
+          )
+        : [];
+      allStatuses.push(...statuses);
+      return {
+        ...rest,
+        deliveryStatus: completed ? buyerDeliveryStatus(statuses) : null,
+      };
+    });
+  }
+  copy.deliveryStatus = completed ? buyerDeliveryStatus(allStatuses) : null;
+  return copy as unknown as BuyerOrder<T>;
+}
 
 /// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
 /// Скалярные поля позиции сохранены (контракт AdminOrderDto); товар, вариант и
@@ -122,6 +185,8 @@ export class OrdersService {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly checkout: CheckoutPolicyService,
+    private readonly delivery: DeliveryService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -176,22 +241,29 @@ export class OrdersService {
       total: Prisma.Decimal;
     },
     promoCodeId: string | null,
+    acceptedOfferVersion: string | undefined,
   ) {
-    await this.assertNotAlreadyOwned(userId, lines);
-
+    // Провайдера нет (production без PAYMENT_PROVIDER) — честный 503 ДО любой
+    // записи: «висячих» PENDING-заказов без платежа не появляется.
     const provider = this.payments.getConfigured();
     if (!provider) {
-      throw new ServiceUnavailableException(
-        'Платёжный провайдер не настроен — оформление заказов временно недоступно',
-      );
+      throw paymentUnavailable();
     }
+    const offer = await this.checkout.assertOfferAccepted(acceptedOfferVersion);
+    const recipientNick = await this.checkout.resolveRecipientNick(
+      userId,
+      guestMinecraftNick ?? undefined,
+    );
+    await this.assertNotAlreadyOwned(userId, lines);
 
     const orderNumber = await this.generateOrderNumber();
     const order = await this.prisma.order.create({
       data: {
         orderNumber,
         userId: userId ?? undefined,
-        guestMinecraftNick: guestMinecraftNick ?? undefined,
+        guestMinecraftNick: recipientNick,
+        offerVersion: offer.offerVersion,
+        offerAcceptedAt: offer.offerAcceptedAt,
         subtotal: totals.subtotal,
         discountAmount: totals.discountAmount,
         promoCodeId: promoCodeId ?? undefined,
@@ -212,18 +284,31 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
 
-    const payment = await provider.createPayment(
-      orderNumber,
-      totals.total,
-      `Заказ ${orderNumber}`,
-    );
+    let payment: Awaited<ReturnType<PaymentProvider['createPayment']>>;
+    try {
+      payment = await provider.createPayment(
+        orderNumber,
+        totals.total,
+        `Заказ ${orderNumber}`,
+      );
+    } catch (error) {
+      // Платёж не создан: заказ не остаётся PENDING без платежа.
+      this.logger.warn(
+        `Не удалось создать платёж ${orderNumber}: ${(error as Error).message}`,
+      );
+      await this.prisma.order.updateMany({
+        where: { id: order.id, status: OrderStatus.PENDING },
+        data: { status: OrderStatus.FAILED },
+      });
+      throw paymentUnavailable();
+    }
     const completed = await this.prisma.order.update({
       where: { id: order.id },
       data: { paymentId: payment.paymentId, paymentProvider: provider.name },
       include: ORDER_INCLUDE,
     });
 
-    return { order: completed, paymentUrl: payment.paymentUrl };
+    return { order: toBuyerOrder(completed), paymentUrl: payment.paymentUrl };
   }
 
   async createFromCart(userId: string, dto: CreateOrderDto) {
@@ -257,6 +342,7 @@ export class OrdersService {
       totals.lines,
       totals,
       cart.promoCode?.id ?? null,
+      dto.offerVersion,
     );
 
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -269,6 +355,7 @@ export class OrdersService {
   }
 
   async quickBuy(dto: QuickBuyDto) {
+    this.checkout.assertQuickBuyEnabled();
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: dto.variantId },
       include: { product: true },
@@ -313,16 +400,41 @@ export class OrdersService {
       totals.lines,
       totals,
       null,
+      dto.offerVersion,
     );
   }
 
-  async listMine(userId: string) {
-    const items = await this.prisma.order.findMany({
-      where: { userId },
-      include: ORDER_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
-    return { items, total: items.length };
+  /// Публичные параметры оформления для страницы /shop/checkout (0.5): версия
+  /// оферты, доступна ли оплата (иначе клиент показывает 503-состояние с
+  /// неактивной кнопкой) и включён ли анонимный quick-buy. Без секретов.
+  async checkoutConfig() {
+    return {
+      offerVersion: await this.checkout.currentOfferVersion(),
+      paymentAvailable: this.payments.getConfigured() !== undefined,
+      quickBuyEnabled: this.checkout.isQuickBuyEnabled(),
+    };
+  }
+
+  /// Только заказы текущего пользователя (`userId` из токена, не из запроса).
+  async listMine(userId: string, query: ListMyOrdersQueryDto = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where: Prisma.OrderWhereInput = {
+      userId,
+      ...(query.status ? { status: query.status } : {}),
+    };
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: ORDER_INCLUDE,
+        // Второй ключ — стабильная пагинация при одинаковом createdAt.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { items: orders.map((o) => toBuyerOrder(o)), total, page, limit };
   }
 
   async getByOrderNumber(orderNumber: string, userId: string) {
@@ -330,13 +442,12 @@ export class OrdersService {
       where: { orderNumber },
       include: ORDER_INCLUDE,
     });
-    if (!order) {
+    // Чужой и гостевой (userId = NULL) заказ неотличим от несуществующего:
+    // тот же 404 и то же тело, номер заказа не подтверждается постороннему.
+    if (!order || order.userId === null || order.userId !== userId) {
       throw new NotFoundException('Заказ не найден');
     }
-    if (order.userId !== userId) {
-      throw new ForbiddenException('Это не ваш заказ');
-    }
-    return order;
+    return toBuyerOrder(order);
   }
 
   async recentPurchases(): Promise<unknown[]> {
@@ -537,6 +648,13 @@ export class OrdersService {
         }
         return true;
       });
+      if (transitioned) {
+        // ADR-0184, «Реализация 0.7»: задания выдачи создаются ПОСЛЕ коммита
+        // COMPLETED отдельным шагом (только у победителя перехода). Ошибка
+        // здесь логируется внутри и не отменяет оплату: недостающие задания
+        // досоздаёт фоновая сверка.
+        await this.delivery.createTasksAfterPayment(order.id);
+      }
       return transitioned
         ? { accepted: true }
         : { accepted: true, reason: 'already_processed' };
@@ -657,14 +775,6 @@ export class OrdersService {
     };
   }
 
-  private async requireOrder(id: string) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
-    if (!order) {
-      throw new NotFoundException('Заказ не найден');
-    }
-    return order;
-  }
-
   /// Отмена только PENDING (0.4). Статус перечитывается под блокировкой строки
   /// (FOR UPDATE): параллельный вебхук оплаты не пройдёт между проверкой и
   /// записью. Оплаченный/завершённый/возвращённый/неуспешный заказ — 409.
@@ -719,20 +829,38 @@ export class OrdersService {
     );
   }
 
-  async refund(id: string, dto: RefundOrderDto) {
-    const order = await this.requireOrder(id);
-    if (order.status !== OrderStatus.COMPLETED) {
-      throw new BadRequestException(
-        'Возврат возможен только для завершённого заказа',
-      );
-    }
-    return this.prisma.order.update({
-      where: { id },
-      data: {
-        status: OrderStatus.REFUNDED,
-        refundedAt: new Date(),
-        cancelReason: dto.reason,
+  /// Возврат (0.7, ADR-0184 Р4/Р5): запрещён (409), если любое задание
+  /// выдачи в DELIVERED/MANUAL_DONE/IN_PROGRESS/NEEDS_ATTENTION. Иначе в одной
+  /// транзакции: блокировка заказа и заданий, отмена невыданных заданий,
+  /// отзыв сайтовой выдачи, смена статуса. Деньги провайдер не возвращает
+  /// (это 0.9): меняется только статус.
+  async refund(id: string, dto: RefundOrderDto, actorId?: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const locked = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM orders WHERE id = ${id} FOR UPDATE`;
+        if (locked.length === 0) {
+          throw new NotFoundException('Заказ не найден');
+        }
+        const order = await tx.order.findUniqueOrThrow({ where: { id } });
+        if (order.status !== OrderStatus.COMPLETED) {
+          throw new BadRequestException(
+            'Возврат возможен только для завершённого заказа',
+          );
+        }
+        await this.delivery.assertRefundAllowed(tx, id);
+        await this.delivery.cancelOpenTasks(tx, id);
+        await this.delivery.revokeSiteGrants(tx, id, actorId);
+        return tx.order.update({
+          where: { id },
+          data: {
+            status: OrderStatus.REFUNDED,
+            refundedAt: new Date(),
+            cancelReason: dto.reason,
+          },
+        });
       },
-    });
+      { maxWait: 10_000, timeout: 10_000 },
+    );
   }
 }

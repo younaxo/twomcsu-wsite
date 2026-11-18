@@ -22,6 +22,12 @@ export class QuickBuyDto {
   @Length(1, 16)
   guestMinecraftNick!: string;
 
+  /// Версия оферты, принятая покупателем (0.5); проверяется сервисом.
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  offerVersion?: string;
+
   @IsOptional()
   @IsEmail()
   contactEmail?: string;

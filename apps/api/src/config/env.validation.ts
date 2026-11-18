@@ -343,4 +343,22 @@ export const envValidationSchema = Joi.object({
     .min(1000)
     .max(60_000)
     .default(10_000),
+  /// Анонимный quick-buy (0.5, ADR-0186 Р5): аварийный выключатель. В dev/test
+  /// по умолчанию включён, в production (и при пустом/неизвестном NODE_ENV)
+  /// выключен, пока владелец не включит явно вместе с боевым запуском.
+  QUICK_BUY_ENABLED: Joi.boolean().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.boolean().default(true),
+    otherwise: Joi.boolean().default(false),
+  }),
+  /// Жёсткий аварийный запрет выдачи купленного (0.7, ADR-0184 Р10, Q80): явный
+  /// false выключает доставку независимо от настройки сайта
+  /// `store.delivery.enabled`. Без значения решает настройка (по умолчанию выкл.).
+  /// Значение не требует перезапуска только в смысле настройки; смена
+  /// переменной — перезапуск процесса.
+  STORE_DELIVERY_ENABLED: Joi.boolean().optional(),
+  /// Фоновая сверка заданий выдачи (ADR-0184, «Реализация 0.7»): досоздаёт
+  /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
+  /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
+  DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
 }).unknown(true);
