@@ -48,6 +48,10 @@
 - `userId` оставлен в ответе покупателю (это его собственный id; существующие e2e проверяют `userId === null` у гостевого заказа).
 - Ответ для «последних входов» — те же активные сессии (журнала завершённых входов для пользователя в API нет).
 
+## Доработки по ревью
+
+В `ListMyOrdersQueryDto` добавлен `@Max(10000)` на `page` (`limit` уже имел `@Max(50)`, без изменений); добавлен e2e-кейс `page=99999999999` -> 400 (не 500). Проверки: `tsc --noEmit` в apps/api чисто (rc=0); `jest src/modules/store`: Test Suites 12 passed, 12 total; Tests 182 passed, 182 total; e2e `store-my-orders` (одноразовая БД, `e2e-guarded.sh`): rc=0, Tests 8 passed, 8 total (было 7).
+
 ## Блокеры
 
 Нет. Push не выполнялся.

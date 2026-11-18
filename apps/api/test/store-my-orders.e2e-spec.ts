@@ -178,6 +178,13 @@ describe('Мои заказы и личный журнал (0.6, e2e)', () => {
       .expect(400);
   });
 
+  it('список: огромный page — 400, а не 500', async () => {
+    await request(app.getHttpServer())
+      .get('/store/orders?page=99999999999')
+      .set('Authorization', auth(alice))
+      .expect(400);
+  });
+
   it('пустой список у пользователя без заказов', async () => {
     const fresh = await createUser('fresh');
     try {
