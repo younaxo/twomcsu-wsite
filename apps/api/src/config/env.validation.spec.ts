@@ -167,8 +167,11 @@ describe('envValidationSchema PAYMENT_WEBHOOK_SECRET (ADR-0157)', () => {
   });
 
   it('заданный секрет сохраняется', () => {
-    const { value } = validate({ ...base, PAYMENT_WEBHOOK_SECRET: 's3cret' });
-    expect(value.PAYMENT_WEBHOOK_SECRET).toBe('s3cret');
+    const { value } = validate({
+      ...base,
+      PAYMENT_WEBHOOK_SECRET: 's'.repeat(32),
+    });
+    expect(value.PAYMENT_WEBHOOK_SECRET).toBe('s'.repeat(32));
   });
 });
 
@@ -339,5 +342,78 @@ describe('envValidationSchema PRISMA_TX_* (ADR-0183)', () => {
     ['PRISMA_TX_TIMEOUT_MS', 'abc'],
   ])('%s=%s отклоняется', (key, val) => {
     expect(validate({ [key]: val }).error).toBeDefined();
+  });
+});
+
+describe('envValidationSchema PAYMENT_PROVIDER и секреты (ADR-0187)', () => {
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true, abortEarly: false });
+  const prod = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    TURNSTILE_DISABLED: 'false',
+    TURNSTILE_SECRET_KEY: 'test-secret',
+    COOKIE_SECURE: 'true',
+  };
+
+  it.each(['development', 'test'])('NODE_ENV=%s: по умолчанию test', (env) => {
+    const { error, value } = validate({ ...base, NODE_ENV: env });
+    expect(error).toBeUndefined();
+    expect(value.PAYMENT_PROVIDER).toBe('test');
+  });
+
+  it.each(['test', 'mock-http'])('вне production допустим %s', (name) => {
+    expect(validate({ ...base, PAYMENT_PROVIDER: name }).error).toBeUndefined();
+  });
+
+  it('вне production неизвестный провайдер отвергается', () => {
+    const { error } = validate({ ...base, PAYMENT_PROVIDER: 'yookassa' });
+    expect(error?.message).toMatch(/PAYMENT_PROVIDER/);
+  });
+
+  it.each(['test', 'mock-http'])(
+    'production: PAYMENT_PROVIDER=%s отвергается (fail closed)',
+    (name) => {
+      const { error } = validate({ ...prod, PAYMENT_PROVIDER: name });
+      expect(error?.message).toMatch(/PAYMENT_PROVIDER/);
+    },
+  );
+
+  it('production: пусто или не задано — старт возможен, значение пустое', () => {
+    const { error, value } = validate({ ...prod });
+    expect(error?.message ?? '').not.toMatch(/PAYMENT_PROVIDER/);
+    expect(value.PAYMENT_PROVIDER).toBe('');
+  });
+
+  it('пустой NODE_ENV = production: test отвергается', () => {
+    const { error } = validate({
+      ...base,
+      NODE_ENV: '',
+      PAYMENT_PROVIDER: 'test',
+    });
+    expect(error?.message).toMatch(/PAYMENT_PROVIDER/);
+  });
+
+  it.each(['PAYMENT_WEBHOOK_SECRET', 'PAYMENT_WEBHOOK_SECRET_PREVIOUS'])(
+    '%s короче 32 символов отвергается, пустой допустим',
+    (key) => {
+      expect(
+        validate({ ...base, [key]: 'x'.repeat(31) }).error?.message,
+      ).toMatch(new RegExp(key));
+      expect(
+        validate({ ...base, [key]: 'x'.repeat(32) }).error,
+      ).toBeUndefined();
+      expect(validate({ ...base, [key]: '' }).error).toBeUndefined();
+    },
+  );
+
+  it('значения по умолчанию для таймаута и повторов', () => {
+    const { value } = validate(base);
+    expect(value.PAYMENT_HTTP_TIMEOUT_MS).toBe(5000);
+    expect(value.PAYMENT_HTTP_RETRIES).toBe(2);
+    expect(validate({ ...base, PAYMENT_HTTP_RETRIES: 6 }).error).toBeDefined();
   });
 });

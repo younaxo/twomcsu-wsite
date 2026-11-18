@@ -286,18 +286,82 @@ describe('OrdersService.handleWebhook (ADR-0157)', () => {
     expect(prisma.order.updateMany).not.toHaveBeenCalled();
   });
 
-  it('поздний succeeded после FAILED: already_processed, статус не меняется (R29)', async () => {
-    // Текущее поведение зафиксировано намеренно, см. RISKS R29.
-    const { service, prisma, tx } = setup(
-      baseOrder({ status: OrderStatus.FAILED }),
-    );
-    await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
-      accepted: true,
-      reason: 'already_processed',
+  describe('поздний succeeded после FAILED (R29, ADR-0187)', () => {
+    it('тот же paymentId, сумма и валюта: FAILED -> COMPLETED в транзакции, задания выдачи', async () => {
+      const { service, prisma, tx, delivery } = setup(
+        baseOrder({ status: OrderStatus.FAILED }),
+      );
+      await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+        accepted: true,
+      });
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'o1', status: OrderStatus.FAILED },
+          data: expect.objectContaining({ status: OrderStatus.COMPLETED }),
+        }),
+      );
+      expect(tx.promoCode.update).toHaveBeenCalledTimes(1);
+      expect(delivery.createTasksAfterPayment).toHaveBeenCalledWith('o1');
     });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(prisma.order.updateMany).not.toHaveBeenCalled();
-    expect(tx.order.updateMany).not.toHaveBeenCalled();
+
+    it.each([
+      ['paymentId', { paymentId: 'other' }, 'payment_id_mismatch'],
+      ['валюта', { currency: 'USD' }, 'currency_mismatch'],
+      ['сумма', { amount: new Prisma.Decimal('269.99') }, 'amount_mismatch'],
+    ])(
+      '%s не совпадает: отказ, заказ остаётся FAILED',
+      async (_n, over, reason) => {
+        const { service, prisma, tx } = setup(
+          baseOrder({ status: OrderStatus.FAILED }),
+        );
+        await expect(
+          service.handleWebhook(provider, ev(over)),
+        ).resolves.toEqual({ accepted: false, reason });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(tx.order.updateMany).not.toHaveBeenCalled();
+      },
+    );
+
+    it('FAILED без сохранённого paymentId (платёж не создавался): статус не меняется', async () => {
+      const { service, prisma, tx } = setup(
+        baseOrder({ status: OrderStatus.FAILED, paymentId: null }),
+      );
+      await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+        accepted: true,
+        reason: 'already_processed',
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('CANCELLED не оживляется поздним succeeded', async () => {
+      const { service, prisma } = setup(
+        baseOrder({ status: OrderStatus.CANCELLED }),
+      );
+      await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
+        accepted: true,
+        reason: 'already_processed',
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('повтор того же succeeded после восстановления: already_processed', async () => {
+      const first = setup(baseOrder({ status: OrderStatus.FAILED }));
+      await first.service.handleWebhook(provider, ev());
+      const lost = setup(baseOrder({ status: OrderStatus.FAILED }), 0);
+      await expect(lost.service.handleWebhook(provider, ev())).resolves.toEqual(
+        { accepted: true, reason: 'already_processed' },
+      );
+      expect(lost.delivery.createTasksAfterPayment).not.toHaveBeenCalled();
+      const done = setup(baseOrder({ status: OrderStatus.COMPLETED }));
+      await expect(done.service.handleWebhook(provider, ev())).resolves.toEqual(
+        {
+          accepted: true,
+          reason: 'already_processed',
+        },
+      );
+    });
   });
 
   it('конкурентные failed: count 1 -> accepted, count 0 -> already_processed', async () => {
@@ -387,8 +451,9 @@ describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', (
       const warn = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
+      // FAILED без сохранённого paymentId: сверить платёж нельзя (R29, ADR-0187).
       const { service, prisma, audit, notifications } = setupLate(
-        baseOrder({ status }),
+        baseOrder({ status, paymentId: null }),
       );
       await expect(service.handleWebhook(provider, ev())).resolves.toEqual({
         accepted: true,

@@ -18,12 +18,41 @@ export interface PaymentWebhookEvent {
 
 export type WebhookHeaders = Record<string, string | string[] | undefined>;
 
+/// Состояние платежа у провайдера (ADR-0187). `refunded` — возвращён весь
+/// платёж; частичный возврат отражается в `refundedAmount` при `succeeded`.
+export type ProviderPaymentState =
+  'pending' | 'succeeded' | 'failed' | 'refunded';
+
+export interface ProviderPaymentStatus {
+  paymentId: string;
+  status: ProviderPaymentState;
+  amount: Prisma.Decimal;
+  currency: string;
+  /// Сумма, уже возвращённая по платежу (0, если возвратов нет).
+  refundedAmount: Prisma.Decimal;
+}
+
+export type ProviderRefundState = 'pending' | 'succeeded' | 'failed';
+
+export interface ProviderRefund {
+  refundId: string;
+  paymentId: string;
+  status: ProviderRefundState;
+  amount: Prisma.Decimal;
+  currency: string;
+}
+
 /// ADR-0009: заказ переходит в COMPLETED только через вебхук с проверенной
 /// подписью — ни один провайдер не предоставляет client-triggered «complete».
+/// Ошибки методов, обращающихся к провайдеру, — `PaymentProviderError`
+/// (payment-provider.errors.ts, ADR-0187).
 export interface PaymentProvider {
   readonly name: string;
   /// Валюта платежей провайдера: в `Order` поля currency нет (ADR-0157).
   readonly currency: string;
+  /// false — нет ключей/секретов: реестр не отдаёт провайдера как рабочего
+  /// (оформление отвечает 503 payment_unavailable, fail closed, ADR-0187).
+  isConfigured(): boolean;
   createPayment(
     orderNumber: string,
     amount: Prisma.Decimal,
@@ -35,4 +64,14 @@ export interface PaymentProvider {
     rawBody: Buffer | undefined,
     headers: WebhookHeaders,
   ): PaymentWebhookEvent | null;
+  /// Запрос статуса платежа у провайдера (сверка PENDING, 0.9). Только чтение.
+  getPaymentStatus(paymentId: string): Promise<ProviderPaymentStatus>;
+  /// Возврат полный или частичный. `idempotencyKey` обязателен: повтор с тем
+  /// же ключом возвращает тот же результат и не создаёт второй возврат.
+  /// Сумма возврата и сумма уже возвращённого не превышают оплаченное.
+  refund(
+    paymentId: string,
+    amount: Prisma.Decimal,
+    idempotencyKey: string,
+  ): Promise<ProviderRefund>;
 }

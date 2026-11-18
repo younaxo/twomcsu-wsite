@@ -1,60 +1,53 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { randomBytes } from 'crypto';
+import { InMemoryPaymentLedger } from './payment-ledger';
 import {
   CreatedPayment,
   PaymentProvider,
   PaymentWebhookEvent,
+  ProviderPaymentStatus,
+  ProviderRefund,
   WebhookHeaders,
 } from './payment-provider.interface';
+import { readWebhookSecrets, verifySignedWebhook } from './webhook-signature';
 
-export const WEBHOOK_SIGNATURE_HEADER = 'x-twomc-signature';
-export const WEBHOOK_TIMESTAMP_HEADER = 'x-twomc-timestamp';
-/// Допустимое расхождение timestamp подписи с текущим временем (секунды).
-export const WEBHOOK_TOLERANCE_SECONDS = 300;
-
-/// Подпись вебхука: HMAC-SHA256 над `timestamp.rawBody` (digest). Единая
-/// функция для проверки провайдером и для dev-симулятора.
-export function computeWebhookSignature(
-  secret: string,
-  timestamp: string,
-  rawBody: Buffer | string,
-): Buffer {
-  return createHmac('sha256', secret)
-    .update(`${timestamp}.`)
-    .update(rawBody)
-    .digest();
-}
-
-function headerValue(
-  headers: WebhookHeaders,
-  name: string,
-): string | undefined {
-  const value = headers[name];
-  return Array.isArray(value) ? value[0] : value;
-}
+// Подпись и константы вынесены в webhook-signature.ts; реэкспорт сохраняет
+// прежние пути импорта (симулятор, тесты).
+export {
+  computeWebhookSignature,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  WEBHOOK_TOLERANCE_SECONDS,
+} from './webhook-signature';
 
 /// Регистрируется только в development/test (PaymentProviderRegistry,
 /// ADR-0009). Не создаёт реального редиректа — `paymentUrl: null`. Вебхук
 /// подписан HMAC-SHA256 над `timestamp.rawBody` секретом PAYMENT_WEBHOOK_SECRET
-/// (ADR-0157); пустой секрет — всегда отказ.
+/// (ADR-0157; минимум 32 символа и ротация через PAYMENT_WEBHOOK_SECRET_PREVIOUS,
+/// ADR-0187); без действующего секрета — всегда отказ. Статус и возврат —
+/// по учёту в памяти процесса (`InMemoryPaymentLedger`), без сети.
 @Injectable()
 export class TestPaymentProvider implements PaymentProvider {
   readonly name = 'test';
   readonly currency = 'RUB';
+  private readonly ledger = new InMemoryPaymentLedger();
 
   constructor(private readonly config: ConfigService) {}
 
+  isConfigured(): boolean {
+    return readWebhookSecrets(this.config).length > 0;
+  }
+
   async createPayment(
     orderNumber: string,
-    _amount: Prisma.Decimal,
+    amount: Prisma.Decimal,
     _description: string,
   ): Promise<CreatedPayment> {
-    return {
-      paymentId: `test_${orderNumber}_${randomBytes(4).toString('hex')}`,
-      paymentUrl: null,
-    };
+    const paymentId = `test_${orderNumber}_${randomBytes(4).toString('hex')}`;
+    this.ledger.create(paymentId, orderNumber, amount, this.currency);
+    return { paymentId, paymentUrl: null };
   }
 
   verifyWebhook(
@@ -62,62 +55,33 @@ export class TestPaymentProvider implements PaymentProvider {
     headers: WebhookHeaders,
     now: Date = new Date(),
   ): PaymentWebhookEvent | null {
-    const secret = this.config.get<string>('PAYMENT_WEBHOOK_SECRET') ?? '';
-    if (secret.length === 0 || !rawBody) {
-      return null;
+    const event = verifySignedWebhook(
+      readWebhookSecrets(this.config),
+      rawBody,
+      headers,
+      now,
+    );
+    if (event) {
+      this.ledger.create(
+        event.paymentId,
+        event.orderNumber,
+        event.amount,
+        event.currency,
+      );
+      this.ledger.setStatus(event.paymentId, event.status);
     }
-    const signature = headerValue(headers, WEBHOOK_SIGNATURE_HEADER);
-    const timestamp = headerValue(headers, WEBHOOK_TIMESTAMP_HEADER);
-    if (!signature || !timestamp || !/^\d{1,13}$/.test(timestamp)) {
-      return null;
-    }
-    const nowSeconds = Math.floor(now.getTime() / 1000);
-    if (Math.abs(nowSeconds - Number(timestamp)) > WEBHOOK_TOLERANCE_SECONDS) {
-      return null;
-    }
-    const expected = computeWebhookSignature(secret, timestamp, rawBody);
-    const given = /^[0-9a-f]{64}$/i.test(signature)
-      ? Buffer.from(signature, 'hex')
-      : null;
-    if (!given || given.length !== expected.length) {
-      return null;
-    }
-    if (!timingSafeEqual(given, expected)) {
-      return null;
-    }
-    return this.parseEvent(rawBody);
+    return event;
   }
 
-  private parseEvent(rawBody: Buffer): PaymentWebhookEvent | null {
-    let body: unknown;
-    try {
-      body = JSON.parse(rawBody.toString('utf8'));
-    } catch {
-      return null;
-    }
-    if (typeof body !== 'object' || body === null) {
-      return null;
-    }
-    const b = body as Record<string, unknown>;
-    if (
-      typeof b.orderNumber !== 'string' ||
-      typeof b.paymentId !== 'string' ||
-      typeof b.currency !== 'string' ||
-      (b.status !== 'succeeded' && b.status !== 'failed') ||
-      (typeof b.amount !== 'string' && typeof b.amount !== 'number')
-    ) {
-      return null;
-    }
-    const amountText = String(b.amount);
-    if (!/^\d{1,8}(\.\d{1,2})?$/.test(amountText)) {
-      return null;
-    }
-    return {
-      orderNumber: b.orderNumber,
-      paymentId: b.paymentId,
-      status: b.status,
-      amount: new Prisma.Decimal(amountText),
-      currency: b.currency,
-    };
+  async getPaymentStatus(paymentId: string): Promise<ProviderPaymentStatus> {
+    return this.ledger.getStatus(paymentId);
+  }
+
+  async refund(
+    paymentId: string,
+    amount: Prisma.Decimal,
+    idempotencyKey: string,
+  ): Promise<ProviderRefund> {
+    return this.ledger.refund(paymentId, amount, idempotencyKey);
   }
 }
