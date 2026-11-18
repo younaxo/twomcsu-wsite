@@ -55,3 +55,11 @@
 - Уведомление уходит без ссылки на раздел админки (путь UI заказов ещё не определён).
 - Миграций нет. `npx prisma generate` выполнен локально: клиент в worktree был собран под другую схему (ошибка `users.bannedById`).
 - `tsc --noEmit` показывает 3 ошибки в `audit.service.spec.ts` (`logInTx`): файл совпадает с main и вне scope; jest его не затрагивает.
+
+## Доработки по ревью, часть 2 (M1, L1, L4, 2FA в e2e)
+- **2FA в e2e.** Хелпер `apps/api/test/helpers/staff-two-factor.ts` (`markStaffTwoFactorEnabled`) включает `twoFactorEnabled=true` у тестового персонала; применён в orders-admin, reports, reports-support, store-admin-products, store-catalog, store-checkout. Сценарий «403 без 2FA» остаётся в `store-admin-2fa.e2e-spec.ts`.
+- **M1 (поздняя оплата).** `OrdersService.handleWebhook`: `succeeded` по заказу CANCELLED/FAILED — `logger.warn`, аудит `orders.order.late_payment` (severity warning, только orderNumber, orderStatus, paymentId, provider) от системного аккаунта, уведомление SYSTEM/HIGH ролям с `orders.view` (и суперпользователям; не более 50, механизм `NotificationsService` уже существовал). Статус, цена, `paidAt` не меняются; ответ вебхука — 200 `already_processed`; сбой наблюдения не ломает ответ. Тесты: юнит (orders.service.spec) и e2e orders-admin (отмена → поздний succeeded → CANCELLED, `paidAt=null`, одно событие аудита, уведомление админу и не наблюдателю без права).
+- **L1.** `apps/api/src/modules/admin/csv.util.spec.ts`: TAB, CR, ведущий пробел, числа/Decimal, кавычки и запятые.
+- **L4 (Q83).** Скидка/промокод 100% при создании и изменении пишет отдельное событие warning «скидка 100%» (`store.promocode.full_percent`, `store.discount.full_percent`); 99% не пишет. Юнит (promocodes/discounts) и e2e (создание, изменение до 100%, bulk-скидка).
+- **Проверки.** e2e на одноразовой БД (`scratchpad/logs-l04-final/summary.txt`): orders-admin 12/12, store-admin-2fa 1/1, store-checkout 19/19, store-admin-products 13/13, store-catalog 8/8, reports 28/28, reports-support 15/15. Юниты `jest --runInBand`: 548/548 тестов, 50 из 51 набора; падает `audit.service.spec.ts` (TS2339: `logInTx` отсутствует в `AuditService`) — дефект уже в HEAD ветки (b9fbf312), не связан с этой правкой (спеку, вероятно, нужно привести к main/добавить метод).
+- **Миграций нет**, seed не запускался.
