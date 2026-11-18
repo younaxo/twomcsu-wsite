@@ -115,11 +115,4 @@ export class UpdateSiteSettingsDto {
   @IsOptional()
   @IsBoolean()
   defaultNotificationsEnabled?: boolean;
-
-  /// Поле есть в схеме, но фактического 2FA-механизма ещё нет (нет
-  /// TOTP/OTP-модели) — переключатель сохраняется, но ничего пока не
-  /// обеспечивает принудительно. Честно задокументировано в ADR PHASE 20.
-  @IsOptional()
-  @IsBoolean()
-  requireAdmin2fa?: boolean;
 }

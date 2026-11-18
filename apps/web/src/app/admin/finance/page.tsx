@@ -7,6 +7,7 @@ import {
   type OrderStatus,
 } from '@twomc/shared';
 import { Download, Search } from 'lucide-react';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
   DescriptionItem,
@@ -180,7 +181,18 @@ function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
     {
       key: 'number',
       header: '№',
-      cell: (o) => <span className="font-mono text-xs">{o.orderNumber}</span>,
+      cell: (o) =>
+        can('orders.view') ? (
+          <Link
+            href={`/admin/store/orders/${encodeURIComponent(o.orderNumber)}`}
+            className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {o.orderNumber}
+          </Link>
+        ) : (
+          <span className="font-mono text-xs">{o.orderNumber}</span>
+        ),
     },
     {
       key: 'user',
@@ -314,6 +326,16 @@ function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
               <DescriptionItem term="ID платежа" mono>
                 {selected.paymentId ?? '—'}
               </DescriptionItem>
+              {can('orders.view') ? (
+                <DescriptionItem term="Заказ в магазине">
+                  <Link
+                    href={`/admin/store/orders/${encodeURIComponent(selected.orderNumber)}`}
+                    className="text-primary underline-offset-2 hover:underline"
+                  >
+                    Открыть карточку заказа
+                  </Link>
+                </DescriptionItem>
+              ) : null}
               {selected.cancelReason ? (
                 <DescriptionItem term="Причина отмены" className="sm:col-span-2">
                   {selected.cancelReason}

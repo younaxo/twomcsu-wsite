@@ -13,6 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AccountType, Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, createHmac, randomBytes, randomInt } from 'crypto';
+import { maskIp } from '../../common/privacy.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { publicTag } from '../users/public-tag';
 import { EmailService } from '../email/email.service';
@@ -31,6 +32,9 @@ import { TwoFactorService } from './two-factor/two-factor.service';
 
 export interface RequestContext {
   ip: string;
+  /// СЫРОЙ req.ip ?? remoteAddress — только для ключа brute-force (ADR-0163):
+  /// `ip` уже схлопывает мусор в 'unknown'. Нет значения — берётся `ip`.
+  rateLimitIp?: string;
   userAgent?: string;
 }
 
@@ -43,6 +47,7 @@ export interface TokenPair {
 export interface SessionSummary {
   id: string;
   userAgent: string | null;
+  /// Маскированный IP (`203.0.*.*`), не полный адрес.
   ipAddress: string | null;
   createdAt: Date;
   expiresAt: Date;
@@ -242,7 +247,7 @@ export class AuthService {
     | ({ user: AuthenticatedUser } & TokenPair)
     | { twoFactorRequired: true; challengeId: string }
   > {
-    if (await this.bruteForce.isBlocked(context.ip)) {
+    if (await this.bruteForce.isBlocked(context.rateLimitIp ?? context.ip)) {
       throw new HttpException(
         'Слишком много попыток входа. Повторите позже.',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -281,7 +286,7 @@ export class AuthService {
       user.accountType === AccountType.SYSTEM ||
       !(await bcrypt.compare(dto.password, user.password))
     ) {
-      await this.bruteForce.registerFailure(context.ip);
+      await this.bruteForce.registerFailure(context.rateLimitIp ?? context.ip);
       throw new UnauthorizedException('Неверный email/логин или пароль');
     }
 
@@ -293,7 +298,7 @@ export class AuthService {
       });
     }
 
-    await this.bruteForce.reset(context.ip);
+    await this.bruteForce.reset(context.rateLimitIp ?? context.ip);
 
     // 2FA (ADR-0109): пароль верен — сессия только после кода.
     if (user.twoFactorEnabled) {
@@ -319,7 +324,7 @@ export class AuthService {
     code: string,
     context: RequestContext,
   ): Promise<{ user: AuthenticatedUser } & TokenPair> {
-    if (await this.bruteForce.isBlocked(context.ip)) {
+    if (await this.bruteForce.isBlocked(context.rateLimitIp ?? context.ip)) {
       throw new HttpException(
         'Слишком много попыток входа. Повторите позже.',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -330,11 +335,13 @@ export class AuthService {
         challengeId,
         code,
       );
-      await this.bruteForce.reset(context.ip);
+      await this.bruteForce.reset(context.rateLimitIp ?? context.ip);
       return await this.issueSessionForUser(userId, context);
     } catch (error) {
       if (error instanceof UnauthorizedException) {
-        await this.bruteForce.registerFailure(context.ip);
+        await this.bruteForce.registerFailure(
+          context.rateLimitIp ?? context.ip,
+        );
       }
       throw error;
     }
@@ -478,8 +485,10 @@ export class AuthService {
         expiresAt: true,
       },
     });
+    // Свой журнал: IP маскируется (полный адрес — только персоналу, Q21).
     return sessions.map((session) => ({
       ...session,
+      ipAddress: maskIp(session.ipAddress),
       current: session.id === currentSessionId,
     }));
   }

@@ -1,5 +1,10 @@
 import { CurrencyType } from '@prisma/client';
 import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
+import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -29,12 +34,15 @@ export class UpdateProductDto {
   fullDescription?: string;
 
   @IsOptional()
-  @IsString()
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl()
   image?: string;
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(10)
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl({ each: true })
   images?: string[];
 
   @IsOptional()
@@ -84,9 +92,12 @@ export class UpdateProductDto {
   isFeatured?: boolean;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  gameCommands?: string[];
+  @IsInt()
+  @Min(0)
+  order?: number;
+
+  // gameCommands в DTO НЕТ намеренно: шаблоны команд выдачи редактируются
+  // только в 0.11 (ADR-0184 Р1); существующие значения в БД не трогаются.
 
   @IsOptional()
   @IsString()

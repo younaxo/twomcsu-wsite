@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — тот же риск конкуренции за ресурсы под полным сьютом.
@@ -89,6 +90,7 @@ describe('Positions / Departments / Custom Positions / Users (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: user.id, roleId: role.id },
     });
+    await markStaffTwoFactorEnabled(prisma, user.id);
     await permissions.invalidateUser(user.id);
   });
 

@@ -1,12 +1,6 @@
 import { DiscountType, ProductType } from '@prisma/client';
-import {
-  IsEnum,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class CreateBulkDiscountDto {
   @IsOptional()
@@ -23,14 +17,13 @@ export class CreateBulkDiscountDto {
   minQuantity?: number;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  minAmount?: number;
+  @IsDecimalInput()
+  minAmount?: string;
 
   @IsEnum(DiscountType)
   discountType!: DiscountType;
 
-  @IsNumber()
-  @Min(0)
-  discountValue!: number;
+  /// Decimal-строка; для PERCENT — 0 < значение <= 100 (проверяет сервис).
+  @IsDecimalInput()
+  discountValue!: string;
 }

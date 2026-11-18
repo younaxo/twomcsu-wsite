@@ -16,6 +16,8 @@ import { DiscountsService } from './discounts.service';
 import { OrdersAdminController } from './orders-admin.controller';
 import { OrdersController, StoreExtrasController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { CheckoutPolicyService } from './checkout-policy.service';
+import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
@@ -64,6 +66,8 @@ import { WishlistService } from './wishlist.service';
     CartService,
     WishlistService,
     OrdersService,
+    NickResolver,
+    CheckoutPolicyService,
     StoreStatsService,
     PaymentProviderRegistry,
     TestPaymentProvider,

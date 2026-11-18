@@ -5,12 +5,12 @@ import {
   IsEnum,
   IsISO8601,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   Length,
   Min,
 } from 'class-validator';
+import { IsDecimalInput } from './decimal-input';
 
 export class UpdatePromoCodeDto {
   @IsOptional()
@@ -23,9 +23,8 @@ export class UpdatePromoCodeDto {
   discountType?: DiscountType;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  discountValue?: number;
+  @IsDecimalInput()
+  discountValue?: string;
 
   @IsOptional()
   @IsInt()
@@ -46,9 +45,8 @@ export class UpdatePromoCodeDto {
   applicableToTypes?: ProductType[];
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  minOrderAmount?: number;
+  @IsDecimalInput()
+  minOrderAmount?: string;
 
   @IsOptional()
   @IsBoolean()

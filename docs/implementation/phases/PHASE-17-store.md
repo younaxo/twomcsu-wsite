@@ -9,7 +9,7 @@
   вместе» через агрегацию `OrderItem` по завершённым заказам, `inWishlist`
   для авторизованного viewer), `BundlesController`/`BundlesAdminController`
   (наборы товаров с собственной ценой и окном действия `validFrom/
-  validUntil`).
+validUntil`).
 - Скидки и промокоды: `DiscountsController`/`DiscountsAdminController`
   (`BulkDiscount` по товару/типу+количеству/сумме, `LoyaltyDiscount` по
   числу завершённых заказов), `PromocodesController`/
@@ -37,9 +37,9 @@
 - `modules/store/payment/` — `PaymentProvider`-интерфейс, `TestPaymentProvider`
   (не регистрируется в production), `PaymentProviderRegistry`. Заказ
   создаётся в `PENDING`, переходит в `COMPLETED` только через
-  `POST /webhooks/payments/:provider` с секретом в теле (`PAYMENT_WEBHOOK_SECRET`,
-  constant-time сравнение — ADR-0034), всегда отвечает `200 {accepted,
-  reason?}`, идемпотентен. Проверка `isUnique` — при оформлении заказа, не
+  `POST /webhooks/payments/:provider` с HMAC-SHA256 над сырым телом (заголовки
+  `x-twomc-signature`/`x-twomc-timestamp`, ADR-0157; ADR-0034 superseded), всегда отвечает `200 {accepted,
+reason?}`, идемпотентен. Проверка `isUnique` — при оформлении заказа, не
   при добавлении в корзину (ADR-0037).
 - `StoreStatsAdminController`/`StoreStatsService` — overview/sales-by-day
   (реальный `$queryRaw` по `paidAt`)/sales-by-category/top-products/

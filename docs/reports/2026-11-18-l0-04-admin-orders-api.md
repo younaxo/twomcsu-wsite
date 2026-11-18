@@ -1,0 +1,65 @@
+# Подэтап 0.4 — API заказов, промокодов и скидок в админке
+
+Ветка: feature/l0-04-admin-orders-api. Дата: 2026-11-18.
+
+## Что сделано
+- Список заказов `GET /admin/orders`: фильтры status, userId, orderNumber, nickname, search, dateFrom/dateTo (дата без времени в `dateTo` = конец суток), пагинация со стабильной сортировкой (createdAt, id). Проверка dateFrom <= dateTo.
+- Суженный `ADMIN_ORDER_INCLUDE`: позиции по белому списку полей, без gameCommands; получатель подарка — публичные поля; покупатель — публичные поля и email.
+- Карточка `GET /admin/orders/:id` (id или номер): позиции, суммы, промокод, сводка оплаты (`payment`).
+- Отмена `PATCH /admin/orders/:id/cancel`: только PENDING, `SELECT ... FOR UPDATE` в транзакции, иначе 409 `ORDER_NOT_CANCELLABLE`; причина обязательна (trim); аудит `orders.order.cancelled` в tx со `strict`.
+- Промокоды и скидки: Decimal-строки (`IsDecimalInput`), проценты 0–100, проверка дат, аудит в tx со `strict`; право `store.discounts.view`.
+- Экспорт: существующий `POST /admin/orders/export` (право `orders.export`, лимит MAX_ROWS, без email и ПДн); изменений не потребовал.
+- 2FA персонала — общий `PermissionsGuard` (ADR-0169), покрыт `two-factor.e2e-spec.ts`.
+
+## Проверки
+- typecheck API (`tsc --noEmit`): без ошибок.
+- Юнит `jest src/modules/store`: 9 наборов, 143/143 тестов.
+- e2e `orders-admin.e2e-spec.ts` (одноразовая БД): 5/5. Логи: `scratchpad/logs-l004-2/summary.txt` (первая попытка 4/5: ошибка в самом тесте — число 10 допускается намеренно для совместимости).
+
+## Допущения
+- События вебхука в БД не хранятся (только paymentWebhookVerifiedAt, paidAt, paymentId, paymentProvider), поэтому в карточке — сводка оплаты, а не журнал событий.
+- Причина отмены хранится в существующем `Order.cancelReason` и дублируется в аудите; схема не менялась.
+- Миграций в этой работе нет.
+- 2FA-сценарий в e2e не дублируется, чтобы не включать глобальный флаг requireAdmin2fa.
+- Экспорт не покрыт аудитом (как и прежде).
+
+## Риски
+- JSON number в `discountValue` по-прежнему принимается (приводится к строке) ради совместимости.
+- Экспорт заказов не пишет аудит выгрузки.
+- Новое право `store.discounts.view` нужно выдать ролям через seed/синхронизацию прав (seed не запускался).
+
+## К переносу
+- Журнал событий вебхука оплаты (требует модели/миграции — решение владельца).
+- Аудит экспорта заказов.
+- UI админки (0.4 web) под новые эндпоинты и фильтры.
+- Выдача `store.discounts.view` существующим ролям при деплое.
+
+## Доработки по ревью
+- **Диапазон дат.** Единая функция `parseDateRange` / `dateToUpperBound` / `isDateRangeInverted` в `apps/api/src/common/date-range.util.ts` (юнит-тест рядом). Список заказов и все CSV-экспорты используют её: `dateTo` вида `YYYY-MM-DD` = конец суток UTC. Экспорт заказов при `dateFrom > dateTo` отвечает 400, как список. Побочный эффект: то же исправление действует для экспортов пользователей, жалоб, новостей и журнала аудита (раньше `dateTo` без времени отрезал весь день).
+- **Аудит экспорта заказов.** Событие `orders.export.completed` (severity warning): actor, фильтр (status, userId, dateFrom, dateTo), `rowCount`, `truncated`. ПДн (ники, номера заказов, e-mail) в событие не попадают. Действие названо отдельно, потому что глобальный интерцептор уже пишет общий `orders.export` (кто и когда, без фильтра и числа строк). Аудит экспорта не строгий (не в транзакции): сбой записи логируется и не блокирует выгрузку.
+- **CSV-инъекции.** `toCsv` добавляет префикс `'` к строковым значениям, начинающимся с `= + - @ TAB CR`; числа и Decimal не затрагиваются. Также CR добавлен в набор символов, требующих кавычек. Действует для всех экспортов.
+- **e2e.** `orders-admin`: содержимое и заголовок CSV, экранирование инъекций (включая запятую и кавычку), заказ последнего дня в экспорте и в списке, аудит экспорта, гонка «отмена PENDING против вебхука» (6 параллельных итераций через настоящий вебхук тестового провайдера: ровно один исход, оплаченный заказ не отменён, аудит отмены только при победе отмены), CRUD скидок bulk и loyalty (валидация, 404, аудит, права). `two-factor`: `admin_2fa_required` для заказов (список, карточка, отмена, экспорт), промокодов и скидок (все мутации и списки); с 2FA доступ есть.
+- **Проверки.** Юниты 527/527 (49 наборов); `tsc` без ошибок; eslint чисто. e2e на одноразовой БД: orders-admin 10/10, store-admin-products 13/13, two-factor 8/8, admin 40/40 (финансовый экспорт делегирует в тот же сервис).
+- **Перенос 2FA-тестов (слияние с main).** Тесты `admin_2fa_required` для заказов, экспорта, промокодов и скидок (а также товаров и категорий) перенесены из `two-factor.e2e-spec.ts` в новый `apps/api/test/store-admin-2fa.e2e-spec.ts` со своим bootstrap: после Q22 2FA персонала обязательна всегда, без `resetAdmin2faCache` по имени (сброс кэша флага — только необязательным вызовом через namespace-импорт, на main безвреден). `two-factor.e2e-spec.ts` приведён к версии ветки 0.3, чтобы слияние шло без конфликта.
+- **Остаточное.** Другие экспорты (пользователи, жалобы, новости, аудит) не пишут свои аудит-события — вне scope 0.4.
+
+## Доработки по ревью Q&S (M1, L1, L4) и 2FA персонала в e2e
+- **2FA персонала в e2e.** Хелпер `apps/api/test/helpers/staff-two-factor.ts` (`markStaffTwoFactorEnabled`, та же сигнатура и тело, что в ветке 0.3) выставляет `twoFactorEnabled=true` сотрудникам с правами после получения токена. Подключён в `orders-admin`, `store-admin-products`, `store-catalog`, `store-checkout`, `reports`, `reports-support` (на main 2FA обязательна всегда, Q22). `store-admin-2fa` не менялся: проверка «403 `admin_2fa_required` без 2FA» осталась, флаг через siteSettings на main безвреден.
+- **M1: поздняя оплата отменённого заказа.** В `OrdersService.handleWebhook` при `succeeded` для заказа в CANCELLED/FAILED: `logger.warn`, событие аудита `orders.order.late_payment` (severity warning; в `changes` только orderNumber, orderStatus, paymentId, provider), уведомление `SYSTEM` (HIGH) ролям с `orders.view` (и суперпользователям; до 50 получателей, без заблокированных и системного аккаунта) через существующий `NotificationsService` (добавлен в конструктор `OrdersService`). Статус, цена и ответ вебхука (`accepted: true, reason: already_processed`) не изменены. Сбой аудита или уведомления не ломает ответ вебхука (иначе провайдер зациклит ретраи). Актор аудита — системный аккаунт (`accountType=SYSTEM`, #0): `AuditLog.actorId` обязателен (FK), а у вебхука актора нет. Если системного аккаунта в БД нет, аудит пропускается с warn-логом (уведомления и лог остаются).
+- **L1: `csv.util`.** Новый `apps/api/src/modules/admin/csv.util.spec.ts`: ведущие `= + - @`, TAB, CR (с кавычками), числа и Decimal (отрицательные не экранируются), ведущий пробел (значение не меняется), null/Date, RFC4180, заголовки. Дефектов в утилите тест не выявил, код не менялся.
+- **L4 (Q83): скидка 100%.** `store.discount.full_percent` (bulk и loyalty) и `store.promocode.full_percent`: отдельное событие аудита severity warning с `note: "скидка 100%"` при создании и при изменении скидки/промокода, итоговое значение которых — PERCENT 100. В той же транзакции и в строгом режиме. Проверка — `isFullPercentDiscount` в `discount-validation.ts`. Расчёт цены не менялся.
+- **Тесты.** Юнит: `orders.service.spec.ts` (поздняя оплата: CANCELLED и FAILED, отсутствие событий для COMPLETED и для failed, устойчивость к сбоям), `promocodes.service.spec.ts` (100%), `csv.util.spec.ts`. e2e `orders-admin`: M1 (отмена, поздний succeeded, заказ остаётся CANCELLED, событие аудита, уведомление; наблюдатель без права не получает) и Q83.
+
+## Риски и допущения (M1, L4)
+- Системного аккаунта #0 на dev/e2e-БД может не быть (seed требует `BOOTSTRAP_SYSTEM_PASSWORD`); тогда аудит поздней оплаты не пишется. В e2e тест заводит такой аккаунт сам. Альтернатива — nullable `actorId` (миграция, решение владельца).
+- Уведомление уходит без ссылки на раздел админки (путь UI заказов ещё не определён).
+- Миграций нет. `npx prisma generate` выполнен локально: клиент в worktree был собран под другую схему (ошибка `users.bannedById`).
+- `tsc --noEmit` показывает 3 ошибки в `audit.service.spec.ts` (`logInTx`): файл совпадает с main и вне scope; jest его не затрагивает.
+
+## Доработки по ревью, часть 2 (M1, L1, L4, 2FA в e2e)
+- **2FA в e2e.** Хелпер `apps/api/test/helpers/staff-two-factor.ts` (`markStaffTwoFactorEnabled`) включает `twoFactorEnabled=true` у тестового персонала; применён в orders-admin, reports, reports-support, store-admin-products, store-catalog, store-checkout. Сценарий «403 без 2FA» остаётся в `store-admin-2fa.e2e-spec.ts`.
+- **M1 (поздняя оплата).** `OrdersService.handleWebhook`: `succeeded` по заказу CANCELLED/FAILED — `logger.warn`, аудит `orders.order.late_payment` (severity warning, только orderNumber, orderStatus, paymentId, provider) от системного аккаунта, уведомление SYSTEM/HIGH ролям с `orders.view` (и суперпользователям; не более 50, механизм `NotificationsService` уже существовал). Статус, цена, `paidAt` не меняются; ответ вебхука — 200 `already_processed`; сбой наблюдения не ломает ответ. Тесты: юнит (orders.service.spec) и e2e orders-admin (отмена → поздний succeeded → CANCELLED, `paidAt=null`, одно событие аудита, уведомление админу и не наблюдателю без права).
+- **L1.** `apps/api/src/modules/admin/csv.util.spec.ts`: TAB, CR, ведущий пробел, числа/Decimal, кавычки и запятые.
+- **L4 (Q83).** Скидка/промокод 100% при создании и изменении пишет отдельное событие warning «скидка 100%» (`store.promocode.full_percent`, `store.discount.full_percent`); 99% не пишет. Юнит (promocodes/discounts) и e2e (создание, изменение до 100%, bulk-скидка).
+- **Проверки.** e2e на одноразовой БД (`scratchpad/logs-l04-final/summary.txt`): orders-admin 12/12, store-admin-2fa 1/1, store-checkout 19/19, store-admin-products 13/13, store-catalog 8/8, reports 28/28, reports-support 15/15. Юниты `jest --runInBand`: 548/548 тестов, 50 из 51 набора; падает `audit.service.spec.ts` (TS2339: `logInTx` отсутствует в `AuditService`) — дефект уже в HEAD ветки (b9fbf312), не связан с этой правкой (спеку, вероятно, нужно привести к main/добавить метод).
+- **Миграций нет**, seed не запускался.

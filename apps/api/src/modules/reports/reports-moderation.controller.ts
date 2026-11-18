@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,10 +16,13 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { AddReportMessageDto } from './dto/add-report-message.dto';
+import { AssignableStaffQueryDto } from './dto/assignable-staff-query.dto';
 import { AssignReportDto } from './dto/assign-report.dto';
 import { ChangeReportStatusDto } from './dto/change-report-status.dto';
 import { CreateModeratorNoteDto } from './dto/create-moderator-note.dto';
-import { ListReportsQueryDto } from './dto/list-reports-query.dto';
+import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
+import { StaffListReportsQueryDto } from './dto/staff-list-reports-query.dto';
+import { PinModeratorNoteDto } from './dto/pin-moderator-note.dto';
 import { LockReportDto } from './dto/lock-report.dto';
 import { SetVerdictDto } from './dto/set-verdict.dto';
 import { SoftDeleteMessageDto } from './dto/soft-delete-message.dto';
@@ -32,8 +36,26 @@ export class ReportsModerationController {
 
   @Get()
   @RequirePermissions('reports.view')
-  async list(@Query() query: ListReportsQueryDto) {
-    return this.moderation.listModeration(query);
+  async list(
+    @Query() query: StaffListReportsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.moderation.listModeration(query, user.id);
+  }
+
+  @Get('assignable-staff')
+  @RequirePermissions('reports.assign')
+  async assignableStaff(@Query() query: AssignableStaffQueryDto) {
+    return this.moderation.assignableStaff(query);
+  }
+
+  @Get(':reportNumber/history')
+  @RequirePermissions('reports.view')
+  async history(
+    @Param('reportNumber') reportNumber: string,
+    @Query() query: ReportHistoryQueryDto,
+  ) {
+    return this.moderation.history(reportNumber, query);
   }
 
   @Patch(':reportNumber/assign')
@@ -41,8 +63,9 @@ export class ReportsModerationController {
   async assign(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: AssignReportDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.assign(reportNumber, dto);
+    return this.moderation.assign(reportNumber, dto, user.id);
   }
 
   @Patch(':reportNumber/status')
@@ -50,8 +73,9 @@ export class ReportsModerationController {
   async changeStatus(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: ChangeReportStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.changeStatus(reportNumber, dto);
+    return this.moderation.changeStatus(reportNumber, dto, user.id);
   }
 
   @Patch(':reportNumber/verdict')
@@ -59,8 +83,9 @@ export class ReportsModerationController {
   async setVerdict(
     @Param('reportNumber') reportNumber: string,
     @Body() dto: SetVerdictDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.setVerdict(reportNumber, dto);
+    return this.moderation.setVerdict(reportNumber, dto, user.id);
   }
 
   @Post(':reportNumber/messages')
@@ -125,8 +150,14 @@ export class ReportsModerationController {
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
     @Body() dto: UpdateModeratorNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.updateModeratorNote(reportNumber, noteId, dto);
+    return this.moderation.updateModeratorNote(
+      reportNumber,
+      noteId,
+      dto,
+      user.id,
+    );
   }
 
   @Delete(':reportNumber/notes/:noteId')
@@ -134,17 +165,36 @@ export class ReportsModerationController {
   async deleteNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.moderation.deleteModeratorNote(reportNumber, noteId);
+    return this.moderation.deleteModeratorNote(reportNumber, noteId, user.id);
   }
 
+  /// Только закрепление (право `reports.notes.pin`). `pinned:false` отвергается:
+  /// иначе держатель pin без unpin обошёл бы право открепления.
   @Patch(':reportNumber/notes/:noteId/pin')
   @RequirePermissions('reports.notes.pin')
   async pinNote(
     @Param('reportNumber') reportNumber: string,
     @Param('noteId') noteId: string,
+    @Body() dto: PinModeratorNoteDto,
   ) {
+    if (dto.pinned === false) {
+      throw new BadRequestException(
+        'Для открепления используйте DELETE /moderation/reports/:reportNumber/notes/:noteId/pin (право reports.notes.unpin)',
+      );
+    }
     return this.moderation.pinModeratorNote(reportNumber, noteId, true);
+  }
+
+  /// Открепление заметки (право `reports.notes.unpin`).
+  @Delete(':reportNumber/notes/:noteId/pin')
+  @RequirePermissions('reports.notes.unpin')
+  async unpinNote(
+    @Param('reportNumber') reportNumber: string,
+    @Param('noteId') noteId: string,
+  ) {
+    return this.moderation.pinModeratorNote(reportNumber, noteId, false);
   }
 
   @Post(':reportNumber/lock')

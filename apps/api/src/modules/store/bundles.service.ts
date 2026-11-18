@@ -6,9 +6,25 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBundleDto } from './dto/create-bundle.dto';
 import { UpdateBundleDto } from './dto/update-bundle.dto';
+import { PUBLIC_PRODUCT_BRIEF_SELECT } from './public-product';
 
 const BUNDLE_INCLUDE = {
   items: { include: { product: true } },
+} as const;
+
+/// Публичный вид набора: товары — по белому списку полей (без gameCommands и
+/// прочих служебных). BUNDLE_INCLUDE остаётся для админских ответов.
+const PUBLIC_BUNDLE_INCLUDE = {
+  items: {
+    select: {
+      id: true,
+      bundleId: true,
+      productId: true,
+      variantId: true,
+      quantity: true,
+      product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
+    },
+  },
 } as const;
 
 @Injectable()
@@ -25,7 +41,7 @@ export class BundlesService {
           { OR: [{ validUntil: null }, { validUntil: { gte: now } }] },
         ],
       },
-      include: BUNDLE_INCLUDE,
+      include: PUBLIC_BUNDLE_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -33,7 +49,7 @@ export class BundlesService {
   async getBySlug(slug: string) {
     const bundle = await this.prisma.bundle.findUnique({
       where: { slug },
-      include: BUNDLE_INCLUDE,
+      include: PUBLIC_BUNDLE_INCLUDE,
     });
     if (!bundle || !bundle.isActive) {
       throw new NotFoundException('Набор не найден');

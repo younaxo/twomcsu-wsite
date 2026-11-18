@@ -1,11 +1,23 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
+import { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { resolve } from 'path';
 import { allowedOrigins, corsOrigin } from './config/cors';
+import { normalizeIp, resolveTrustProxy } from './config/trust-proxy';
+import { createBridgeBodyParser } from './modules/bridge/bridge-body-parser';
+import {
+  BRIDGE_CONFIG,
+  BridgeConfig,
+  readBridgeConfig,
+} from './modules/bridge/bridge.config';
 import { ConfigurableIoAdapter } from './websocket-adapter';
+
+/// Опции создания приложения для main.ts и e2e (`createNestApplication`):
+/// `rawBody` нужен для проверки HMAC платёжного вебхука (ADR-0157).
+export const APP_CREATE_OPTIONS = { rawBody: true } as const;
 
 /// Общая настройка приложения — используется и в main.ts (реальный запуск),
 /// и в e2e-тестах (Test.createTestingModule не прогоняет main.ts). Если
@@ -14,12 +26,41 @@ import { ConfigurableIoAdapter } from './websocket-adapter';
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
 
+  // Политика доверия к прокси (ADR-0155) — до любых middleware, читающих req.ip.
+  const express = app as NestExpressApplication;
+  express.set(
+    'trust proxy',
+    resolveTrustProxy(config.get<string>('TRUST_PROXY')),
+  );
+  // Единый клиентский IP для throttler, brute-force, audit, сессий и форм:
+  // `::ffff:1.2.3.4` → `1.2.3.4`.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    Object.defineProperty(req, 'ip', {
+      value: normalizeIp(req.ip),
+      configurable: true,
+      enumerable: true,
+      writable: true,
+    });
+    next();
+  });
+
   app.use(helmet());
+  // Парсер тела /bridge/v1 со своим лимитом (M3) - до глобальных парсеров Nest.
+  // Конфигурация - тот же провайдер, что у guard (единый источник значений).
+  let bridgeConfig: BridgeConfig;
+  try {
+    bridgeConfig = app.get<BridgeConfig>(BRIDGE_CONFIG, { strict: false });
+  } catch {
+    bridgeConfig = readBridgeConfig(config);
+  }
+  app.use(createBridgeBodyParser(bridgeConfig));
   app.use(cookieParser());
   // Явный allowlist origin'ов сайта (ADR-0104), без «*»; тот же — у Socket.IO.
   app.enableCors({
     origin: corsOrigin(allowedOrigins(config)),
     credentials: true,
+    // Retry-After (429/503) должен быть виден браузеру на запросах web -> api.
+    exposedHeaders: ['Retry-After'],
   });
   app.useGlobalPipes(
     new ValidationPipe({
@@ -33,7 +74,6 @@ export function configureApp(app: INestApplication): void {
   // Локальный драйвер хранилища (dev/тесты): файлы отдаются самим API по
   // /uploads; в production за cdn-files.twomc.su стоит S3/отдельный слой.
   if ((config.get<string>('STORAGE_DRIVER') ?? 'local') === 'local') {
-    const express = app as NestExpressApplication;
     if (typeof express.useStaticAssets === 'function') {
       express.useStaticAssets(
         resolve(

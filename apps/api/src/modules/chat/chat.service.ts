@@ -171,7 +171,14 @@ export class ChatService {
     }
   }
 
-  async sendMessage(userId: string, channelId: string, dto: SendMessageDto) {
+  /// `beforeStaffAction` — admin-2FA (ADR-0169): вызывается только если
+  /// отправка в read-only канал разрешена правом персонала.
+  async sendMessage(
+    userId: string,
+    channelId: string,
+    dto: SendMessageDto,
+    beforeStaffAction?: () => Promise<void>,
+  ) {
     const channel = await this.requireActiveChannel(channelId);
     await this.requireNotChatBanned(userId);
     await this.requireNotMuted(userId, channelId);
@@ -185,6 +192,7 @@ export class ChatService {
       if (!canPostReadonly) {
         throw new ForbiddenException('Канал доступен только для чтения');
       }
+      await beforeStaffAction?.();
     }
 
     if (dto.parentId) {
@@ -265,7 +273,15 @@ export class ChatService {
     });
   }
 
-  async deleteMessage(userId: string, messageId: string, reason?: string) {
+  /// `beforeModerate` вызывается только для НЕавторской (модераторской) ветки
+  /// после проверки права — WS-gateway передаёт сюда admin-2FA (ADR-0156);
+  /// автор, удаляющий своё сообщение, 2FA не проходит.
+  async deleteMessage(
+    userId: string,
+    messageId: string,
+    reason?: string,
+    beforeModerate?: () => Promise<void>,
+  ) {
     const message = await this.prisma.chatMessage.findUnique({
       where: { id: messageId },
     });
@@ -281,6 +297,7 @@ export class ChatService {
       if (!canDelete) {
         throw new ForbiddenException('Удалить можно только свои сообщения');
       }
+      await beforeModerate?.();
     }
     return this.prisma.chatMessage.update({
       where: { id: messageId },

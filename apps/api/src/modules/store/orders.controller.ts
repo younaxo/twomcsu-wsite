@@ -1,10 +1,20 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
+import { Throttle } from '@nestjs/throttler';
 import { SiteModule } from '../system/site-module.decorator';
 
 @SiteModule('store')
@@ -17,6 +27,13 @@ export class StoreExtrasController {
     return this.orders.recentPurchases();
   }
 
+  @Get('checkout-config')
+  async checkoutConfig() {
+    return this.orders.checkoutConfig();
+  }
+
+  /// Анонимный: без лимита любой может плодить PENDING-заказы (SEC-07, ADR-0157).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('quick-buy')
   async quickBuy(@Body() dto: QuickBuyDto) {
     return this.orders.quickBuy(dto);
@@ -38,8 +55,11 @@ export class OrdersController {
   }
 
   @Get()
-  async list(@CurrentUser() user: AuthenticatedUser) {
-    return this.orders.listMine(user.id);
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListMyOrdersQueryDto,
+  ) {
+    return this.orders.listMine(user.id, query);
   }
 
   @Get(':orderNumber')

@@ -1,5 +1,7 @@
 import { Body, Controller, Post, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
@@ -24,8 +26,12 @@ export class ExportController {
 
   @Post('orders/export')
   @RequirePermissions('orders.export')
-  async exportOrders(@Body() dto: ExportOrdersDto, @Res() res: Response) {
-    sendCsv(res, await this.exportService.exportOrders(dto));
+  async exportOrders(
+    @Body() dto: ExportOrdersDto,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    sendCsv(res, await this.exportService.exportOrders(dto, user.id));
   }
 
   @Post('reports/export')

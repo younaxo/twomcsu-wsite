@@ -63,20 +63,31 @@ export class CategoriesService {
 
   async remove(id: string): Promise<void> {
     await this.requireCategory(id);
-    const childrenCount = await this.prisma.category.count({
-      where: { parentId: id },
+    // Проверки и удаление — в одной транзакции под блокировкой строки
+    // категории: параллельное создание подкатегории/товара (FK берёт
+    // FOR KEY SHARE) дождётся конца и не потеряет родителя (parentId
+    // обнуляется через ON DELETE SET NULL). Конфликт состояния — 409.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM categories WHERE id = ${id} FOR UPDATE`;
+      const childrenCount = await tx.category.count({
+        where: { parentId: id },
+      });
+      if (childrenCount > 0) {
+        throw new ConflictException({
+          code: 'CATEGORY_HAS_CHILDREN',
+          message: 'Нельзя удалить категорию с подкатегориями',
+        });
+      }
+      const productsCount = await tx.product.count({
+        where: { categoryId: id },
+      });
+      if (productsCount > 0) {
+        throw new ConflictException({
+          code: 'CATEGORY_HAS_PRODUCTS',
+          message: 'Нельзя удалить категорию с товарами',
+        });
+      }
+      await tx.category.delete({ where: { id } });
     });
-    if (childrenCount > 0) {
-      throw new BadRequestException(
-        'Нельзя удалить категорию с подкатегориями',
-      );
-    }
-    const productsCount = await this.prisma.product.count({
-      where: { categoryId: id },
-    });
-    if (productsCount > 0) {
-      throw new BadRequestException('Нельзя удалить категорию с товарами');
-    }
-    await this.prisma.category.delete({ where: { id } });
   }
 }

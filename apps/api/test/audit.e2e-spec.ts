@@ -10,6 +10,7 @@ import {
   severityFor,
 } from '../src/modules/audit/audit.interceptor';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { RedisService } from '../src/modules/redis/redis.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
@@ -81,6 +82,7 @@ describe('Audit log (e2e)', () => {
     await prisma.userRole.create({
       data: { userId: admin.id, roleId: adminRole.id },
     });
+    await markStaffTwoFactorEnabled(prisma, admin.id);
     const records = await prisma.permission.findMany({
       where: {
         key: {
