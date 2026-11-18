@@ -408,7 +408,15 @@ describe('Store checkout (e2e)', () => {
     createdOrderNumbers.push(orderNumber);
     expectNoServiceFields(created.body);
     expect(created.body.order.status).toBe('PENDING');
-    expect(created.body.order.paymentProvider).toBe('test');
+    // Внутренние платёжные поля покупателю не отдаются (0.6).
+    expect(created.body.order).not.toHaveProperty('paymentId');
+    expect(created.body.order).not.toHaveProperty('paymentProvider');
+    expect(created.body.order).not.toHaveProperty('paymentWebhookVerifiedAt');
+    expect(created.body.order).not.toHaveProperty('promoCodeId');
+    const stored = await prisma.order.findUniqueOrThrow({
+      where: { orderNumber },
+    });
+    expect(stored.paymentProvider).toBe('test');
     expect(created.body.paymentUrl).toBeNull();
 
     const cartAfter = await request(app.getHttpServer())
@@ -538,7 +546,14 @@ describe('Store checkout (e2e)', () => {
         .expect(201);
       const number = created.body.order.orderNumber;
       createdOrderNumbers.push(number);
-      expect(created.body.order.promoCodeId).toBe(promo.id);
+      expect(created.body.order).not.toHaveProperty('promoCodeId');
+      expect(
+        (
+          await prisma.order.findUniqueOrThrow({
+            where: { orderNumber: number },
+          })
+        ).promoCodeId,
+      ).toBe(promo.id);
 
       const payload = await webhookPayload(number);
       const results = await Promise.all(

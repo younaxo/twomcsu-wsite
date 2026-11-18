@@ -20,6 +20,7 @@ import { PUBLIC_USER_SELECT } from '../users/public-user';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
+import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import {
@@ -54,11 +55,34 @@ const ORDER_INCLUDE = {
     include: {
       product: { select: PUBLIC_PRODUCT_BRIEF_SELECT },
       variant: { select: PUBLIC_VARIANT_SELECT },
-      bundle: true,
+      bundle: {
+        select: { id: true, name: true, slug: true, image: true },
+      },
       giftToUser: { select: PUBLIC_USER_SELECT },
     },
   },
 } as const;
+
+/// Внутренние платёжные поля заказа: покупателю не отдаются (0.6, N1 ревью S1).
+/// Статус оплаты и время — `status` и `paidAt`.
+const BUYER_HIDDEN_ORDER_FIELDS = [
+  'paymentId',
+  'paymentProvider',
+  'paymentWebhookVerifiedAt',
+  'promoCodeId',
+] as const;
+
+/// Ответ покупателю: заказ без внутренних платёжных полей. Админские
+/// эндпоинты этим не пользуются — им поля нужны.
+export function toBuyerOrder<T extends object>(
+  order: T,
+): Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]> {
+  const copy = { ...order } as Record<string, unknown>;
+  for (const field of BUYER_HIDDEN_ORDER_FIELDS) {
+    delete copy[field];
+  }
+  return copy as Omit<T, (typeof BUYER_HIDDEN_ORDER_FIELDS)[number]>;
+}
 
 /// Позиция заказа для админки (0.4, ревью S1): только нужное карточке заказа.
 /// Скалярные поля позиции сохранены (контракт AdminOrderDto); товар, вариант и
@@ -243,7 +267,7 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
 
-    return { order: completed, paymentUrl: payment.paymentUrl };
+    return { order: toBuyerOrder(completed), paymentUrl: payment.paymentUrl };
   }
 
   async createFromCart(userId: string, dto: CreateOrderDto) {
@@ -350,13 +374,26 @@ export class OrdersService {
     };
   }
 
-  async listMine(userId: string) {
-    const items = await this.prisma.order.findMany({
-      where: { userId },
-      include: ORDER_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-    });
-    return { items, total: items.length };
+  /// Только заказы текущего пользователя (`userId` из токена, не из запроса).
+  async listMine(userId: string, query: ListMyOrdersQueryDto = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where: Prisma.OrderWhereInput = {
+      userId,
+      ...(query.status ? { status: query.status } : {}),
+    };
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        include: ORDER_INCLUDE,
+        // Второй ключ — стабильная пагинация при одинаковом createdAt.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+    return { items: orders.map((o) => toBuyerOrder(o)), total, page, limit };
   }
 
   async getByOrderNumber(orderNumber: string, userId: string) {
@@ -369,7 +406,7 @@ export class OrdersService {
     if (!order || order.userId === null || order.userId !== userId) {
       throw new NotFoundException('Заказ не найден');
     }
-    return order;
+    return toBuyerOrder(order);
   }
 
   async recentPurchases(): Promise<unknown[]> {
