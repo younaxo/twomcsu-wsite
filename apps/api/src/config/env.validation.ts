@@ -243,12 +243,40 @@ export const envValidationSchema = Joi.object({
   TWITCH_CLIENT_SECRET: Joi.string().allow('').default(''),
   YOUTUBE_API_KEY: Joi.string().allow('').default(''),
 
-  /// Провайдер не выбран (RISKS.md R2, ADR-0009) — только 'test' реализован.
-  /// PAYMENT_WEBHOOK_SECRET — ключ HMAC-SHA256 подписи вебхука (ADR-0157),
-  /// без дефолта: пустой секрет = все вебхуки отклоняются (401).
-  PAYMENT_PROVIDER: Joi.string().valid('test').default('test'),
+  /// Провайдер не выбран (RISKS.md R2, ADR-0009). ADR-0187: 'test' и
+  /// 'mock-http' допустимы только при явных development/test; в production
+  /// (в т. ч. пустой/незаданный NODE_ENV) допустимо лишь пустое значение —
+  /// оформление отвечает 503 payment_unavailable (fail closed); значение
+  /// реального провайдера добавится в 0.8b.
+  PAYMENT_PROVIDER: Joi.when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.string().valid('test', 'mock-http').default('test'),
+    otherwise: Joi.string().valid('').default('').messages({
+      'any.only':
+        'PAYMENT_PROVIDER в production пока допускает только пустое значение (0.8b)',
+    }),
+  }),
   PAYMENT_API_KEY: Joi.string().allow('').default(''),
-  PAYMENT_WEBHOOK_SECRET: Joi.string().allow('').default(''),
+  /// PAYMENT_WEBHOOK_SECRET — ключ HMAC-SHA256 подписи вебхука (ADR-0157),
+  /// без дефолта: пустой секрет = все вебхуки отклоняются (401). Непустой не
+  /// короче 32 символов (ADR-0187). PAYMENT_WEBHOOK_SECRET_PREVIOUS — прежний
+  /// секрет на время ротации (принимаются подписи обоих).
+  PAYMENT_WEBHOOK_SECRET: Joi.string().min(32).allow('').default(''),
+  PAYMENT_WEBHOOK_SECRET_PREVIOUS: Joi.string().min(32).allow('').default(''),
+  /// Только dev/test (адаптер mock-http): адрес мок-сервера на loopback,
+  /// таймаут запроса, число повторов и пауза между ними (ADR-0187).
+  PAYMENT_MOCK_BASE_URL: Joi.string().allow('').default(''),
+  PAYMENT_HTTP_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(100)
+    .max(30000)
+    .default(5000),
+  PAYMENT_HTTP_RETRIES: Joi.number().integer().min(0).max(5).default(2),
+  PAYMENT_HTTP_RETRY_DELAY_MS: Joi.number()
+    .integer()
+    .min(0)
+    .max(5000)
+    .default(200),
 
   /// Интеграция наказаний LiteBans (этап 02, ADR-0166, раздел 2.3 дизайна).
   /// Все переменные необязательны и без дефолтов с секретами: без них модуль

@@ -21,6 +21,7 @@ import { CheckoutPolicyService } from './checkout-policy.service';
 import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
+import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
 import { PricingService } from './pricing.service';
 import { PromocodesAdminController } from './promocodes-admin.controller';
@@ -73,6 +74,7 @@ import { WishlistService } from './wishlist.service';
     StoreStatsService,
     PaymentProviderRegistry,
     TestPaymentProvider,
+    MockHttpPaymentProvider,
   ],
   exports: [OrdersService, StoreStatsService],
 })
