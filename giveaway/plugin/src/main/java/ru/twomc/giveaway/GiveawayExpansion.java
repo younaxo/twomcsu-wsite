@@ -9,12 +9,10 @@ import org.bukkit.OfflinePlayer;
  */
 public final class GiveawayExpansion extends PlaceholderExpansion {
     private final ProgressService progress;
-    private final String cutoffText;
     private final String version;
 
-    public GiveawayExpansion(ProgressService progress, String cutoffText, String version) {
+    public GiveawayExpansion(ProgressService progress, String version) {
         this.progress = progress;
-        this.cutoffText = cutoffText;
         this.version = version;
     }
 
@@ -26,6 +24,6 @@ public final class GiveawayExpansion extends PlaceholderExpansion {
     @Override
     public String onRequest(OfflinePlayer player, String params) {
         PlayerProgress p = player == null ? null : progress.get(player.getUniqueId());
-        return PlaceholderFormat.resolve(params, p, progress.thresholdMinutes(), cutoffText);
+        return PlaceholderFormat.resolve(params, p, progress.site());
     }
 }

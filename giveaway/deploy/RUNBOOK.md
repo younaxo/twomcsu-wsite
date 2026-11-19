@@ -77,6 +77,7 @@ docker rmi twomc-giveaway-keytool:tmp
 - `online-mode=true` в `server.properties` (за прокси - на прокси и защищённый проброс UUID). Проверка: `/giveawaytime` в игре (право `giveaway.admin`) показывает режим; в логе плагина нет предупреждения об `online-mode=false`.
 - NTP на игровом сервере - как в п.1.5.
 - `apiUrl` плагина - `https://<домен>` (без пути), `serverId` из `GIVEAWAY_ALLOWED_SERVERS`.
+- Логи команд: `/giveaway <код>` виден в консоли Spigot и в CoreProtect, spy и подобных плагинах. Исключите команды `/giveaway` и `/ticket` из их логов (по документации плагина), включая пересылку логов наружу.
 
 ## 7. Бэкап БД розыгрыша
 Ежедневно (cron пользователя `gw`), дамп хранит данные подсчёта времени - права 0600, каталог 0700:

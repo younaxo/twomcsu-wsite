@@ -55,22 +55,22 @@ public final class GiveawayApi {
     }
 
     /** Результат опроса: ok=false при сети, не-200 или неразборчивом теле; players пуст в этом случае. */
-    public record ProgressOutcome(boolean ok, Map<UUID, PlayerProgress> players, String error) {}
+    public record ProgressOutcome(boolean ok, Map<UUID, PlayerProgress> players, String error, SiteInfo site) {}
 
     public ProgressOutcome progress(List<UUID> uuids) {
-        if (config == null) return new ProgressOutcome(false, Map.of(), "not_configured");
-        if (uuids.isEmpty() || uuids.size() > Protocol.MAX_PROGRESS_UUIDS) return new ProgressOutcome(false, Map.of(), "bad_batch");
+        if (config == null) return new ProgressOutcome(false, Map.of(), "not_configured", null);
+        if (uuids.isEmpty() || uuids.size() > Protocol.MAX_PROGRESS_UUIDS) return new ProgressOutcome(false, Map.of(), "bad_batch", null);
         try {
             BatchSender.Response r = post(Protocol.PROGRESS_PATH, progressBody(uuids));
-            if (r.status() != 200) return new ProgressOutcome(false, Map.of(), "http " + r.status());
+            if (r.status() != 200) return new ProgressOutcome(false, Map.of(), "http " + r.status(), null);
             Map<String, Object> root = MiniJson.parseObject(r.body());
-            if (root == null || !(root.get("players") instanceof List<?>)) return new ProgressOutcome(false, Map.of(), "bad_response");
-            return new ProgressOutcome(true, PlayerProgress.parse(r.status(), r.body()), "");
+            if (root == null || !(root.get("players") instanceof List<?>)) return new ProgressOutcome(false, Map.of(), "bad_response", null);
+            return new ProgressOutcome(true, PlayerProgress.parse(r.status(), r.body()), "", SiteInfo.parse(r.body()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new ProgressOutcome(false, Map.of(), "interrupted");
+            return new ProgressOutcome(false, Map.of(), "interrupted", null);
         } catch (IOException | RuntimeException e) {
-            return new ProgressOutcome(false, Map.of(), "network:" + e.getClass().getSimpleName());
+            return new ProgressOutcome(false, Map.of(), "network:" + e.getClass().getSimpleName(), null);
         }
     }
 

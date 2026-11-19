@@ -57,7 +57,6 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
     private final java.util.concurrent.atomic.AtomicBoolean polling = new java.util.concurrent.atomic.AtomicBoolean();
     private boolean notifyEnabled = true;
     private boolean progressEnabled = true;
-    private String cutoffText = "";
 
     @Override
     public void onEnable() {
@@ -222,19 +221,21 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
 
     private void initPhase2(FileConfiguration cfg, SenderConfig.Result res) {
         api = new GiveawayApi(res.ok() ? res.config() : null, new JdkTransport(), System::currentTimeMillis);
-        long thresholdHours = Math.max(1, cfg.getLong("thresholdHoursDefault", 50));
-        progress = new ProgressService(api, new QualifyNotifier(getDataFolder().toPath().resolve("notified.txt")),
-                thresholdHours * 60L);
-        cooldown = new Cooldown(Math.max(1, Math.min(60, cfg.getInt("cooldownSeconds", 5))) * 1000L);
-        progressEnabled = cfg.getBoolean("progress.enabled", true);
-        notifyEnabled = cfg.getBoolean("progress.notify", true);
-        cutoffText = cfg.getString("cutoffText", "30.12 23:59 по МСК");
+        progress = new ProgressService(api, new QualifyNotifier(getDataFolder().toPath().resolve("notified.txt")));
+        ServiceSettings st = ServiceSettings.resolve(System.getenv());
+        cooldown = new Cooldown(st.cooldownSeconds() * 1000L);
+        java.util.List<String> legacy = ServiceSettings.legacyKeysPresent(cfg.getKeys(false));
+        if (!legacy.isEmpty()) {
+            getLogger().warning("В config.yml найдены устаревшие ключи " + legacy + ": они игнорируются. Дата старта, окончания и порог берутся с сайта; служебные настройки заданы в коде. Удалите эти ключи.");
+        }
+        progressEnabled = st.progressEnabled();
+        notifyEnabled = st.notifyEnabled();
         if (progressEnabled && api.configured()) {
             progressTask = getServer().getScheduler().runTaskTimer(this, this::progressTick, PROGRESS_TICKS, PROGRESS_TICKS);
         }
         if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
             try {
-                if (new GiveawayExpansion(progress, cutoffText, getDescription().getVersion()).register()) {
+                if (new GiveawayExpansion(progress, getDescription().getVersion()).register()) {
                     getLogger().info("PlaceholderAPI: зарегистрировано расширение twomcgiveaway.");
                 }
             } catch (LinkageError | RuntimeException e) {
@@ -345,7 +346,7 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
                 + ", неверный ник " + skippedInvalidName);
         who.sendMessage("Игроков под учётом AFK: " + afk.tracked());
         if (!progressEnabled) {
-            who.sendMessage("Опрос прогресса: выключен (progress.enabled=false)");
+            who.sendMessage("Опрос прогресса: выключен (GIVEAWAY_PROGRESS_ENABLED=false)");
         } else if (!api.configured()) {
             who.sendMessage("Опрос прогресса: не работает, отправка не настроена");
         } else {

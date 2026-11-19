@@ -16,7 +16,7 @@ public final class ProgressService {
     private final QualifyNotifier notifier;
     private final ConcurrentHashMap<UUID, PlayerProgress> cache = new ConcurrentHashMap<>();
 
-    private volatile long thresholdMinutes;
+    private volatile SiteInfo site; // null до первого ответа сайта
     private volatile long lastSuccessAt = -1;
     private volatile long lastAttemptAt = -1;
     private volatile String lastError = "";
@@ -26,10 +26,9 @@ public final class ProgressService {
     private volatile long pollsOk;
     private volatile long pollsFailed;
 
-    public ProgressService(GiveawayApi api, QualifyNotifier notifier, long defaultThresholdMinutes) {
+    public ProgressService(GiveawayApi api, QualifyNotifier notifier) {
         this.api = api;
         this.notifier = notifier;
-        this.thresholdMinutes = defaultThresholdMinutes;
     }
 
     /** Пропуск цикла из-за паузы после ошибок (вызывается на каждом тике опроса). */
@@ -59,10 +58,10 @@ public final class ProgressService {
                 err = out.error();
                 break;
             }
+            if (out.site() != null) site = out.site();
             for (Map.Entry<UUID, PlayerProgress> e : out.players().entrySet()) {
                 PlayerProgress p = e.getValue();
                 cache.put(e.getKey(), p);
-                thresholdMinutes = p.thresholdMinutes();
                 if (notifier.shouldNotify(p)) toNotify.add(p);
             }
         }
@@ -91,7 +90,7 @@ public final class ProgressService {
                 : new PlayerProgress(p.uuid(), p.minutes(), p.thresholdMinutes(), p.remainingMinutes(), p.percent(), p.qualified(), ticket));
     }
 
-    public long thresholdMinutes() { return thresholdMinutes; }
+    public SiteInfo site() { return site; }
     public long lastSuccessAt() { return lastSuccessAt; }
     public long lastAttemptAt() { return lastAttemptAt; }
     public String lastError() { return lastError; }

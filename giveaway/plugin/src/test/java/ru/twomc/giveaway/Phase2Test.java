@@ -123,28 +123,28 @@ class Phase2Test {
         assertFalse(n.shouldNotify(prog(true, "K417")));
     }
 
+    private static final SiteInfo SITE = new SiteInfo(3000, "2026-11-21T21:00:00.000Z", "2026-12-30T20:59:59.000Z",
+            "22.11 00:00 по МСК", "30.12 23:59 по МСК");
+
     // ---- плейсхолдеры ----
 
     @Test
     void placeholderFormatting() {
         PlayerProgress p = new PlayerProgress(U, 725, 3000, 2275, 24, false, null);
-        assertEquals("12", PlaceholderFormat.resolve("hours", p, 3000, "x"));
-        assertEquals("5", PlaceholderFormat.resolve("minutes", p, 3000, "x"));
-        assertEquals("37:55", PlaceholderFormat.resolve("remaining", p, 3000, "x"));
-        assertEquals("24", PlaceholderFormat.resolve("percent", p, 3000, "x"));
-        assertEquals("нет", PlaceholderFormat.resolve("qualified", p, 3000, "x"));
-        assertEquals("-", PlaceholderFormat.resolve("ticket", p, 3000, "x"));
-        assertEquals("50", PlaceholderFormat.resolve("threshold_hours", p, 3000, "x"));
-        assertEquals("30.12 23:59 по МСК", PlaceholderFormat.resolve("cutoff", p, 3000, "30.12 23:59 по МСК"));
-        assertNull(PlaceholderFormat.resolve("unknown", p, 3000, "x"));
+        assertEquals("12", PlaceholderFormat.resolve("hours", p, SITE));
+        assertEquals("5", PlaceholderFormat.resolve("minutes", p, SITE));
+        assertEquals("37:55", PlaceholderFormat.resolve("remaining", p, SITE));
+        assertEquals("24", PlaceholderFormat.resolve("percent", p, SITE));
+        assertEquals("нет", PlaceholderFormat.resolve("qualified", p, SITE));
+        assertEquals("-", PlaceholderFormat.resolve("ticket", p, SITE));
+        assertEquals("50", PlaceholderFormat.resolve("threshold_hours", p, SITE));
+        assertNull(PlaceholderFormat.resolve("unknown", p, SITE));
         PlayerProgress q = new PlayerProgress(U, 3100, 3000, 0, 100, true, "K417");
-        assertEquals("да", PlaceholderFormat.resolve("qualified", q, 3000, ""));
-        assertEquals("K417", PlaceholderFormat.resolve("ticket", q, 3000, ""));
-        assertEquals("0:00", PlaceholderFormat.resolve("remaining", q, 3000, ""));
+        assertEquals("да", PlaceholderFormat.resolve("qualified", q, SITE));
+        assertEquals("K417", PlaceholderFormat.resolve("ticket", q, SITE));
+        assertEquals("0:00", PlaceholderFormat.resolve("remaining", q, SITE));
         // без данных
-        assertEquals("0", PlaceholderFormat.resolve("hours", null, 3000, ""));
-        assertEquals("50:00", PlaceholderFormat.resolve("remaining", null, 3000, ""));
-        assertEquals("50", PlaceholderFormat.resolve("threshold_hours", null, 3000, ""));
+        assertEquals("0", PlaceholderFormat.resolve("hours", null, SITE));
         assertEquals("0:05", PlaceholderFormat.clock(5));
         assertEquals("48:00", PlaceholderFormat.clock(2880));
         assertEquals("50.5", PlaceholderFormat.hours(3030));
@@ -213,7 +213,7 @@ class Phase2Test {
         Fake t = new Fake();
         t.response = "{\"thresholdMinutes\":3000,\"players\":[{\"playerUuid\":\"" + U
                 + "\",\"minutes\":3000,\"thresholdMinutes\":3000,\"remainingMinutes\":0,\"percent\":100,\"qualified\":true,\"ticket\":null}]}";
-        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null), 3000);
+        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null));
         List<PlayerProgress> n1 = s.poll(List.of(U), 1000);
         assertEquals(1, n1.size());
         assertTrue(s.get(U).qualified());
@@ -228,7 +228,7 @@ class Phase2Test {
     void pollFailureBacksOff() {
         Fake t = new Fake();
         t.status = 503;
-        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null), 3000);
+        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null));
         assertTrue(s.poll(List.of(U), 1000).isEmpty());
         assertEquals("http 503", s.lastError());
         assertEquals(1, s.consecutiveFailures());
@@ -245,7 +245,7 @@ class Phase2Test {
     void pollSplitsIntoBatchesOf100() {
         Fake t = new Fake();
         t.response = "{\"thresholdMinutes\":3000,\"players\":[]}";
-        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null), 3000);
+        ProgressService s = new ProgressService(new GiveawayApi(cfg(), t, () -> 0L), new QualifyNotifier(null));
         List<UUID> many = new ArrayList<>();
         for (int i = 0; i < 250; i++) many.add(new UUID(0, i));
         s.poll(many, 0);
