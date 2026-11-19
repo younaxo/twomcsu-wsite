@@ -2,6 +2,9 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
+import { SiteFooter } from '@/components/shell/site-footer';
+import { SiteHeader } from '@/components/shell/site-header';
+import { ShellModeProvider } from '@/lib/site/shell-mode';
 import { GiveawayPage } from './giveaway-page';
 import { selectApi, type SelectedApi } from './select-api';
 import type { MockScenario } from './mock-api';
@@ -16,7 +19,7 @@ const DevSwitcher =
 
 /// Клиентская точка входа: выбирает API (реальный или dev-мок) и рисует страницу.
 /// Реальный HTTP-клиент создаётся сразу; мок подгружается лениво и только в dev.
-export function GiveawayApp() {
+export function GiveawayApp({ mainSiteUrl = null }: { mainSiteUrl?: string | null } = {}) {
   const [selected, setSelected] = useState<SelectedApi | null>(null);
   /// Меняется при каждом выборе сценария: страница пересоздаётся с чистым состоянием.
   const [revision, setRevision] = useState(0);
@@ -40,20 +43,28 @@ export function GiveawayApp() {
     });
   }, []);
 
-  if (!selected) {
-    return (
-      <div
-        role="status"
-        className="flex min-h-dvh items-center justify-center bg-background text-muted-foreground"
-      >
-        Загружаем…
-      </div>
-    );
-  }
+  // Общий каркас основного сайта: шапка и футер те же компоненты; на сайте розыгрыша
+  // (mainSiteUrl) ссылки ведут на основной сайт, запросов к его API нет, «o» без цвета.
   return (
-    <>
-      <GiveawayPage key={revision} api={selected.api} autoIssue={selected.autoIssue} />
-      {DevSwitcher ? <DevSwitcher current={selected.mock} onSelect={switchScenario} /> : null}
-    </>
+    <ShellModeProvider value={{ mainSiteUrl, monochromeLogo: mainSiteUrl !== null }}>
+      <div className="flex min-h-dvh flex-col bg-background text-foreground">
+        <SiteHeader />
+        {selected ? (
+          <GiveawayPage key={revision} api={selected.api} autoIssue={selected.autoIssue} />
+        ) : (
+          <main
+            id="main"
+            role="status"
+            className="flex flex-1 items-center justify-center text-muted-foreground"
+          >
+            Загружаем…
+          </main>
+        )}
+        <SiteFooter />
+      </div>
+      {selected && DevSwitcher ? (
+        <DevSwitcher current={selected.mock} onSelect={switchScenario} />
+      ) : null}
+    </ShellModeProvider>
   );
 }

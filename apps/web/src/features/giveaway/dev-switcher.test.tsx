@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import DevSwitcher from './dev-switcher';
 import { MOCK_SCENARIOS } from './mock-api';
 
+// Каркас (шапка/футер) тянет QueryClient и next/image - здесь проверяется только панель.
+vi.mock('@/components/shell/site-header', () => ({ SiteHeader: () => null }));
+vi.mock('@/components/shell/site-footer', () => ({ SiteFooter: () => null }));
+
 describe('dev-переключатель состояний', () => {
   afterEach(() => {
     vi.unstubAllEnvs();

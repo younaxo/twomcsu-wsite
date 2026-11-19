@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from '@/components/ui/toast';
 import { createHttpGiveawayApi } from './api';
 import { GiveawayPage } from './giveaway-page';
 import { POLL_INTERVAL_MS } from './use-giveaway';
@@ -10,6 +11,10 @@ import {
   type GiveawayPhase,
   type GiveawayPublicInfo,
 } from './types';
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+}));
 
 const HOUR = 3_600_000;
 const NOW = Date.parse('2026-11-20T12:00:00.000Z');
@@ -94,15 +99,6 @@ describe('страница розыгрыша', () => {
     expect(screen.getByRole('timer')).toHaveAccessibleName(/1 день 2 часа 0 минут/);
     expect(screen.getAllByText(/по МСК/).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Получить код' })).toBeNull();
-  });
-
-  it('логотип ведёт на https://twomc.su', async () => {
-    render(<GiveawayPage api={makeApi()} />);
-    await flush();
-    expect(screen.getByRole('link', { name: /twomc\.su/ })).toHaveAttribute(
-      'href',
-      'https://twomc.su',
-    );
   });
 
   it('идёт розыгрыш: кнопка «Получить код» и подсказка про время', async () => {
@@ -247,7 +243,12 @@ describe('страница розыгрыша', () => {
     await flush();
     fireEvent.click(screen.getByRole('button', { name: 'Получить код' }));
     await advance(10);
-    expect(screen.getByRole('alert')).toHaveTextContent(/Слишком много попыток.*2 минуты/);
+    expect(toast.error).toHaveBeenCalledWith(
+      'Не удалось получить код',
+      expect.objectContaining({
+        description: expect.stringMatching(/Слишком много попыток.*2 минуты/),
+      }),
+    );
   });
 
   it('ошибка сети при загрузке: сообщение и повтор', async () => {
@@ -257,7 +258,10 @@ describe('страница розыгрыша', () => {
       .mockResolvedValue(info('running'));
     render(<GiveawayPage api={makeApi({ getPublic })} />);
     await flush();
-    expect(screen.getByRole('alert')).toHaveTextContent(/Нет связи/);
+    expect(toast.error).toHaveBeenCalledWith(
+      'Не удалось загрузить розыгрыш',
+      expect.objectContaining({ description: expect.stringMatching(/Нет связи/) }),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
     await flush();
     expect(screen.getByText('Розыгрыш идёт')).toBeInTheDocument();

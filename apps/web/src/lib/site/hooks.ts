@@ -11,6 +11,7 @@ import type {
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuthStore } from '../auth/store';
+import { useShellMode } from './shell-mode';
 
 export const siteKeys = {
   settings: ['site', 'settings'] as const,
@@ -22,20 +23,25 @@ export const siteKeys = {
 
 /// Публичные настройки сайта (соцсети, e-mail, модули) — кэш 5 минут.
 export function usePublicSiteSettings() {
+  // Отдельный сайт розыгрыша (внешний режим каркаса): API основного сайта не вызываем.
+  const external = useShellMode().mainSiteUrl !== null;
   return useQuery({
     queryKey: siteKeys.settings,
     queryFn: () => api.get<PublicSiteSettings>('/site/settings', { auth: false }),
     staleTime: 5 * 60_000,
+    enabled: !external,
   });
 }
 
 /// Общий онлайн — реальный Server List Ping; обновляется каждую минуту.
 export function useServersOverview() {
+  const external = useShellMode().mainSiteUrl !== null;
   return useQuery({
     queryKey: siteKeys.serversOverview,
     queryFn: () => api.get<ServersOverview>('/servers/overview', { auth: false }),
     refetchInterval: 60_000,
     staleTime: 30_000,
+    enabled: !external,
   });
 }
 
