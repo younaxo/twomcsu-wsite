@@ -3634,6 +3634,9 @@ model GiveawayTicket {
   playerUuid String   @unique @db.VarChar(36)
   playerName String   @db.VarChar(16)
   issuedAt   DateTime @default(now())
+  /// Токен ссылки отслеживания /giveaway/ticket/<токен> (CSPRNG, base64url).
+  /// NULL допустим только до миграции giveaway_ticket_tracking.
+  trackingToken String? @unique @db.VarChar(64)
   codes      GiveawayCode[]
 
   @@map("giveaway_tickets")

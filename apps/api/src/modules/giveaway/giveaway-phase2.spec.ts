@@ -54,6 +54,7 @@ interface TicketRow {
   playerUuid: string;
   playerName: string;
   issuedAt: Date;
+  trackingToken?: string | null;
 }
 
 function matches(row: CodeRow, where: Record<string, unknown>): boolean {
@@ -328,6 +329,8 @@ describe('giveaway фаза 2: коды', () => {
       status: 'redeemed',
       ticket: (r as { ticket: string }).ticket,
       playerName: 'Steve',
+      issuedAt: NOW.toISOString(),
+      trackingToken: expect.stringMatching(/^[A-Za-z0-9_-]{22,}$/) as string,
     });
   });
   it('status: чужая сессия не видит коды (хэш другой)', async () => {

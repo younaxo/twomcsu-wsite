@@ -5,6 +5,7 @@ import {
   HttpException,
   Inject,
   Logger,
+  Param,
   Post,
   Req,
   Res,
@@ -20,6 +21,8 @@ import {
 import {
   COOKIE_PATH,
   PUBLIC_PER_IP_MIN,
+  TRACK_CACHE_MAX_AGE_S,
+  TRACK_PER_IP_MIN,
   SESSION_COOKIE,
   SESSION_COOKIE_MAX_AGE_S,
 } from './giveaway.constants';
@@ -30,10 +33,12 @@ import {
 } from './giveaway-codes.service';
 import {
   invalidEnvelope,
+  notFound,
   tooManyRequests,
   unavailable,
 } from './giveaway-errors';
 import { GiveawayRedisService } from './giveaway-redis.service';
+import { GiveawayTicketsService } from './giveaway-tickets.service';
 
 /// Читает одну cookie из заголовка без cookie-parser (его нет в режиме
 /// GIVEAWAY_ONLY).
@@ -61,6 +66,7 @@ export class GiveawayPublicController {
   constructor(
     private readonly codes: GiveawayCodesService,
     private readonly redis: GiveawayRedisService,
+    private readonly tickets: GiveawayTicketsService,
     @Inject(GIVEAWAY_CONFIG) private readonly config: GiveawayConfig,
   ) {}
 
@@ -123,6 +129,36 @@ export class GiveawayPublicController {
       );
     } catch (err) {
       return this.fail(err, res, 'status');
+    }
+  }
+
+  /// Публичное отслеживание билета по токену из ссылки. Лимит по IP до
+  /// любого чтения БД; все неизвестные и неверные токены - один 404.
+  @Get('tickets/track/:token')
+  async track(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.ensureOperational();
+    this.noStore(res);
+    try {
+      const retry = await this.redis.hit(
+        'track-net',
+        rateLimitKey(req.ip),
+        TRACK_PER_IP_MIN,
+        60,
+      );
+      if (retry > 0) throw new GiveawayLimitError('rate_limited', retry);
+      const found = await this.tickets.track(token);
+      if (found === null) throw notFound();
+      res.setHeader(
+        'Cache-Control',
+        `public, max-age=${TRACK_CACHE_MAX_AGE_S}`,
+      );
+      return found;
+    } catch (err) {
+      return this.fail(err, res, 'track');
     }
   }
 

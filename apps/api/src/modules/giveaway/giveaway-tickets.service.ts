@@ -4,8 +4,14 @@ import {
   REDEEM_PER_SERVER_MIN,
   REDEEM_PER_UUID_MIN,
   TICKET_MAX_ATTEMPTS,
+  TRACKING_TOKEN_PATTERN,
 } from './giveaway.constants';
-import { DUMMY_CODE, generateTicket, normalizeCode } from './giveaway-codes';
+import {
+  DUMMY_CODE,
+  generateTicket,
+  generateTrackingToken,
+  normalizeCode,
+} from './giveaway-codes';
 import {
   GiveawayCodesService,
   GiveawayLimitError,
@@ -39,6 +45,14 @@ export interface PlayerProgress {
   percent: number;
   qualified: boolean;
   ticket: string | null;
+}
+
+/// Публичные данные страницы отслеживания: без UUID, IP и кода.
+export interface TrackedTicket {
+  ticket: string;
+  playerName: string;
+  played: { hours: number; minutes: number };
+  status: 'running' | 'finished';
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -171,6 +185,7 @@ export class GiveawayTicketsService {
           const created = await tx.giveawayTicket.create({
             data: {
               ticket: generateTicket(),
+              trackingToken: generateTrackingToken(),
               playerUuid: body.playerUuid,
               playerName: body.playerName,
               issuedAt: now,
@@ -205,6 +220,27 @@ export class GiveawayTicketsService {
   ): Promise<RedeemResult> {
     if (validFormat) await this.bindCode(hash, existing.id, now);
     return { status: 'issued', ticket: existing.ticket, repeat: true };
+  }
+
+  /// Публичное отслеживание по токену; неизвестный или неверный формат -
+  /// null (единый 404 в контроллере). Токен нельзя подобрать по номеру и нику.
+  async track(
+    token: string,
+    now: Date = new Date(),
+  ): Promise<TrackedTicket | null> {
+    if (!TRACKING_TOKEN_PATTERN.test(token)) return null;
+    const row = await this.prisma.giveawayTicket.findUnique({
+      where: { trackingToken: token },
+    });
+    if (row === null) return null;
+    const s = await this.settings.get();
+    const total = await this.countMinutes(row.playerUuid, s);
+    return {
+      ticket: row.ticket,
+      playerName: row.playerName,
+      played: { hours: Math.floor(total / 60), minutes: total % 60 },
+      status: now.getTime() > s.cutoffAt.getTime() ? 'finished' : 'running',
+    };
   }
 
   /// Пакетный прогресс (п. 6.2): только минуты с разрешённых серверов.

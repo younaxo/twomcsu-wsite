@@ -85,6 +85,11 @@ export const COOKIE_PATH = '/api/giveaway';
 /// Билет: буква без I и O (24) + три цифры.
 export const TICKET_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const TICKET_MAX_ATTEMPTS = 8;
+/// Токен ссылки отслеживания: 24 байта CSPRNG = 32 символа base64url; старые
+/// билеты получают 32 hex-символа из миграции (подходят под тот же шаблон).
+export const TRACKING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
+export const TRACK_PER_IP_MIN = 60;
+export const TRACK_CACHE_MAX_AGE_S = 60;
 
 /// Лимиты (ADR-G002 п. 2.5, 4, 6.1, 6.2).
 export const CODES_PER_SUBNET_HOUR = 30;
