@@ -9,11 +9,30 @@ import { GiveawayIngestService } from './giveaway-ingest.service';
 import { GiveawayRedisService } from './giveaway-redis.service';
 import { GiveawaySettingsService } from './giveaway-settings.service';
 import { GiveawaySignatureGuard } from './giveaway-signature.guard';
+import { GiveawayAdminAuditService } from './giveaway-admin-audit.service';
+import { GiveawayAdminAuthController } from './giveaway-admin-auth.controller';
+import { GiveawayAdminAuthService } from './giveaway-admin-auth.service';
+import { GiveawayAdminController } from './giveaway-admin.controller';
+import { GiveawayAdminGuard } from './giveaway-admin.guard';
+import { GiveawayAdminSettingsService } from './giveaway-admin-settings.service';
+import { GiveawayDataService } from './giveaway-data.service';
+import { GiveawayDiscordClient } from './giveaway-discord.client';
+import { GiveawayDrawService } from './giveaway-draw.service';
+import { GiveawayPrizesService } from './giveaway-prizes.service';
+import { GiveawayStreamController } from './giveaway-stream.controller';
+import { GiveawayStreamService } from './giveaway-stream.service';
+import { GiveawayTestService } from './giveaway-test.service';
 
-/// Розыгрыш «Анархия Новой Эры», фаза 1: приём событий сессий и подсчёт
-/// времени. Выключен по умолчанию (`GIVEAWAY_ENABLED`). См. giveaway/README.md.
+/// Розыгрыш «Анархия Новой Эры»: приём событий и подсчёт времени (фаза 1),
+/// коды и билеты (фаза 2), админка, итоги, эфир и тестовый режим (фаза 3). Выключен по умолчанию (`GIVEAWAY_ENABLED`). См. giveaway/README.md.
 @Module({
-  controllers: [GiveawayController, GiveawayPublicController],
+  controllers: [
+    GiveawayController,
+    GiveawayPublicController,
+    GiveawayAdminAuthController,
+    GiveawayAdminController,
+    GiveawayStreamController,
+  ],
   providers: [
     {
       provide: GIVEAWAY_CONFIG,
@@ -26,6 +45,16 @@ import { GiveawaySignatureGuard } from './giveaway-signature.guard';
     GiveawayCodesService,
     GiveawayTicketsService,
     GiveawaySignatureGuard,
+    GiveawayDiscordClient,
+    GiveawayAdminAuditService,
+    GiveawayAdminAuthService,
+    GiveawayAdminGuard,
+    GiveawayAdminSettingsService,
+    GiveawayDataService,
+    GiveawayPrizesService,
+    GiveawayStreamService,
+    GiveawayTestService,
+    GiveawayDrawService,
   ],
   exports: [GiveawaySettingsService, GiveawayIngestService],
 })

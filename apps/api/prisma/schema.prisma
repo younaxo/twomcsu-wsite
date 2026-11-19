@@ -3664,3 +3664,130 @@ model GiveawayCode {
   @@index([expiresAt])
   @@map("giveaway_codes")
 }
+
+// ---------------------------------------------------------------------------
+// Розыгрыш «Анархия Новой Эры», фаза 3 (админка, розыгрыш, эфир, тестовый
+// режим). Подробно: giveaway/docs/ADR-G003-admin-draw-live.md. Только новые
+// таблицы (expand-only); миграция 20261119170000_giveaway_phase3.
+// ---------------------------------------------------------------------------
+
+/// Приз. Картинка - имя PNG-файла из giveaway/prizes/ (без загрузки).
+model GiveawayPrize {
+  id        String   @id @default(cuid())
+  name      String   @db.VarChar(80)
+  quantity  Int
+  imageFile String?  @db.VarChar(64)
+  /// Меньше = раньше занимает места.
+  priority  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([priority, createdAt])
+  @@map("giveaway_prizes")
+}
+
+/// Розыгрыш: один на контекст (live | test). Статус: frozen -> calculated ->
+/// broadcast; переходы только условными UPDATE (ADR-G003 п. 4).
+model GiveawayDraw {
+  id           String           @id @default(cuid())
+  context      String           @unique @db.VarChar(8)
+  status       String           @db.VarChar(12)
+  snapshotJson String           @db.Text
+  snapshotHash String           @db.VarChar(64)
+  ticketCount  Int
+  frozenAt     DateTime         @default(now())
+  frozenBy     String           @db.VarChar(32)
+  seedHex      String?          @db.VarChar(64)
+  algorithm    String?          @db.VarChar(48)
+  orderJson    String?          @db.Text
+  prizesJson   String?          @db.Text
+  calculatedAt DateTime?
+  calculatedBy String?          @db.VarChar(32)
+  broadcastAt  DateTime?
+  broadcastBy  String?          @db.VarChar(32)
+  revision     Int              @default(1)
+  winners      GiveawayWinner[]
+
+  @@map("giveaway_draws")
+}
+
+/// Победитель места. Замена при дисквалификации - новая строка с тем же place.
+model GiveawayWinner {
+  id               String       @id @default(cuid())
+  drawId           String
+  draw             GiveawayDraw @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  place            Int
+  orderIndex       Int
+  ticket           String       @db.VarChar(4)
+  playerUuid       String       @db.VarChar(36)
+  playerName       String       @db.VarChar(16)
+  prizeName        String       @db.VarChar(80)
+  prizeImage       String?      @db.VarChar(64)
+  status           String       @db.VarChar(16)
+  disqualifiedAt   DateTime?
+  disqualifiedBy   String?      @db.VarChar(32)
+  disqualifyReason String?      @db.VarChar(300)
+  replacesWinnerId String?
+  createdAt        DateTime     @default(now())
+
+  @@unique([drawId, orderIndex])
+  @@index([drawId, place])
+  @@map("giveaway_winners")
+}
+
+/// Сессия администратора (Discord OAuth2). Хранится только HMAC токена.
+model GiveawayAdminSession {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique @db.VarChar(64)
+  discordId   String    @db.VarChar(32)
+  discordName String    @db.VarChar(64)
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([discordId])
+  @@index([expiresAt])
+  @@map("giveaway_admin_sessions")
+}
+
+/// Аудит админки: без секретов, токенов и IP.
+model GiveawayAdminAudit {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  actor      String?  @db.VarChar(32)
+  action     String   @db.VarChar(48)
+  objectType String?  @db.VarChar(24)
+  objectId   String?  @db.VarChar(64)
+  mode       String?  @db.VarChar(8)
+  detail     String?  @db.VarChar(500)
+
+  @@index([at])
+  @@map("giveaway_admin_audit")
+}
+
+/// Тестовый режим: начисления времени нику (изолировано от giveaway_minutes).
+model GiveawayTestTimeGrant {
+  id         String   @id @default(cuid())
+  playerName String   @db.VarChar(16)
+  playerUuid String   @db.VarChar(36)
+  /// Дата по МСК, YYYY-MM-DD.
+  day        String   @db.VarChar(10)
+  minutes    Int
+  createdBy  String   @db.VarChar(32)
+  createdAt  DateTime @default(now())
+
+  @@index([playerUuid])
+  @@map("giveaway_test_time_grants")
+}
+
+/// Тестовый режим: билеты (изолировано от giveaway_tickets).
+model GiveawayTestTicket {
+  id         String   @id @default(cuid())
+  ticket     String   @unique @db.VarChar(4)
+  playerName String   @unique @db.VarChar(16)
+  playerUuid String   @unique @db.VarChar(36)
+  issuedAt   DateTime @default(now())
+
+  @@map("giveaway_test_tickets")
+}

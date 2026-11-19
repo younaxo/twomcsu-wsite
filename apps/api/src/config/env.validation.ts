@@ -387,6 +387,20 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   GIVEAWAY_ALLOWED_SERVERS: Joi.string().allow(''),
   /// Капча на выдаче кода (ADR-G002 п. 2.6); по умолчанию выключена.
   GIVEAWAY_CAPTCHA_ENABLED: Joi.boolean().default(false),
+  /// Админка розыгрыша (giveaway/docs/ADR-G003): Discord OAuth2, allowlist ID
+  /// (через запятую), Origin админки, тестовый режим, каталог PNG призов.
+  /// Без ID и ключей приложения вход закрыт (fail closed).
+  GIVEAWAY_DISCORD_CLIENT_ID: Joi.string().allow(''),
+  GIVEAWAY_DISCORD_CLIENT_SECRET: Joi.string().allow(''),
+  GIVEAWAY_DISCORD_REDIRECT_URI: Joi.string()
+    .uri({ scheme: 'https' })
+    .allow(''),
+  GIVEAWAY_ADMIN_DISCORD_IDS: Joi.string()
+    .pattern(/^([0-9]{5,32}(,\s*[0-9]{5,32})*)?$/)
+    .allow(''),
+  GIVEAWAY_ADMIN_ORIGIN: Joi.string().uri({ scheme: 'https' }).allow(''),
+  GIVEAWAY_TEST_MODE_ENABLED: Joi.boolean().default(false),
+  GIVEAWAY_PRIZES_DIR: Joi.string().allow(''),
 
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по
