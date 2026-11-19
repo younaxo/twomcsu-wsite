@@ -20,9 +20,18 @@ export interface GiveawayIssuedCode {
   ttlSeconds: number;
 }
 
+/// Последняя попытка ввода кода в игре: времени не хватило (код остаётся действующим).
+export interface GiveawayLastAttempt {
+  result: 'not_enough';
+  /// Сколько минут наиграно.
+  minutes: number;
+  remainingMinutes: number;
+  thresholdMinutes: number;
+}
+
 export type GiveawayCodeStatus =
   | { status: 'none' }
-  | { status: 'pending'; expiresAt: string }
+  | { status: 'pending'; expiresAt: string; lastAttempt?: GiveawayLastAttempt | null }
   | { status: 'redeemed'; ticket: string; playerName: string }
   | { status: 'expired' };
 

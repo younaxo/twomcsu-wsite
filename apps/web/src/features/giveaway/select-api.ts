@@ -25,7 +25,10 @@ export async function selectApi(search: string): Promise<SelectedApi> {
     const scenario: MockScenario = isMockScenario(raw) ? raw : 'running';
     return {
       api: createMockGiveawayApi(scenario),
-      autoIssue: scenario === 'pending' || scenario === 'ticket' || scenario === 'limit',
+      autoIssue: scenario === 'pending' ||
+        scenario === 'ticket' ||
+        scenario === 'limit' ||
+        scenario === 'not_enough',
       mock: scenario,
     };
   }

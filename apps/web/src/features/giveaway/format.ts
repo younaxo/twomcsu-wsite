@@ -89,3 +89,12 @@ function plural(n: number, one: string, few: string, many: string): string {
 export const pluralDays = (n: number) => plural(n, 'день', 'дня', 'дней');
 export const pluralHours = (n: number) => plural(n, 'час', 'часа', 'часов');
 export const pluralMinutes = (n: number) => plural(n, 'минута', 'минуты', 'минут');
+
+/// «28 ч 30 мин», «50 ч», «45 мин». Отрицательные и нечисловые значения - 0 мин.
+export function formatDuration(totalMinutes: number): string {
+  const total = Number.isFinite(totalMinutes) ? Math.max(0, Math.floor(totalMinutes)) : 0;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m} мин`;
+  return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
+}

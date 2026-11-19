@@ -5,6 +5,7 @@ import {
   GiveawayApiError,
   type GiveawayApi,
   type GiveawayErrorKind,
+  type GiveawayLastAttempt,
   type GiveawayPublicInfo,
 } from './types';
 
@@ -24,7 +25,13 @@ export type CodeView =
   | { kind: 'idle' }
   | { kind: 'issuing' }
   /// `code === null`: код выдан раньше (до перезагрузки страницы) и больше не показывается.
-  | { kind: 'pending'; code: string | null; expiresAtMs: number }
+  | {
+      kind: 'pending';
+      code: string | null;
+      expiresAtMs: number;
+      /// Игра ответила «время не набрано»: код действует, играйте дальше.
+      lastAttempt: GiveawayLastAttempt | null;
+    }
   /// `animate`: билет только что получен - играем анимацию перебора символов.
   | { kind: 'ticket'; ticket: string; playerName: string; animate: boolean; previously: boolean }
   | { kind: 'expired' }
@@ -91,6 +98,7 @@ export function useGiveaway(api: GiveawayApi, options: UseGiveawayOptions = {}):
           kind: 'pending',
           code: issued.code,
           expiresAtMs: Date.parse(issued.expiresAt),
+          lastAttempt: null,
         });
       })
       .catch((error: unknown) => setView(toErrorView(error)))
@@ -119,7 +127,12 @@ export function useGiveaway(api: GiveawayApi, options: UseGiveawayOptions = {}):
             previously: true,
           });
         } else if (status.status === 'pending') {
-          setView({ kind: 'pending', code: null, expiresAtMs: Date.parse(status.expiresAt) });
+          setView({
+            kind: 'pending',
+            code: null,
+            expiresAtMs: Date.parse(status.expiresAt),
+            lastAttempt: status.lastAttempt ?? null,
+          });
         } else if (autoIssue) {
           issue();
         }
@@ -189,6 +202,12 @@ export function useGiveaway(api: GiveawayApi, options: UseGiveawayOptions = {}):
           return;
         }
         setPollIssue(null);
+        const attempt = status.status === 'pending' ? (status.lastAttempt ?? null) : null;
+        setView((prev) =>
+          prev.kind === 'pending' && JSON.stringify(prev.lastAttempt) !== JSON.stringify(attempt)
+            ? { ...prev, lastAttempt: attempt }
+            : prev,
+        );
         schedule(POLL_INTERVAL_MS);
       } catch (error) {
         if (stopped || isAbort(error)) return;

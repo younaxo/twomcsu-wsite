@@ -7,6 +7,7 @@ import {
   Clock,
   Copy,
   Flag,
+  Hourglass,
   KeyRound,
   Loader2,
   RefreshCw,
@@ -16,6 +17,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import {
   formatCode,
+  formatDuration,
   formatMsk,
   formatMmSs,
   pluralDays,
@@ -235,6 +237,26 @@ function PendingCode({
           </code>
         </p>
       </div>
+      {view.lastAttempt ? (
+        <div
+          role="status"
+          data-testid="not-enough"
+          className="flex w-full max-w-md items-start gap-3 rounded-lg border border-warning/50 bg-surface-sunken p-4 text-sm"
+        >
+          <Hourglass aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warning" />
+          <div className="flex min-w-0 flex-col gap-1 text-foreground">
+            <p className="font-semibold">
+              Время ещё не набрано: {formatDuration(view.lastAttempt.minutes)} из{' '}
+              {formatDuration(view.lastAttempt.thresholdMinutes)}, осталось{' '}
+              {formatDuration(view.lastAttempt.remainingMinutes)}.
+            </p>
+            <p className="text-muted-foreground">
+              Код остаётся действующим. Играйте дальше и введите его снова, когда наберёте нужное
+              время.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="code-timer">
         <Clock aria-hidden="true" className="size-4" />
         Код действует ещё{' '}

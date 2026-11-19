@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatCode,
+  formatDuration,
   formatMmSs,
   formatMsk,
   formatMskTime,
@@ -58,5 +59,16 @@ describe('время', () => {
     expect(formatMmSs(600_000)).toBe('10:00');
     expect(formatMmSs(61_000)).toBe('01:01');
     expect(formatMmSs(-1)).toBe('00:00');
+  });
+});
+
+describe('formatDuration', () => {
+  it('часы и минуты', () => {
+    expect(formatDuration(1710)).toBe('28 ч 30 мин');
+    expect(formatDuration(3000)).toBe('50 ч');
+    expect(formatDuration(45)).toBe('45 мин');
+    expect(formatDuration(0)).toBe('0 мин');
+    expect(formatDuration(-5)).toBe('0 мин');
+    expect(formatDuration(Number.NaN)).toBe('0 мин');
   });
 });

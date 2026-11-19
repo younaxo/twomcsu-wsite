@@ -21,6 +21,7 @@ export const MOCK_SCENARIOS = [
   'down',
   'offline',
   'finished',
+  'not_enough',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -87,6 +88,19 @@ export function createMockGiveawayApi(scenario: MockScenario): GiveawayApi {
       if (scenario === 'expired' && issuedAt === null) return { status: 'expired' };
       if (issuedAt === null) return { status: 'none' };
       polls += 1;
+      if (scenario === 'not_enough') {
+        // Игра ответила «время не набрано»: 28 ч 30 мин из 50 ч, осталось 21 ч 30 мин.
+        return {
+          status: 'pending',
+          expiresAt: new Date(issuedAt + 600_000).toISOString(),
+          lastAttempt: {
+            result: 'not_enough',
+            minutes: 1710,
+            remainingMinutes: 1290,
+            thresholdMinutes: 3000,
+          },
+        };
+      }
       if (scenario === 'ticket' && polls >= 2) {
         return { status: 'redeemed', ticket: 'K417', playerName: 'Steve' };
       }

@@ -263,6 +263,62 @@ describe('страница розыгрыша', () => {
     expect(screen.getByText('Розыгрыш идёт')).toBeInTheDocument();
   });
 
+  it('«время не набрано»: показывает наиграно/осталось, код остаётся действующим', async () => {
+    const api = makeApi({
+      getStatus: vi
+        .fn(
+          async (): Promise<GiveawayCodeStatus> => ({
+            status: 'pending',
+            expiresAt: new Date(Date.now() + 500_000).toISOString(),
+            lastAttempt: {
+              result: 'not_enough',
+              minutes: 1710,
+              remainingMinutes: 1290,
+              thresholdMinutes: 3000,
+            },
+          }),
+        )
+        .mockResolvedValueOnce({ status: 'none' }),
+    });
+    render(<GiveawayPage api={api} />);
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: 'Получить код' }));
+    await advance(10);
+    expect(screen.queryByTestId('not-enough')).toBeNull();
+    await advance(POLL_INTERVAL_MS + 10);
+    const notice = screen.getByTestId('not-enough');
+    expect(notice).toHaveTextContent(
+      'Время ещё не набрано: 28 ч 30 мин из 50 ч, осталось 21 ч 30 мин.',
+    );
+    expect(notice).toHaveTextContent(/Код остаётся действующим/);
+    expect(screen.getByTestId('giveaway-code')).toHaveTextContent('ABCD-EFGH-JKMN-PQRS');
+    expect(screen.getByTestId('code-timer')).toBeInTheDocument();
+    expect(screen.queryByText('Код истёк')).toBeNull();
+  });
+
+  it('«время не набрано» при перезагрузке страницы: уведомление есть, кода нет', async () => {
+    const api = makeApi({
+      getStatus: vi.fn(
+        async (): Promise<GiveawayCodeStatus> => ({
+          status: 'pending',
+          expiresAt: new Date(Date.now() + 500_000).toISOString(),
+          lastAttempt: {
+            result: 'not_enough',
+            minutes: 45,
+            remainingMinutes: 2955,
+            thresholdMinutes: 3000,
+          },
+        }),
+      ),
+    });
+    render(<GiveawayPage api={api} />);
+    await flush();
+    expect(screen.getByTestId('not-enough')).toHaveTextContent(
+      '45 мин из 50 ч, осталось 49 ч 15 мин',
+    );
+    expect(screen.queryByTestId('giveaway-code')).toBeNull();
+  });
+
   it('розыгрыш завершён', async () => {
     render(<GiveawayPage api={makeApi({ phase: 'finished' })} />);
     await flush();

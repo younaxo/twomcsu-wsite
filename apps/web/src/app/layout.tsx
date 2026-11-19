@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { isGiveawayOnly } from '@/features/giveaway/giveaway-only';
 import { SITE_URL } from '@/lib/env';
 import { DEFAULT_DESCRIPTION, fetchPublic, type PublicSiteMeta } from '@/lib/seo';
 import { SSR_THEME, THEME_INIT_SCRIPT } from '@/lib/theme/theme';
@@ -11,7 +12,8 @@ import { Providers } from './providers';
 /// умолчанию. Во вкладке всегда только «twomc.su» (с unread — «(N) twomc.su»,
 /// см. useDocumentBadge); заголовки страниц в title вкладки не попадают.
 export async function generateMetadata(): Promise<Metadata> {
-  const site = await fetchPublic<PublicSiteMeta>('/site/settings', 300);
+  // GIVEAWAY_ONLY: мини-выкладка без API сайта - серверный запрос настроек не делаем.
+  const site = isGiveawayOnly() ? null : await fetchPublic<PublicSiteMeta>('/site/settings', 300);
   const shareTitle = site?.meta?.title?.trim() || 'twomc.su';
   const description = site?.meta?.description?.trim() || DEFAULT_DESCRIPTION;
   const keywords = (site?.meta?.keywords ?? []).filter(Boolean);
