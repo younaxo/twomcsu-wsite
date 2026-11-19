@@ -1,5 +1,7 @@
 import { createHttpGiveawayApi } from './api';
 import type { MockScenario } from './mock-api';
+import { createHttpResultsApi } from './results-api';
+import type { ResultsApi, ResultsMode } from './results-types';
 import type { GiveawayApi } from './types';
 
 /// Моки разрешены только вне production и только по явному флагу.
@@ -14,6 +16,14 @@ export interface SelectedApi {
   /// В режиме предпросмотра код выдаётся автоматически (для сценариев со снимками).
   autoIssue: boolean;
   mock: MockScenario | null;
+  /// Итоги и эфир (SSE + опрос).
+  results: ResultsApi;
+  /// `?mode=test`: тестовый эфир (сервер пускает только админ-сессию).
+  mode: ResultsMode;
+}
+
+export function resolveResultsMode(search: string): ResultsMode {
+  return new URLSearchParams(search).get('mode') === 'test' ? 'test' : 'live';
 }
 
 /// Выбор клиента: реальный HTTP-клиент в production-пути; в dev с флагом -
@@ -31,7 +41,15 @@ export async function selectApi(search: string): Promise<SelectedApi> {
         scenario === 'limit' ||
         scenario === 'not_enough',
       mock: scenario,
+      results: (await import('./results-mock')).createMockResultsApi(scenario),
+      mode: scenario === 'results-test' ? 'test' : resolveResultsMode(search),
     };
   }
-  return { api: createHttpGiveawayApi(), autoIssue: false, mock: null };
+  return {
+    api: createHttpGiveawayApi(),
+    autoIssue: false,
+    mock: null,
+    results: createHttpResultsApi(),
+    mode: resolveResultsMode(search),
+  };
 }

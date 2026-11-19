@@ -22,6 +22,8 @@ export const MOCK_SCENARIOS = [
   'offline',
   'finished',
   'not_enough',
+  'results',
+  'results-test',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -58,7 +60,11 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 export function createMockGiveawayApi(scenario: MockScenario): GiveawayApi {
   const phase: GiveawayPhase =
-    scenario === 'before' ? 'before' : scenario === 'finished' ? 'finished' : 'running';
+    scenario === 'before'
+      ? 'before'
+      : scenario === 'finished' || scenario === 'results' || scenario === 'results-test'
+        ? 'finished'
+        : 'running';
   let issuedAt: number | null = null;
   let polls = 0;
 

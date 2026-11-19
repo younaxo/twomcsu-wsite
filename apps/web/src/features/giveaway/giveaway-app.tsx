@@ -6,6 +6,9 @@ import { SiteFooter } from '@/components/shell/site-footer';
 import { SiteHeader } from '@/components/shell/site-header';
 import { ShellModeProvider } from '@/lib/site/shell-mode';
 import { GiveawayPage } from './giveaway-page';
+import { GiveawayResults } from './giveaway-results';
+import { TestBadge } from './test-badge';
+import { useLiveResults } from './use-live-results';
 import { resolveLayout, type GiveawayLayout } from './layout';
 import { selectApi, type SelectedApi } from './select-api';
 import type { MockScenario } from './mock-api';
@@ -17,6 +20,48 @@ const DevSwitcher =
   process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === '1'
     ? dynamic(() => import('./dev-switcher'), { ssr: false })
     : null;
+
+/// Сцена: пока итогов нет - обычная страница; при state === 'results' - эфир победителей.
+/// Ошибки итогов (live) страницу не ломают: остаётся обычный вид. Тест - только для админ-сессии.
+export function GiveawayStage({
+  selected,
+  layout,
+}: {
+  selected: SelectedApi;
+  layout: GiveawayLayout;
+}) {
+  const live = useLiveResults(selected.results, selected.mode);
+  const test = selected.mode === 'test';
+  if (live.kind === 'ready' && live.data.state === 'results') {
+    return <GiveawayResults data={live.data} />;
+  }
+  if (test && live.kind === 'error') {
+    return (
+      <main id="main" className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-10">
+        <TestBadge />
+        <p role="alert" className="text-center text-foreground">
+          {live.error === 'unauthorized'
+            ? 'Тестовый эфир доступен только администратору: войдите в админку.'
+            : live.error === 'test_disabled'
+              ? 'Тестовый режим выключен.'
+              : 'Не удалось загрузить тестовый эфир.'}
+        </p>
+      </main>
+    );
+  }
+  const page = (
+    <GiveawayPage api={selected.api} autoIssue={selected.autoIssue} layout={layout} />
+  );
+  if (!test) return page;
+  return (
+    <>
+      <div className="mx-auto w-full max-w-5xl px-4 pt-4">
+        <TestBadge />
+      </div>
+      {page}
+    </>
+  );
+}
 
 /// Клиентская точка входа: выбирает API (реальный или dev-мок) и рисует страницу.
 /// Реальный HTTP-клиент создаётся сразу; мок подгружается лениво и только в dev.
@@ -54,12 +99,7 @@ export function GiveawayApp({ mainSiteUrl = null }: { mainSiteUrl?: string | nul
       <div className="flex min-h-dvh flex-col bg-background text-foreground">
         <SiteHeader />
         {selected ? (
-          <GiveawayPage
-            key={revision}
-            api={selected.api}
-            autoIssue={selected.autoIssue}
-            layout={layout}
-          />
+          <GiveawayStage key={revision} selected={selected} layout={layout} />
         ) : (
           <main
             id="main"

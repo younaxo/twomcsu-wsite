@@ -54,7 +54,7 @@ describe('призы из конфига (Q97)', () => {
       place: 1,
       title: 'Клавиатура AJAZZ AK820',
       description: 'Механическая клавиатура AJAZZ AK820 и кастомный титул.',
-      image: 'keyboard.svg',
+      image: 'keyboard-art.svg',
     });
   });
 

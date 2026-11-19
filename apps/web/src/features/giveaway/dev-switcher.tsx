@@ -19,6 +19,8 @@ export const DEV_SCENARIO_LABELS: Record<MockScenario, string> = {
   offline: 'Ошибка сети',
   down: 'Сервис недоступен',
   finished: 'Завершён',
+  results: 'Итоги (эфир)',
+  'results-test': 'Итоги (ТЕСТ)',
 };
 
 const ORDER: readonly MockScenario[] = [
@@ -33,6 +35,8 @@ const ORDER: readonly MockScenario[] = [
   'offline',
   'down',
   'finished',
+  'results',
+  'results-test',
 ];
 
 const focusRing =
