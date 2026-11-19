@@ -27,6 +27,10 @@ import {
   splitCountdown,
 } from './format';
 import { useNow } from './hooks';
+import { GiveawayHero, WORKSPACE_ID } from './giveaway-hero';
+import type { GiveawayLayout } from './layout';
+import { PrizeSections } from './prize-sections';
+import { PrizeShowcase } from './prize-showcase';
 import { TicketCard } from './ticket-card';
 import type { GiveawayApi, GiveawayErrorKind, GiveawayPublicInfo } from './types';
 import { useGiveaway, type CodeView } from './use-giveaway';
@@ -124,7 +128,14 @@ function CountdownUnit({ value, unit }: { value: number; unit: string }) {
   );
 }
 
-function BeforeStart({ info }: { info: GiveawayPublicInfo }) {
+function BeforeStart({
+  info,
+  showCountdown = true,
+}: {
+  info: GiveawayPublicInfo;
+  /** В новой раскладке крупный таймер уже наверху страницы. */
+  showCountdown?: boolean;
+}) {
   const now = useNow(true);
   const left = splitCountdown(Date.parse(info.startAtUtc) - now);
   const spoken = `${left.days} ${pluralDays(left.days)} ${left.hours} ${pluralHours(left.hours)} ${left.minutes} ${pluralMinutes(left.minutes)}`;
@@ -137,12 +148,18 @@ function BeforeStart({ info }: { info: GiveawayPublicInfo }) {
       <p className="text-center text-muted-foreground">
         Старт: <strong className="text-foreground">{formatMsk(info.startAtUtc)}</strong>
       </p>
-      <div role="timer" aria-label={`До старта осталось ${spoken}`} className="flex gap-2 sm:gap-3">
-        <CountdownUnit value={left.days} unit={pluralDays(left.days)} />
-        <CountdownUnit value={left.hours} unit={pluralHours(left.hours)} />
-        <CountdownUnit value={left.minutes} unit={pluralMinutes(left.minutes)} />
-        <CountdownUnit value={left.seconds} unit="сек" />
-      </div>
+      {showCountdown ? (
+        <div
+          role="timer"
+          aria-label={`До старта осталось ${spoken}`}
+          className="flex gap-2 sm:gap-3"
+        >
+          <CountdownUnit value={left.days} unit={pluralDays(left.days)} />
+          <CountdownUnit value={left.hours} unit={pluralHours(left.hours)} />
+          <CountdownUnit value={left.minutes} unit={pluralMinutes(left.minutes)} />
+          <CountdownUnit value={left.seconds} unit="сек" />
+        </div>
+      ) : null}
       <p className="text-center text-sm text-muted-foreground">
         Билеты можно получить с момента старта и до {formatMsk(info.cutoffAtUtc)}.
       </p>
@@ -326,12 +343,16 @@ function Running({
   );
 }
 
-function Finished({ view }: { view: CodeView }) {
+/// `heroHasStatus`: в новой раскладке «Розыгрыш завершён» уже показан наверху (вместо
+/// таймера), поэтому заголовок рабочей области другой - без дублей текста.
+function Finished({ view, heroHasStatus }: { view: CodeView; heroHasStatus: boolean }) {
   return (
     <section aria-labelledby="gw-state" className="flex flex-col items-center gap-6">
       <Flag aria-hidden="true" className="size-10 text-primary" />
       <StateHeading id="finished">
-        <span id="gw-state">Розыгрыш завершён</span>
+        <span id="gw-state">
+          {heroHasStatus ? 'Билеты больше не выдаются' : 'Розыгрыш завершён'}
+        </span>
       </StateHeading>
       <p className="text-center text-muted-foreground">
         Приём билетов закрыт. Спасибо всем, кто участвовал!
@@ -403,25 +424,47 @@ function useGiveawayToasts(
 export interface GiveawayPageProps {
   api: GiveawayApi;
   autoIssue?: boolean;
+  /** `cards` - прежний карточный вариант (dev, `?layout=cards`). */
+  layout?: GiveawayLayout;
 }
 
 /// Страница розыгрыша: все состояния. Данные - только через переданный `api`.
-export function GiveawayPage({ api, autoIssue = false }: GiveawayPageProps) {
+export function GiveawayPage({ api, autoIssue = false, layout = 'default' }: GiveawayPageProps) {
+  const cards = layout === 'cards';
   const { info, view, pollIssue, issue, reload } = useGiveaway(api, { autoIssue });
   useGiveawayToasts(info, view, pollIssue, issue, reload);
   return (
     <main
       id="main"
-      className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:py-12"
+      className={cn(
+        'mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-8 sm:py-12',
+        cards ? 'gap-8' : 'gap-16 sm:gap-24',
+      )}
     >
-      <div className="text-center">
-        <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-          Розыгрыш на «Анархии Новой Эры»
-        </h1>
-      </div>
+      {cards ? (
+        <>
+          <div className="text-center">
+            <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
+              Розыгрыш на «Анархии Новой Эры»
+            </h1>
+          </div>
+          <PrizeShowcase />
+        </>
+      ) : (
+        <>
+          <GiveawayHero info={info.kind === 'ready' ? info.info : null} />
+          <PrizeSections />
+        </>
+      )}
       <div
-        className="rounded-xl border border-border bg-surface p-5 shadow sm:p-8"
-        data-testid="giveaway-card"
+        id={cards ? undefined : WORKSPACE_ID}
+        tabIndex={cards ? undefined : -1}
+        className={
+          cards
+            ? 'mx-auto w-full max-w-3xl rounded-xl border border-border bg-surface p-5 shadow sm:p-8'
+            : 'mx-auto w-full max-w-3xl scroll-mt-24 border-t border-border pt-12 outline-none'
+        }
+        data-testid={cards ? 'giveaway-card' : 'giveaway-workspace'}
       >
         {info.kind === 'loading' ? (
           <p
@@ -444,9 +487,9 @@ export function GiveawayPage({ api, autoIssue = false }: GiveawayPageProps) {
             </ActionButton>
           </section>
         ) : info.info.status === 'before' ? (
-          <BeforeStart info={info.info} />
+          <BeforeStart info={info.info} showCountdown={cards} />
         ) : info.info.status === 'finished' ? (
-          <Finished view={view} />
+          <Finished view={view} heroHasStatus={!cards} />
         ) : (
           <Running info={info.info} view={view} issue={issue} />
         )}

@@ -34,6 +34,8 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_TELEMETRY_DISABLED=1
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+COPY giveaway/config giveaway/config
+COPY giveaway/assets giveaway/assets
 RUN test -n "$NEXT_PUBLIC_TURNSTILE_SITE_KEY" || (echo "ОШИБКА: не задан build-arg NEXT_PUBLIC_TURNSTILE_SITE_KEY (публичный site key Cloudflare Turnstile); сборка web без него остановлена" >&2; exit 1)
 RUN pnpm --filter @twomc/shared run build && pnpm --filter @twomc/web run build
 
