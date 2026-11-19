@@ -230,9 +230,9 @@ function PendingCode({
       )}
       <div className="flex w-full max-w-md items-start gap-3 rounded-lg border border-border bg-surface-sunken p-4 text-sm">
         <Terminal aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
-        <p className="text-foreground">
+        <p className="min-w-0 text-foreground">
           Зайдите на «Анархию Новой Эры» и введите в игре:{' '}
-          <code className="whitespace-nowrap rounded bg-surface px-1.5 py-0.5 font-mono font-semibold">
+          <code className="break-all rounded bg-surface px-1.5 py-0.5 font-mono font-semibold">
             {GAME_COMMAND} {shown ?? 'КОД'}
           </code>
         </p>

@@ -60,14 +60,16 @@
 
 Маршрут `/giveaway` в `apps/web` (`src/app/giveaway/page.tsx`), код — `apps/web/src/features/giveaway/`. Страница клиентская: ходит только на `/api/giveaway/v1/{public,codes,codes/status}` того же домена (`credentials: same-origin`, cookie `gw_session`), к API сайта не обращается. Все даты — по МСК (`Intl`, `Europe/Moscow`), логотип ведёт на `https://twomc.su`.
 
-Состояния: до старта (обратный отсчёт), идёт, код выдан и ожидание ввода в игре (опрос `codes/status` раз в 2,5 с только пока код pending и вкладка видима, таймер жизни кода, «Скопировать», «Новый код»), анимация перебора символов и итоговый билет с ником (при `prefers-reduced-motion` сразу билет), «билет уже получен», ошибки (429, 503, сеть, код истёк), розыгрыш завершён. Статуса «время не набрано» в контракте `codes/status` нет (его видит игрок в игре), поэтому на странице только подсказка «игра покажет, сколько осталось».
+Состояния: до старта (обратный отсчёт), идёт, код выдан и ожидание ввода в игре (опрос `codes/status` раз в 2,5 с только пока код pending и вкладка видима, таймер жизни кода, «Скопировать», «Новый код»), анимация перебора символов и итоговый билет с ником (при `prefers-reduced-motion` сразу билет), «билет уже получен», ошибки (429, 503, сеть, код истёк), розыгрыш завершён. При pending `codes/status` может содержать `lastAttempt: {result:"not_enough", minutes, remainingMinutes, thresholdMinutes}`: страница показывает «Время ещё не набрано: X ч Y мин из 50 ч, осталось …», код остаётся действующим, поллинг продолжается.
 
 Переменные окружения web:
 - `GIVEAWAY_ONLY=true` (на сервере web): все маршруты, кроме `/giveaway`, `/api/giveaway/*` и статики, редиректят (307) на `/giveaway` (`src/middleware.ts`). Без флага сайт не меняется.
 - `NEXT_PUBLIC_GIVEAWAY_API_BASE` (необязательно): префикс API, если он не на том же домене; по умолчанию пусто.
-- `NEXT_PUBLIC_GIVEAWAY_MOCK=1`: только dev (при `NODE_ENV=production` игнорируется): API заменяется моком, сценарий выбирается `?mock=before|running|pending|ticket|redeemed|expired|limit|down|offline|finished`.
+- `NEXT_PUBLIC_GIVEAWAY_MOCK=1`: только dev (при `NODE_ENV=production` игнорируется): API заменяется моком, сценарий выбирается `?mock=before|running|pending|not_enough|ticket|redeemed|expired|limit|down|offline|finished`. При моке (и не production) справа внизу видна кнопка «Состояния (dev)» с меню сценариев (Tab/Enter/Escape); панель грузится динамическим `import()` за литеральным условием `process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === "1"`, в production-бандл не попадает (тест проверяет условие и отсутствие панели).
 
-Проверка: `pnpm --filter @twomc/web exec vitest run src/features/giveaway`. Скриншоты основных состояний (dark, desktop 1280 и mobile 500, на моках): `docs/screenshots/phase2/`. Ограничение headless Edge: окно уже 500 px не делается, 320 px вручную не снимался.
+`GIVEAWAY_ONLY` и middleware (Next 14.2.35, self-hosted `next start`): edge-песочница middleware наполняет `process.env` из окружения процесса в рантайме (`sandbox/context.js`, `buildEnvironmentVariablesFrom`), а при сборке инлайнятся только `NEXT_PUBLIC_*` и значения из `next.config` `env`. Значит `GIVEAWAY_ONLY` для middleware достаточно задать при запуске `next start`; пересборка не нужна. Оговорка: `generateMetadata` в `layout.tsx` на статически предсобранных страницах вычисляется при сборке, поэтому в Docker-образе мини-выкладки флаг нужно задавать и на этапе сборки (build arg/ENV), иначе в метаданные может попасть запрос `/site/settings`; на редирект это не влияет.
+
+Проверка: `pnpm --filter @twomc/web exec vitest run src/features/giveaway`. Скриншоты основных состояний (dark, desktop 1280 и mobile 500, на моках): `docs/screenshots/phase2/`. Снимки 320 px (`*-320.png`, включая `not_enough`) сняты headless Chromium (chrome-headless-shell из Playwright) с `--window-size=320,…` на dev-сервере с моком; Edge уже 500 px не сужается.
 
 ## Безопасность выкладки
 
