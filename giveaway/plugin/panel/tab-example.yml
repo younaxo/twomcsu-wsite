@@ -1,0 +1,23 @@
+# Запасной вариант панели прогресса розыгрыша через плагин TAB (без ресурс-пака), см. panel/README.md п. 4.
+# Это пример, а не готовый файл: имена секций и формат зависят от версии TAB, сверьтесь с его документацией.
+# Плейсхолдеры PlaceholderAPI подключаются как есть. НЕ босс-бар и НЕ скорборд (заняты другими механиками).
+# До первого ответа сайта даты и порог показываются как «—».
+# Скопируйте нужный блок в конфиг TAB (header/footer или layout), поправьте отступы под его формат.
+
+header-footer:
+  header:
+    - "&6&lАнархия Новой Эры"
+    - "&7Розыгрыш: &f%twomcgiveaway_start% &7- &f%twomcgiveaway_cutoff%"
+  footer:
+    - ""
+    - "&6Онлайн для билета: &f%twomcgiveaway_hours% ч %twomcgiveaway_minutes% мин из %twomcgiveaway_threshold_hours% ч &7(%twomcgiveaway_percent%%)"
+    - "&7Осталось: &f%twomcgiveaway_remaining% &7| Билет: &6%twomcgiveaway_ticket%"
+
+# Вариант layout (если используется): строки того же вида в слотах layout.
+# layout:
+#   slots:
+#     - "&6Розыгрыш: &f%twomcgiveaway_hours% ч из %twomcgiveaway_threshold_hours% ч"
+#     - "&7Билет: &6%twomcgiveaway_ticket%"
+
+# Интервал обновления плейсхолдеров в TAB: 5-10 секунд (данные плагина обновляются раз в минуту).
+# Знак процента после числа: «%%» или «%» зависит от версии TAB.

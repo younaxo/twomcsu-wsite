@@ -8,7 +8,7 @@
 ## 0. Предусловия
 - [В] Решение: сервер (отдельный от production twomc.su), домен/поддомен, срок жизни выкладки.
 - [В] Домен: A/AAAA-запись на сервер. Игровой трафик Minecraft через Cloudflare не проксировать (Q14); для HTTPS-части прокси допустим только по отдельному решению (иначе менять `TRUST_PROXY` и nginx).
-- [В] Назвать домен и заменить плейсхолдер `giveaway.example.com` в `nginx/giveaway.conf` (3 места: `map $gw_domain` и два `server_name`; проверка: `grep -n example.com giveaway/deploy/nginx/giveaway.conf` ничего не находит) коммитом в ветке, не на сервере вручную. Редирект 80->443 и заголовок `Host` к API берутся из `$gw_domain`, а не из запроса; запросы к чужому Host или по IP получают 444 (catch-all).
+- [В] DNS-запись `giveaway` в Beget - владелец. Домен `giveaway.twomc.su` уже прописан в `nginx/giveaway.conf` (3 места: `map $gw_domain` и два `server_name`; проверка: `grep -n example.com deploy/nginx/giveaway.conf` ничего не находит). Редирект 80->443 и заголовок `Host` к API берутся из `$gw_domain`, а не из запроса; запросы к чужому Host или по IP получают 444 (catch-all).
 
 ## 1. Сервер и пользователь без root
 1. [В] Создать пользователя `gw` без sudo-пароля для рутины: `adduser gw`, добавить в группу `docker` (rootless Docker предпочтительнее; группа docker эквивалентна root - принять осознанно).
@@ -77,6 +77,7 @@ docker rmi twomc-giveaway-keytool:tmp
 - `online-mode=true` в `server.properties` (за прокси - на прокси и защищённый проброс UUID). Проверка: `/giveawaytime` в игре (право `giveaway.admin`) показывает режим; в логе плагина нет предупреждения об `online-mode=false`.
 - NTP на игровом сервере - как в п.1.5.
 - `apiUrl` плагина - `https://<домен>` (без пути), `serverId` из `GIVEAWAY_ALLOWED_SERVERS`.
+- Логи команд: `/giveaway <код>` виден в консоли Spigot и в CoreProtect, spy и подобных плагинах. Исключите команды `/giveaway` и `/ticket` из их логов (по документации плагина), включая пересылку логов наружу.
 
 ## 7. Бэкап БД розыгрыша
 Ежедневно (cron пользователя `gw`), дамп хранит данные подсчёта времени - права 0600, каталог 0700:

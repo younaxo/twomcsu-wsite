@@ -20,6 +20,8 @@ export interface GiveawayConfig {
   /// Принимать версию на единицу ниже текущей (ротация).
   acceptPreviousKey: boolean;
   timestampWindowS: number;
+  /// `GIVEAWAY_CAPTCHA_ENABLED` (ADR-G002 п. 2.6); по умолчанию выключено.
+  captchaEnabled: boolean;
   defaults: {
     thresholdMinutes: number;
     startAt: Date;
@@ -74,6 +76,7 @@ export function readGiveawayConfig(env: EnvReader): GiveawayConfig {
       5,
       MAX_TIMESTAMP_WINDOW_S,
     ),
+    captchaEnabled: toBoolean(env.get('GIVEAWAY_CAPTCHA_ENABLED'), false),
     defaults: {
       thresholdMinutes: toInt(
         env.get('GIVEAWAY_THRESHOLD_MINUTES'),

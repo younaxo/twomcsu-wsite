@@ -3625,3 +3625,42 @@ model GiveawaySessionEvent {
   @@index([playerUuid, occurredAt])
   @@map("giveaway_session_events")
 }
+
+/// Билет розыгрыша (ADR-G002): буква без I и O + 3 цифры. UNIQUE на ticket и на
+/// игрока (один билет на UUID). Время UTC.
+model GiveawayTicket {
+  id         String   @id @default(cuid())
+  ticket     String   @unique @db.VarChar(4)
+  playerUuid String   @unique @db.VarChar(36)
+  playerName String   @db.VarChar(16)
+  issuedAt   DateTime @default(now())
+  codes      GiveawayCode[]
+
+  @@map("giveaway_tickets")
+}
+
+/// Код привязки (ADR-G002): хранится только HMAC-хэш кода и хэш анонимной
+/// cookie-сессии браузера. Одноразовый, TTL 10 минут, один активный на сессию.
+model GiveawayCode {
+  id          String          @id @default(cuid())
+  codeHash    String          @unique @db.VarChar(64)
+  sessionHash String          @db.VarChar(64)
+  createdAt   DateTime        @default(now())
+  expiresAt   DateTime
+  redeemedAt  DateTime?
+  revokedAt   DateTime?
+  ticketId    String?
+  ticket      GiveawayTicket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  /// Последняя попытка погашения при нехватке времени (код не гасится).
+  lastAttemptAt        DateTime?
+  lastAttemptMinutes   Int?
+  lastAttemptThreshold Int?
+
+  /// Частичный уникальный индекс giveaway_codes_one_active_per_session
+  /// (sessionHash) WHERE redeemedAt IS NULL AND revokedAt IS NULL существует
+  /// только в миграции 20261119150000_giveaway_phase2b: Prisma не выражает
+  /// частичные индексы. Не удалять при будущих migrate diff.
+  @@index([sessionHash, createdAt])
+  @@index([expiresAt])
+  @@map("giveaway_codes")
+}

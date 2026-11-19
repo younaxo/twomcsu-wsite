@@ -5,6 +5,7 @@
 ## Что где лежит
 
 - `docs/ADR-G001-session-time-counting.md` — решения по подсчёту времени и контракт для плагина (подпись, события).
+- `docs/ADR-G002-codes-and-tickets.md` — фаза 2: cookie-сессия, коды, билеты, `redeem`/`progress` для плагина, контракт для страницы (`codes`, `codes/status`, `public`).
 - `docs/MASTER-PROMPT-16.1.md` — задание фазы 1, работа 1 (бэкенд).
 - Бэкенд: `apps/api/src/modules/giveaway/` (модуль, выключен флагом `GIVEAWAY_ENABLED`).
 - Миграция: `apps/api/prisma/migrations/20261119120000_giveaway_phase1/` (expand-only, ждёт ревью; на production применяет владелец).
@@ -43,6 +44,32 @@
 Команда `/giveawaytime` (право `giveaway.admin`, по умолчанию op): настроена ли отправка, режим online-mode, размер и возраст очереди, последний успех, ошибка связи и время следующей попытки, счётчики отброшенных событий. Ключ не показывается.
 
 Безопасность: при `online-mode=false` в лог пишется громкое предупреждение (риск подмены ника, см. ADR). За прокси нужен `online-mode=true` на прокси и защищённый проброс UUID. Часы сервера должны быть синхронизированы по NTP (окно ±300 с).
+
+### Фаза 2: билеты, прогресс, PlaceholderAPI
+
+Контракт: `docs/ADR-G002-codes-and-tickets.md`, разделы 6 и 7. Подпись та же, что у `/events`, но подписываемый путь свой: `/api/giveaway/v1/redeem` и `/api/giveaway/v1/progress`.
+
+- `/giveaway <код>` (псевдоним `/ticket`, право `giveaway.use`, по умолчанию у всех; только игрок). Код нормализуется как на бэкенде (регистр, пробелы и дефисы, `O`->`0`, `I`/`L`->`1`). Запрос асинхронный, ответ игроку на главном потоке. `not_enough`: «Набрано X ч Y мин из 50 ч, осталось …» (порог из ответа); `issued`: билет крупно (чат и title, звук); `repeat`: «Ваш билет: K417»; `invalid_code`: нейтральное сообщение; лимит, сеть, любой неожиданный ответ: «Попробуйте позже». Кулдаун на игрока `cooldownSeconds` (5 с). Код нигде не логируется. Неверный по формату код уходит на сервер как нулевой (порядок проверок ADR: билет уже есть, мало времени, иначе `invalid_code`).
+- Прогресс: раз в минуту пакетом (до 100) `POST /progress` по онлайн-игрокам; кэш на игрока (минуты, порог, остаток, процент, qualified, билет). Пауза при ошибках сети (1, 2, 4, 5 мин). При `qualified` без билета игрок один раз получает чат, title и звук `ENTITY_PLAYER_LEVELUP`; отметка хранится в `plugins/TwoMCGiveaway/notified.txt` и переживает рестарт. Если игрок набрал порог офлайн, уведомление придёт при первом опросе после входа.
+- PlaceholderAPI (softdepend, версия 2.11.6 compileOnly; без него плагин работает): `%twomcgiveaway_hours%`, `_minutes`, `_remaining` (`ч:мм`), `_percent`, `_qualified` (`да`/`нет`), `_ticket` (или `-`), `_threshold_hours`, `_start`, `_cutoff`. Даты и порог берутся ТОЛЬКО из ответа сайта `/progress` (`startText`, `cutoffText` по МСК, `thresholdMinutes`); до первого ответа они показывают `—`, сообщение `not_enough` берёт порог из ответа `/redeem`. Подробности и подключение к панели: `plugin/panel/README.md`, запасной вариант через TAB: `plugin/panel/tab-example.yml`.
+- `/giveawaytime` дополнен статусом опроса прогресса (успешные и неудачные опросы, последний успех, ошибка, размер пакета, размер кэша).
+- Настройки: в config.yml остаются только `apiUrl`, `serverId`, `keyVersion` (допущение Q93: версия ключа задаётся вместе с `keyFile`), `keyFile` (и фазы 1 `afkMinutes`, `maxQueueEvents`). Старые ключи `thresholdHoursDefault`, `cutoffText`, `cooldownSeconds`, `progress.*` убраны из шаблона; если они есть в конфиге сервера, плагин их игнорирует и пишет одно предупреждение. Служебные значения (допущение) заданы в коде: кулдаун 5 с, опрос раз в минуту, уведомление о пороге; override только через окружение: `GIVEAWAY_COOLDOWN_SECONDS` (1..60), `GIVEAWAY_PROGRESS_ENABLED=false`, `GIVEAWAY_PROGRESS_NOTIFY=false`.
+- ВНИМАНИЕ (логи команд): команда `/giveaway <код>` попадает в лог консоли Spigot и в плагины журналирования команд (CoreProtect, spy и подобные). Исключите команды `/giveaway` и `/ticket` из их логов (по документации каждого плагина) и из пересылки логов в Discord и внешние системы. Дополнительная защита: код живёт 10 минут и одноразовый.
+
+## Страница
+
+Маршрут `/giveaway` в `apps/web` (`src/app/giveaway/page.tsx`), код — `apps/web/src/features/giveaway/`. Страница клиентская: ходит только на `/api/giveaway/v1/{public,codes,codes/status}` того же домена (`credentials: same-origin`, cookie `gw_session`), к API сайта не обращается. Все даты — по МСК (`Intl`, `Europe/Moscow`), логотип ведёт на `https://twomc.su`.
+
+Состояния: до старта (обратный отсчёт), идёт, код выдан и ожидание ввода в игре (опрос `codes/status` раз в 2,5 с только пока код pending и вкладка видима, таймер жизни кода, «Скопировать», «Новый код»), анимация перебора символов и итоговый билет с ником (при `prefers-reduced-motion` сразу билет), «билет уже получен», ошибки (429, 503, сеть, код истёк), розыгрыш завершён. При pending `codes/status` может содержать `lastAttempt: {result:"not_enough", minutes, remainingMinutes, thresholdMinutes}`: страница показывает «Время ещё не набрано: X ч Y мин из 50 ч, осталось …», код остаётся действующим, поллинг продолжается.
+
+Переменные окружения web:
+- `GIVEAWAY_ONLY=true` (на сервере web): все маршруты, кроме `/giveaway`, `/api/giveaway/*` и статики, редиректят (307) на `/giveaway` (`src/middleware.ts`). Без флага сайт не меняется.
+- `NEXT_PUBLIC_GIVEAWAY_API_BASE` (необязательно): префикс API, если он не на том же домене; по умолчанию пусто.
+- `NEXT_PUBLIC_GIVEAWAY_MOCK=1`: только dev (при `NODE_ENV=production` игнорируется): API заменяется моком, сценарий выбирается `?mock=before|running|pending|not_enough|ticket|redeemed|expired|limit|down|offline|finished`. При моке (и не production) справа внизу видна кнопка «Состояния (dev)» с меню сценариев (Tab/Enter/Escape); панель грузится динамическим `import()` за литеральным условием `process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === "1"`, в production-бандл не попадает (тест проверяет условие и отсутствие панели).
+
+`GIVEAWAY_ONLY` и middleware (Next 14.2.35, self-hosted `next start`): edge-песочница middleware наполняет `process.env` из окружения процесса в рантайме (`sandbox/context.js`, `buildEnvironmentVariablesFrom`), а при сборке инлайнятся только `NEXT_PUBLIC_*` и значения из `next.config` `env`. Значит `GIVEAWAY_ONLY` для middleware достаточно задать при запуске `next start`; пересборка не нужна. Оговорка: `generateMetadata` в `layout.tsx` на статически предсобранных страницах вычисляется при сборке, поэтому в Docker-образе мини-выкладки флаг нужно задавать и на этапе сборки (build arg/ENV), иначе в метаданные может попасть запрос `/site/settings`; на редирект это не влияет.
+
+Проверка: `pnpm --filter @twomc/web exec vitest run src/features/giveaway`. Скриншоты основных состояний (dark, desktop 1280 и mobile 500, на моках): `docs/screenshots/phase2/`. Снимки 320 px (`*-320.png`, включая `not_enough`) сняты headless Chromium (chrome-headless-shell из Playwright) с `--window-size=320,…` на dev-сервере с моком; Edge уже 500 px не сужается.
 
 ## Безопасность выкладки
 

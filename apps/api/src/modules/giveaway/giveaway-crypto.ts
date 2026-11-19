@@ -79,3 +79,36 @@ export function verifySignature(
   if (expected.length !== actual.length) return false;
   return timingSafeEqual(expected, actual);
 }
+
+/// Ключ назначения (сессии браузера, коды): HKDF-SHA256, соль фиксирована, info
+/// содержит метку и отличается от ключей серверов (ADR-G002 п. 1.3).
+export function deriveLabelKey(masterSecret: Buffer, label: string): Buffer {
+  if (masterSecret.length === 0) throw new Error('empty master secret');
+  const info = Buffer.concat([
+    Buffer.from('twomc-giveaway', 'utf8'),
+    Buffer.from([0]),
+    Buffer.from(label, 'utf8'),
+    Buffer.from([0]),
+    Buffer.from('v1', 'utf8'),
+  ]);
+  return Buffer.from(
+    hkdfSync(
+      'sha256',
+      masterSecret,
+      Buffer.from('giveaway-static', 'utf8'),
+      info,
+      32,
+    ),
+  );
+}
+
+export function hmacHex(key: Buffer, data: string): string {
+  return createHmac('sha256', key).update(data, 'utf8').digest('hex');
+}
+
+/// Сравнение hex-хэшей за постоянное время.
+export function safeEqualHex(a: string, b: string): boolean {
+  const x = Buffer.from(a, 'hex');
+  const y = Buffer.from(b, 'hex');
+  return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
+}

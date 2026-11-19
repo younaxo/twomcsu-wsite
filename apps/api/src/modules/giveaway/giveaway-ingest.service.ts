@@ -127,11 +127,13 @@ export class GiveawayIngestService {
   }
 
   /// Итог игрока: число минут-корзин в окне [startAt, cutoffAt].
+  /// Считаются только корзины с разрешённых серверов (ADR-G002 п. 6.3).
   async getProgress(playerUuid: string) {
     const s = await this.settings.get();
     const minutes = await this.prisma.giveawayMinute.count({
       where: {
         playerUuid: playerUuid.toLowerCase(),
+        serverSlug: { in: s.allowedServers },
         minute: { gte: s.startAt, lte: s.cutoffAt },
       },
     });

@@ -12,6 +12,12 @@ public final class Protocol {
     /** Путь, который подписывается ВСЕГДА. */
     public static final String SIGN_PATH = "/api/giveaway/v1/events";
     public static final String METHOD = "POST";
+    /** Фаза 2 (ADR-G002 п. 6): подписываемые пути redeem и progress. */
+    public static final String REDEEM_PATH = "/api/giveaway/v1/redeem";
+    public static final String PROGRESS_PATH = "/api/giveaway/v1/progress";
+    public static final int MAX_PROGRESS_UUIDS = 100;
+    /** Билет: буква без I и O плюс три цифры (ADR-G002 п. 7.1). */
+    public static final Pattern TICKET = Pattern.compile("^[A-HJ-NP-Z][0-9]{3}$");
 
     public static final String HEADER_KEY_ID = "X-Giveaway-Key-Id";
     public static final String HEADER_TIMESTAMP = "X-Giveaway-Timestamp";
