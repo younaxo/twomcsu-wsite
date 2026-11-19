@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { Button, IconButton } from '@/components/ui/button';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/cn';
 import { isSiteNavActive, SITE_NAVIGATION } from '@/lib/site/config';
@@ -82,28 +83,39 @@ export function SiteHeader({ className }: { className?: string }) {
         className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-3 rounded-xl bg-surface px-3 shadow-lg md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
       >
         <SeasonalHeaderDecoration />
-        <IconButton
-          aria-label="Открыть меню"
-          variant="outline"
-          className="lg:hidden"
-          onClick={() => setMenuOpen(true)}
-        >
-          <Menu />
-        </IconButton>
+        {mainSiteUrl === null ? (
+          <IconButton
+            aria-label="Открыть меню"
+            variant="outline"
+            className="lg:hidden"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Menu />
+          </IconButton>
+        ) : null}
         <SiteLogo />
-        <HeaderNav className="mx-auto hidden lg:block" />
+        {mainSiteUrl === null ? <HeaderNav className="mx-auto hidden lg:block" /> : null}
         <div className="ml-auto flex items-center gap-1 lg:ml-0">
           {/* На самых узких телефонах (360 px) счётчик онлайна не помещается рядом
               с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
           {mainSiteUrl !== null ? (
             // Сайт розыгрыша: онлайн, уведомления и профиль требуют API основного
-            // сайта — только вход на основном сайте.
-            <Button asChild size="sm" variant="secondary">
-              <a href={resolveShellHref(mainSiteUrl, '/login')}>
+            // сайта; вход пока недоступен: неактивная кнопка с подсказкой «Скоро»
+            // (hover и фокус с клавиатуры), без перехода.
+            <Tooltip content="Скоро">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                aria-disabled="true"
+                data-testid="login-soon"
+                className="cursor-not-allowed opacity-60 hover:bg-secondary"
+                onClick={(event) => event.preventDefault()}
+              >
                 <LogIn />
                 Войти
-              </a>
-            </Button>
+              </Button>
+            </Tooltip>
           ) : (
             <>
               <div className="lg:hidden max-[379px]:hidden">
@@ -118,18 +130,20 @@ export function SiteHeader({ className }: { className?: string }) {
       {/* HeaderStack: плашка — часть sticky-шапки и двигается вместе с ней. */}
       <GlobalAlertBar />
 
-      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent side="left" size="sm" aria-describedby={undefined}>
-          <SheetHeader>
-            <SheetTitle>
-              <SiteLogo />
-            </SheetTitle>
-          </SheetHeader>
-          <SheetBody>
-            <HeaderNav onNavigate={() => setMenuOpen(false)} />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
+      {mainSiteUrl === null ? (
+        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+          <SheetContent side="left" size="sm" aria-describedby={undefined}>
+            <SheetHeader>
+              <SheetTitle>
+                <SiteLogo />
+              </SheetTitle>
+            </SheetHeader>
+            <SheetBody>
+              <HeaderNav onNavigate={() => setMenuOpen(false)} />
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
+      ) : null}
     </header>
   );
 }

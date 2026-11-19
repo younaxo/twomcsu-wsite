@@ -66,6 +66,7 @@
 
 Переменные окружения web:
 - `GIVEAWAY_ONLY=true` (на сервере web): все маршруты, кроме `/giveaway`, `/api/giveaway/*` и статики, редиректят (307) на `/giveaway` (`src/middleware.ts`). Без флага сайт не меняется.
+- `NEXT_PUBLIC_GIVEAWAY_SOCIAL_TELEGRAM`, `_DISCORD`, `_YOUTUBE`, `_TIKTOK`, `_VK` (необязательно, только http/https): адреса соцсетей в футере страницы в режиме `GIVEAWAY_ONLY`; единственный конфиг - `src/features/giveaway/social-links.ts`. По умолчанию пусто: иконка неактивна (`aria-disabled`, подсказка «Скоро»). В режиме `GIVEAWAY_ONLY` шапка без навигации, «Войти», «Статус серверов» и разделы футера без страниц - «Скоро» (неактивны).
 - `NEXT_PUBLIC_GIVEAWAY_API_BASE` (необязательно): префикс API, если он не на том же домене; по умолчанию пусто.
 - `NEXT_PUBLIC_GIVEAWAY_MOCK=1`: только dev (при `NODE_ENV=production` игнорируется): API заменяется моком, сценарий выбирается `?mock=before|running|pending|not_enough|ticket|redeemed|expired|limit|down|offline|finished`. При моке (и не production) справа внизу видна кнопка «Состояния (dev)» с меню сценариев (Tab/Enter/Escape); панель грузится динамическим `import()` за литеральным условием `process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === "1"`, в production-бандл не попадает (тест проверяет условие и отсутствие панели).
 

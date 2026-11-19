@@ -53,6 +53,28 @@ export function ServerStatusButton({ className }: { className?: string }) {
       {external ? <ExternalLink aria-hidden className="size-3.5 text-subtle-foreground" /> : null}
     </>
   );
+  if (mainSiteUrl !== null) {
+    // Сайт розыгрыша: статус серверов пока недоступен.
+    return (
+      <Tooltip content="Скоро">
+        <button
+          type="button"
+          aria-disabled="true"
+          data-testid="server-status-soon"
+          onClick={(event) => event.preventDefault()}
+          className={cn(
+            'inline-flex h-control-sm cursor-not-allowed items-center gap-2 rounded border bg-surface px-3 text-sm text-muted-foreground/70',
+            className,
+          )}
+        >
+          Статус серверов
+          <span className="rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wide text-subtle-foreground">
+            скоро
+          </span>
+        </button>
+      </Tooltip>
+    );
+  }
   const classes = cn(
     'inline-flex h-control-sm items-center gap-2 rounded border bg-surface px-3 text-sm hover:bg-muted',
     className,

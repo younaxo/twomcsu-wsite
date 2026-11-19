@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -51,18 +51,78 @@ describe('каркас: режим сайта розыгрыша (внешний
     );
   }
 
-  it('шапка: логотип, навигация и «Войти» ведут на основной сайт абсолютными ссылками', () => {
+  it('шапка: логотип на основной сайт, навигации нет, «Войти» неактивна с подсказкой «Скоро»', async () => {
     renderShell();
     const header = within(screen.getByTestId('site-header'));
     expect(header.getAllByRole('link', { name: /twomc\.su — на главную/ })[0]).toHaveAttribute(
       'href',
       MAIN,
     );
-    const nav = within(header.getByRole('navigation', { name: 'Основная навигация' }));
-    expect(nav.getByRole('link', { name: 'Магазин' })).toHaveAttribute('href', `${MAIN}/shop`);
-    expect(nav.getByRole('link', { name: 'Правила' })).toHaveAttribute('href', `${MAIN}/rules`);
-    expect(nav.getByRole('link', { name: 'Сервера' })).toHaveAttribute('href', `${MAIN}/servers`);
-    expect(header.getByRole('link', { name: 'Войти' })).toHaveAttribute('href', `${MAIN}/login`);
+    expect(header.queryByRole('navigation', { name: 'Основная навигация' })).toBeNull();
+    expect(header.queryByRole('link', { name: 'Магазин' })).toBeNull();
+    expect(header.queryByRole('link', { name: 'Войти' })).toBeNull();
+    const login = header.getByRole('button', { name: 'Войти' });
+    expect(login).toHaveAttribute('aria-disabled', 'true');
+    expect(login.className).toContain('cursor-not-allowed');
+    login.focus();
+    expect((await screen.findAllByText('Скоро')).length).toBeGreaterThan(0);
+  });
+
+  it('футер: «Игрокам» - главная основного сайта, правила, «Скоро» без перехода', () => {
+    renderShell();
+    const col = within(
+      within(screen.getByTestId('site-footer')).getByRole('navigation', { name: 'Игрокам' }),
+    );
+    for (const name of ['Начать играть', 'Магазин', 'Серверы']) {
+      expect(col.getByRole('link', { name })).toHaveAttribute('href', MAIN);
+    }
+    expect(col.getByRole('link', { name: 'Правила' })).toHaveAttribute('href', `${MAIN}/rules`);
+    for (const name of [
+      /^Wiki/,
+      /^Новости/,
+      /^Голосование/,
+      /^Рейтинги/,
+      /^Список наказаний/,
+      /^Достижения/,
+      /^Формы и заявки/,
+    ]) {
+      const el = col.getByRole('link', { name });
+      expect(el).toHaveAttribute('aria-disabled', 'true');
+      expect(el).not.toHaveAttribute('href');
+      expect(el.className).toContain('cursor-not-allowed');
+      expect(el).toHaveTextContent(/скоро/i);
+      fireEvent.click(el);
+    }
+  });
+
+  it('футер: «Статус серверов» неактивна', () => {
+    renderShell();
+    const btn = screen.getByTestId('server-status-soon');
+    expect(btn).toHaveAttribute('aria-disabled', 'true');
+    expect(btn.className).toContain('cursor-not-allowed');
+  });
+
+  it('соцсети: без env все пять неактивны, без href', () => {
+    renderShell();
+    const list = within(screen.getByRole('list', { name: 'Соцсети' }));
+    expect(list.getAllByRole('button')).toHaveLength(5);
+    for (const b of list.getAllByRole('button')) {
+      expect(b).toHaveAttribute('aria-disabled', 'true');
+      expect(b.className).toContain('cursor-not-allowed');
+    }
+    expect(list.queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('соцсети: заданный адрес даёт ссылку', () => {
+    vi.stubEnv('NEXT_PUBLIC_GIVEAWAY_SOCIAL_DISCORD', 'https://discord.gg/abc');
+    renderShell();
+    const list = within(screen.getByRole('list', { name: 'Соцсети' }));
+    expect(list.getByRole('link', { name: 'Discord' })).toHaveAttribute(
+      'href',
+      'https://discord.gg/abc',
+    );
+    expect(list.getAllByRole('button')).toHaveLength(4);
+    vi.unstubAllEnvs();
   });
 
   it('надпись «twomc.su» без оранжевой «o»', () => {
@@ -83,7 +143,6 @@ describe('каркас: режим сайта розыгрыша (внешний
       'href',
       `${MAIN}/legal/cookies`,
     );
-    expect(footer.getByRole('link', { name: 'Магазин' })).toHaveAttribute('href', `${MAIN}/shop`);
     expect(footer.getByText('Тема')).toBeInTheDocument();
     expect(footer.getByTestId('legal-owner')).toBeInTheDocument();
     expect(footer.getByText(/Статус серверов/)).toBeInTheDocument();
@@ -110,6 +169,11 @@ describe('каркас: основной сайт без ShellModeProvider не 
       '/',
     );
     expect(header.getByRole('link', { name: 'Магазин' })).toHaveAttribute('href', '/shop');
+    const footer = within(screen.getByTestId('site-footer'));
+    expect(footer.getByRole('link', { name: 'Новости' })).toHaveAttribute('href', '/news');
+    expect(
+      footer.getByRole('link', { name: 'Статус серверов: Статус неизвестен' }),
+    ).toBeInTheDocument();
     expect(document.querySelector('[data-wordmark-o="default"]')?.getAttribute('class')).toContain(
       'text-primary',
     );
