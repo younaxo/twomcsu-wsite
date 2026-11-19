@@ -229,8 +229,8 @@ export class GiveawayCodesService {
       expiresAt: last.expiresAt.toISOString(),
     };
     if (
-      last.lastAttemptMinutes !== null &&
-      last.lastAttemptThreshold !== null
+      typeof last.lastAttemptMinutes === 'number' &&
+      typeof last.lastAttemptThreshold === 'number'
     ) {
       pending.lastAttempt = {
         result: 'not_enough',

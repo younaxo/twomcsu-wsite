@@ -44,6 +44,9 @@ interface CodeRow {
   redeemedAt: Date | null;
   revokedAt: Date | null;
   ticketId: string | null;
+  lastAttemptAt?: Date | null;
+  lastAttemptMinutes?: number | null;
+  lastAttemptThreshold?: number | null;
 }
 interface TicketRow {
   id: string;
@@ -281,7 +284,8 @@ describe('giveaway фаза 2: коды', () => {
     ).rejects.toMatchObject({ kind: 'rate_limited', retryAfterS: 42 });
     expect(e.rows().codes).toHaveLength(0);
     const scopes = e.redis.hit.mock.calls.map((c) => c[0]);
-    expect(scopes).toEqual(['codes-net', 'codes-ip', 'codes-sess']);
+    // L3: по очереди; отказ на втором шаге не расходует третий.
+    expect(scopes).toEqual(['codes-net', 'codes-ip']);
   });
   it('IPv6 в одной /64 делят общий ключ подсети', async () => {
     const e = makeEnv();
@@ -351,19 +355,16 @@ describe('giveaway фаза 2: redeem', () => {
     expect(codes[0].redeemedAt).not.toBeNull();
     expect(codes[0].ticketId).toBe(tickets[0].id);
   });
-  it('лимиты UUID и сервера проверяются первыми', async () => {
+  it('лимиты проверяются первыми по очереди (отказ UUID не расходует сервер)', async () => {
     const e = makeEnv();
     e.redis.hit.mockResolvedValueOnce(7);
     await expect(
       e.ticketsSvc.redeem(SERVER, body('x'), NOW),
     ).rejects.toMatchObject({ kind: 'rate_limited' });
     expect(e.db.giveawayTicket.findUnique).not.toHaveBeenCalled();
-    expect(e.redis.hit.mock.calls.map((c) => c[0])).toEqual([
-      'redeem-uuid',
-      'redeem-srv',
-    ]);
+    expect(e.redis.hit.mock.calls.map((c) => c[0])).toEqual(['redeem-uuid']);
   });
-  it('время меньше порога: not_enough БЕЗ проверки кода', async () => {
+  it('время меньше порога: not_enough, код не гасится, попытка запоминается', async () => {
     const e = makeEnv(100);
     const a = await e.codesSvc.issue(null, '203.0.113.5', undefined, NOW);
     e.db.giveawayCode.updateMany.mockClear();
@@ -374,8 +375,21 @@ describe('giveaway фаза 2: redeem', () => {
       remainingMinutes: 2900,
       thresholdMinutes: 3000,
     });
-    expect(e.db.giveawayCode.updateMany).not.toHaveBeenCalled();
     expect(e.rows().codes[0].redeemedAt).toBeNull();
+    expect(e.rows().codes[0]).toMatchObject({
+      lastAttemptMinutes: 100,
+      lastAttemptThreshold: 3000,
+    });
+    const st = await e.codesSvc.status(a.sessionToken, NOW);
+    expect(st).toMatchObject({
+      status: 'pending',
+      lastAttempt: {
+        result: 'not_enough',
+        minutes: 100,
+        remainingMinutes: 2900,
+        thresholdMinutes: 3000,
+      },
+    });
     // Неверный код при нехватке времени даёт тот же not_enough (код не раскрывается).
     const r2 = await e.ticketsSvc.redeem(SERVER, body('garbage'), NOW);
     expect(r2.status).toBe('not_enough');
@@ -524,6 +538,10 @@ describe('giveaway фаза 2: прогресс и тела', () => {
     const e = makeEnv(1500);
     const r = await e.ticketsSvc.progress([U1, U2]);
     expect(r.thresholdMinutes).toBe(3000);
+    expect(r.startAt).toBe('2026-11-21T21:00:00.000Z');
+    expect(r.cutoffAt).toBe('2026-12-30T20:59:59.000Z');
+    expect(r.startText).toBe('22.11 00:00 по МСК');
+    expect(r.cutoffText).toBe('30.12 23:59 по МСК');
     expect(r.players[0]).toEqual({
       playerUuid: U1,
       minutes: 1500,
