@@ -27,6 +27,7 @@ import {
   splitCountdown,
 } from './format';
 import { useNow } from './hooks';
+import { PrizeShowcase } from './prize-showcase';
 import { TicketCard } from './ticket-card';
 import type { GiveawayApi, GiveawayErrorKind, GiveawayPublicInfo } from './types';
 import { useGiveaway, type CodeView } from './use-giveaway';
@@ -412,15 +413,16 @@ export function GiveawayPage({ api, autoIssue = false }: GiveawayPageProps) {
   return (
     <main
       id="main"
-      className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:py-12"
+      className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:py-12"
     >
       <div className="text-center">
         <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
           Розыгрыш на «Анархии Новой Эры»
         </h1>
       </div>
+      <PrizeShowcase />
       <div
-        className="rounded-xl border border-border bg-surface p-5 shadow sm:p-8"
+        className="mx-auto w-full max-w-3xl rounded-xl border border-border bg-surface p-5 shadow sm:p-8"
         data-testid="giveaway-card"
       >
         {info.kind === 'loading' ? (

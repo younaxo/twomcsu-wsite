@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="AJAZZ AK820">
+<rect width="160" height="160" rx="16" fill="#2a241f"/>
+<g fill="none" stroke="#F26A1B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,-8)"><rect x="28" y="46" width="104" height="52" rx="8"/><path d="M42 62h6M56 62h6M70 62h6M84 62h6M98 62h6M112 62h6M42 76h6M56 76h6M70 76h6M84 76h6M98 76h6M112 76h6M52 88h56"/></g>
+<text x="80" y="128" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" fill="#f5efe8">AJAZZ AK820</text>
+<text x="80" y="146" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="11" fill="#c9bfb3">клавиатура</text>
+</svg>
