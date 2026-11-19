@@ -95,7 +95,12 @@ export function SiteHeader({ className }: { className?: string }) {
         ) : null}
         <SiteLogo />
         {mainSiteUrl === null ? <HeaderNav className="mx-auto hidden lg:block" /> : null}
-        <div className="ml-auto flex items-center gap-1 lg:ml-0">
+        {/* Основной сайт: на lg навигация (mx-auto) отодвигает блок вправо. Сайт
+            розыгрыша без навигации: «Войти» прижат вправо на любой ширине. */}
+        <div
+          data-testid="site-header-actions"
+          className={cn('ml-auto flex items-center gap-1', mainSiteUrl === null && 'lg:ml-0')}
+        >
           {/* На самых узких телефонах (360 px) счётчик онлайна не помещается рядом
               с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
           {mainSiteUrl !== null ? (

@@ -153,7 +153,7 @@ describe('GiveawayHero', () => {
     const steps = within(screen.getByTestId('how-steps')).getAllByRole('listitem');
     expect(steps).toHaveLength(3);
     expect(steps[0]).toHaveTextContent('Наберите 72 часа онлайна');
-    expect(steps[2]).toHaveTextContent('/giveaway КОД');
+    expect(steps[2]).toHaveTextContent('/giveaway XXXX-XXXX-XXXX-XXXX');
     expect(screen.getByTestId('hero-dates')).toHaveTextContent(/Билеты выдаются с .* до .*по МСК/);
   });
 
@@ -216,6 +216,11 @@ describe('Reveal: появление при прокрутке', () => {
     act(() => trigger([{ isIntersecting: true }]));
     expect(el.getAttribute('data-reveal')).toBe('shown');
     expect(el.className).not.toMatch(/opacity-0/);
-    expect(disconnect).toHaveBeenCalled();
+    // В обе стороны: наблюдатель не отключается, при выходе из экрана снова скрыт.
+    expect(disconnect).not.toHaveBeenCalled();
+    act(() => trigger([{ isIntersecting: false }]));
+    expect(el.getAttribute('data-reveal')).toBe('hidden');
+    act(() => trigger([{ isIntersecting: true }]));
+    expect(el.getAttribute('data-reveal')).toBe('shown');
   });
 });

@@ -68,6 +68,14 @@ describe('каркас: режим сайта розыгрыша (внешний
     expect((await screen.findAllByText('Скоро')).length).toBeGreaterThan(0);
   });
 
+  it('шапка: «Войти» справа на любой ширине (без lg:ml-0, нет навигации по центру)', () => {
+    renderShell();
+    const actions = screen.getByTestId('site-header-actions');
+    expect(actions.className).toContain('ml-auto');
+    expect(actions.className).not.toContain('lg:ml-0');
+    expect(within(actions).getByRole('button', { name: 'Войти' })).toBeInTheDocument();
+  });
+
   it('футер: «Игрокам» - главная основного сайта, правила, «Скоро» без перехода', () => {
     renderShell();
     const col = within(

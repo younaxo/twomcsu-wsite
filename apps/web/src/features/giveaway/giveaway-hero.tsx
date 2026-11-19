@@ -3,11 +3,13 @@
 import { ArrowDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatMsk, pluralDays, pluralHours, pluralMinutes, splitCountdown } from './format';
+import { HowToParticipate, type PlayerProgress } from './how-to';
+import { Reveal } from './reveal';
 import { useNow } from './hooks';
 import type { GiveawayPublicInfo } from './types';
 
-export const WORKSPACE_ID = 'gw-workspace';
-const GAME_COMMAND = '/giveaway';
+export { WORKSPACE_ID } from './use-workspace-scroll';
+import { WORKSPACE_ID } from './use-workspace-scroll';
 
 const focusRing =
   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring';
@@ -63,19 +65,16 @@ function Countdown({ targetIso, kind }: { targetIso: string; kind: 'start' | 'en
 
 /// Верх страницы: название, крупный таймер (до старта или до конца, по МСК),
 /// «как участвовать» и якорь к рабочей области. Порог и даты - только из /public.
-export function GiveawayHero({ info }: { info: GiveawayPublicInfo | null }) {
-  const hours = info
-    ? `${info.thresholdHours} ${pluralHours(info.thresholdHours)}`
-    : 'нужное количество часов';
-  const steps = [
-    <>Наберите {hours} онлайна на «Анархии Новой Эры».</>,
-    <>Получите код на этом сайте.</>,
-    <>
-      Введите его в игре:{' '}
-      <code className="font-mono font-semibold text-foreground">{GAME_COMMAND} КОД</code> и получите
-      билет.
-    </>,
-  ];
+/// `code` и `progress` - выданный код и прогресс игрока (если известны).
+export function GiveawayHero({
+  info,
+  code = null,
+  progress = null,
+}: {
+  info: GiveawayPublicInfo | null;
+  code?: string | null;
+  progress?: PlayerProgress | null;
+}) {
   return (
     <header data-testid="giveaway-hero" className="flex flex-col items-center gap-10 text-center">
       <h1 className="text-balance text-4xl font-black tracking-tight sm:text-6xl">
@@ -90,32 +89,23 @@ export function GiveawayHero({ info }: { info: GiveawayPublicInfo | null }) {
           <Countdown targetIso={info.cutoffAtUtc} kind="end" />
         )
       ) : null}
-      <section aria-labelledby="gw-how" className="w-full max-w-3xl">
-        <h2 id="gw-how" className="mb-6 text-xl font-semibold text-foreground">
-          Как участвовать
-        </h2>
-        <ol
-          data-testid="how-steps"
-          className="grid grid-cols-1 gap-6 text-left sm:grid-cols-3 sm:gap-8"
-        >
-          {steps.map((text, i) => (
-            <li key={i} className="flex items-start gap-3">
-              <span
-                aria-hidden="true"
-                className="text-4xl font-black leading-none tabular-nums text-primary"
-              >
-                {i + 1}
-              </span>
-              <span className="text-muted-foreground">{text}</span>
-            </li>
-          ))}
-        </ol>
-        {info ? (
-          <p className="mt-4 text-sm text-muted-foreground" data-testid="hero-dates">
-            Билеты выдаются с {formatMsk(info.startAtUtc)} до {formatMsk(info.cutoffAtUtc)}.
-          </p>
-        ) : null}
-      </section>
+      <Reveal className="w-full max-w-3xl">
+        <section aria-labelledby="gw-how" className="w-full">
+          <h2 id="gw-how" className="mb-8 text-xl font-semibold text-foreground">
+            Как участвовать
+          </h2>
+          <HowToParticipate
+            thresholdHours={info ? info.thresholdHours : null}
+            code={code}
+            progress={progress}
+          />
+          {info ? (
+            <p className="mt-6 text-sm text-muted-foreground" data-testid="hero-dates">
+              Билеты выдаются с {formatMsk(info.startAtUtc)} до {formatMsk(info.cutoffAtUtc)}.
+            </p>
+          ) : null}
+        </section>
+      </Reveal>
       {info?.status === 'finished' ? null : (
         <a
           href={`#${WORKSPACE_ID}`}

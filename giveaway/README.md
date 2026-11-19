@@ -104,6 +104,7 @@
 - Старый карточный вариант сохранён: dev-параметр `?layout=cards` (только вне production; в production игнорируется), например `/giveaway?mock=running&layout=cards`.
 - Иллюстрации призов: `giveaway/assets/prizes/*-art.svg` (оригинальные, см. `docs/IMAGE-SOURCES.md`); старые `*.svg` не удалены.
 - Раскладка: телефон — 1 колонка, узкий экран — 2 колонки (порядок 1–10), от md — пьедестал мест 1–5 и ряд 6–10. Блок призов стоит выше рабочей области с кодом и билетом.
+- Отслеживание билета (Q99): страница `apps/web/src/app/giveaway/ticket/[token]/page.tsx` (noindex, без призов и шапки розыгрыша) показывает номер, ник, наиграно и статус по `GET /api/giveaway/v1/tickets/track/:token`. Кнопки «Сохранить билет» (PNG на клиенте, `twomc-ticket-K417.png`) и «Скопировать ссылку» — `ticket-actions.tsx`. Барабан — `ticket-reel.tsx` (лента на символ, ~3 с, остановка слева направо, при `prefers-reduced-motion` сразу результат). nginx: `location ^~ /api/giveaway/` уже покрывает маршрут.
 
 ## Страница: итоги и эфир (фаза 3)
 
