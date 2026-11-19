@@ -266,18 +266,16 @@ describe('страница розыгрыша', () => {
   it('«время не набрано»: показывает наиграно/осталось, код остаётся действующим', async () => {
     const api = makeApi({
       getStatus: vi
-        .fn(
-          async (): Promise<GiveawayCodeStatus> => ({
-            status: 'pending',
-            expiresAt: new Date(Date.now() + 500_000).toISOString(),
-            lastAttempt: {
-              result: 'not_enough',
-              minutes: 1710,
-              remainingMinutes: 1290,
-              thresholdMinutes: 3000,
-            },
-          }),
-        )
+        .fn(async (): Promise<GiveawayCodeStatus> => ({
+          status: 'pending',
+          expiresAt: new Date(Date.now() + 500_000).toISOString(),
+          lastAttempt: {
+            result: 'not_enough',
+            minutes: 1710,
+            remainingMinutes: 1290,
+            thresholdMinutes: 3000,
+          },
+        }))
         .mockResolvedValueOnce({ status: 'none' }),
     });
     render(<GiveawayPage api={api} />);
@@ -298,18 +296,16 @@ describe('страница розыгрыша', () => {
 
   it('«время не набрано» при перезагрузке страницы: уведомление есть, кода нет', async () => {
     const api = makeApi({
-      getStatus: vi.fn(
-        async (): Promise<GiveawayCodeStatus> => ({
-          status: 'pending',
-          expiresAt: new Date(Date.now() + 500_000).toISOString(),
-          lastAttempt: {
-            result: 'not_enough',
-            minutes: 45,
-            remainingMinutes: 2955,
-            thresholdMinutes: 3000,
-          },
-        }),
-      ),
+      getStatus: vi.fn(async (): Promise<GiveawayCodeStatus> => ({
+        status: 'pending',
+        expiresAt: new Date(Date.now() + 500_000).toISOString(),
+        lastAttempt: {
+          result: 'not_enough',
+          minutes: 45,
+          remainingMinutes: 2955,
+          thresholdMinutes: 3000,
+        },
+      })),
     });
     render(<GiveawayPage api={api} />);
     await flush();

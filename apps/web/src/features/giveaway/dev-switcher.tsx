@@ -89,7 +89,8 @@ export default function DevSwitcher({ current, onSelect }: DevSwitcherProps) {
                 className={cn(
                   'flex h-control w-full items-center rounded px-3 text-left text-sm text-foreground hover:bg-muted',
                   focusRing,
-                  current === scenario && 'bg-primary-soft font-semibold text-primary-soft-foreground',
+                  current === scenario &&
+                    'bg-primary-soft font-semibold text-primary-soft-foreground',
                 )}
               >
                 {DEV_SCENARIO_LABELS[scenario]}
