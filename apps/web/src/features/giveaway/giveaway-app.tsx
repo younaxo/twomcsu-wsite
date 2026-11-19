@@ -49,9 +49,7 @@ export function GiveawayStage({
       </main>
     );
   }
-  const page = (
-    <GiveawayPage api={selected.api} autoIssue={selected.autoIssue} layout={layout} />
-  );
+  const page = <GiveawayPage api={selected.api} autoIssue={selected.autoIssue} layout={layout} />;
   if (!test) return page;
   return (
     <>

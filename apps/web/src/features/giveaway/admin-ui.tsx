@@ -38,9 +38,7 @@ export function adminErrorText(error: unknown): string {
 }
 
 export type LoadState<T> =
-  | { kind: 'loading' }
-  | { kind: 'error'; error: unknown }
-  | { kind: 'ready'; data: T };
+  { kind: 'loading' } | { kind: 'error'; error: unknown } | { kind: 'ready'; data: T };
 
 /// Загрузка данных раздела с возможностью обновить. `fn` вызывается при смене `deps`.
 export function useLoad<T>(

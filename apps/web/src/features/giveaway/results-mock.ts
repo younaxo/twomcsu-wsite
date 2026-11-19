@@ -10,7 +10,18 @@ import {
   type ResultsReady,
 } from './results-types';
 
-const NAMES = ['Steve', 'Alex_77', 'Creeper', 'Notch_fan', 'Herobrine', 'Zombie', 'Ender', 'Wolf', 'Ghast', 'Piglin'];
+const NAMES = [
+  'Steve',
+  'Alex_77',
+  'Creeper',
+  'Notch_fan',
+  'Herobrine',
+  'Zombie',
+  'Ender',
+  'Wolf',
+  'Ghast',
+  'Piglin',
+];
 const TICKETS = ['K417', 'B002', 'W640', 'A001', 'P777', 'H808', 'M250', 'Z999', 'T100', 'C333'];
 
 export function mockResultsReady(test: boolean): ResultsReady {

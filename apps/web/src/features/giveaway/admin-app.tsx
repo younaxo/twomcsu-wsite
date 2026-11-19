@@ -17,8 +17,7 @@ import { adminErrorText } from './admin-ui';
 import { TestBadge } from './test-badge';
 
 /// Литералы process.env: в production условие становится false и ветка с import() вырезается.
-const MOCK =
-  process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === '1';
+const MOCK = process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_GIVEAWAY_MOCK === '1';
 
 type Tab = 'draw' | 'tickets' | 'settings' | 'prizes' | 'audit' | 'test';
 
@@ -52,7 +51,10 @@ export function loginErrorText(code: string | null): string | null {
 
 function LoginScreen({ error, onLogin }: { error: string | null; onLogin: () => void }) {
   return (
-    <main id="main" className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-12">
+    <main
+      id="main"
+      className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 px-4 py-12"
+    >
       <h1 className="text-center text-2xl font-bold text-foreground">Панель розыгрыша</h1>
       {error ? (
         <p
@@ -136,8 +138,12 @@ export function AdminPanel({ api, session, onLogout }: AdminPanelProps) {
           </div>
         ) : null}
       </div>
-      {tab === 'draw' ? <DrawSection key={`${effectiveMode}-${version}`} api={api} mode={effectiveMode} /> : null}
-      {tab === 'tickets' ? <TicketsSection key={`${effectiveMode}-${version}`} api={api} mode={effectiveMode} /> : null}
+      {tab === 'draw' ? (
+        <DrawSection key={`${effectiveMode}-${version}`} api={api} mode={effectiveMode} />
+      ) : null}
+      {tab === 'tickets' ? (
+        <TicketsSection key={`${effectiveMode}-${version}`} api={api} mode={effectiveMode} />
+      ) : null}
       {tab === 'settings' ? <SettingsSection api={api} /> : null}
       {tab === 'prizes' ? <PrizesSection api={api} /> : null}
       {tab === 'audit' ? <AuditSection api={api} /> : null}
@@ -221,7 +227,11 @@ export function AdminApp({ mainSiteUrl = null, createApi }: AdminAppProps = {}) 
   const body = useMemo(() => {
     if (view.kind === 'loading' || !api) {
       return (
-        <main id="main" role="status" className="flex flex-1 items-center justify-center gap-2 text-muted-foreground">
+        <main
+          id="main"
+          role="status"
+          className="flex flex-1 items-center justify-center gap-2 text-muted-foreground"
+        >
           <Loader2 aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" />
           Загружаем…
         </main>
@@ -229,10 +239,7 @@ export function AdminApp({ mainSiteUrl = null, createApi }: AdminAppProps = {}) 
     }
     if (view.kind === 'anon') {
       return (
-        <LoginScreen
-          error={view.error}
-          onLogin={() => window.location.assign(adminLoginUrl())}
-        />
+        <LoginScreen error={view.error} onLogin={() => window.location.assign(adminLoginUrl())} />
       );
     }
     return <AdminPanel api={api} session={view.session} onLogout={logout} />;

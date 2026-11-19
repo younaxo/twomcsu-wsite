@@ -26,7 +26,20 @@ interface DrawState {
 }
 
 export function createMockAdminApi(): AdminApi {
-  const NAMES = ['Steve', 'Alex_77', 'Creeper', 'Notch_fan', 'Herobrine', 'Zombie', 'Ender', 'Wolf', 'Ghast', 'Piglin', 'Dolphin', 'Squid'];
+  const NAMES = [
+    'Steve',
+    'Alex_77',
+    'Creeper',
+    'Notch_fan',
+    'Herobrine',
+    'Zombie',
+    'Ender',
+    'Wolf',
+    'Ghast',
+    'Piglin',
+    'Dolphin',
+    'Squid',
+  ];
   const liveTickets: AdminTicket[] = NAMES.map((playerName, i) => ({
     ticket: `K${400 + i * 7}`,
     playerName,
@@ -76,7 +89,8 @@ export function createMockAdminApi(): AdminApi {
       frozenAt: d.status === 'none' ? null : new Date().toISOString(),
       algorithm: 'twomc-giveaway-draw-v1',
       seed: d.status === 'calculated' || d.status === 'broadcast' ? SEED : null,
-      calculatedAt: d.status === 'calculated' || d.status === 'broadcast' ? new Date().toISOString() : null,
+      calculatedAt:
+        d.status === 'calculated' || d.status === 'broadcast' ? new Date().toISOString() : null,
       broadcastAt: d.status === 'broadcast' ? new Date().toISOString() : null,
       revision: d.revision,
     };
@@ -110,9 +124,17 @@ export function createMockAdminApi(): AdminApi {
       await wait(80);
       const needle = q.trim().toLowerCase();
       const all = ticketsOf(mode).filter(
-        (t) => !needle || t.ticket.toLowerCase().includes(needle) || t.playerName.toLowerCase().includes(needle),
+        (t) =>
+          !needle ||
+          t.ticket.toLowerCase().includes(needle) ||
+          t.playerName.toLowerCase().includes(needle),
       );
-      return { items: all.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: all.length };
+      return {
+        items: all.slice((page - 1) * pageSize, page * pageSize),
+        page,
+        pageSize,
+        total: all.length,
+      };
     },
     async player(uuid, mode) {
       await wait(80);
@@ -137,10 +159,14 @@ export function createMockAdminApi(): AdminApi {
     },
     async patchSettings(body) {
       await wait(80);
-      if (body.thresholdMinutes !== undefined && body.thresholdMinutes > settings.thresholdMinutes) {
+      if (
+        body.thresholdMinutes !== undefined &&
+        body.thresholdMinutes > settings.thresholdMinutes
+      ) {
         throw new AdminApiError(400, 'threshold_cannot_increase_after_start');
       }
-      if (body.startAt !== undefined) throw new AdminApiError(400, 'start_cannot_change_after_start');
+      if (body.startAt !== undefined)
+        throw new AdminApiError(400, 'start_cannot_change_after_start');
       if (body.thresholdMinutes !== undefined) settings.thresholdMinutes = body.thresholdMinutes;
       if (body.cutoffAt !== undefined) settings.cutoffAtUtc = body.cutoffAt;
       log('settings_update', null, Object.keys(body).join(','));
@@ -287,7 +313,12 @@ export function createMockAdminApi(): AdminApi {
     },
     async audit(page, pageSize) {
       await wait(60);
-      return { items: audit.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: audit.length };
+      return {
+        items: audit.slice((page - 1) * pageSize, page * pageSize),
+        page,
+        pageSize,
+        total: audit.length,
+      };
     },
   };
 }

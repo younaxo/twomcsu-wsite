@@ -30,7 +30,11 @@ export function createHttpAdminApi(options: HttpAdminApiOptions = {}): AdminApi 
   const base = options.base ?? GIVEAWAY_API_BASE;
   let csrf: string | null = null;
 
-  async function call<T>(method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown): Promise<T> {
+  async function call<T>(
+    method: 'GET' | 'POST' | 'PATCH',
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const headers: Record<string, string> = {};
     const init: RequestInit = {
       method,
@@ -98,9 +102,13 @@ export function createHttpAdminApi(options: HttpAdminApiOptions = {}): AdminApi 
       call<AdminDraw>('POST', `/admin/draw/calculate${modeQs(mode)}`, { snapshotHash, confirm }),
     broadcast: (mode) => call<AdminDraw>('POST', `/admin/draw/broadcast${modeQs(mode)}`, {}),
     disqualify: (mode, winnerId, reason) =>
-      call('POST', `/admin/draw/winners/${encodeURIComponent(winnerId)}/disqualify${modeQs(mode)}`, {
-        reason,
-      }),
+      call(
+        'POST',
+        `/admin/draw/winners/${encodeURIComponent(winnerId)}/disqualify${modeQs(mode)}`,
+        {
+          reason,
+        },
+      ),
     testTime: (body) => call('POST', '/admin/test/time', body),
     testTickets: (playerName) => call('POST', '/admin/test/tickets', { playerName }),
     testSeed: (count) => call('POST', '/admin/test/seed', { count }),

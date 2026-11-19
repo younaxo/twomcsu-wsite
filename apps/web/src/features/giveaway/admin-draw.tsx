@@ -81,9 +81,7 @@ function CalculateDialog({
       <DialogContent size="md">
         <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
           <DialogHeader>
-            <DialogTitle>
-              Рассчитать результат{draw.test ? ' (ТЕСТ)' : ''}
-            </DialogTitle>
+            <DialogTitle>Рассчитать результат{draw.test ? ' (ТЕСТ)' : ''}</DialogTitle>
             <DialogDescription>
               Действие необратимо и выполняется один раз: зерно создаётся сейчас, повторный расчёт
               невозможен.
@@ -91,7 +89,9 @@ function CalculateDialog({
           </DialogHeader>
           <DialogBody className="flex flex-col gap-4">
             <div>
-              <p className="text-sm text-muted-foreground">Хэш снимка ({draw.ticketCount} билетов)</p>
+              <p className="text-sm text-muted-foreground">
+                Хэш снимка ({draw.ticketCount} билетов)
+              </p>
               <p className="break-all font-mono text-sm text-foreground" data-testid="calc-hash">
                 {draw.snapshotHash}
               </p>
@@ -175,13 +175,20 @@ function DisqualifyDialog({
           <DialogHeader>
             <DialogTitle>Дисквалифицировать победителя</DialogTitle>
             <DialogDescription>
-              {winner ? `Место ${winner.place}: ${winner.playerName}, билет ${winner.ticket}. ` : ''}
+              {winner
+                ? `Место ${winner.place}: ${winner.playerName}, билет ${winner.ticket}. `
+                : ''}
               Место получит следующий неиспользованный билет порядка.
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
             <Field label="Причина (3–300 символов)" error={error}>
-              <Textarea value={reason} maxLength={300} rows={3} onChange={(e) => setReason(e.target.value)} />
+              <Textarea
+                value={reason}
+                maxLength={300}
+                rows={3}
+                onChange={(e) => setReason(e.target.value)}
+              />
             </Field>
           </DialogBody>
           <DialogFooter>
@@ -199,15 +206,7 @@ function DisqualifyDialog({
   );
 }
 
-function DrawBody({
-  api,
-  draw,
-  reload,
-}: {
-  api: AdminApi;
-  draw: AdminDraw;
-  reload: () => void;
-}) {
+function DrawBody({ api, draw, reload }: { api: AdminApi; draw: AdminDraw; reload: () => void }) {
   const [calc, setCalc] = useState(false);
   const [target, setTarget] = useState<AdminWinner | null>(null);
   const [busy, setBusy] = useState<'freeze' | 'broadcast' | null>(null);
@@ -256,7 +255,11 @@ function DrawBody({
 
       <div className="flex flex-wrap gap-2">
         {draw.status === 'none' ? (
-          <Button onClick={() => void run('freeze')} disabled={!draw.canFreeze} loading={busy === 'freeze'}>
+          <Button
+            onClick={() => void run('freeze')}
+            disabled={!draw.canFreeze}
+            loading={busy === 'freeze'}
+          >
             <Snowflake />
             Заморозить
           </Button>
@@ -288,7 +291,10 @@ function DrawBody({
         </p>
       ) : null}
       {note ? (
-        <p role="status" className="rounded border border-border bg-muted p-3 text-sm text-foreground">
+        <p
+          role="status"
+          className="rounded border border-border bg-muted p-3 text-sm text-foreground"
+        >
           {note}
         </p>
       ) : null}
@@ -299,12 +305,24 @@ function DrawBody({
             <caption className="sr-only">Предпросмотр результата</caption>
             <thead>
               <tr>
-                <th scope="col" className={thClass}>Место</th>
-                <th scope="col" className={thClass}>Игрок</th>
-                <th scope="col" className={thClass}>Билет</th>
-                <th scope="col" className={thClass}>Приз</th>
-                <th scope="col" className={thClass}>Статус</th>
-                <th scope="col" className={thClass}><span className="sr-only">Действия</span></th>
+                <th scope="col" className={thClass}>
+                  Место
+                </th>
+                <th scope="col" className={thClass}>
+                  Игрок
+                </th>
+                <th scope="col" className={thClass}>
+                  Билет
+                </th>
+                <th scope="col" className={thClass}>
+                  Приз
+                </th>
+                <th scope="col" className={thClass}>
+                  Статус
+                </th>
+                <th scope="col" className={thClass}>
+                  <span className="sr-only">Действия</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -317,11 +335,17 @@ function DrawBody({
                     <td className={`${tdClass} font-mono`}>{w.ticket}</td>
                     <td className={tdClass}>{w.prizeName}</td>
                     <td className={tdClass}>
-                      {w.status === 'active' ? 'Действует' : `Дисквалифицирован: ${w.disqualifyReason ?? ''}`}
+                      {w.status === 'active'
+                        ? 'Действует'
+                        : `Дисквалифицирован: ${w.disqualifyReason ?? ''}`}
                     </td>
                     <td className={tdClass}>
                       {w.status === 'active' ? (
-                        <Button size="sm" variant="destructive-outline" onClick={() => setTarget(w)}>
+                        <Button
+                          size="sm"
+                          variant="destructive-outline"
+                          onClick={() => setTarget(w)}
+                        >
                           <Ban />
                           Дисквалифицировать<span className="sr-only"> место {w.place}</span>
                         </Button>

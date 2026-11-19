@@ -52,7 +52,9 @@ function PlayerProfile({
           <div className="flex flex-col gap-4">
             <p className="text-lg font-semibold text-foreground">
               {p.playerName ?? 'Ник неизвестен'}{' '}
-              <span className="font-mono text-base text-muted-foreground">{p.ticket ?? 'без билета'}</span>
+              <span className="font-mono text-base text-muted-foreground">
+                {p.ticket ?? 'без билета'}
+              </span>
             </p>
             <p className="text-foreground" data-testid="player-total">
               Всего: {formatDuration(p.totalMinutes)} ({p.totalMinutes} мин) из порога{' '}
@@ -62,8 +64,12 @@ function PlayerProfile({
               <caption className="sr-only">Время по дням (МСК)</caption>
               <thead>
                 <tr>
-                  <th scope="col" className={thClass}>День (МСК)</th>
-                  <th scope="col" className={thClass}>Минуты</th>
+                  <th scope="col" className={thClass}>
+                    День (МСК)
+                  </th>
+                  <th scope="col" className={thClass}>
+                    Минуты
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -92,7 +98,8 @@ export function TicketsSection({ api, mode }: { api: AdminApi; mode: AdminMode }
     [api, mode, q, page],
   );
 
-  if (player) return <PlayerProfile api={api} uuid={player} mode={mode} onClose={() => setPlayer(null)} />;
+  if (player)
+    return <PlayerProfile api={api} uuid={player} mode={mode} onClose={() => setPlayer(null)} />;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -125,10 +132,18 @@ export function TicketsSection({ api, mode }: { api: AdminApi; mode: AdminMode }
                 <caption className="sr-only">Выданные билеты</caption>
                 <thead>
                   <tr>
-                    <th scope="col" className={thClass}>Билет</th>
-                    <th scope="col" className={thClass}>Игрок</th>
-                    <th scope="col" className={thClass}>Выдан (МСК)</th>
-                    <th scope="col" className={thClass}><span className="sr-only">Действия</span></th>
+                    <th scope="col" className={thClass}>
+                      Билет
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Игрок
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Выдан (МСК)
+                    </th>
+                    <th scope="col" className={thClass}>
+                      <span className="sr-only">Действия</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -163,7 +178,15 @@ export function TicketsSection({ api, mode }: { api: AdminApi; mode: AdminMode }
   );
 }
 
-function SettingsForm({ api, initial, onSaved }: { api: AdminApi; initial: AdminSettings; onSaved: () => void }) {
+function SettingsForm({
+  api,
+  initial,
+  onSaved,
+}: {
+  api: AdminApi;
+  initial: AdminSettings;
+  onSaved: () => void;
+}) {
   const [threshold, setThreshold] = useState(String(initial.thresholdMinutes));
   const [cutoff, setCutoff] = useState(toLocalInput(initial.cutoffAtUtc));
   const [start, setStart] = useState(toLocalInput(initial.startAtUtc));
@@ -175,7 +198,8 @@ function SettingsForm({ api, initial, onSaved }: { api: AdminApi; initial: Admin
     event.preventDefault();
     const body: { thresholdMinutes?: number; startAt?: string; cutoffAt?: string } = {};
     if (Number(threshold) !== initial.thresholdMinutes) body.thresholdMinutes = Number(threshold);
-    if (!initial.started && start !== toLocalInput(initial.startAtUtc)) body.startAt = fromLocalInput(start);
+    if (!initial.started && start !== toLocalInput(initial.startAtUtc))
+      body.startAt = fromLocalInput(start);
     if (cutoff !== toLocalInput(initial.cutoffAtUtc)) body.cutoffAt = fromLocalInput(cutoff);
     if (Object.keys(body).length === 0) {
       setError('Нечего сохранять: значения не изменились.');
@@ -208,7 +232,10 @@ function SettingsForm({ api, initial, onSaved }: { api: AdminApi; initial: Admin
           onChange={(e) => setThreshold(e.target.value)}
         />
       </Field>
-      <Field label="Старт (UTC)" hint={`По МСК: ${initial.startAtMsk || formatMsk(initial.startAtUtc)}`}>
+      <Field
+        label="Старт (UTC)"
+        hint={`По МСК: ${initial.startAtMsk || formatMsk(initial.startAtUtc)}`}
+      >
         <Input
           type="datetime-local"
           value={start}
@@ -216,7 +243,10 @@ function SettingsForm({ api, initial, onSaved }: { api: AdminApi; initial: Admin
           onChange={(e) => setStart(e.target.value)}
         />
       </Field>
-      <Field label="Отсечка (UTC)" hint={`По МСК: ${initial.cutoffAtMsk || formatMsk(initial.cutoffAtUtc)}`}>
+      <Field
+        label="Отсечка (UTC)"
+        hint={`По МСК: ${initial.cutoffAtMsk || formatMsk(initial.cutoffAtUtc)}`}
+      >
         <Input
           type="datetime-local"
           value={cutoff}
@@ -229,7 +259,9 @@ function SettingsForm({ api, initial, onSaved }: { api: AdminApi; initial: Admin
           {error}
         </p>
       ) : null}
-      {frozen ? <p className="text-sm text-muted-foreground">Розыгрыш заморожен: настройки не меняются.</p> : null}
+      {frozen ? (
+        <p className="text-sm text-muted-foreground">Розыгрыш заморожен: настройки не меняются.</p>
+      ) : null}
       <div>
         <Button type="submit" loading={busy} disabled={frozen}>
           Сохранить
@@ -273,7 +305,14 @@ export function PrizesSection({ api }: { api: AdminApi }) {
                     <p className="text-sm text-muted-foreground">{p.description}</p>
                   </div>
                   {src ? (
-                    <Image src={src} alt="" width={64} height={48} unoptimized className="h-auto w-16" />
+                    <Image
+                      src={src}
+                      alt=""
+                      width={64}
+                      height={48}
+                      unoptimized
+                      className="h-auto w-16"
+                    />
                   ) : null}
                 </li>
               );
@@ -298,11 +337,21 @@ export function AuditSection({ api }: { api: AdminApi }) {
                 <caption className="sr-only">Журнал действий</caption>
                 <thead>
                   <tr>
-                    <th scope="col" className={thClass}>Время (МСК)</th>
-                    <th scope="col" className={thClass}>Кто</th>
-                    <th scope="col" className={thClass}>Действие</th>
-                    <th scope="col" className={thClass}>Режим</th>
-                    <th scope="col" className={thClass}>Подробности</th>
+                    <th scope="col" className={thClass}>
+                      Время (МСК)
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Кто
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Действие
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Режим
+                    </th>
+                    <th scope="col" className={thClass}>
+                      Подробности
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -318,7 +367,9 @@ export function AuditSection({ api }: { api: AdminApi }) {
                 </tbody>
               </table>
             </div>
-            {data.items.length === 0 ? <p className="text-muted-foreground">Записей пока нет.</p> : null}
+            {data.items.length === 0 ? (
+              <p className="text-muted-foreground">Записей пока нет.</p>
+            ) : null}
             {data.total > data.pageSize ? (
               <Pagination
                 label="Страницы аудита"

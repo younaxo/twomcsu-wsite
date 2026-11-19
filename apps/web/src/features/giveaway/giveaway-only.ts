@@ -41,7 +41,9 @@ export function giveawayOnlyRedirect(pathname: string, enabled: boolean): string
 export const ADMIN_PATH = '/giveaway/admin';
 export const DEFAULT_ADMIN_HOST = 'admin.giveaway.twomc.su';
 
-export function resolveAdminHost(value: string | undefined = process.env.GIVEAWAY_ADMIN_HOST): string {
+export function resolveAdminHost(
+  value: string | undefined = process.env.GIVEAWAY_ADMIN_HOST,
+): string {
   const host = (value ?? '').trim().toLowerCase();
   return host === '' ? DEFAULT_ADMIN_HOST : host;
 }

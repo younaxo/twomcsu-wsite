@@ -63,7 +63,10 @@ export function TestSection({ api, onChanged }: { api: AdminApi; onChanged: () =
       </p>
       <form onSubmit={grant} className="flex flex-wrap items-end gap-3">
         <div className="w-48">
-          <Field label="Ник игрока" error={name !== '' && !nameOk ? 'Латиница, цифры, «_», до 16 символов' : null}>
+          <Field
+            label="Ник игрока"
+            error={name !== '' && !nameOk ? 'Латиница, цифры, «_», до 16 символов' : null}
+          >
             <Input value={name} maxLength={16} onChange={(e) => setName(e.target.value)} />
           </Field>
         </div>
@@ -98,7 +101,13 @@ export function TestSection({ api, onChanged }: { api: AdminApi; onChanged: () =
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-32">
           <Field label="Сколько билетов">
-            <Input type="number" min={1} max={500} value={count} onChange={(e) => setCount(e.target.value)} />
+            <Input
+              type="number"
+              min={1}
+              max={500}
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+            />
           </Field>
         </div>
         <Button

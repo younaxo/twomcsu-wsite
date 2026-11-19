@@ -14,9 +14,7 @@ export function TestBadge({ className }: { className?: string }) {
     >
       <FlaskConical aria-hidden="true" />
       ТЕСТ
-      <span className="text-sm font-medium normal-case tracking-normal">
-        — данные не настоящие
-      </span>
+      <span className="text-sm font-medium normal-case tracking-normal">— данные не настоящие</span>
     </div>
   );
 }
