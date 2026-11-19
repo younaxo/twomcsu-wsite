@@ -1,0 +1,15 @@
+name: TwoMCGiveaway
+version: '${version}'
+main: ru.twomc.giveaway.GiveawayPlugin
+api-version: '1.21'
+author: TwoMC
+description: Учёт времени онлайн для розыгрыша «Анархия Новой Эры» (join/quit, heartbeat, подписанная отправка на сайт).
+commands:
+  giveawaytime:
+    description: Статус очереди и связи плагина розыгрыша (без ключа).
+    usage: /giveawaytime
+    permission: giveaway.admin
+permissions:
+  giveaway.admin:
+    description: Доступ к /giveawaytime.
+    default: op
