@@ -10,11 +10,16 @@ repositories {
     maven("https://hub.spigotmc.org/nexus/content/repositories/snapshots/") {
         content { includeGroup("org.spigotmc") }
     }
+    maven("https://repo.extendedclip.com/content/repositories/placeholderapi/") {
+        content { includeGroup("me.clip") }
+    }
 }
 
 dependencies {
     // Стабильный Bukkit/Spigot API; на сервере API предоставляет сам сервер. Без NMS и Paper-API.
     compileOnly("org.spigotmc:spigot-api:1.21.4-R0.1-SNAPSHOT")
+    // PlaceholderAPI: softdepend, на сервере предоставляется плагином; версия закреплена.
+    compileOnly("me.clip:placeholderapi:2.11.6")
 
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
