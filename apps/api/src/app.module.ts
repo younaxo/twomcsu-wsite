@@ -13,6 +13,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AwardsModule } from './modules/awards/awards.module';
 import { BridgeModule } from './modules/bridge/bridge.module';
+import { GiveawayModule } from './modules/giveaway/giveaway.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { CommunicationsModule } from './modules/communications/communications.module';
@@ -93,6 +94,7 @@ import { VotingModule } from './modules/voting/voting.module';
     PunishmentsModule,
     InventoryModule,
     BridgeModule,
+    GiveawayModule,
     AchievementsModule,
     AwardsModule,
     LeaderboardsModule,
