@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
 
 // См. auth.e2e-spec.ts — тот же риск конкуренции за ресурсы под полным сьютом.
@@ -62,6 +63,7 @@ describe('RBAC (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 
@@ -283,5 +285,37 @@ describe('RBAC (e2e)', () => {
       priority: 10,
       isSuperuser: false,
     });
+  });
+
+  it('выдача роли: права роли должны входить в права выдающего (Q23)', async () => {
+    const actor = await createUser('assign-subset');
+    const target = await createUser('assign-target');
+    const actorRole = await createRole(`assigner-${unique}`, 100);
+    // У актёра есть roles.assign и users.view, но НЕТ users.ban.
+    await grantPermissions(actorRole.id, ['roles.assign', 'users.view']);
+    await grantRole(actor.id, actorRole.id);
+
+    const widerRole = await createRole(`wider-${unique}`, 10);
+    await grantPermissions(widerRole.id, ['users.view', 'users.ban']);
+    const narrowerRole = await createRole(`narrower-${unique}`, 10);
+    await grantPermissions(narrowerRole.id, ['users.view']);
+
+    const denied = await request(app.getHttpServer())
+      .post(`/admin/users/${target.id}/roles/${widerRole.id}`)
+      .set('Authorization', `Bearer ${actor.accessToken}`)
+      .send({})
+      .expect(403);
+    expect(denied.body.code).toBe('role_permissions_exceed_grantor');
+    expect(
+      await prisma.userRole.count({
+        where: { userId: target.id, roleId: widerRole.id },
+      }),
+    ).toBe(0);
+
+    await request(app.getHttpServer())
+      .post(`/admin/users/${target.id}/roles/${narrowerRole.id}`)
+      .set('Authorization', `Bearer ${actor.accessToken}`)
+      .send({})
+      .expect(201);
   });
 });

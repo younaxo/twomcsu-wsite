@@ -335,7 +335,11 @@ export class AdminPanelController {
 
   @Post('finance/export')
   @RequirePermissions('finance.export')
-  async financeExport(@Body() dto: ExportOrdersDto, @Res() res: Response) {
-    sendCsv(res, await this.exportService.exportOrders(dto));
+  async financeExport(
+    @Body() dto: ExportOrdersDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    sendCsv(res, await this.exportService.exportOrders(dto, admin.id));
   }
 }

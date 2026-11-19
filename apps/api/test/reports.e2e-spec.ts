@@ -5,7 +5,9 @@ import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { REPORT_CREATE_LIMIT } from '../src/modules/reports/report-constants';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
 jest.setTimeout(20_000);
@@ -66,6 +68,7 @@ describe('Reports (e2e)', () => {
 
   async function grantRole(userId: string, roleId: string) {
     await prisma.userRole.create({ data: { userId, roleId } });
+    await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateUser(userId);
   }
 
@@ -84,6 +87,9 @@ describe('Reports (e2e)', () => {
   let alice: TestUser;
   let bob: TestUser;
   let troll: TestUser;
+  let spammer: TestUser;
+  let peer: TestUser;
+  let senior: TestUser;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -102,6 +108,9 @@ describe('Reports (e2e)', () => {
     alice = await createUser('alice');
     bob = await createUser('bob');
     troll = await createUser('troll');
+    spammer = await createUser('spammer');
+    peer = await createUser('peer');
+    senior = await createUser('senior');
 
     const moderatorRole = await createRole(`reports-moderator-${unique}`, 10);
     await grantRole(moderator.id, moderatorRole.id);
@@ -115,6 +124,18 @@ describe('Reports (e2e)', () => {
       'reports.messages.unpin',
       'reports.notes',
       'reports.notes.pin',
+    ]);
+
+    // Q52: peer — только reports.notes; senior — notes + notes.edit (без unpin).
+    const peerRole = await createRole(`reports-peer-${unique}`, 10);
+    await grantRole(peer.id, peerRole.id);
+    await grantPermissions(peerRole.id, ['reports.view', 'reports.notes']);
+    const seniorRole = await createRole(`reports-senior-${unique}`, 10);
+    await grantRole(senior.id, seniorRole.id);
+    await grantPermissions(seniorRole.id, [
+      'reports.view',
+      'reports.notes',
+      'reports.notes.edit',
     ]);
 
     const adminRole = await createRole(`reports-admin-${unique}`, 20);
@@ -157,6 +178,9 @@ describe('Reports (e2e)', () => {
               alice.email,
               bob.email,
               troll.email,
+              spammer.email,
+              peer.email,
+              senior.email,
             ],
           },
         },
@@ -171,6 +195,9 @@ describe('Reports (e2e)', () => {
             alice.email,
             bob.email,
             troll.email,
+            spammer.email,
+            peer.email,
+            senior.email,
           ],
         },
       },
@@ -225,7 +252,12 @@ describe('Reports (e2e)', () => {
     reportNumber = res.body.reportNumber;
     createdReportNumbers.push(reportNumber);
     expect(reportNumber).toMatch(/^R-\d{8}-[0-9A-F]{6}$/);
-    expect(res.body.targets[0].userId).toBe(bob.id);
+    // Приватность: игрок не видит userId цели; резолв проверяем по БД.
+    expect(res.body.targets[0]).not.toHaveProperty('userId');
+    const stored = await prisma.reportTarget.findFirst({
+      where: { report: { reportNumber } },
+    });
+    expect(stored?.userId).toBe(bob.id);
     expect(res.body.evidenceLinks).toHaveLength(1);
   });
 
@@ -480,6 +512,55 @@ describe('Reports (e2e)', () => {
       .expect(200);
   });
 
+  it('удаление заметки (Q52): чужая — только с reports.notes.edit, закреплённая — ещё и с unpin', async () => {
+    const created = await request(app.getHttpServer())
+      .post(`/moderation/reports/${reportNumber}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Заметка автора-модератора' })
+      .expect(201);
+    const notes = created.body.moderatorNotes as Array<{ id: string }>;
+    const foreignId = notes[notes.length - 1].id;
+    const url = `/moderation/reports/${reportNumber}/notes/${foreignId}`;
+
+    // Без reports.notes.edit чужую заметку удалить нельзя.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(peer))
+      .expect(403);
+
+    // Закрепляем (moderator имеет reports.notes.pin).
+    await request(app.getHttpServer())
+      .patch(`${url}/pin`)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+
+    // С edit, но без unpin закреплённую чужую удалить нельзя.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(senior))
+      .expect(403);
+
+    // Автор удаляет свою закреплённую заметку без unpin.
+    await request(app.getHttpServer())
+      .delete(url)
+      .set('Authorization', auth(moderator))
+      .expect(200);
+
+    // Незакреплённая чужая заметка: с edit — 200.
+    const second = await request(app.getHttpServer())
+      .post(`/moderation/reports/${reportNumber}/notes`)
+      .set('Authorization', auth(moderator))
+      .send({ content: 'Вторая заметка' })
+      .expect(201);
+    const secondNotes = second.body.moderatorNotes as Array<{ id: string }>;
+    await request(app.getHttpServer())
+      .delete(
+        `/moderation/reports/${reportNumber}/notes/${secondNotes[secondNotes.length - 1].id}`,
+      )
+      .set('Authorization', auth(senior))
+      .expect(200);
+  });
+
   it('lock: блокирует новые сообщения от автора', async () => {
     await request(app.getHttpServer())
       .post(`/moderation/reports/${reportNumber}/lock`)
@@ -582,6 +663,28 @@ describe('Reports (e2e)', () => {
           r.reportNumber === created.body.reportNumber,
       ),
     ).toBe(true);
+  });
+
+  it('лимит по пользователю (SEC-01): обращение сверх лимита за окно — 429', async () => {
+    // Отдельный свежий пользователь: остальные тесты лимит не расходуют.
+    for (let i = 0; i < REPORT_CREATE_LIMIT; i += 1) {
+      const res = await request(app.getHttpServer())
+        .post('/reports')
+        .set('Authorization', auth(spammer))
+        .send({ type: 'OTHER', description: `Обращение ${i}` })
+        .expect(201);
+      createdReportNumbers.push(res.body.reportNumber);
+    }
+    await request(app.getHttpServer())
+      .post('/reports')
+      .set('Authorization', auth(spammer))
+      .send({ type: 'OTHER', description: 'Сверх лимита' })
+      .expect(429);
+    await request(app.getHttpServer())
+      .post('/support/donation-problem')
+      .set('Authorization', auth(spammer))
+      .send({ description: 'Тоже сверх лимита' })
+      .expect(429);
   });
 
   it('наказания: выдача/обновление администратором, список по username', async () => {

@@ -193,7 +193,7 @@ Platforms a creator can be verified on, a subset of SocialPlatform
 Значения: `PENDING`, `COMPLETED`, `FAILED`, `CANCELLED`, `REFUNDED`
 
 ### NotificationType
-Значения: `COMMENT_ON_PROFILE`, `COMMENT_MENTION`, `COMMENT_REPLY`, `FRIEND_REQUEST`, `FRIEND_ACCEPTED`, `GIFT_RECEIVED`, `ORDER_STATUS_CHANGED`, `CHAT_MENTION`, `NEWS_PUBLISHED`, `NEWS_COMMENT_REPLY`, `NEWS_COMMENT_MENTION`, `REPORT_MENTION`, `NEWS_LIKED`, `ANNOUNCEMENT`, `MAINTENANCE`, `ACHIEVEMENT_UNLOCKED`, `REPORT_ASSIGNED`, `REPORT_VERDICT`, `REPORT_TARGET`, `MESSAGE_RECEIVED`, `RANK_GRANTED`, `BADGE_GRANTED`, `AWARD_GRANTED`, `PAYMENT_RECEIVED`, `DAILY_REWARD_AVAILABLE`, `EVENT_REMINDER`, `EVENT_UPDATED`, `DECORATION_GRANTED`, `SYSTEM`
+Значения: `COMMENT_ON_PROFILE`, `COMMENT_MENTION`, `COMMENT_REPLY`, `FRIEND_REQUEST`, `FRIEND_ACCEPTED`, `GIFT_RECEIVED`, `ORDER_STATUS_CHANGED`, `CHAT_MENTION`, `NEWS_PUBLISHED`, `NEWS_COMMENT_REPLY`, `NEWS_COMMENT_MENTION`, `REPORT_MENTION`, `NEWS_LIKED`, `ANNOUNCEMENT`, `MAINTENANCE`, `ACHIEVEMENT_UNLOCKED`, `REPORT_ASSIGNED`, `REPORT_VERDICT`, `REPORT_STATUS_CHANGED`, `REPORT_TARGET`, `MESSAGE_RECEIVED`, `RANK_GRANTED`, `BADGE_GRANTED`, `AWARD_GRANTED`, `PAYMENT_RECEIVED`, `DAILY_REWARD_AVAILABLE`, `EVENT_REMINDER`, `EVENT_UPDATED`, `DECORATION_GRANTED`, `SYSTEM`
 
 ### NotificationPriority
 Значения: `LOW`, `NORMAL`, `HIGH`, `URGENT`
@@ -328,6 +328,7 @@ Purpose: _нет комментария в schema.prisma; назначение �
 | `isBanned` | `Boolean` | no | `@default(false)` |  |
 | `banReason` | `String` | yes | `` |  |
 | `bannedUntil` | `DateTime` | yes | `` |  |
+| `bannedById` | `String` | yes | `` | Кто выдал бан аккаунта (Q48, ADR-0173); без FK; NULL — снимает только владелец |
 | `lastLoginAt` | `DateTime` | yes | `` |  |
 | `lastLoginIp` | `String` | yes | `` |  |
 | `lastActivityAt` | `DateTime` | yes | `` | Updated on authenticated API activity |

@@ -69,4 +69,25 @@ describe('Настройки → Наказания', () => {
     render(<PunishmentsPage />, { wrapper: Providers });
     expect(await screen.findByText('Наказаний нет')).toBeInTheDocument();
   });
+
+  it('«Обжаловать» ведёт к форме обжалования; необжалуемое наказание без ссылки', async () => {
+    const base = {
+      punishmentType: 'MUTE',
+      reason: 'Флуд',
+      duration: null,
+      server: null,
+      issuedAt: '2026-10-01T10:00:00.000Z',
+      expiresAt: null,
+      isActive: true,
+    };
+    mocks.get.mockResolvedValue([
+      { ...base, id: 'a', isAppealable: true },
+      { ...base, id: 'b', isAppealable: false },
+    ]);
+    render(<PunishmentsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('punishments');
+    const links = list.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute('href', '/support/new/punishment_appeal');
+  });
 });

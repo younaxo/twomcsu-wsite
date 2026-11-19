@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { isProductionLike } from './node-env';
 
 /// CORS allowlist (ADR-0104): явный список origin'ов сайта — один источник
 /// для HTTP API и Socket.IO. Без `*` и без шаблонов: запрос с `Origin`, которого
@@ -46,7 +47,7 @@ export function parseOrigins(
 }
 
 export function allowedOrigins(config: ConfigService): string[] {
-  const production = config.get<string>('NODE_ENV') === 'production';
+  const production = isProductionLike(config.get<string>('NODE_ENV'));
   const list =
     config.get<string>('WEB_ORIGINS') || config.get<string>('WEB_ORIGIN');
   return parseOrigins(list, production);

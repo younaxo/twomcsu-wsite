@@ -1,4 +1,5 @@
-import { corsOrigin, parseOrigins } from './cors';
+import type { ConfigService } from '@nestjs/config';
+import { allowedOrigins, corsOrigin, parseOrigins } from './cors';
 
 describe('CORS allowlist (ADR-0104)', () => {
   it('явный список, нормализация до origin, без дублей', () => {
@@ -43,5 +44,28 @@ describe('CORS allowlist (ADR-0104)', () => {
       // Без Origin — не CORS-запрос (тот же сайт, сервер-сервер).
       expect(result(undefined)).resolves.toBe(true),
     ]);
+  });
+});
+
+describe('allowedOrigins и NODE_ENV fail-closed (ADR-0164)', () => {
+  const config = (env: string | undefined) =>
+    ({
+      get: (name: string) =>
+        name === 'NODE_ENV'
+          ? env
+          : name === 'WEB_ORIGIN'
+            ? 'http://twomc.example'
+            : undefined,
+    }) as unknown as ConfigService;
+
+  it.each([undefined, '', 'staging', 'production'])(
+    'NODE_ENV=%p: http-origin не из localhost отвергается',
+    (env) => {
+      expect(() => allowedOrigins(config(env))).toThrow(/https/);
+    },
+  );
+
+  it.each(['development', 'test'])('NODE_ENV=%s: http допустим', (env) => {
+    expect(allowedOrigins(config(env))).toEqual(['http://twomc.example']);
   });
 });

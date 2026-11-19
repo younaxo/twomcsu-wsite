@@ -26,7 +26,6 @@ import {
   SEASONAL_MAX_EFFECTS,
   UpdateSeasonalDto,
 } from './dto/update-seasonal.dto';
-import { resetAdmin2faCache } from '../roles/guards/permissions.guard';
 
 /// Переопределение кампании в `seasonal_settings.campaigns` (ADR-0079).
 type SeasonalOverride = {
@@ -243,8 +242,20 @@ export class AdminToolsService {
     return this.prisma.siteSettings.create({ data: {} });
   }
 
+  /// Ответ API без deprecated-колонки `requireAdmin2fa` (Q22/Q44): флага
+  /// больше нет, наружу он не отдаётся.
   async getSiteSettings() {
-    return this.getOrCreateSiteSettings();
+    return AdminToolsService.withoutDeprecated2fa(
+      await this.getOrCreateSiteSettings(),
+    );
+  }
+
+  private static withoutDeprecated2fa<T extends { requireAdmin2fa?: unknown }>(
+    row: T,
+  ): Omit<T, 'requireAdmin2fa'> {
+    const { requireAdmin2fa: _deprecated, ...rest } = row;
+    void _deprecated;
+    return rest;
   }
 
   // --- Глобальная плашка (ADR-0066) -------------------------------------------
@@ -407,16 +418,17 @@ export class AdminToolsService {
       where: { id: current.id },
       data: { ...dto, updatedBy: actorId },
     });
-    // Требование 2FA персоналу (ADR-0109) — сразу, без ожидания кэша guard'а.
-    resetAdmin2faCache();
     await this.audit.log({
       actorId,
       action: 'settings.site.update',
       targetType: 'SiteSettings',
       targetId: updated.id,
-      changes: { before: current, after: updated },
+      changes: {
+        before: AdminToolsService.withoutDeprecated2fa(current),
+        after: AdminToolsService.withoutDeprecated2fa(updated),
+      } as Prisma.InputJsonValue,
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Сезонная система (ADR-0079) -----------------------------------------
@@ -602,7 +614,7 @@ export class AdminToolsService {
       changes: { before: current.ipWhitelist, after: updated.ipWhitelist },
       severity: 'warning',
     });
-    return updated;
+    return AdminToolsService.withoutDeprecated2fa(updated);
   }
 
   // --- Security -------------------------------------------------------------
@@ -632,9 +644,10 @@ export class AdminToolsService {
     });
   }
 
-  /// Список IP, заблокированных/подозрительных по данным BruteForceService
+  /// Список подсетей, заблокированных/подозрительных по данным BruteForceService
   /// (Redis) — честно собрано из реального рантайм-состояния, нет
-  /// персистентной модели SuspiciousActivity.
+  /// персистентной модели SuspiciousActivity. `ip` — ключ подсети
+  /// (`rateLimitKey`, ADR-0163), `lastIp` — последний полный IP неудачи или null.
   async listSuspiciousActivity() {
     const blockedIps = await this.scanKeys('bruteforce:blocked:*');
     const counterIps = await this.scanKeys('bruteforce:login:*');
@@ -643,6 +656,7 @@ export class AdminToolsService {
       string,
       {
         ip: string;
+        lastIp: string | null;
         failedAttempts: number;
         isBlocked: boolean;
         blockedTtlSeconds: number | null;
@@ -654,6 +668,7 @@ export class AdminToolsService {
       const count = await this.redis.client.get(key);
       ips.set(ip, {
         ip,
+        lastIp: null,
         failedAttempts: count ? Number(count) : 0,
         isBlocked: false,
         blockedTtlSeconds: null,
@@ -665,9 +680,24 @@ export class AdminToolsService {
       const existing = ips.get(ip);
       ips.set(ip, {
         ip,
+        lastIp: null,
         failedAttempts: existing?.failedAttempts ?? 0,
         isBlocked: true,
         blockedTtlSeconds: ttl >= 0 ? ttl : null,
+      });
+    }
+
+    // Последний полный IP хранится отдельным ключом `bruteforce:lastip:<ключ>`
+    // (BruteForceService); истёк или отсутствует — null. Не логируется.
+    const subnetKeys = [...ips.keys()];
+    for (let i = 0; i < subnetKeys.length; i += 100) {
+      const chunk = subnetKeys.slice(i, i + 100);
+      const values = await this.redis.client.mget(
+        chunk.map((k) => `bruteforce:lastip:${k}`),
+      );
+      chunk.forEach((k, idx) => {
+        const entry = ips.get(k);
+        if (entry) entry.lastIp = values[idx] ?? null;
       });
     }
 

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DeliveryModule } from '../delivery/delivery.module';
 import { BundlesAdminController } from './bundles-admin.controller';
 import { BundlesController } from './bundles.controller';
 import { BundlesService } from './bundles.service';
@@ -16,8 +17,11 @@ import { DiscountsService } from './discounts.service';
 import { OrdersAdminController } from './orders-admin.controller';
 import { OrdersController, StoreExtrasController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { CheckoutPolicyService } from './checkout-policy.service';
+import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
+import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
 import { PricingService } from './pricing.service';
 import { PromocodesAdminController } from './promocodes-admin.controller';
@@ -32,6 +36,7 @@ import { WishlistController } from './wishlist.controller';
 import { WishlistService } from './wishlist.service';
 
 @Module({
+  imports: [DeliveryModule],
   controllers: [
     CategoriesController,
     CategoriesAdminController,
@@ -64,9 +69,12 @@ import { WishlistService } from './wishlist.service';
     CartService,
     WishlistService,
     OrdersService,
+    NickResolver,
+    CheckoutPolicyService,
     StoreStatsService,
     PaymentProviderRegistry,
     TestPaymentProvider,
+    MockHttpPaymentProvider,
   ],
   exports: [OrdersService, StoreStatsService],
 })

@@ -299,6 +299,9 @@ model User {
   isBanned    Boolean   @default(false)
   banReason   String?
   bannedUntil DateTime?
+  /// Кто выдал бан аккаунта (Q48, ADR-0173). Без FK (как ChatBan.bannedBy);
+  /// NULL — старый бан или выдавший удалён: снять может только владелец.
+  bannedById  String?
 
   lastLoginAt    DateTime?
   lastLoginIp    String?
@@ -374,6 +377,8 @@ model User {
   externalAccounts     UserExternalAccount[]
   legalConsents        LegalConsent[]
   minecraftAccount     MinecraftAccount?
+  playerInventories    PlayerInventory[]
+  inventoryPrivacy     InventoryPrivacy?
   refreshTokens        RefreshToken[]
   twoFactorBackupCodes TwoFactorBackupCode[]
   passwordResetTokens  PasswordResetToken[]
@@ -1352,6 +1357,9 @@ model Order {
   paymentProvider          String?
   /// Проставляется только после проверки подписи вебхука провайдера (ADR-0009).
   paymentWebhookVerifiedAt DateTime?
+  /// Версия оферты, принятая при оформлении, и время акцепта (0.5). Для старых заказов null.
+  offerVersion             String?     @db.VarChar(32)
+  offerAcceptedAt          DateTime?
   paidAt                   DateTime?
   cancelledAt              DateTime?
   refundedAt               DateTime?
@@ -1389,8 +1397,60 @@ model OrderItem {
   bundle     Bundle?         @relation(fields: [bundleId], references: [id])
   giftToUser User?           @relation(fields: [giftToUserId], references: [id])
 
+  deliveryTasks DeliveryTask[]
+
   @@index([orderId])
   @@map("order_items")
+}
+
+/// Статусы задания выдачи (0.7, ADR-0184 п. 4).
+enum DeliveryTaskStatus {
+  PENDING
+  IN_PROGRESS
+  RETRY_WAIT
+  DELIVERED
+  FAILED
+  NEEDS_ATTENTION
+  AWAITING_MANUAL
+  MANUAL_DONE
+  CANCELLED
+}
+
+/// Очередь выдачи купленного (0.7, ADR-0184). Ключ идемпотентности —
+/// (orderItemId, step). Исполнитель — строка (manual | site | command | …):
+/// новый исполнитель не требует миграции.
+model DeliveryTask {
+  id              String             @id @default(cuid())
+  orderItemId     String
+  step            Int                @default(1)
+  executor        String             @db.VarChar(16)
+  status          DeliveryTaskStatus @default(PENDING)
+  /// Номер попытки: растёт при каждом захвате (Р6).
+  attempts        Int                @default(0)
+  nextAttemptAt   DateTime?
+  /// Токен аренды: результат принимается, только если совпал (Р6).
+  leaseToken      String?            @db.VarChar(64)
+  leaseUntil      DateTime?
+  /// Снимок ника получателя на момент создания задания.
+  nick            String?            @db.VarChar(16)
+  /// Получатель-пользователь сайта (для сайтовой выдачи); без внешнего ключа.
+  recipientUserId String?
+  /// В 0.7 всегда null: шаблонов нет (0.11).
+  renderedCommand String?            @db.VarChar(256)
+  templateVersion Int?
+  /// Очищенный текст ошибки, без секретов.
+  lastError       String?            @db.VarChar(500)
+  deliveredAt     DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@unique([orderItemId, step])
+  @@index([status, nextAttemptAt])
+  @@index([status, leaseUntil])
+  @@index([status, createdAt])
+  @@map("delivery_tasks")
 }
 
 model LoyaltyDiscount {
@@ -1442,6 +1502,7 @@ enum NotificationType {
   ACHIEVEMENT_UNLOCKED
   REPORT_ASSIGNED
   REPORT_VERDICT
+  REPORT_STATUS_CHANGED
   REPORT_TARGET
   MESSAGE_RECEIVED
   RANK_GRANTED
@@ -1801,6 +1862,7 @@ model SiteSettings {
   newsEnabled                  Boolean  @default(true)
   reportsEnabled               Boolean  @default(true)
   defaultNotificationsEnabled  Boolean  @default(true)
+  /// Deprecated: 2FA персонала обязательна всегда (Q22), поле не читается.
   requireAdmin2fa              Boolean  @default(false)
   ipWhitelist                  String[] @default([])
   updatedBy                    String?
@@ -3309,4 +3371,257 @@ model TwoFactorBackupCode {
 
   @@index([userId])
   @@map("two_factor_backup_codes")
+}
+
+// =========================================================================
+// Наказания Minecraft: зеркало источника (этап 02, ADR-0166, ADR-0178)
+// =========================================================================
+
+enum MinecraftPunishmentKind {
+  BAN
+  MUTE
+  WARN
+  KICK
+}
+
+enum MinecraftPunishmentStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+  DELETED_AT_SOURCE
+}
+
+/// Зеркало записи об игровом наказании из внешнего источника (LiteBans, позже
+/// Bridge). Только чтение источника: сайт ничего в него не пишет. Тексты
+/// (`reason`, имена) сохраняются УЖЕ очищенными от IP и контактов (Q31).
+/// `sourceId` — id строки источника; ключ `(source, sourceScope, kind, sourceId)`.
+/// Запись выполняет только сервис синхронизации (upsert по `rowHash`).
+/// Исключение: колонки `issuerHidden*` пишет только действие персонала
+/// (скрытие выдавшего, ADR-0180, Q63 п.3); синхронизация их не трогает и в
+/// `rowHash` они не входят.
+/// Индексы, которых Prisma не выражает, заданы вручную в миграции
+/// `20261117040000_punishments_public_indexes` и здесь НЕ объявлены:
+/// `minecraft_punishments_subjectName_lower_idx` (lower("subjectName")
+/// text_pattern_ops), `minecraft_punishments_public_startedAt_id_idx`
+/// (частичный, публичный предикат) и `minecraft_punishments_startedAt_id_idx`.
+/// Следующие миграции пишутся вручную: автогенерация могла бы удалить их.
+model MinecraftPunishment {
+  id                 String                    @id @default(cuid())
+  source             String                    @default("litebans") @db.VarChar(16)
+  sourceScope        String                    @default("default") @db.VarChar(32)
+  kind               MinecraftPunishmentKind
+  sourceId           BigInt
+  subjectUuid        String?                   @db.VarChar(36)
+  subjectName        String?                   @db.VarChar(64)
+  ipBan              Boolean                   @default(false)
+  reason             String?
+  executorUuid       String?                   @db.VarChar(36)
+  executorName       String?                   @db.VarChar(128)
+  executorIsConsole  Boolean                   @default(false)
+  removedByUuid      String?                   @db.VarChar(36)
+  removedByName      String?                   @db.VarChar(128)
+  removedByIsConsole Boolean                   @default(false)
+  removedReason      String?
+  removedAt          DateTime?
+  startedAt          DateTime
+  until              DateTime?
+  status             MinecraftPunishmentStatus
+  serverScope        String?                   @db.VarChar(128)
+  serverOrigin       String?                   @db.VarChar(128)
+  silent             Boolean                   @default(false)
+  template           Int?
+  /// SHA-256 нормализованных полей: дедупликация и обнаружение правок.
+  rowHash            String                    @db.VarChar(64)
+  /// Растёт при каждом изменении; клиент отбрасывает события с `rev` не выше известного.
+  rev                Int                       @default(1)
+  isHidden           Boolean                   @default(false)
+  hiddenById         String?
+  hiddenReason       String?
+  /// Выдавший принудительно скрыт публично и от игрока (ADR-0180, 4.2).
+  issuerHidden       Boolean                   @default(false)
+  /// Id пользователя сайта, скрывшего выдавшего; без внешнего ключа, как `hiddenById`.
+  issuerHiddenById   String?
+  issuerHiddenAt     DateTime?
+  issuerHiddenReason String?                   @db.VarChar(200)
+  firstSeenAt        DateTime                  @default(now())
+  /// Обновляется только при изменении записи (неизменённые строки не пишутся).
+  lastSeenAt         DateTime                  @default(now())
+  lastChangedAt      DateTime                  @default(now())
+  deletedAtSource    DateTime?
+
+  @@unique([source, sourceScope, kind, sourceId])
+  @@index([subjectUuid, startedAt])
+  @@index([status, startedAt])
+  @@index([kind, status, isHidden, startedAt])
+  @@map("minecraft_punishments")
+}
+
+/// Водяной знак и состояние синхронизации по паре (источник, тип).
+/// Курсор фиксируется в той же транзакции, что и upsert пачки.
+model PunishmentSyncState {
+  id                  String                  @id @default(cuid())
+  source              String                  @db.VarChar(16)
+  kind                MinecraftPunishmentKind
+  cursorId            BigInt                  @default(0)
+  lastPollAt          DateTime?
+  lastSuccessAt       DateTime?
+  lastActiveCheckAt   DateTime?
+  lastFullReconcileAt DateTime?
+  consecutiveFailures Int                     @default(0)
+  lastErrorCode       String?                 @db.VarChar(32)
+  initialSyncDoneAt   DateTime?
+
+  @@unique([source, kind])
+  @@map("punishment_sync_state")
+}
+
+/// Последнее состояние инвентаря игрока на сервере (этап 04, ADR-0168, ADR-0179).
+/// Один ряд на (пользователь, сервер, группа); сырой NBT не хранится, `slots` —
+/// нормализованный JSON (до 24 КБ). UUID не хранится: связь через `userId`.
+model PlayerInventory {
+  id            String   @id @default(cuid())
+  userId        String
+  serverSlug    String   @db.VarChar(32)
+  /// main | ender
+  grp           String   @db.VarChar(8)
+  epoch         String   @db.VarChar(64)
+  rev           Int
+  slots         Json
+  slotCount     Int
+  /// SHA-256 от канонического JSON слотов (дедупликация, ETag).
+  contentHash   String   @db.VarChar(64)
+  capturedAt    DateTime
+  /// Последнее подтверждение (в том числе без изменений).
+  lastSeenAt    DateTime
+  playerOnline  Boolean  @default(false)
+  schemaVersion Int      @default(1)
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, serverSlug, grp])
+  @@index([lastSeenAt])
+  @@map("player_inventories")
+}
+
+/// Приватность инвентаря (ADR-0168, раздел 6). Нет строки = «приватно».
+model InventoryPrivacy {
+  userId          String   @id
+  /// Основной инвентарь, броня и вторая рука видны другим игрокам.
+  inventoryPublic Boolean  @default(false)
+  /// Ender Chest виден другим; имеет смысл только при `inventoryPublic`.
+  enderPublic     Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("inventory_privacy")
+}
+
+/// Статус сервера-источника Bridge (ADR-0182). `REVOKED` отклоняет все ключи сразу.
+enum BridgeServerStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// Сервер Minecraft, которому разрешено слать события в приёмник Bridge (ADR-0182).
+/// Секретов не хранит: ключ выводится HKDF от `BRIDGE_MASTER_SECRET` по `slug` и
+/// `keyGeneration` (контракт 2.4). Связи с `servers` нет намеренно: `slug` - строка
+/// того же вида, что `serverSlug` в `player_inventories` и зеркале наказаний.
+model BridgeServer {
+  id                   String             @id @default(cuid())
+  slug                 String             @unique @db.VarChar(32)
+  displayName          String             @db.VarChar(64)
+  status               BridgeServerStatus @default(ACTIVE)
+  keyGeneration        Int                @default(1)
+  /// Окно перекрытия: пока `now` меньше значения, предыдущее поколение принимается.
+  previousGenValidTill DateTime?
+  lastSeenAt           DateTime?
+  lastProtocol         Int?
+  pluginVersion        String?            @db.VarChar(32)
+  platform             String?            @db.VarChar(48)
+  clockSkewMs          Int?
+  /// Возможности сервера: `punishments`, позже `punishments-authoritative`, `player-events`.
+  capabilities         Json?
+  /// Область идентификаторов наказаний этого сервера (ключ зеркала этапа 02).
+  sourceScope          String             @default("default") @db.VarChar(32)
+  createdAt            DateTime           @default(now())
+
+  @@map("bridge_servers")
+}
+
+/// Журнал дедупликации событий `punishment.*` (ADR-0182). Не хранит `data`: только
+/// хэш содержимого для обнаружения `conflict`. Чистится по `receivedAt` старше 7 суток.
+model BridgeEventLog {
+  id          String   @id @default(cuid())
+  serverSlug  String   @db.VarChar(32)
+  eventId     String   @db.VarChar(64)
+  type        String   @db.VarChar(48)
+  status      String   @db.VarChar(16)
+  payloadHash String   @db.VarChar(64)
+  receivedAt  DateTime @default(now())
+
+  @@unique([serverSlug, eventId])
+  @@index([receivedAt])
+  @@map("bridge_event_log")
+}
+
+// ---------------------------------------------------------------------------
+// Розыгрыш «Анархия Новой Эры», фаза 1 (учёт времени). Подробно:
+// giveaway/docs/ADR-G001-session-time-counting.md. Связей с остальными
+// таблицами нет намеренно (expand-only, изолированный модуль).
+// ---------------------------------------------------------------------------
+
+/// Настройки розыгрыша (одна строка, id = "default"). Нет строки - значения
+/// по умолчанию из окружения (без seed). Время хранится в UTC.
+model GiveawaySettings {
+  id               String   @id @default("default") @db.VarChar(16)
+  thresholdMinutes Int
+  startAt          DateTime
+  cutoffAt         DateTime
+  timezone         String   @default("Europe/Moscow") @db.VarChar(48)
+  allowedServers   String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("giveaway_settings")
+}
+
+/// Игрок розыгрыша: последний известный ник (по самому позднему occurredAt).
+model GiveawayPlayer {
+  playerUuid  String   @id @db.VarChar(36)
+  lastName    String   @db.VarChar(16)
+  firstSeenAt DateTime
+  lastSeenAt  DateTime
+
+  @@map("giveaway_players")
+}
+
+/// Минута-корзина: одна запись на (игрок, минута UTC). Уникальность пары -
+/// идемпотентность и слияние пересечений между серверами. Итог игрока -
+/// число корзин в окне [startAt, cutoffAt].
+model GiveawayMinute {
+  playerUuid String   @db.VarChar(36)
+  minute     DateTime
+  serverSlug String   @db.VarChar(32)
+  receivedAt DateTime @default(now())
+
+  @@id([playerUuid, minute])
+  @@index([minute])
+  @@map("giveaway_minutes")
+}
+
+/// Журнал сессий (join/quit) с идемпотентностью по (сервер, eventId).
+model GiveawaySessionEvent {
+  id         String   @id @default(cuid())
+  serverSlug String   @db.VarChar(32)
+  eventId    String   @db.VarChar(36)
+  type       String   @db.VarChar(8)
+  playerUuid String   @db.VarChar(36)
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  @@unique([serverSlug, eventId])
+  @@index([playerUuid, occurredAt])
+  @@map("giveaway_session_events")
 }

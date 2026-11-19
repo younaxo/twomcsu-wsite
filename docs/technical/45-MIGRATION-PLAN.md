@@ -4,7 +4,7 @@
 
 | Phase | Objective | Files / areas | Migrations | Breaking changes | Rollback | Tests |
 |---|---|---|---|---|---|---|
-| 0 | Hotfix безопасности | `seed.ts`, `orders.controller.ts`/`orders.service.ts`, `auth.service.ts`, `admin-users.service.ts`, `main.ts` (`trust proxy`) | — | seed без ENV падает; mock-оплата отключена в prod | revert коммита | seed без ENV не создаёт аккаунты; `mock-complete` → 404/403 в prod; бан → `refresh` 401 |
+| 0 | Hotfix безопасности | `seed.ts`, `orders.controller.ts`/`orders.service.ts`, `auth.service.ts`, `admin-users.service.ts`, `main.ts` (`trust proxy`; исправлено в P3-02, ADR-0155) | — | seed без ENV падает; mock-оплата отключена в prod | revert коммита | seed без ENV не создаёт аккаунты; `mock-complete` → 404/403 в prod; бан → `refresh` 401 |
 | 1 | Documentation baseline | `docs/technical/**` | — | — | — | coverage report |
 | 2 | Permissions schema | `schema.prisma`: Role, Permission, RolePermission, UserRole, RoleAssignmentLog; seed реестра 11-PERMISSION-MATRIX.md | `add_rbac_tables` (аддитивная) | нет | drop новых таблиц | seed идемпотентен |
 | 3 | Authorization guard | `PermissionService`, `PermissionsGuard`, `@RequirePermissions`; dual-mode: `@Roles` продолжает работать | — | нет | отключить guard | 403/200/superuser/priority (46-TESTING.md) |

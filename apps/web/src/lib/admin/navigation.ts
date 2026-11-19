@@ -26,7 +26,8 @@ export type AdminIconName =
   | 'download'
   | 'wrench'
   | 'award'
-  | 'briefcase';
+  | 'briefcase'
+  | 'store';
 
 /// Подраздел пункта (ADR-0139): связанные страницы под одним пунктом, чтобы
 /// навигация не разрасталась; в оболочке переключаются вкладками.
@@ -178,6 +179,54 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         sections: [
           { href: '/admin/achievements', label: 'Достижения', requirement: 'achievements.view' },
           { href: '/admin/awards', label: 'Награды', requirement: 'awards.view' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'store',
+    title: 'Магазин',
+    items: [
+      {
+        href: '/admin/store/products',
+        label: 'Товары магазина',
+        icon: 'store',
+        requirement: [
+          'store.products.view',
+          'store.categories.view',
+          'orders.view',
+          'promocodes.view',
+          'store.discounts.view',
+          'store.delivery.view',
+        ],
+        keywords: [
+          'выдача',
+          'магазин',
+          'товары',
+          'варианты',
+          'цены',
+          'категории',
+          'привилегии',
+          'донат',
+          'заказы',
+          'промокоды',
+          'скидки',
+        ],
+        sections: [
+          { href: '/admin/store/products', label: 'Товары', requirement: 'store.products.view' },
+          {
+            href: '/admin/store/categories',
+            label: 'Категории',
+            requirement: 'store.categories.view',
+          },
+          { href: '/admin/store/orders', label: 'Заказы', requirement: 'orders.view' },
+          {
+            href: '/admin/store/delivery',
+            label: 'Выдача',
+            requirement: 'store.delivery.view',
+          },
+          { href: '/admin/store/promocodes', label: 'Промокоды', requirement: 'promocodes.view' },
+          { href: '/admin/store/discounts', label: 'Скидки', requirement: 'store.discounts.view' },
         ],
       },
     ],

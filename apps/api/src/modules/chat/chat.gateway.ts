@@ -14,6 +14,10 @@ import {
 import { Server, Socket } from 'socket.io';
 import { AccessTokenPayload } from '../auth/interfaces/access-token-payload.interface';
 import { PermissionService } from '../roles/permission.service';
+import {
+  ADMIN_2FA_REQUIRED_MESSAGE,
+  isAdmin2faDenied,
+} from '../roles/guards/permissions.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChannelIdDto } from './dto/socket/channel-id.dto';
 import { EditMessageSocketDto } from './dto/socket/edit-message-socket.dto';
@@ -96,6 +100,23 @@ export class ChatGateway
     return reason === 'MAINTENANCE'
       ? 'Идут технические работы. Чат скоро заработает.'
       : 'Чат временно недоступен.';
+  }
+
+  /// Staff-действия по WS (мут/бан/пин) — та же admin-2FA проверка, что у HTTP
+  /// (ADR-0109/0156). Актуальный флаг 2FA читаем из БД, не из данных сокета.
+  private async assertAdmin2fa(userId: string): Promise<void> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { twoFactorEnabled: true },
+    });
+    if (
+      isAdmin2faDenied(
+        { twoFactorEnabled: row?.twoFactorEnabled ?? false },
+        this.config,
+      )
+    ) {
+      throw new Error(`admin_2fa_required: ${ADMIN_2FA_REQUIRED_MESSAGE}`);
+    }
   }
 
   afterInit(server: Server): void {
@@ -208,6 +229,7 @@ export class ChatGateway
           content: dto.content,
           parentId: dto.parentId,
         },
+        () => this.assertAdmin2fa(client.data.userId),
       );
       this.server.to(channelRoom(dto.channelId)).emit('message:new', message);
       return { ok: true, message };
@@ -259,6 +281,8 @@ export class ChatGateway
       const message = await this.chat.deleteMessage(
         client.data.userId,
         dto.messageId,
+        undefined,
+        () => this.assertAdmin2fa(client.data.userId),
       );
       this.server
         .to(channelRoom(message.channelId))
@@ -304,6 +328,14 @@ export class ChatGateway
   ): Promise<void> {
     try {
       const pinned = !dto.unpin;
+      if (
+        await this.permissions.hasPermission(
+          client.data.userId,
+          'chat.messages.pin',
+        )
+      ) {
+        await this.assertAdmin2fa(client.data.userId);
+      }
       const message = await this.chat.setPinned(
         client.data.userId,
         dto.messageId,
@@ -333,6 +365,7 @@ export class ChatGateway
       if (!allowed) {
         throw new Error('Недостаточно прав для выдачи мута');
       }
+      await this.assertAdmin2fa(client.data.userId);
       const mute = await this.moderation.muteUser(client.data.userId, dto);
 
       this.server.to(userRoom(dto.userId)).emit('user:muted', mute);
@@ -368,6 +401,7 @@ export class ChatGateway
       if (!allowed) {
         throw new Error('Недостаточно прав для бана в чате');
       }
+      await this.assertAdmin2fa(client.data.userId);
       const ban = await this.moderation.banUser(client.data.userId, dto);
 
       this.server.to(userRoom(dto.userId)).emit('user:banned', ban);
