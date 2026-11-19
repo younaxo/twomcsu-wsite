@@ -385,6 +385,8 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   GIVEAWAY_CUTOFF_AT: Joi.string().isoDate().allow(''),
   /// Через запятую, формат id сервера: [a-z0-9-]{2,32}.
   GIVEAWAY_ALLOWED_SERVERS: Joi.string().allow(''),
+  /// Капча на выдаче кода (ADR-G002 п. 2.6); по умолчанию выключена.
+  GIVEAWAY_CAPTCHA_ENABLED: Joi.boolean().default(false),
 
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по

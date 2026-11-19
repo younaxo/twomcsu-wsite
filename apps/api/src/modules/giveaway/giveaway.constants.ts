@@ -59,3 +59,39 @@ export const DEFAULT_START_AT = '2026-11-21T21:00:00.000Z';
 export const DEFAULT_CUTOFF_AT = '2026-12-30T20:59:59.000Z';
 export const DEFAULT_THRESHOLD_MINUTES = 3000;
 export const GIVEAWAY_TIMEZONE = 'Europe/Moscow';
+
+/// Фаза 2 (ADR-G002): подписанные пути плагина. Ключ - путь запроса (с `/api`
+/// и без), значение - публичный путь, который подписывается всегда.
+export const GIVEAWAY_REDEEM_PATH = '/api/giveaway/v1/redeem';
+export const GIVEAWAY_PROGRESS_PATH = '/api/giveaway/v1/progress';
+export const GIVEAWAY_SIGNED_PATHS: Readonly<Record<string, string>> = {
+  '/api/giveaway/v1/events': GIVEAWAY_SIGN_PATH,
+  '/giveaway/v1/events': GIVEAWAY_SIGN_PATH,
+  '/api/giveaway/v1/redeem': GIVEAWAY_REDEEM_PATH,
+  '/giveaway/v1/redeem': GIVEAWAY_REDEEM_PATH,
+  '/api/giveaway/v1/progress': GIVEAWAY_PROGRESS_PATH,
+  '/giveaway/v1/progress': GIVEAWAY_PROGRESS_PATH,
+};
+
+/// Коды: алфавит Crockford без I, L, O, U (32 символа), 16 символов = 80 бит.
+export const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const CODE_LENGTH = 16;
+export const CODE_TTL_S = 600;
+export const SESSION_COOKIE = 'gw_session';
+export const SESSION_COOKIE_MAX_AGE_S = 86_400;
+export const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+export const COOKIE_PATH = '/api/giveaway';
+
+/// Билет: буква без I и O (24) + три цифры.
+export const TICKET_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+export const TICKET_MAX_ATTEMPTS = 8;
+
+/// Лимиты (ADR-G002 п. 2.5, 4, 6.1, 6.2).
+export const CODES_PER_SUBNET_HOUR = 30;
+export const CODES_PER_IP_HOUR = 15;
+export const CODES_PER_SESSION_10MIN = 10;
+export const STATUS_PER_SESSION_MIN = 60;
+export const PUBLIC_PER_IP_MIN = 120;
+export const REDEEM_PER_UUID_MIN = 10;
+export const REDEEM_PER_SERVER_MIN = 60;
+export const MAX_PROGRESS_UUIDS = 100;

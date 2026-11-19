@@ -5,6 +5,7 @@
 ## Что где лежит
 
 - `docs/ADR-G001-session-time-counting.md` — решения по подсчёту времени и контракт для плагина (подпись, события).
+- `docs/ADR-G002-codes-and-tickets.md` — фаза 2: cookie-сессия, коды, билеты, `redeem`/`progress` для плагина, контракт для страницы (`codes`, `codes/status`, `public`).
 - `docs/MASTER-PROMPT-16.1.md` — задание фазы 1, работа 1 (бэкенд).
 - Бэкенд: `apps/api/src/modules/giveaway/` (модуль, выключен флагом `GIVEAWAY_ENABLED`).
 - Миграция: `apps/api/prisma/migrations/20261119120000_giveaway_phase1/` (expand-only, ждёт ревью; на production применяет владелец).
