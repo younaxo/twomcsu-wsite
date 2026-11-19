@@ -56,6 +56,19 @@
 - Новые настройки config.yml: `thresholdHoursDefault`, `cooldownSeconds`, `cutoffText`, `progress.enabled`, `progress.notify`.
 - Ограничение: сервер Minecraft и сторонние плагины могут логировать введённую команду (например, логи команд); для защиты кода действует TTL 10 минут и одноразовость.
 
+## Страница
+
+Маршрут `/giveaway` в `apps/web` (`src/app/giveaway/page.tsx`), код — `apps/web/src/features/giveaway/`. Страница клиентская: ходит только на `/api/giveaway/v1/{public,codes,codes/status}` того же домена (`credentials: same-origin`, cookie `gw_session`), к API сайта не обращается. Все даты — по МСК (`Intl`, `Europe/Moscow`), логотип ведёт на `https://twomc.su`.
+
+Состояния: до старта (обратный отсчёт), идёт, код выдан и ожидание ввода в игре (опрос `codes/status` раз в 2,5 с только пока код pending и вкладка видима, таймер жизни кода, «Скопировать», «Новый код»), анимация перебора символов и итоговый билет с ником (при `prefers-reduced-motion` сразу билет), «билет уже получен», ошибки (429, 503, сеть, код истёк), розыгрыш завершён. Статуса «время не набрано» в контракте `codes/status` нет (его видит игрок в игре), поэтому на странице только подсказка «игра покажет, сколько осталось».
+
+Переменные окружения web:
+- `GIVEAWAY_ONLY=true` (на сервере web): все маршруты, кроме `/giveaway`, `/api/giveaway/*` и статики, редиректят (307) на `/giveaway` (`src/middleware.ts`). Без флага сайт не меняется.
+- `NEXT_PUBLIC_GIVEAWAY_API_BASE` (необязательно): префикс API, если он не на том же домене; по умолчанию пусто.
+- `NEXT_PUBLIC_GIVEAWAY_MOCK=1`: только dev (при `NODE_ENV=production` игнорируется): API заменяется моком, сценарий выбирается `?mock=before|running|pending|ticket|redeemed|expired|limit|down|offline|finished`.
+
+Проверка: `pnpm --filter @twomc/web exec vitest run src/features/giveaway`. Скриншоты основных состояний (dark, desktop 1280 и mobile 500, на моках): `docs/screenshots/phase2/`. Ограничение headless Edge: окно уже 500 px не делается, 320 px вручную не снимался.
+
 ## Безопасность выкладки
 
 - Файл ключа сервера: Linux - права `0600`, владелец - пользователь процесса сервера; Windows - отдельная папка с наследованием прав только для пользователя сервера.
