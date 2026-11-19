@@ -3,6 +3,7 @@
 #
 # Секреты - только в env-файлах ВНЕ репозитория (каталог GIVEAWAY_SECRETS_DIR, по умолчанию
 # /srv/twomc-giveaway/secrets, права 0600). Образцы без значений: secrets/*.env.example.
+# Выкладка с машины агента - deploy.sh, первичная настройка сервера - setup-server.sh (RUNBOOK.md).
 # Проверка синтаксиса без запуска (демон не нужен; укажите каталог с копиями *.env.example):
 #   GIVEAWAY_SECRETS_DIR=<каталог-с-копиями> docker compose -f giveaway/deploy/docker-compose.yml config -q
 
