@@ -105,6 +105,8 @@ export const ADMIN_COOKIE_PATH = '/api/giveaway/v1';
 export const ADMIN_OAUTH_COOKIE_PATH = '/api/giveaway/v1/admin/auth';
 export const ADMIN_IDLE_MS = 30 * 60 * 1000;
 export const ADMIN_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
+/// Сколько хранить истёкшие и отозванные сессии до удаления (при входе).
+export const ADMIN_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const ADMIN_OAUTH_TTL_S = 600;
 export const ADMIN_LOGIN_PER_10MIN = 20;
 export const ADMIN_API_PER_MIN = 300;

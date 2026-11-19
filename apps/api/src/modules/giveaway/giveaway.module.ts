@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GIVEAWAY_CONFIG, readGiveawayConfig } from './giveaway.config';
+import {
+  GIVEAWAY_CONFIG,
+  GiveawayConfig,
+  readGiveawayConfig,
+} from './giveaway.config';
 import { GiveawayController } from './giveaway.controller';
 import { GiveawayCodesService } from './giveaway-codes.service';
 import { GiveawayPublicController } from './giveaway-public.controller';
@@ -19,6 +23,10 @@ import { GiveawayDataService } from './giveaway-data.service';
 import { GiveawayDiscordClient } from './giveaway-discord.client';
 import { GiveawayDrawService } from './giveaway-draw.service';
 import { GiveawayPrizesService } from './giveaway-prizes.service';
+import {
+  GIVEAWAY_PRIZES_CONFIG,
+  loadPrizesConfig,
+} from './giveaway-prizes-config';
 import { GiveawayStreamController } from './giveaway-stream.controller';
 import { GiveawayStreamService } from './giveaway-stream.service';
 import { GiveawayTestService } from './giveaway-test.service';
@@ -38,6 +46,14 @@ import { GiveawayTestService } from './giveaway-test.service';
       provide: GIVEAWAY_CONFIG,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => readGiveawayConfig(config),
+    },
+    {
+      // Призы из giveaway/config/prizes.json: проверка при старте, ошибка
+      // останавливает приложение (fail closed). Выключенный розыгрыш не читает.
+      provide: GIVEAWAY_PRIZES_CONFIG,
+      inject: [GIVEAWAY_CONFIG],
+      useFactory: (config: GiveawayConfig) =>
+        config.enabled ? loadPrizesConfig(config.admin.prizesConfigPath) : [],
     },
     GiveawayRedisService,
     GiveawaySettingsService,

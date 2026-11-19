@@ -105,6 +105,12 @@ export class GiveawayStreamController {
       m,
       rateLimitKey(req.ip),
       revision,
+      m === 'test'
+        ? () =>
+            this.auth.isSessionActive(
+              readCookie(req.headers.cookie, ADMIN_COOKIE),
+            )
+        : null,
     );
     if (!ok) {
       res.removeHeader('Content-Type');

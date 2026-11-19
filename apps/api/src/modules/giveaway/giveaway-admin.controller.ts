@@ -24,8 +24,6 @@ import {
   parseEmpty,
   parseMode,
   parsePage,
-  parsePrizeCreate,
-  parsePrizeUpdate,
   parseQuery,
   parseSettingsPatch,
   parseTestSeed,
@@ -36,7 +34,7 @@ import {
 import { GiveawayAdminSettingsService } from './giveaway-admin-settings.service';
 import { GiveawayDataService, GiveawayMode } from './giveaway-data.service';
 import { GiveawayDrawService } from './giveaway-draw.service';
-import { notFound } from './giveaway-errors';
+import { conflict, notFound } from './giveaway-errors';
 import { GiveawayPrizesService } from './giveaway-prizes.service';
 import { GiveawayTestService } from './giveaway-test.service';
 
@@ -115,35 +113,35 @@ export class GiveawayAdminController {
     return this.settings.patch(parseSettingsPatch(body), actorOf(req));
   }
 
+  /// Картинки призов - из конфига (ADR-G003 п. 5.5, Q97).
   @Get('prize-images')
-  async images() {
-    return { items: await this.prizes.listImages() };
+  images() {
+    return {
+      items: this.prizes.configList().items.map((p) => p.imageFile as string),
+    };
   }
 
   @Get('prizes')
   listPrizes() {
-    return this.prizes.list();
+    return this.prizes.configList();
   }
 
+  /// Админ-CRUD призов отключён: единственный источник - giveaway/config/prizes.json.
+  /// Методы GiveawayPrizesService.create/update/remove сохранены, но не вызываются.
   @Post('prizes')
   @HttpCode(200)
-  createPrize(@Req() req: AdminRequest, @Body() body: unknown) {
-    return this.prizes.create(parsePrizeCreate(body), actorOf(req));
+  createPrize(): never {
+    throw conflict('prizes_config_managed');
   }
 
   @Patch('prizes/:id')
-  updatePrize(
-    @Req() req: AdminRequest,
-    @Param('id') id: string,
-    @Body() body: unknown,
-  ) {
-    return this.prizes.update(id, parsePrizeUpdate(body), actorOf(req));
+  updatePrize(): never {
+    throw conflict('prizes_config_managed');
   }
 
   @Delete('prizes/:id')
-  async deletePrize(@Req() req: AdminRequest, @Param('id') id: string) {
-    await this.prizes.remove(id, actorOf(req));
-    return { ok: true };
+  deletePrize(): never {
+    throw conflict('prizes_config_managed');
   }
 
   @Get('draw')

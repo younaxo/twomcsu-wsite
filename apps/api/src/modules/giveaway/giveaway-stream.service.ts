@@ -10,6 +10,8 @@ interface Client {
   res: Response;
   channel: StreamChannel;
   ipKey: string;
+  /// Перепроверка прав долгоживущего соединения (тестовый канал: админ-сессия).
+  revalidate: (() => Promise<boolean>) | null;
 }
 
 interface Message {
@@ -52,11 +54,12 @@ export class GiveawayStreamService implements OnModuleDestroy {
     channel: StreamChannel,
     ipKey: string,
     revision: number,
+    revalidate: (() => Promise<boolean>) | null = null,
   ): Promise<boolean> {
     const used = this.perIp.get(ipKey) ?? 0;
     if (used >= STREAM_MAX_PER_IP) return false;
     this.perIp.set(ipKey, used + 1);
-    const client: Client = { res, channel, ipKey };
+    const client: Client = { res, channel, ipKey, revalidate };
     this.clients.add(client);
     let closed = false;
     const cleanup = (): void => {
@@ -112,8 +115,35 @@ export class GiveawayStreamService implements OnModuleDestroy {
 
   private deliver(m: Message): void {
     for (const c of this.clients) {
-      if (c.channel === m.channel) this.write(c, m.event, m.data);
+      if (c.channel !== m.channel) continue;
+      if (c.revalidate === null) this.write(c, m.event, m.data);
+      else void this.deliverChecked(c, m);
     }
+  }
+
+  /// Соединение с перепроверкой: перед событием сессия должна быть жива, иначе
+  /// клиенту отправляется `unauthorized` и соединение закрывается.
+  private async deliverChecked(c: Client, m: Message): Promise<void> {
+    if (await this.stillAllowed(c)) this.write(c, m.event, m.data);
+  }
+
+  private async stillAllowed(c: Client): Promise<boolean> {
+    if (c.revalidate === null) return true;
+    let ok = false;
+    try {
+      ok = await c.revalidate();
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      this.write(c, 'unauthorized', {});
+      try {
+        c.res.end();
+      } catch {
+        /* см. close */
+      }
+    }
+    return ok;
   }
 
   /// Публикация: через Redis (рассылка всем инстансам); если подписчика нет
@@ -151,6 +181,7 @@ export class GiveawayStreamService implements OnModuleDestroy {
         } catch {
           /* см. close */
         }
+        if (c.revalidate !== null) void this.stillAllowed(c);
       }
     }, STREAM_HEARTBEAT_MS);
     this.timer.unref();

@@ -10,6 +10,7 @@ import {
   ADMIN_ABSOLUTE_MS,
   ADMIN_IDLE_MS,
   ADMIN_OAUTH_TTL_S,
+  ADMIN_SESSION_RETENTION_MS,
   SESSION_TOKEN_PATTERN,
 } from './giveaway.constants';
 import { GiveawayAdminAuditService } from './giveaway-admin-audit.service';
@@ -49,6 +50,7 @@ function b64url(buf: Buffer): string {
 export class GiveawayAdminAuthService {
   private readonly sessionKey: Buffer | null;
   private readonly csrfKey: Buffer | null;
+  private readonly auditKey: Buffer | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,6 +62,7 @@ export class GiveawayAdminAuthService {
     const m = config.masterSecret;
     this.sessionKey = m === null ? null : deriveLabelKey(m, 'admin-session');
     this.csrfKey = m === null ? null : deriveLabelKey(m, 'admin-csrf');
+    this.auditKey = m === null ? null : deriveLabelKey(m, 'admin-audit-id');
   }
 
   /// Вход открыт, только если заданы allowlist, ключи Discord и секрет.
@@ -72,6 +75,13 @@ export class GiveawayAdminAuthService {
       a.discordClientSecret !== null &&
       a.discordRedirectUri !== null
     );
+  }
+
+  /// Идентификатор Discord для аудита отказов: HMAC, а не сам ID (ADR-G003 п. 7,
+  /// 12): отказы пишут и посторонние аккаунты, их ID не хранится открыто.
+  auditId(discordId: string): string | null {
+    if (this.auditKey === null) return null;
+    return `hmac:${hmacHex(this.auditKey, discordId).slice(0, 24)}`;
   }
 
   tokenHash(token: string): string {
@@ -110,7 +120,7 @@ export class GiveawayAdminAuthService {
     actor: string | null,
   ): Promise<CallbackResult> {
     await this.audit.recordSafe({
-      actor,
+      actor: actor === null ? null : this.auditId(actor),
       action: 'login_denied',
       detail: error,
     });
@@ -167,15 +177,27 @@ export class GiveawayAdminAuthService {
       },
     });
     await this.audit.record({ actor: me.id, action: 'login' });
+    await this.purgeExpiredSessions(now);
     return { ok: true, token };
   }
 
-  /// Сессия по токену из cookie или null: формат, отзыв, абсолютный срок,
-  /// idle 30 минут, allowlist (проверяется на каждом запросе).
-  async resolve(
-    token: string | null,
-    now: Date = new Date(),
-  ): Promise<AdminPrincipal | null> {
+  /// Удаление истёкших и отозванных сессий (с запасом ADMIN_SESSION_RETENTION_MS).
+  /// Вызывается при успешном входе (а значит, только при включённом и
+  /// настроенном розыгрыше); ошибка не мешает входу.
+  async purgeExpiredSessions(now: Date = new Date()): Promise<void> {
+    const cutoff = new Date(now.getTime() - ADMIN_SESSION_RETENTION_MS);
+    try {
+      await this.prisma.giveawayAdminSession.deleteMany({
+        where: {
+          OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }],
+        },
+      });
+    } catch {
+      /* best effort */
+    }
+  }
+
+  private async findActive(token: string | null, now: Date) {
     if (token === null || !SESSION_TOKEN_PATTERN.test(token)) return null;
     const row = await this.prisma.giveawayAdminSession.findUnique({
       where: { tokenHash: this.tokenHash(token) },
@@ -186,6 +208,26 @@ export class GiveawayAdminAuthService {
     if (!this.config.admin.allowedDiscordIds.includes(row.discordId)) {
       return null;
     }
+    return row;
+  }
+
+  /// Сессия ещё действительна (без обновления lastSeenAt): перепроверка
+  /// долгоживущих соединений (SSE тестового эфира).
+  async isSessionActive(
+    token: string | null,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    return (await this.findActive(token, now)) !== null;
+  }
+
+  /// Сессия по токену из cookie или null: формат, отзыв, абсолютный срок,
+  /// idle 30 минут, allowlist (проверяется на каждом запросе).
+  async resolve(
+    token: string | null,
+    now: Date = new Date(),
+  ): Promise<AdminPrincipal | null> {
+    const row = await this.findActive(token, now);
+    if (row === null) return null;
     await this.prisma.giveawayAdminSession.updateMany({
       where: { id: row.id, revokedAt: null },
       data: { lastSeenAt: now },

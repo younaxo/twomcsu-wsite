@@ -3728,10 +3728,14 @@ model GiveawayWinner {
   disqualifiedBy   String?      @db.VarChar(32)
   disqualifyReason String?      @db.VarChar(300)
   replacesWinnerId String?
+  /// Дисквалифицированный победитель, чьё место занято этой записью.
+  replacesWinner   GiveawayWinner?  @relation("WinnerReplacement", fields: [replacesWinnerId], references: [id], onDelete: SetNull)
+  replacedBy       GiveawayWinner[] @relation("WinnerReplacement")
   createdAt        DateTime     @default(now())
 
   @@unique([drawId, orderIndex])
   @@index([drawId, place])
+  @@index([replacesWinnerId])
   @@map("giveaway_winners")
 }
 

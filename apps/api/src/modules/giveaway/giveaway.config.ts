@@ -42,6 +42,8 @@ export interface GiveawayAdminConfig {
   origin: string;
   testModeEnabled: boolean;
   prizesDir: string;
+  /// `GIVEAWAY_PRIZES_CONFIG`: путь к giveaway/config/prizes.json; null = по умолчанию.
+  prizesConfigPath: string | null;
 }
 
 export const DEFAULT_ADMIN_ORIGIN = 'https://admin.giveaway.twomc.su';
@@ -115,6 +117,7 @@ export function readGiveawayConfig(env: EnvReader): GiveawayConfig {
       ).replace(/\/+$/, ''),
       testModeEnabled: toBoolean(env.get('GIVEAWAY_TEST_MODE_ENABLED'), false),
       prizesDir: toStr(env.get('GIVEAWAY_PRIZES_DIR')) ?? DEFAULT_PRIZES_DIR,
+      prizesConfigPath: toStr(env.get('GIVEAWAY_PRIZES_CONFIG')),
     },
     defaults: {
       thresholdMinutes: toInt(

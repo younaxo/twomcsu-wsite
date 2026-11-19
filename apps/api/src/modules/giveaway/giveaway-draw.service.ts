@@ -12,9 +12,11 @@ import {
   SnapshotEntry,
   canonicalSnapshot,
   drawOrder,
+  assignWinners,
   newSeed,
-  nextCandidateIndex,
+  nextEligibleIndex,
   placesFor,
+  revealOrder,
   snapshotHashOf,
 } from './giveaway-draw';
 import { badRequest, conflict, notFound } from './giveaway-errors';
@@ -160,17 +162,17 @@ export class GiveawayDrawService {
         },
       });
       if (claimed.count !== 1) throw conflict('already_calculated');
-      const n = Math.min(places.length, order.length);
+      const assigned = assignWinners(order, places);
       await tx.giveawayWinner.createMany({
-        data: Array.from({ length: n }, (_, k) => ({
+        data: assigned.map((a) => ({
           drawId: draw.id,
-          place: places[k].place,
-          orderIndex: k,
-          ticket: order[k].ticket,
-          playerUuid: order[k].playerUuid,
-          playerName: order[k].playerName,
-          prizeName: places[k].prizeName,
-          prizeImage: places[k].prizeImage,
+          place: a.place.place,
+          orderIndex: a.orderIndex,
+          ticket: order[a.orderIndex].ticket,
+          playerUuid: order[a.orderIndex].playerUuid,
+          playerName: order[a.orderIndex].playerName,
+          prizeName: a.place.prizeName,
+          prizeImage: a.place.prizeImage,
           status: 'active',
         })),
       });
@@ -252,19 +254,26 @@ export class GiveawayDrawService {
       if (marked.count !== 1) throw conflict('winner_not_active');
       const usedRows = await tx.giveawayWinner.findMany({
         where: { drawId: draw.id },
-        select: { orderIndex: true },
+        select: { orderIndex: true, playerUuid: true },
       });
       const order = JSON.parse(draw.orderJson) as string[];
-      const idx = nextCandidateIndex(
-        order.length,
+      const byTicket = new Map(
+        parseSnapshot(draw.snapshotJson).map((e) => [e.ticket, e]),
+      );
+      const orderEntries = order.map((t) => byTicket.get(t));
+      if (orderEntries.some((e) => e === undefined)) {
+        throw conflict('snapshot_corrupt');
+      }
+      // Один приз на игрока: UUID любой записи победителя (в том числе
+      // дисквалифицированной) повторно не выигрывает.
+      const idx = nextEligibleIndex(
+        orderEntries.map((e) => (e as SnapshotEntry).playerUuid),
         new Set(usedRows.map((r) => r.orderIndex)),
+        new Set(usedRows.map((r) => r.playerUuid)),
       );
       let replacementId: string | null = null;
       if (idx !== null) {
-        const entry = parseSnapshot(draw.snapshotJson).find(
-          (e) => e.ticket === order[idx],
-        );
-        if (entry === undefined) throw conflict('snapshot_corrupt');
+        const entry = orderEntries[idx] as SnapshotEntry;
         const created = await tx.giveawayWinner.create({
           data: {
             drawId: draw.id,
@@ -342,6 +351,7 @@ export class GiveawayDrawService {
         revision: 0,
         order: [] as { ticket: string; playerName: string }[],
         prizes: [] as DrawPrize[],
+        revealOrder: [] as number[],
         winners: [] as ReturnType<GiveawayDrawService['adminWinner']>[],
       };
     }
@@ -379,6 +389,9 @@ export class GiveawayDrawService {
         draw.prizesJson === null
           ? []
           : (JSON.parse(draw.prizesJson) as DrawPrize[]),
+      revealOrder: revealOrder(
+        winners.filter((w) => w.status === 'active').map((w) => w.place),
+      ),
       winners: winners.map((w) =>
         this.adminWinner(w, minutes.get(w.playerUuid) ?? 0),
       ),
@@ -447,6 +460,9 @@ export class GiveawayDrawService {
         ticket: t,
         playerName: byTicket.get(t)?.playerName ?? '',
       })),
+      revealOrder: revealOrder(
+        rows.filter((w) => w.status === 'active').map((w) => w.place),
+      ),
       winners: rows
         .filter((w) => w.status === 'active')
         .map((w) => ({

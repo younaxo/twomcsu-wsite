@@ -401,6 +401,7 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   GIVEAWAY_ADMIN_ORIGIN: Joi.string().uri({ scheme: 'https' }).allow(''),
   GIVEAWAY_TEST_MODE_ENABLED: Joi.boolean().default(false),
   GIVEAWAY_PRIZES_DIR: Joi.string().allow(''),
+  GIVEAWAY_PRIZES_CONFIG: Joi.string().allow(''),
 
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по

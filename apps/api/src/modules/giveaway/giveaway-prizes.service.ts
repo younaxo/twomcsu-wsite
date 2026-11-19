@@ -6,6 +6,7 @@ import { GIVEAWAY_CONFIG, GiveawayConfig } from './giveaway.config';
 import { PRIZE_IMAGE_PATTERN } from './giveaway.constants';
 import { GiveawayAdminAuditService } from './giveaway-admin-audit.service';
 import { badRequest, conflict, notFound } from './giveaway-errors';
+import { ConfigPrize, GIVEAWAY_PRIZES_CONFIG } from './giveaway-prizes-config';
 
 export interface PrizeView {
   id: string;
@@ -22,15 +23,50 @@ export interface PrizeInput {
   priority?: number;
 }
 
-/// Призы (ADR-G003 п. 5.5). Картинка - только имя из списка файлов каталога
-/// `giveaway/prizes/`; имя никогда не используется как путь.
+/// Призы (ADR-G003 п. 5.5, решение владельца Q97): единственный источник -
+/// `giveaway/config/prizes.json` (читается при старте, только чтение). Методы
+/// работы с таблицей `giveaway_prizes` (listImages, isLocked, create, update,
+/// remove, orderedFromDb) сохранены, но НЕ используются: админ-CRUD отключён.
 @Injectable()
 export class GiveawayPrizesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: GiveawayAdminAuditService,
     @Inject(GIVEAWAY_CONFIG) private readonly config: GiveawayConfig,
+    @Inject(GIVEAWAY_PRIZES_CONFIG)
+    private readonly configPrizes: readonly ConfigPrize[],
   ) {}
+
+  /// Призы из конфига по местам; одно место = один победитель (quantity 1).
+  /// Конфиг неизменяем в процессе, поэтому расчёт не зависит от гонок правок.
+  ordered(): Promise<PrizeView[]> {
+    return Promise.resolve(
+      this.configPrizes.map((p) => ({
+        id: `place-${p.place}`,
+        name: p.title,
+        quantity: 1,
+        imageFile: p.image,
+        priority: p.place,
+      })),
+    );
+  }
+
+  /// Для админки: только чтение (`locked: true`, `source: 'config'`).
+  configList() {
+    return {
+      source: 'config' as const,
+      locked: true,
+      items: this.configPrizes.map((p) => ({
+        id: `place-${p.place}`,
+        name: p.title,
+        quantity: 1,
+        imageFile: p.image as string | null,
+        priority: p.place,
+        place: p.place,
+        description: p.description,
+      })),
+    };
+  }
 
   async listImages(): Promise<string[]> {
     try {
@@ -74,18 +110,20 @@ export class GiveawayPrizesService {
     };
   }
 
-  /// Призы по приоритету (раньше = выше), затем по времени и id.
-  async ordered(): Promise<PrizeView[]> {
+  /// @deprecated не используется (призы из конфига); таблица сохранена.
+  async orderedFromDb(): Promise<PrizeView[]> {
     const rows = await this.prisma.giveawayPrize.findMany({
       orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     });
     return rows.map((r) => this.view(r));
   }
 
+  /// @deprecated не используется: см. configList().
   async list(): Promise<{ items: PrizeView[]; locked: boolean }> {
-    return { items: await this.ordered(), locked: await this.isLocked() };
+    return { items: await this.orderedFromDb(), locked: await this.isLocked() };
   }
 
+  /** @deprecated админ-CRUD отключён (призы из конфига) */
   async create(input: PrizeInput, actor: string): Promise<PrizeView> {
     if (await this.isLocked()) throw conflict('draw_locked');
     await this.checkImage(input.imageFile);
@@ -115,6 +153,7 @@ export class GiveawayPrizesService {
     return this.view(row);
   }
 
+  /** @deprecated админ-CRUD отключён (призы из конфига) */
   async update(
     id: string,
     input: PrizeInput,
@@ -146,6 +185,7 @@ export class GiveawayPrizesService {
     return this.view(row);
   }
 
+  /** @deprecated админ-CRUD отключён (призы из конфига) */
   async remove(id: string, actor: string): Promise<void> {
     if (await this.isLocked()) throw conflict('draw_locked');
     const exists = await this.prisma.giveawayPrize.findUnique({

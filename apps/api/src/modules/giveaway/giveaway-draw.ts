@@ -156,12 +156,58 @@ export function placesFor(prizesInPriorityOrder: DrawPrize[]): Place[] {
   return out;
 }
 
-/// Следующий в перестановке индекс, который ещё не использован (не выигрывал
-/// и не дисквалифицирован); null, если билеты закончились.
+/// @deprecated не учитывает правило «один приз на игрока» (см. nextEligibleIndex).
+/// Следующий в перестановке индекс, который ещё не использован; null, если билеты закончились.
 export function nextCandidateIndex(
   orderLength: number,
   used: ReadonlySet<number>,
 ): number | null {
   for (let i = 0; i < orderLength; i++) if (!used.has(i)) return i;
   return null;
+}
+
+export interface Assignment {
+  place: Place;
+  /// Индекс билета в перестановке (order).
+  orderIndex: number;
+}
+
+/// Первоначальные победители (решение владельца Q97): места по возрастанию,
+/// одно место - один победитель; победитель места - следующий в перестановке
+/// билет, чей UUID ещё не выиграл. Билетов не хватает - лишние места пусты.
+export function assignWinners(
+  order: readonly SnapshotEntry[],
+  places: readonly Place[],
+): Assignment[] {
+  const won = new Set<string>();
+  const out: Assignment[] = [];
+  let idx = 0;
+  for (const place of places) {
+    while (idx < order.length && won.has(order[idx].playerUuid)) idx++;
+    if (idx >= order.length) break;
+    won.add(order[idx].playerUuid);
+    out.push({ place, orderIndex: idx });
+    idx++;
+  }
+  return out;
+}
+
+/// Замена при дисквалификации: следующий в перестановке билет, индекс которого
+/// не использован записью победителя и чей UUID не выигрывал и не
+/// дисквалифицирован (`blockedUuids` - UUID всех записей победителей, в том числе
+/// дисквалифицированных); null, если подходящих билетов нет.
+export function nextEligibleIndex(
+  orderUuids: readonly string[],
+  usedIndexes: ReadonlySet<number>,
+  blockedUuids: ReadonlySet<string>,
+): number | null {
+  for (let i = 0; i < orderUuids.length; i++) {
+    if (!usedIndexes.has(i) && !blockedUuids.has(orderUuids[i])) return i;
+  }
+  return null;
+}
+
+/// Порядок показа в эфире: от последнего места к первому (10 -> 1).
+export function revealOrder(places: readonly number[]): number[] {
+  return [...new Set(places)].sort((a, b) => b - a);
 }
