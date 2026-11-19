@@ -417,3 +417,70 @@ describe('envValidationSchema PAYMENT_PROVIDER и секреты (ADR-0187)', ()
     expect(validate({ ...base, PAYMENT_HTTP_RETRIES: 6 }).error).toBeDefined();
   });
 });
+
+describe('envValidationSchema GIVEAWAY_ONLY', () => {
+  const secret = Buffer.from(
+    Array.from({ length: 32 }, (_, i) => i * 7 + 3),
+  ).toString('latin1');
+  const only: Record<string, unknown> = {
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    GIVEAWAY_ONLY: 'true',
+    GIVEAWAY_ENABLED: 'true',
+    GIVEAWAY_MASTER_SECRET: secret,
+  };
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true, abortEarly: false });
+  const without = (v: Record<string, unknown>, key: string) => {
+    const copy = { ...v };
+    delete copy[key];
+    return copy;
+  };
+
+  it('production без JWT/2FA/Turnstile/COOKIE_* проходит', () => {
+    expect(validate(only).error).toBeUndefined();
+  });
+
+  it('GIVEAWAY_ENABLED и GIVEAWAY_MASTER_SECRET обязательны', () => {
+    expect(validate(without(only, 'GIVEAWAY_ENABLED')).error?.message).toMatch(
+      /GIVEAWAY_ENABLED/,
+    );
+    expect(
+      validate({ ...only, GIVEAWAY_ENABLED: 'false' }).error?.message,
+    ).toMatch(/GIVEAWAY_ENABLED/);
+    expect(
+      validate(without(only, 'GIVEAWAY_MASTER_SECRET')).error?.message,
+    ).toMatch(/GIVEAWAY_MASTER_SECRET/);
+    expect(
+      validate({ ...only, GIVEAWAY_MASTER_SECRET: '' }).error?.message,
+    ).toMatch(/GIVEAWAY_MASTER_SECRET/);
+    expect(
+      validate({ ...only, GIVEAWAY_MASTER_SECRET: 'short' }).error?.message,
+    ).toMatch(/GIVEAWAY_MASTER_SECRET/);
+  });
+
+  it('пустой или незаданный NODE_ENV остаётся production (TRUST_PROXY обязателен)', () => {
+    const noProxy = without(only, 'TRUST_PROXY');
+    expect(validate({ ...noProxy, NODE_ENV: '' }).error?.message).toMatch(
+      /TRUST_PROXY/,
+    );
+    expect(validate(without(noProxy, 'NODE_ENV')).error?.message).toMatch(
+      /TRUST_PROXY/,
+    );
+  });
+
+  it('без GIVEAWAY_ONLY прежние требования действуют (production без JWT падает)', () => {
+    const msg = validate(without(only, 'GIVEAWAY_ONLY')).error?.message ?? '';
+    expect(msg).toMatch(/JWT_ACCESS_SECRET/);
+    expect(msg).toMatch(/TWO_FACTOR_ENCRYPTION_KEY/);
+    expect(msg).toMatch(/TURNSTILE_SECRET_KEY/);
+    expect(msg).toMatch(/COOKIE_DOMAIN/);
+  });
+
+  it('GIVEAWAY_ONLY=false ведёт себя как без флага', () => {
+    expect(
+      validate({ ...only, GIVEAWAY_ONLY: 'false' }).error?.message,
+    ).toMatch(/JWT_ACCESS_SECRET/);
+  });
+});

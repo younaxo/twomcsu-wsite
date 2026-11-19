@@ -24,7 +24,7 @@
 ## 2. Секреты (вне репозитория)
 1. Скопировать образцы из `giveaway/deploy/secrets/*.env.example` в `/srv/twomc-giveaway/secrets/{postgres,redis,api}.env`, `chmod 0600`.
 2. Пароли БД и Redis сгенерировать на сервере (`openssl rand -hex 24`), не печатая: записывать сразу в файлы; значения в `api.env` (`DATABASE_URL`, `REDIS_PASSWORD`) должны совпасть с `postgres.env`/`redis.env`.
-3. Заглушки production-обязательных переменных (`JWT_*`, `TWO_FACTOR_ENCRYPTION_KEY`, `TURNSTILE_SECRET_KEY`, `COOKIE_DOMAIN`) - свои случайные значения, НЕ значения боевого сайта.
+3. Режим `GIVEAWAY_ONLY=true` (в `api.env.example` уже стоит): API поднимает только health и приёмник розыгрыша; `JWT_*`, `TWO_FACTOR_ENCRYPTION_KEY`, `TURNSTILE_SECRET_KEY`, `COOKIE_*` не нужны (заглушек нет). Флаг читается из окружения контейнера (`--env-file`), не из `.env` внутри образа. `GIVEAWAY_ENABLED=true` и `GIVEAWAY_MASTER_SECRET` обязательны, иначе API не стартует.
 4. [В] `GIVEAWAY_MASTER_SECRET` генерирует ТОЛЬКО владелец (не короче 32 байт, не менее 16 различных) и вписывает в `api.env` сам. Агент значение не получает, не читает файл и не выводит.
 5. Проверка прав, не содержимого: `stat -c '%a %U %n' /srv/twomc-giveaway/secrets/*` -> `600 gw ...`.
 
