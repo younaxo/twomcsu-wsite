@@ -71,14 +71,37 @@ describe('giveaway: конфиг и время', () => {
 describe('giveaway: настройки (порог только вниз после старта)', () => {
   const cfg = readGiveawayConfig(env({}));
   const make = (row: unknown = null) => {
+    const stored = (row ?? {
+      thresholdMinutes: cfg.defaults.thresholdMinutes,
+      startAt: cfg.defaults.startAt,
+      cutoffAt: cfg.defaults.cutoffAt,
+      timezone: 'Europe/Moscow',
+      allowedServers: [],
+    }) as Record<string, unknown>;
     const upsert = jest.fn();
+    const update = jest.fn();
+    const queryRaw = jest.fn().mockResolvedValue([]);
+    const tx = {
+      giveawaySettings: {
+        createMany: jest.fn(),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(stored),
+        update,
+      },
+      $queryRaw: queryRaw,
+    };
     const prisma = {
       giveawaySettings: {
         findUnique: jest.fn().mockResolvedValue(row),
         upsert,
       },
+      $transaction: jest.fn((fn: (t: unknown) => unknown) => fn(tx)),
     };
-    return { svc: new GiveawaySettingsService(prisma as never, cfg), upsert };
+    return {
+      svc: new GiveawaySettingsService(prisma as never, cfg),
+      upsert: update,
+      queryRaw,
+      prisma,
+    };
   };
   const before = new Date('2026-11-20T00:00:00Z');
   const after = new Date('2026-11-23T00:00:00Z');
@@ -88,6 +111,15 @@ describe('giveaway: настройки (порог только вниз пос�
     const r = await svc.update({ thresholdMinutes: 4000 }, before);
     expect(r.thresholdMinutes).toBe(4000);
     expect(upsert).toHaveBeenCalled();
+  });
+  it('update атомарен: транзакция и блокировка строки до чтения', async () => {
+    const { svc, queryRaw, prisma } = make();
+    await svc.update({ thresholdMinutes: 2500 }, after);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(String((queryRaw.mock.calls[0][0] as string[]).join(''))).toContain(
+      'FOR UPDATE',
+    );
   });
   it('после старта поднять нельзя', async () => {
     const { svc, upsert } = make();

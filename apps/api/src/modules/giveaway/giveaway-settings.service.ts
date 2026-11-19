@@ -49,41 +49,68 @@ export class GiveawaySettingsService {
     };
   }
 
+  /// Атомарно: в транзакции строка настроек блокируется (`SELECT ... FOR
+  /// UPDATE`; при отсутствии строки сначала создаётся из значений по
+  /// умолчанию), текущие значения читаются уже под блокировкой, правило
+  /// «порог только вниз после старта» проверяется по ним. Параллельные
+  /// `update` выстраиваются в очередь. Ограничение: правило действует только
+  /// для этого метода; прямое изменение env/SQL его обходит (см. ADR-G001).
   async update(
     patch: GiveawaySettingsPatch,
     now: Date = new Date(),
   ): Promise<GiveawaySettingsValue> {
-    const cur = await this.get();
-    const next: GiveawaySettingsValue = { ...cur, ...stripUndefined(patch) };
-    validate(next);
-    const started =
-      now.getTime() >= Math.min(cur.startAt.getTime(), next.startAt.getTime());
-    if (started) {
-      if (next.thresholdMinutes > cur.thresholdMinutes) {
-        throw new BadRequestException('threshold_cannot_increase_after_start');
+    return this.prisma.$transaction(async (tx) => {
+      const d = this.config.defaults;
+      await tx.giveawaySettings.createMany({
+        data: [
+          {
+            id: SETTINGS_ID,
+            thresholdMinutes: d.thresholdMinutes,
+            startAt: d.startAt,
+            cutoffAt: d.cutoffAt,
+            timezone: GIVEAWAY_TIMEZONE,
+            allowedServers: d.allowedServers,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      await tx.$queryRaw`SELECT id FROM giveaway_settings WHERE id = ${SETTINGS_ID} FOR UPDATE`;
+      const row = await tx.giveawaySettings.findUniqueOrThrow({
+        where: { id: SETTINGS_ID },
+      });
+      const cur: GiveawaySettingsValue = {
+        thresholdMinutes: row.thresholdMinutes,
+        startAt: row.startAt,
+        cutoffAt: row.cutoffAt,
+        timezone: row.timezone,
+        allowedServers: row.allowedServers,
+      };
+      const next: GiveawaySettingsValue = { ...cur, ...stripUndefined(patch) };
+      validate(next);
+      const started =
+        now.getTime() >=
+        Math.min(cur.startAt.getTime(), next.startAt.getTime());
+      if (started) {
+        if (next.thresholdMinutes > cur.thresholdMinutes) {
+          throw new BadRequestException(
+            'threshold_cannot_increase_after_start',
+          );
+        }
+        if (next.startAt.getTime() !== cur.startAt.getTime()) {
+          throw new BadRequestException('start_cannot_change_after_start');
+        }
       }
-      if (next.startAt.getTime() !== cur.startAt.getTime()) {
-        throw new BadRequestException('start_cannot_change_after_start');
-      }
-    }
-    await this.prisma.giveawaySettings.upsert({
-      where: { id: SETTINGS_ID },
-      create: {
-        id: SETTINGS_ID,
-        thresholdMinutes: next.thresholdMinutes,
-        startAt: next.startAt,
-        cutoffAt: next.cutoffAt,
-        timezone: next.timezone,
-        allowedServers: next.allowedServers,
-      },
-      update: {
-        thresholdMinutes: next.thresholdMinutes,
-        startAt: next.startAt,
-        cutoffAt: next.cutoffAt,
-        allowedServers: next.allowedServers,
-      },
+      await tx.giveawaySettings.update({
+        where: { id: SETTINGS_ID },
+        data: {
+          thresholdMinutes: next.thresholdMinutes,
+          startAt: next.startAt,
+          cutoffAt: next.cutoffAt,
+          allowedServers: next.allowedServers,
+        },
+      });
+      return next;
     });
-    return next;
   }
 
   async isServerAllowed(serverId: string): Promise<boolean> {

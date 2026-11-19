@@ -13,6 +13,12 @@ import {
   BridgeConfig,
   readBridgeConfig,
 } from './modules/bridge/bridge.config';
+import { createGiveawayBodyParser } from './modules/giveaway/giveaway-body-parser';
+import {
+  GIVEAWAY_CONFIG,
+  GiveawayConfig,
+  readGiveawayConfig,
+} from './modules/giveaway/giveaway.config';
 import { ConfigurableIoAdapter } from './websocket-adapter';
 
 /// Опции создания приложения для main.ts и e2e (`createNestApplication`):
@@ -54,6 +60,16 @@ export function configureApp(app: INestApplication): void {
     bridgeConfig = readBridgeConfig(config);
   }
   app.use(createBridgeBodyParser(bridgeConfig));
+  // Парсер тела /giveaway/v1 с лимитом 64 КБ (M1) - тоже до глобальных парсеров.
+  let giveawayConfig: GiveawayConfig;
+  try {
+    giveawayConfig = app.get<GiveawayConfig>(GIVEAWAY_CONFIG, {
+      strict: false,
+    });
+  } catch {
+    giveawayConfig = readGiveawayConfig(config);
+  }
+  app.use(createGiveawayBodyParser(giveawayConfig));
   app.use(cookieParser());
   // Явный allowlist origin'ов сайта (ADR-0104), без «*»; тот же — у Socket.IO.
   app.enableCors({

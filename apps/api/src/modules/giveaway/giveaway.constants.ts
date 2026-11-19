@@ -12,6 +12,12 @@ export const GIVEAWAY_ROUTES: readonly string[] = [
   '/giveaway/v1/events',
 ];
 
+/// Префиксы путей (в нижнем регистре) для парсера тела.
+export const GIVEAWAY_PATH_PREFIXES: readonly string[] = [
+  '/api/giveaway/v1',
+  '/giveaway/v1',
+];
+
 export const HEADER_KEY_ID = 'x-giveaway-key-id';
 export const HEADER_TIMESTAMP = 'x-giveaway-timestamp';
 export const HEADER_NONCE = 'x-giveaway-nonce';
