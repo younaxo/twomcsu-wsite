@@ -22,7 +22,13 @@ public final class JdkTransport implements BatchSender.Transport {
                 .timeout(Duration.ofSeconds(20))
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
         headers.forEach(b::header);
-        HttpResponse<Void> r = client.send(b.build(), HttpResponse.BodyHandlers.discarding());
-        return new BatchSender.Response(r.statusCode(), r.headers().firstValue("Retry-After").orElse(null));
+        HttpResponse<java.io.InputStream> r = client.send(b.build(), HttpResponse.BodyHandlers.ofInputStream());
+        String text = null;
+        try (java.io.InputStream in = r.body()) {
+            if (r.statusCode() >= 200 && r.statusCode() < 300) {
+                text = new String(in.readNBytes(65_536), java.nio.charset.StandardCharsets.UTF_8); // тело ограничено
+            }
+        }
+        return new BatchSender.Response(r.statusCode(), r.headers().firstValue("Retry-After").orElse(null), text);
     }
 }

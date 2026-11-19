@@ -28,6 +28,7 @@ class BatchSenderTest {
         final List<byte[]> bodies = new ArrayList<>();
         int status = 200;
         String retryAfter;
+        String respBody;
         boolean throwIo;
 
         @Override
@@ -35,7 +36,7 @@ class BatchSenderTest {
             if (throwIo) throw new IOException("down");
             headers.add(h);
             bodies.add(body);
-            return new BatchSender.Response(status, retryAfter);
+            return new BatchSender.Response(status, retryAfter, respBody);
         }
     }
 
@@ -68,6 +69,7 @@ class BatchSenderTest {
         assertEquals(BatchSender.Outcome.ACK, BatchSender.classify(200));
         assertEquals(BatchSender.Outcome.DEAD_LETTER, BatchSender.classify(422));
         assertEquals(BatchSender.Outcome.DEAD_LETTER, BatchSender.classify(413));
+        assertEquals(BatchSender.Outcome.RETRY, BatchSender.classify(400));
         for (int s : new int[] {401, 403, 429, 500, 503, 302}) {
             assertEquals(BatchSender.Outcome.RETRY, BatchSender.classify(s), "status " + s);
         }
@@ -152,6 +154,81 @@ class BatchSenderTest {
         assertEquals(1, tr.bodies.size());
         s.runOnce();
         assertEquals(1, tr.bodies.size());
+    }
+
+    @Test
+    void status413And422GoToDeadLetter() {
+        for (int st : new int[] {413, 422}) {
+            tr.bodies.clear();
+            EventQueue q = new EventQueue(mk("d" + st), 10_000, LOG);
+            q.enqueue(GiveawayEvent.join(U, "Notch", now.get() - 1000));
+            tr.status = st;
+            sender(q).runOnce();
+            assertEquals(0, q.size(), "status " + st);
+            assertEquals(1, q.deadLettered());
+        }
+    }
+
+    private Path mk(String n) {
+        try { return java.nio.file.Files.createDirectories(dir.resolve(n)); } catch (IOException e) { throw new RuntimeException(e); }
+    }
+
+    @Test
+    void status400RetriesWithBackoffThenDeadLettersAfterFive() {
+        EventQueue q = queue();
+        q.enqueue(GiveawayEvent.join(U, "Notch", now.get() - 1000));
+        BatchSender s = sender(q);
+        tr.status = 400;
+        for (int i = 1; i < BatchSender.MAX_CONSECUTIVE_400; i++) {
+            s.runOnce();
+            assertEquals(1, q.size(), "attempt " + i);
+            assertEquals(0, q.deadLettered());
+            assertEquals(i, s.consecutiveFailures());
+            now.addAndGet(BatchSender.BACKOFF_MAX_MS + 1);
+        }
+        s.runOnce();
+        assertEquals(0, q.size());
+        assertEquals(1, q.deadLettered());
+        assertEquals(BatchSender.MAX_CONSECUTIVE_400, tr.bodies.size());
+        assertEquals(0, s.consecutiveFailures());
+    }
+
+    @Test
+    void status400ThenSuccessResetsCounter() {
+        EventQueue q = queue();
+        q.enqueue(GiveawayEvent.join(U, "Notch", now.get() - 1000));
+        BatchSender s = sender(q);
+        tr.status = 400;
+        s.runOnce();
+        now.addAndGet(BatchSender.BACKOFF_MAX_MS + 1);
+        tr.status = 200;
+        s.runOnce();
+        assertEquals(0, q.size());
+        assertEquals(0, q.deadLettered());
+    }
+
+    @Test
+    void rejectedInOkResponseIsCountedWithoutIdentifiers() {
+        EventQueue q = queue();
+        q.enqueue(GiveawayEvent.join(U, "Notch", now.get() - 1000));
+        java.util.List<String> logs = new ArrayList<>();
+        Logger lg = Logger.getAnonymousLogger();
+        lg.setUseParentHandlers(false);
+        lg.addHandler(new java.util.logging.Handler() {
+            public void publish(java.util.logging.LogRecord r) { logs.add(r.getMessage()); }
+            public void flush() {}
+            public void close() {}
+        });
+        SenderConfig cfg = SenderConfig.of(URI.create("https://example.test/api/giveaway/v1/events"), "survival-1", 3, new byte[32]);
+        BatchSender s = new BatchSender(q, cfg, tr, now::get, lg, () -> 0.5);
+        tr.respBody = "{\"accepted\":0,\"rejected\":[{\"eventId\":\"e1\",\"reason\":\"in_future\"},{\"eventId\":\"e2\",\"reason\":\"too_old\"},{\"eventId\":\"e3\",\"reason\":\"in_future\"}]}";
+        s.runOnce();
+        assertEquals(0, q.size());
+        assertEquals(3, s.rejectedTotal());
+        assertEquals(java.util.Map.of("in_future", 2, "too_old", 1), BatchSender.parseRejectedReasons(tr.respBody));
+        assertEquals(1, logs.size());
+        assertTrue(logs.get(0).contains("in_future=2") && logs.get(0).contains("NTP"));
+        assertTrue(!logs.get(0).contains("e1") && !logs.get(0).contains("Notch"));
     }
 
     @Test

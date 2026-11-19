@@ -11,8 +11,10 @@ import java.util.logging.Logger;
 
 /**
  * Отправка пакетов из очереди. Вызывается только из асинхронного потока (runOnce).
- * Удаление из очереди — только после 2xx; ошибки схемы (400/413/422) — в dead-letter;
+ * Удаление из очереди — только после 2xx; ошибки схемы (413/422) — в dead-letter;
+ * 400 (может быть ответом прокси/WAF) — повтор с backoff, после MAX_CONSECUTIVE_400 подряд для одного пакета — dead-letter;
  * остальное (сеть, 401, 403, 429, 5xx) — повтор с экспоненциальной задержкой.
+ * В ответе 200 учитывается поле rejected (счётчик и агрегат по причинам, без ников и UUID).
  */
 public final class BatchSender {
 
@@ -20,7 +22,9 @@ public final class BatchSender {
         Response post(URI uri, Map<String, String> headers, byte[] body) throws IOException, InterruptedException;
     }
 
-    public record Response(int status, String retryAfter) {}
+    public record Response(int status, String retryAfter, String body) {
+        public Response(int status, String retryAfter) { this(status, retryAfter, null); }
+    }
 
     public enum Outcome { ACK, DEAD_LETTER, RETRY }
 
@@ -29,6 +33,9 @@ public final class BatchSender {
     static final long RETRY_AFTER_MAX_MS = 15 * 60_000L;
     static final int MAX_BATCHES_PER_RUN = 10;
     private static final long LOG_REPEAT_MS = 10 * 60_000L;
+    static final int MAX_CONSECUTIVE_400 = 5;
+    static final long REJECT_LOG_MS = 10 * 60_000L;
+    private static final java.util.regex.Pattern REASON = java.util.regex.Pattern.compile("\"reason\"\\s*:\\s*\"([a-z_]{1,32})\"");
 
     private final EventQueue queue;
     private final SenderConfig config; // null, если не настроено
@@ -44,6 +51,11 @@ public final class BatchSender {
     private volatile long sentTotal;
     private volatile long lastLoggedAt;
     private volatile String lastLoggedError = "";
+    private final java.util.concurrent.atomic.LongAdder rejectedTotal = new java.util.concurrent.atomic.LongAdder();
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> rejectedWindow = new java.util.concurrent.ConcurrentHashMap<>();
+    private volatile long lastRejectLogAt;
+    private String last400Key = "";
+    private int consecutive400;
 
     public BatchSender(EventQueue queue, SenderConfig config, Transport transport, LongSupplier clock, Logger log,
                        java.util.function.DoubleSupplier jitter) {
@@ -57,7 +69,7 @@ public final class BatchSender {
 
     public static Outcome classify(int status) {
         if (status >= 200 && status < 300) return Outcome.ACK;
-        if (status == 400 || status == 413 || status == 422) return Outcome.DEAD_LETTER;
+        if (status == 413 || status == 422) return Outcome.DEAD_LETTER;
         return Outcome.RETRY;
     }
 
@@ -90,6 +102,7 @@ public final class BatchSender {
         if (dropped > 0) {
             log.warning("Отброшено событий старше 72 ч: " + dropped);
         }
+        maybeLogRejected(now);
         if (config == null) return;
         if (now < nextAttemptAt) return;
 
@@ -130,8 +143,30 @@ public final class BatchSender {
             return false;
         }
 
+        if (resp.status() == 400) {
+            String key = batch.get(0).eventId() + ":" + batch.size();
+            consecutive400 = key.equals(last400Key) ? consecutive400 + 1 : 1;
+            last400Key = key;
+            if (consecutive400 >= MAX_CONSECUTIVE_400) {
+                queue.deadLetter(batch, "http_400_x" + consecutive400);
+                last400Key = "";
+                consecutive400 = 0;
+                consecutiveFailures = 0;
+                nextAttemptAt = 0;
+                lastError = "http 400 " + MAX_CONSECUTIVE_400 + " раз подряд (пакет отброшен в dead-letter)";
+                log.warning("Сайт отвечает HTTP 400 на один и тот же пакет " + MAX_CONSECUTIVE_400 + " раз подряд, "
+                        + batch.size() + " событий перенесено в dead-letter.log.");
+                return true;
+            }
+            fail("http 400 (возможен ответ прокси/WAF, попытка " + consecutive400 + "/" + MAX_CONSECUTIVE_400 + ")", -1);
+            return false;
+        }
+        last400Key = "";
+        consecutive400 = 0;
+
         switch (classify(resp.status())) {
             case ACK -> {
+                recordRejected(resp.body());
                 queue.ack(batch);
                 consecutiveFailures = 0;
                 nextAttemptAt = 0;
@@ -158,6 +193,38 @@ public final class BatchSender {
         }
     }
 
+    /** Причины из поля rejected ответа 200 (только счётчики по причинам, без eventId). */
+    static Map<String, Integer> parseRejectedReasons(String body) {
+        Map<String, Integer> out = new java.util.TreeMap<>();
+        if (body == null) return out;
+        int i = body.indexOf("\"rejected\"");
+        if (i < 0) return out;
+        java.util.regex.Matcher m = REASON.matcher(body);
+        m.region(i, body.length());
+        while (m.find()) out.merge(m.group(1), 1, Integer::sum);
+        return out;
+    }
+
+    private void recordRejected(String body) {
+        for (Map.Entry<String, Integer> e : parseRejectedReasons(body).entrySet()) {
+            rejectedTotal.add(e.getValue());
+            rejectedWindow.merge(e.getKey(), (long) e.getValue(), Long::sum);
+        }
+        maybeLogRejected(clock.getAsLong());
+    }
+
+    private void maybeLogRejected(long now) {
+        if (rejectedWindow.isEmpty() || now - lastRejectLogAt < REJECT_LOG_MS) return;
+        lastRejectLogAt = now;
+        Map<String, Long> snap = new java.util.TreeMap<>(rejectedWindow);
+        rejectedWindow.clear();
+        StringBuilder sb = new StringBuilder("Сайт принял пакеты, но отклонил события (rejected):");
+        for (Map.Entry<String, Long> e : snap.entrySet()) sb.append(' ').append(e.getKey()).append('=').append(e.getValue());
+        if (snap.containsKey("in_future")) sb.append(". in_future: проверьте синхронизацию времени сервера (NTP)");
+        if (snap.containsKey("too_old")) sb.append(". too_old: события старше 72 ч");
+        log.warning(sb.toString());
+    }
+
     private void fail(String code, long retryAfterMs) {
         int n = consecutiveFailures + 1;
         consecutiveFailures = n;
@@ -178,4 +245,5 @@ public final class BatchSender {
     public long lastSuccessAt() { return lastSuccessAt; }
     public String lastError() { return lastError; }
     public long sentTotal() { return sentTotal; }
+    public long rejectedTotal() { return rejectedTotal.sum(); }
 }

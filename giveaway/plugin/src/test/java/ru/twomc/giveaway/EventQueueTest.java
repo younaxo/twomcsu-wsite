@@ -115,6 +115,68 @@ class EventQueueTest {
     }
 
     @Test
+    void deadLetterRotatesAndStaysUnderLimit() throws IOException {
+        EventQueue q = new EventQueue(dir, 100, LOG, 1000, 2_000L, System::currentTimeMillis);
+        for (int i = 0; i < 40; i++) {
+            GiveawayEvent e = GiveawayEvent.join(U, "Notch", 1_000 + i);
+            q.enqueue(e);
+            q.deadLetter(List.of(e), "http_422");
+        }
+        long main = Files.size(dir.resolve("dead-letter.log"));
+        assertTrue(Files.exists(dir.resolve("dead-letter.log.1")));
+        long old = Files.size(dir.resolve("dead-letter.log.1"));
+        assertTrue(main + old <= 2_000L, "total " + (main + old));
+        assertEquals(40, q.deadLettered());
+    }
+
+    @Test
+    void ackAppendsTombstonesAndCompactsInBatches() throws IOException {
+        EventQueue q = new EventQueue(dir, 1000, LOG, 5, EventQueue.DEAD_LETTER_MAX_BYTES, System::currentTimeMillis);
+        List<GiveawayEvent> all = new java.util.ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            GiveawayEvent e = GiveawayEvent.heartbeat(U, "Notch", 1_000L + i, true);
+            all.add(e);
+            q.enqueue(e);
+        }
+        q.flush();
+        long sizeBefore = Files.size(dir.resolve("queue.log"));
+        q.ack(all.subList(0, 2)); // ниже порога: файл не переписан, есть надгробия
+        assertEquals(sizeBefore, Files.size(dir.resolve("queue.log")));
+        assertTrue(Files.exists(dir.resolve("queue.ack")));
+        EventQueue restored = new EventQueue(dir, 1000, LOG);
+        restored.load();
+        assertEquals(all.subList(2, 20), restored.peek(100)); // acked не воскресают
+
+        q.ack(all.subList(2, 14)); // порог достигнут: компакция
+        assertTrue(Files.size(dir.resolve("queue.log")) < sizeBefore);
+        assertFalse(Files.exists(dir.resolve("queue.ack")));
+        EventQueue r2 = new EventQueue(dir, 1000, LOG);
+        r2.load();
+        assertEquals(all.subList(14, 20), r2.peek(100));
+    }
+
+    @Test
+    void overflowWarningIsRateLimited() {
+        java.util.concurrent.atomic.AtomicLong t = new java.util.concurrent.atomic.AtomicLong(1_000_000L);
+        java.util.List<String> logs = new java.util.ArrayList<>();
+        Logger lg = Logger.getAnonymousLogger();
+        lg.setUseParentHandlers(false);
+        lg.addHandler(new java.util.logging.Handler() {
+            public void publish(java.util.logging.LogRecord r) { logs.add(r.getMessage()); }
+            public void flush() {}
+            public void close() {}
+        });
+        EventQueue q = new EventQueue(dir, 1, lg, 1000, EventQueue.DEAD_LETTER_MAX_BYTES, t::get);
+        q.enqueue(GiveawayEvent.join(U, "Notch", 1));
+        for (int i = 0; i < 5; i++) q.enqueue(GiveawayEvent.join(U, "Notch", 2 + i));
+        assertEquals(1, logs.size());
+        t.addAndGet(EventQueue.OVERFLOW_WARN_MS);
+        q.enqueue(GiveawayEvent.join(U, "Notch", 9));
+        assertEquals(2, logs.size());
+        assertTrue(logs.get(1).contains("ПЕРЕПОЛНЕНА"));
+    }
+
+    @Test
     void corruptLinesGoToDeadLetterOnLoad() throws IOException {
         GiveawayEvent a = GiveawayEvent.join(U, "Notch", 1_000);
         Files.writeString(dir.resolve("queue.log"), "garbage\n" + a.toLine() + "\n", StandardCharsets.UTF_8);

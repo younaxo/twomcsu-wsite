@@ -32,7 +32,8 @@ import org.bukkit.scheduler.BukkitTask;
  * Главный поток: события и heartbeat (без ввода-вывода). Асинхронно: запись очереди и отправка.
  */
 public final class GiveawayPlugin extends JavaPlugin implements Listener {
-    private static final long HEARTBEAT_TICKS = 20L * 60L;
+    private static final long HEARTBEAT_CHECK_TICKS = 20L * 5L; // проверка корзины минуты по реальным часам
+    private final MinuteBucket minuteBucket = new MinuteBucket();
     private static final long SEND_TICKS = 20L * 5L;
 
     private AfkTracker afk;
@@ -94,7 +95,8 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
             afk.touch(p.getUniqueId(), now); // после /reload: игроки считаются только что активными
         }
 
-        heartbeatTask = getServer().getScheduler().runTaskTimer(this, this::heartbeatAll, HEARTBEAT_TICKS, HEARTBEAT_TICKS);
+        minuteBucket.advance(System.currentTimeMillis()); // первый heartbeat - со следующей минуты
+        heartbeatTask = getServer().getScheduler().runTaskTimer(this, this::heartbeatTick, HEARTBEAT_CHECK_TICKS, HEARTBEAT_CHECK_TICKS);
         sendTask = getServer().getScheduler().runTaskTimerAsynchronously(this, this::sendTick, SEND_TICKS, SEND_TICKS);
     }
 
@@ -106,6 +108,10 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
     }
 
     // ---- главный поток ----
+
+    private void heartbeatTick() {
+        if (minuteBucket.advance(System.currentTimeMillis())) heartbeatAll();
+    }
 
     private void heartbeatAll() {
         long now = System.currentTimeMillis();
@@ -214,7 +220,7 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
         who.sendMessage("Связь: " + (err.isEmpty() ? "ок" : "ошибка " + err + ", подряд неудач " + sender.consecutiveFailures()
                 + ", след. попытка через " + Math.max(0, (sender.nextAttemptAt() - now) / 1000L) + " с"));
         who.sendMessage("Отброшено: переполнение " + queue.droppedOverflow() + ", старше 72 ч " + queue.droppedExpired()
-                + ", в dead-letter " + queue.deadLettered() + ", повреждённых строк " + queue.corruptLines()
+                + ", в dead-letter " + queue.deadLettered() + ", отклонено сайтом (rejected) " + sender.rejectedTotal() + ", повреждённых строк " + queue.corruptLines()
                 + ", неверный ник " + skippedInvalidName);
         who.sendMessage("Игроков под учётом AFK: " + afk.tracked());
         return true;
