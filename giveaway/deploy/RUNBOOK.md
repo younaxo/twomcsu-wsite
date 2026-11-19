@@ -8,7 +8,7 @@
 ## 0. Предусловия
 - [В] Решение: сервер (отдельный от production twomc.su), домен/поддомен, срок жизни выкладки.
 - [В] Домен: A/AAAA-запись на сервер. Игровой трафик Minecraft через Cloudflare не проксировать (Q14); для HTTPS-части прокси допустим только по отдельному решению (иначе менять `TRUST_PROXY` и nginx).
-- Заменить `giveaway.example.com` в `nginx/giveaway.conf` (коммитом в ветке, не на сервере вручную).
+- [В] Назвать домен и заменить плейсхолдер `giveaway.example.com` в `nginx/giveaway.conf` (3 места: `map $gw_domain` и два `server_name`; проверка: `grep -n example.com giveaway/deploy/nginx/giveaway.conf` ничего не находит) коммитом в ветке, не на сервере вручную. Редирект 80->443 и заголовок `Host` к API берутся из `$gw_domain`, а не из запроса; запросы к чужому Host или по IP получают 444 (catch-all).
 
 ## 1. Сервер и пользователь без root
 1. [В] Создать пользователя `gw` без sudo-пароля для рутины: `adduser gw`, добавить в группу `docker` (rootless Docker предпочтительнее; группа docker эквивалентна root - принять осознанно).
@@ -19,6 +19,7 @@
    chmod 0700 /srv/twomc-giveaway/secrets /srv/twomc-giveaway/keys /srv/twomc-giveaway/backups
    ```
 4. Файрвол: открыть только 22 (по возможности с ограничением по IP), 80, 443 (и 25565 для тестового MC, когда он появится). Порты 5432/6379/4000 наружу не открываются (compose их не публикует).
+   ВАЖНО: Docker публикует порты через iptables в обход правил ufw/firewalld. Ограничивать нужно в цепочке `DOCKER-USER` (разрешить только 80/443, остальное дропать) или привязать публикацию к адресу: `GIVEAWAY_HTTP_PORT=<ip>:80`, `GIVEAWAY_HTTPS_PORT=<ip>:443`. После `up` проверить с внешней машины, что открыты только ожидаемые порты (`nmap -Pn <ip>`).
 5. Время (NTP): `timedatectl set-ntp true`, проверка `timedatectl status` -> `System clock synchronized: yes`. Окно подписи плагина +-300 с; уход часов даёт отказ событий (`in_future`/`stale`).
 
 ## 2. Секреты (вне репозитория)
@@ -29,9 +30,19 @@
 5. Проверка прав, не содержимого: `stat -c '%a %U %n' /srv/twomc-giveaway/secrets/*` -> `600 gw ...`.
 
 ## 3. Сертификаты (вручную)
-- [В/А] Выпуск certbot/ACME (HTTP-01 standalone на 80 до старта nginx, либо DNS-01), результат положить в `/srv/twomc-giveaway/certs/fullchain.pem` и `privkey.pem` (privkey 0600). Автопродление и перезапуск nginx после продления - отдельным решением. Из репозитория certbot не запускается.
+- [В/А] Выпуск certbot/ACME (HTTP-01 standalone на 80 до старта nginx, либо DNS-01), результат положить в `/srv/twomc-giveaway/certs/fullchain.pem` и `privkey.pem`. Автопродление и перезапуск nginx после продления - отдельным решением. Из репозитория certbot не запускается.
+- Права: nginx-unprivileged работает под uid 101, поэтому `privkey.pem` - владелец `root:101`, режим `0640` (не 644), каталог `certs` - не шире `0750` (`root:101`):
+  ```
+  sudo chown root:101 /srv/twomc-giveaway/certs /srv/twomc-giveaway/certs/*.pem
+  sudo chmod 0750 /srv/twomc-giveaway/certs
+  sudo chmod 0640 /srv/twomc-giveaway/certs/privkey.pem
+  sudo chmod 0644 /srv/twomc-giveaway/certs/fullchain.pem
+  stat -c '%a %U:%G %n' /srv/twomc-giveaway/certs /srv/twomc-giveaway/certs/*   # 750 / 640 root:101
+  ```
 
 ## 4. Выкладка (после разрешения владельца)
+- [В/А] Перед выкладкой закрепить образы по digest: определить digest `postgres:16-alpine`, `redis:7-alpine`, `nginxinc/nginx-unprivileged:1.27-alpine` (`docker buildx imagetools inspect <образ>` либо `docker pull` и `docker image inspect --format '{{index .RepoDigests 0}}' <образ>`), проверить происхождение и записать в compose как `image: <имя>@sha256:<digest>` отдельным коммитом. Значения в репозитории намеренно не заготовлены.
+- Сети: `api` только во внутренней сети `backend` (без исходящего интернета), `nginx` в `edge` и `backend`; `nginx` стартует после `api` со статусом healthy (healthcheck `/health`). Проверка после `up`: `$C ps` показывает api `healthy`; `$C exec nginx wget -qO- http://api:4000/health` отвечает.
 ```
 cd /srv/twomc-giveaway/repo        # checkout слитого main, известный коммит
 export RELEASE=$(git rev-parse --short HEAD)

@@ -100,14 +100,20 @@ services:
       QUICK_BUY_ENABLED: "false"
       DELIVERY_RECONCILE_ENABLED: "false"
       PAYMENT_PROVIDER: ""
-    # Порт API НЕ публикуется на хост: доступен только nginx из сети edge.
+    # Порт API НЕ публикуется на хост: доступен только nginx по внутренней сети backend (internal, без выхода в интернет).
     expose: ["4000"]
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks: [edge, backend]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [backend]
 
   # Миграции - ЯВНО, не при старте: docker compose --profile ops run --rm migrate
   migrate:
@@ -146,8 +152,9 @@ services:
       # Сертификаты - вне репозитория: fullchain.pem и privkey.pem (выпуск certbot/ACME - вручную, RUNBOOK.md).
       - ${GIVEAWAY_CERTS_DIR:-/srv/twomc-giveaway/certs}:/etc/nginx/certs:ro
     depends_on:
-      - api
-    networks: [edge]
+      api:
+        condition: service_healthy
+    networks: [edge, backend]
 
   # --- ЗАГОТОВКА (не включено, не запускать): web-страница розыгрыша ---
   # web:
@@ -165,7 +172,8 @@ volumes:
   redis-data:
 
 networks:
-  # edge: nginx <-> api. backend: БД и Redis без выхода наружу (internal).
+  # edge: только nginx (публикация портов, внешний доступ). backend (internal): postgres, redis, api, nginx - без выхода в интернет.
+  # nginx в обеих сетях: принимает снаружи через edge, ходит к api через backend.
   edge:
     driver: bridge
   backend:
