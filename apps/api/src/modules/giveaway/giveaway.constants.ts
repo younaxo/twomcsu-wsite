@@ -93,5 +93,7 @@ export const CODES_PER_SESSION_10MIN = 10;
 export const STATUS_PER_SESSION_MIN = 60;
 export const PUBLIC_PER_IP_MIN = 120;
 export const REDEEM_PER_UUID_MIN = 10;
-export const REDEEM_PER_SERVER_MIN = 60;
+/// Основная защита - лимит по UUID; лимит на сервер лишь страховка от потока
+/// (ADR-G002 п. 6.1), поэтому высокий: спам нескольких игроков не блокирует всех.
+export const REDEEM_PER_SERVER_MIN = 600;
 export const MAX_PROGRESS_UUIDS = 100;

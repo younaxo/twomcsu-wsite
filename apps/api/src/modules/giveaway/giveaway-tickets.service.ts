@@ -16,6 +16,7 @@ import {
   GiveawaySettingsService,
   GiveawaySettingsValue,
 } from './giveaway-settings.service';
+import { formatMskShort } from './giveaway-time';
 import { RedeemBody } from './giveaway-bodies';
 
 export type RedeemResult =
@@ -95,16 +96,21 @@ export class GiveawayTicketsService {
     now: Date = new Date(),
   ): Promise<RedeemResult> {
     // 1. Лимиты: по UUID и по серверу.
-    const retry = Math.max(
-      await this.redis.hit(
-        'redeem-uuid',
-        body.playerUuid,
-        REDEEM_PER_UUID_MIN,
-        60,
-      ),
-      await this.redis.hit('redeem-srv', serverId, REDEEM_PER_SERVER_MIN, 60),
+    // L3: по очереди; отказ по UUID не расходует лимит сервера.
+    const uuidRetry = await this.redis.hit(
+      'redeem-uuid',
+      body.playerUuid,
+      REDEEM_PER_UUID_MIN,
+      60,
     );
-    if (retry > 0) throw new GiveawayLimitError('rate_limited', retry);
+    if (uuidRetry > 0) throw new GiveawayLimitError('rate_limited', uuidRetry);
+    const srvRetry = await this.redis.hit(
+      'redeem-srv',
+      serverId,
+      REDEEM_PER_SERVER_MIN,
+      60,
+    );
+    if (srvRetry > 0) throw new GiveawayLimitError('rate_limited', srvRetry);
 
     // Хэш считается всегда (в том числе для неверного формата).
     const normalized = normalizeCode(body.code);
@@ -125,6 +131,21 @@ export class GiveawayTicketsService {
     // 4. Время меньше порога: код не проверяется.
     const minutes = await this.countMinutes(body.playerUuid, s);
     if (minutes < s.thresholdMinutes) {
+      // Код не гасится; на валидном активном коде запоминается последняя
+      // попытка для страницы (ответ плагину от этого не зависит).
+      await this.prisma.giveawayCode.updateMany({
+        where: {
+          codeHash: hash,
+          redeemedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: now },
+        },
+        data: {
+          lastAttemptAt: now,
+          lastAttemptMinutes: minutes,
+          lastAttemptThreshold: s.thresholdMinutes,
+        },
+      });
       return {
         status: 'not_enough',
         minutes,
@@ -189,6 +210,10 @@ export class GiveawayTicketsService {
   /// Пакетный прогресс (п. 6.2): только минуты с разрешённых серверов.
   async progress(uuids: string[]): Promise<{
     thresholdMinutes: number;
+    startAt: string;
+    cutoffAt: string;
+    startText: string;
+    cutoffText: string;
     players: PlayerProgress[];
   }> {
     const s = await this.settings.get();
@@ -210,6 +235,10 @@ export class GiveawayTicketsService {
     const ticketBy = new Map(tickets.map((t) => [t.playerUuid, t.ticket]));
     return {
       thresholdMinutes: s.thresholdMinutes,
+      startAt: s.startAt.toISOString(),
+      cutoffAt: s.cutoffAt.toISOString(),
+      startText: formatMskShort(s.startAt),
+      cutoffText: formatMskShort(s.cutoffAt),
       players: uuids.map((u) => {
         const minutes = minutesBy.get(u) ?? 0;
         return {

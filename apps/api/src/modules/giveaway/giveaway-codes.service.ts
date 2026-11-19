@@ -34,9 +34,26 @@ export class GiveawayLimitError extends Error {
 
 export type GiveawayCodeStatus =
   | { status: 'none' }
-  | { status: 'pending'; expiresAt: string }
+  | {
+      status: 'pending';
+      expiresAt: string;
+      lastAttempt?: {
+        result: 'not_enough';
+        minutes: number;
+        remainingMinutes: number;
+        thresholdMinutes: number;
+      };
+    }
   | { status: 'redeemed'; ticket: string; playerName: string }
   | { status: 'expired' };
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === 'P2002'
+  );
+}
 
 export type GiveawayPhase = 'before' | 'running' | 'finished';
 
@@ -101,47 +118,67 @@ export class GiveawayCodesService {
       }
     }
     const isNewSession = !GiveawayCodesService.isValidToken(token);
-    const sessionToken = isNewSession
-      ? GiveawayCodesService.newSessionToken()
-      : (token as string);
+    // L5: токен сессии ротируется при каждой выдаче; прежний теряет коды.
+    const oldHash = isNewSession ? null : this.sessionHash(token as string);
+    const sessionToken = GiveawayCodesService.newSessionToken();
     const sHash = this.sessionHash(sessionToken);
+    // Лимиты и замок привязаны к прежнему хэшу (до ротации), иначе новый
+    // хэш каждый раз обнулял бы лимит по сессии.
+    const limitKey = oldHash ?? sHash;
 
-    const retry = Math.max(
-      await this.redis.hit(
-        'codes-net',
-        rateLimitKey(ip),
-        CODES_PER_SUBNET_HOUR,
-        3600,
-      ),
-      await this.redis.hit(
-        'codes-ip',
-        normalizeIp(ip),
-        CODES_PER_IP_HOUR,
-        3600,
-      ),
-      await this.redis.hit('codes-sess', sHash, CODES_PER_SESSION_10MIN, 600),
-    );
-    if (retry > 0) throw new GiveawayLimitError('rate_limited', retry);
-    if (!(await this.redis.acquireLock(sHash, 5))) {
+    // L3: проверки по очереди; отказ одной не расходует остальные.
+    const checks: Array<() => Promise<number>> = [
+      () =>
+        this.redis.hit(
+          'codes-net',
+          rateLimitKey(ip),
+          CODES_PER_SUBNET_HOUR,
+          3600,
+        ),
+      () =>
+        this.redis.hit('codes-ip', normalizeIp(ip), CODES_PER_IP_HOUR, 3600),
+      () =>
+        this.redis.hit('codes-sess', limitKey, CODES_PER_SESSION_10MIN, 600),
+    ];
+    for (const check of checks) {
+      const retry = await check();
+      if (retry > 0) throw new GiveawayLimitError('rate_limited', retry);
+    }
+    if (!(await this.redis.acquireLock(limitKey, 5))) {
       throw new GiveawayLimitError('rate_limited', 1);
     }
     try {
       const code = generateCode();
       const expiresAt = new Date(now.getTime() + CODE_TTL_S * 1000);
-      await this.prisma.$transaction(async (tx) => {
-        await tx.giveawayCode.updateMany({
-          where: { sessionHash: sHash, redeemedAt: null, revokedAt: null },
-          data: { revokedAt: now },
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          if (oldHash !== null) {
+            await tx.giveawayCode.updateMany({
+              where: {
+                sessionHash: oldHash,
+                redeemedAt: null,
+                revokedAt: null,
+              },
+              data: { revokedAt: now },
+            });
+          }
+          await tx.giveawayCode.create({
+            data: {
+              codeHash: this.codeHash(code),
+              sessionHash: sHash,
+              createdAt: now,
+              expiresAt,
+            },
+          });
         });
-        await tx.giveawayCode.create({
-          data: {
-            codeHash: this.codeHash(code),
-            sessionHash: sHash,
-            createdAt: now,
-            expiresAt,
-          },
-        });
-      });
+      } catch (err) {
+        // M2: частичный уникальный индекс (один активный код на сессию)
+        // сработал - параллельная выдача; повторить позже.
+        if (isUniqueViolation(err)) {
+          throw new GiveawayLimitError('rate_limited', 1);
+        }
+        throw err;
+      }
       return {
         code: formatCode(code),
         expiresAt,
@@ -150,7 +187,7 @@ export class GiveawayCodesService {
         isNewSession,
       };
     } finally {
-      await this.redis.releaseLock(sHash);
+      await this.redis.releaseLock(limitKey);
     }
   }
 
@@ -187,7 +224,25 @@ export class GiveawayCodesService {
     ) {
       return { status: 'expired' };
     }
-    return { status: 'pending', expiresAt: last.expiresAt.toISOString() };
+    const pending: GiveawayCodeStatus = {
+      status: 'pending',
+      expiresAt: last.expiresAt.toISOString(),
+    };
+    if (
+      last.lastAttemptMinutes !== null &&
+      last.lastAttemptThreshold !== null
+    ) {
+      pending.lastAttempt = {
+        result: 'not_enough',
+        minutes: last.lastAttemptMinutes,
+        remainingMinutes: Math.max(
+          0,
+          last.lastAttemptThreshold - last.lastAttemptMinutes,
+        ),
+        thresholdMinutes: last.lastAttemptThreshold,
+      };
+    }
+    return pending;
   }
 
   /// Публичный ход розыгрыша, без персональных данных (п. 5).

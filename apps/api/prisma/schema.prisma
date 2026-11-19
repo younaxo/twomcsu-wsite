@@ -3651,7 +3651,15 @@ model GiveawayCode {
   revokedAt   DateTime?
   ticketId    String?
   ticket      GiveawayTicket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  /// Последняя попытка погашения при нехватке времени (код не гасится).
+  lastAttemptAt        DateTime?
+  lastAttemptMinutes   Int?
+  lastAttemptThreshold Int?
 
+  /// Частичный уникальный индекс giveaway_codes_one_active_per_session
+  /// (sessionHash) WHERE redeemedAt IS NULL AND revokedAt IS NULL существует
+  /// только в миграции 20261119150000_giveaway_phase2b: Prisma не выражает
+  /// частичные индексы. Не удалять при будущих migrate diff.
   @@index([sessionHash, createdAt])
   @@index([expiresAt])
   @@map("giveaway_codes")
