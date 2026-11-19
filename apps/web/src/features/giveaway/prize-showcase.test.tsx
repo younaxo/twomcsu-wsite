@@ -105,7 +105,7 @@ describe('GiveawayPage', () => {
       issueCode: () => new Promise(() => undefined),
       getStatus: () => new Promise(() => undefined),
     } as unknown as GiveawayApi;
-    render(<GiveawayPage api={api} />);
+    render(<GiveawayPage api={api} layout="cards" />);
     const prizes = screen.getByTestId('prize-showcase');
     const card = screen.getByTestId('giveaway-card');
     expect(prizes.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

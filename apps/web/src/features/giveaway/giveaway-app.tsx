@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/shell/site-footer';
 import { SiteHeader } from '@/components/shell/site-header';
 import { ShellModeProvider } from '@/lib/site/shell-mode';
 import { GiveawayPage } from './giveaway-page';
+import { resolveLayout, type GiveawayLayout } from './layout';
 import { selectApi, type SelectedApi } from './select-api';
 import type { MockScenario } from './mock-api';
 
@@ -23,8 +24,11 @@ export function GiveawayApp({ mainSiteUrl = null }: { mainSiteUrl?: string | nul
   const [selected, setSelected] = useState<SelectedApi | null>(null);
   /// Меняется при каждом выборе сценария: страница пересоздаётся с чистым состоянием.
   const [revision, setRevision] = useState(0);
+  /// `?layout=cards` (прежний карточный вид) действует только вне production.
+  const [layout, setLayout] = useState<GiveawayLayout>('default');
   useEffect(() => {
     let cancelled = false;
+    setLayout(resolveLayout(window.location.search));
     void selectApi(window.location.search).then((value) => {
       if (!cancelled) setSelected(value);
     });
@@ -50,7 +54,12 @@ export function GiveawayApp({ mainSiteUrl = null }: { mainSiteUrl?: string | nul
       <div className="flex min-h-dvh flex-col bg-background text-foreground">
         <SiteHeader />
         {selected ? (
-          <GiveawayPage key={revision} api={selected.api} autoIssue={selected.autoIssue} />
+          <GiveawayPage
+            key={revision}
+            api={selected.api}
+            autoIssue={selected.autoIssue}
+            layout={layout}
+          />
         ) : (
           <main
             id="main"

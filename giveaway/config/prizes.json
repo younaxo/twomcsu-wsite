@@ -14,7 +14,7 @@
       "place": 1,
       "title": "Клавиатура AJAZZ AK820",
       "description": "Механическая клавиатура AJAZZ AK820 и кастомный титул.",
-      "image": "keyboard.svg",
+      "image": "keyboard-art.svg",
       "value": 3000,
       "showValue": false
     },
@@ -22,7 +22,7 @@
       "place": 2,
       "title": "Мышь VXE Dragonfly R1 SE+",
       "description": "Беспроводная мышь VXE Dragonfly R1 SE+ и кастомный титул.",
-      "image": "mouse.svg",
+      "image": "mouse-art.svg",
       "value": 2000,
       "showValue": false
     },
@@ -30,7 +30,7 @@
       "place": 3,
       "title": "Лицензия Minecraft",
       "description": "Лицензия Minecraft и кастомный титул.",
-      "image": "license.svg",
+      "image": "license-art.svg",
       "value": 1200,
       "showValue": false
     },
@@ -38,7 +38,7 @@
       "place": 4,
       "title": "Полемизм и 1000 ₽",
       "description": "Полемизм на 1 месяц и 1000 ₽ (или Полемизм на 3 месяца).",
-      "image": "polemism.svg",
+      "image": "polemism-art.svg",
       "value": 1000,
       "showValue": false
     },
@@ -46,7 +46,7 @@
       "place": 5,
       "title": "1500 ₽",
       "description": "1500 рублей.",
-      "image": "rubles.svg",
+      "image": "rubles-art.svg",
       "value": 1500,
       "showValue": false
     },
@@ -54,7 +54,7 @@
       "place": 6,
       "title": "Сварог и 5 рубиновых кейсов",
       "description": "Сварог на 1 месяц и 5 рубиновых кейсов.",
-      "image": "svarog.svg",
+      "image": "svarog-art.svg",
       "value": 1100,
       "showValue": false
     },
@@ -62,7 +62,7 @@
       "place": 7,
       "title": "Кратос и 5 рубиновых кейсов",
       "description": "Кратос на 1 месяц и 5 рубиновых кейсов.",
-      "image": "kratos.svg",
+      "image": "kratos-art.svg",
       "value": 900,
       "showValue": false
     },
@@ -70,7 +70,7 @@
       "place": 8,
       "title": "Аполон на 3 месяца",
       "description": "Аполон на 3 месяца.",
-      "image": "apolon.svg",
+      "image": "apolon-art.svg",
       "value": 700,
       "showValue": false
     },
@@ -78,7 +78,7 @@
       "place": 9,
       "title": "1000 рубинов",
       "description": "1000 рубинов на игровой счёт.",
-      "image": "rubies-1000.svg",
+      "image": "rubies-1000-art.svg",
       "value": 1000,
       "showValue": false
     },
@@ -86,7 +86,7 @@
       "place": 10,
       "title": "500 рубинов",
       "description": "500 рубинов на игровой счёт.",
-      "image": "rubies-500.svg",
+      "image": "rubies-500-art.svg",
       "value": 500,
       "showValue": false
     }
