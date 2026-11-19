@@ -11,10 +11,13 @@ import { resolveTrustProxy } from './trust-proxy';
 /// пропускает undefined в `is`).
 const NON_PRODUCTION_ENV = Joi.valid(...RELAXED_NODE_ENVS).required();
 
-export const envValidationSchema = Joi.object({
+const envBaseKeys: Joi.PartialSchemaMap = {
   /// Fail-closed (ADR-0164): пустой/не заданный NODE_ENV = production, дефолта
   /// `development` нет. Ослабление — только при явных development/test.
   NODE_ENV: Joi.string().allow('').valid('development', 'test', 'production'),
+  /// Режим только розыгрыша (мини-выкладка giveaway/deploy): подключаются лишь
+  /// модули приёмника; auth/JWT/2FA/captcha/cookie не требуются.
+  GIVEAWAY_ONLY: Joi.boolean().default(false),
   API_PORT: Joi.number().port().default(4000),
   /// Политика доверия к прокси (ADR-0155): пусто — выключено; число hop-ов
   /// (1 для nginx → api); loopback/linklocal/uniquelocal; список CIDR.
@@ -414,4 +417,44 @@ export const envValidationSchema = Joi.object({
   /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
   /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
   DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
-}).unknown(true);
+};
+
+const strongGiveawaySecret = Joi.string()
+  .custom((value: string, helpers) =>
+    isStrongMasterSecret(Buffer.from(value, 'utf8'))
+      ? value
+      : helpers.error('string.min'),
+  )
+  .messages({
+    'any.required': 'GIVEAWAY_MASTER_SECRET обязателен при GIVEAWAY_ONLY=true',
+    'string.empty': 'GIVEAWAY_MASTER_SECRET обязателен при GIVEAWAY_ONLY=true',
+    'string.min':
+      'GIVEAWAY_MASTER_SECRET: не короче 32 байт и не менее 16 различных байт',
+  })
+  .required();
+
+const fullEnvSchema = Joi.object(envBaseKeys).unknown(true);
+
+/// Режим GIVEAWAY_ONLY: переменные auth/2FA/captcha/cookie не требуются,
+/// GIVEAWAY_ENABLED=true и GIVEAWAY_MASTER_SECRET обязательны (fail closed).
+/// Остальные правила (NODE_ENV fail-closed, TRUST_PROXY, DATABASE_URL) прежние.
+const giveawayOnlyEnvSchema = fullEnvSchema.keys({
+  JWT_ACCESS_SECRET: Joi.string().allow('').optional(),
+  JWT_REFRESH_SECRET: Joi.string().allow('').optional(),
+  TWO_FACTOR_ENCRYPTION_KEY: Joi.string().allow('').optional(),
+  TURNSTILE_SECRET_KEY: Joi.string().allow('').optional(),
+  COOKIE_DOMAIN: Joi.string().allow('').optional(),
+  COOKIE_SECURE: Joi.boolean().default(false),
+  GIVEAWAY_ENABLED: Joi.boolean().valid(true).required().messages({
+    'any.required': 'GIVEAWAY_ENABLED=true обязателен при GIVEAWAY_ONLY=true',
+    'any.only': 'GIVEAWAY_ENABLED=true обязателен при GIVEAWAY_ONLY=true',
+  }),
+  GIVEAWAY_MASTER_SECRET: strongGiveawaySecret,
+});
+
+export const envValidationSchema = Joi.alternatives().conditional(
+  Joi.object({ GIVEAWAY_ONLY: Joi.boolean().valid(true).required() }).unknown(
+    true,
+  ),
+  { then: giveawayOnlyEnvSchema, otherwise: fullEnvSchema },
+);

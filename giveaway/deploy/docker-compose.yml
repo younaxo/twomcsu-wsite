@@ -1,0 +1,181 @@
+# Мини-выкладка розыгрыша «Анархия Новой Эры» (фаза 1): Postgres + Redis + API + nginx.
+# ТОЛЬКО ПОДГОТОВКА: файл не запускался на сервере. Порядок и откат - RUNBOOK.md.
+#
+# Секреты - только в env-файлах ВНЕ репозитория (каталог GIVEAWAY_SECRETS_DIR, по умолчанию
+# /srv/twomc-giveaway/secrets, права 0600). Образцы без значений: secrets/*.env.example.
+# Проверка синтаксиса без запуска (демон не нужен; укажите каталог с копиями *.env.example):
+#   GIVEAWAY_SECRETS_DIR=<каталог-с-копиями> docker compose -f giveaway/deploy/docker-compose.yml config -q
+
+name: twomc-giveaway
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: "${LOG_MAX_FILE:-5}"
+
+# Общие ограничения контейнеров.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  postgres:
+    <<: *hardening
+    image: postgres:16-alpine
+    container_name: twomc-giveaway-postgres
+    restart: unless-stopped
+    mem_limit: ${POSTGRES_MEM_LIMIT:-512m}
+    logging: *default-logging
+    # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB - из postgres.env.
+    env_file: ${GIVEAWAY_SECRETS_DIR:-/srv/twomc-giveaway/secrets}/postgres.env
+    # Образ postgres стартует от root и понижается до postgres: нужны CHOWN/SETUID/SETGID/DAC_OVERRIDE/FOWNER.
+    # read_only не включён: Postgres пишет в /var/run/postgresql и /tmp (усиление - отдельным шагом).
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=50"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Порты НЕ публикуются: доступ только из внутренней сети backend.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    container_name: twomc-giveaway-redis
+    restart: unless-stopped
+    mem_limit: ${REDIS_MEM_LIMIT:-128m}
+    logging: *default-logging
+    user: "999:1000"
+    read_only: true
+    # REDIS_PASSWORD - из redis.env. noeviction: в Redis лежат нонсы и счётчики лимитов,
+    # вытеснение ключей молча ослабило бы защиту.
+    env_file: ${GIVEAWAY_SECRETS_DIR:-/srv/twomc-giveaway/secrets}/redis.env
+    command:
+      - sh
+      - -c
+      - exec redis-server --requirepass "$$REDIS_PASSWORD" --appendonly yes --maxmemory 96mb --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+
+  api:
+    <<: *hardening
+    # Образ собирается из корня монорепо существующим infrastructure/api.Dockerfile (пользователь twomc, не root).
+    image: twomc-giveaway-api:${RELEASE:-latest}
+    build:
+      context: ../..
+      dockerfile: infrastructure/api.Dockerfile
+    container_name: twomc-giveaway-api
+    restart: unless-stopped
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    # api.env: DATABASE_URL, REDIS_PASSWORD, GIVEAWAY_*, обязательные заглушки production (см. api.env.example).
+    env_file: ${GIVEAWAY_SECRETS_DIR:-/srv/twomc-giveaway/secrets}/api.env
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # Один доверенный hop (nginx из этого compose); nginx перезаписывает X-Forwarded-For (см. nginx/giveaway.conf).
+      TRUST_PROXY: "1"
+      # Всё, что не нужно розыгрышу, держим выключенным.
+      LITEBANS_ENABLED: "false"
+      BRIDGE_ENABLED: "false"
+      STORE_DELIVERY_ENABLED: "false"
+      QUICK_BUY_ENABLED: "false"
+      DELIVERY_RECONCILE_ENABLED: "false"
+      PAYMENT_PROVIDER: ""
+    # Порт API НЕ публикуется на хост: доступен только nginx по внутренней сети backend (internal, без выхода в интернет).
+    expose: ["4000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [backend]
+
+  # Миграции - ЯВНО, не при старте: docker compose --profile ops run --rm migrate
+  migrate:
+    <<: *hardening
+    profiles: ["ops"]
+    image: twomc-giveaway-api:${RELEASE:-latest}
+    container_name: twomc-giveaway-migrate
+    read_only: true
+    tmpfs:
+      - /tmp
+    env_file: ${GIVEAWAY_SECRETS_DIR:-/srv/twomc-giveaway/secrets}/api.env
+    environment:
+      NODE_ENV: production
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
+  nginx:
+    <<: *hardening
+    # Образ без root: внутри слушает 8080/8443, наружу 80/443.
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: twomc-giveaway-nginx
+    restart: unless-stopped
+    mem_limit: ${NGINX_MEM_LIMIT:-128m}
+    logging: *default-logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    ports:
+      - "${GIVEAWAY_HTTP_PORT:-80}:8080"
+      - "${GIVEAWAY_HTTPS_PORT:-443}:8443"
+    volumes:
+      - ./nginx/giveaway.conf:/etc/nginx/conf.d/default.conf:ro
+      # Сертификаты - вне репозитория: fullchain.pem и privkey.pem (выпуск certbot/ACME - вручную, RUNBOOK.md).
+      - ${GIVEAWAY_CERTS_DIR:-/srv/twomc-giveaway/certs}:/etc/nginx/certs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [edge, backend]
+
+  # --- ЗАГОТОВКА (не включено, не запускать): web-страница розыгрыша ---
+  # web:
+  #   image: twomc-giveaway-web:${RELEASE:-latest}   # будущий срез, отдельный Dockerfile
+  #   networks: [edge]
+  #   # в nginx добавить upstream и location / вместо 404 (после решения владельца).
+  #
+  # --- ЗАГОТОВКА (не включено): тестовый Minecraft-сервер ---
+  # mc:
+  #   image: <образ-сервера>   # online-mode=true обязателен; плагин giveaway/plugin; ключ - файл вне репозитория
+  #   # игровой трафик Minecraft НЕ проксировать через Cloudflare (Q14); порт 25565 открывает владелец явно.
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  # edge: только nginx (публикация портов, внешний доступ). backend (internal): postgres, redis, api, nginx - без выхода в интернет.
+  # nginx в обеих сетях: принимает снаружи через edge, ходит к api через backend.
+  edge:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true
