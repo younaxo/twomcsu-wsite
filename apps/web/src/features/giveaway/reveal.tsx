@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { usePrefersReducedMotion } from './hooks';
 
-/// Появление при прокрутке (IntersectionObserver). При prefers-reduced-motion,
+/// Появление при прокрутке в обе стороны (IntersectionObserver не отключается):
+/// вышел из экрана - снова скрыт, вошёл - лёгкий подъём и проявление. При prefers-reduced-motion,
 /// без поддержки IntersectionObserver и до гидратации контент виден сразу и
 /// без анимации. Сами переходы включены только через `motion-safe:`.
 export function Reveal({ children, className }: { children: ReactNode; className?: string }) {
@@ -21,12 +22,10 @@ export function Reveal({ children, className }: { children: ReactNode; className
     setState('hidden');
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          setState('shown');
-          observer.disconnect();
-        }
+        const last = entries[entries.length - 1];
+        if (last) setState(last.isIntersecting ? 'shown' : 'hidden');
       },
-      { threshold: 0.15 },
+      { threshold: 0.1 },
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -37,8 +36,8 @@ export function Reveal({ children, className }: { children: ReactNode; className
       ref={ref}
       data-reveal={state}
       className={cn(
-        'motion-safe:transition-[opacity,transform] motion-safe:duration-700 motion-safe:ease-out',
-        state === 'hidden' && 'translate-y-6 opacity-0',
+        'motion-safe:transition-[opacity,transform] motion-safe:duration-500 motion-safe:ease-out',
+        state === 'hidden' && 'translate-y-4 opacity-0',
         className,
       )}
     >

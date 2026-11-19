@@ -117,7 +117,8 @@ describe('страница розыгрыша', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Получить код' }));
     await advance(10);
     expect(screen.getByTestId('giveaway-code')).toHaveTextContent('ABCD-EFGH-JKMN-PQRS');
-    expect(screen.getByText(/\/giveaway ABCD-EFGH-JKMN-PQRS/)).toBeInTheDocument();
+    expect(screen.getAllByText(/\/giveaway ABCD-EFGH-JKMN-PQRS/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('how-command')).toHaveTextContent('/giveaway ABCD-EFGH-JKMN-PQRS');
     expect(screen.getByTestId('code-timer')).toHaveTextContent('10:00');
     expect(screen.getByRole('button', { name: 'Новый код' })).toBeInTheDocument();
     await act(async () => {
@@ -223,7 +224,7 @@ describe('страница розыгрыша', () => {
     await advance(10);
     await advance(POLL_INTERVAL_MS);
     expect(screen.getByTestId('ticket-card')).toHaveAttribute('data-settled', 'false');
-    await advance(2_000);
+    await advance(3_200);
     expect(screen.getByTestId('ticket-card')).toHaveAttribute('data-settled', 'true');
     expect(screen.getAllByTestId('ticket-char').map((n) => n.textContent)).toEqual([
       'K',

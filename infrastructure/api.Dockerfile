@@ -34,6 +34,8 @@ COPY --from=build --chown=twomc:twomc /app/apps/api/node_modules ./apps/api/node
 COPY --from=build --chown=twomc:twomc /app/apps/api/dist ./apps/api/dist
 COPY --from=build --chown=twomc:twomc /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build --chown=twomc:twomc /app/apps/api/package.json ./apps/api/package.json
+# Призы розыгрыша (GIVEAWAY_ENABLED): API ищет giveaway/config/prizes.json вверх от cwd (/app/apps/api -> /app).
+COPY --chown=twomc:twomc giveaway/config ./giveaway/config
 RUN mkdir -p /app/apps/api/uploads && chown twomc:twomc /app/apps/api/uploads
 USER twomc
 WORKDIR /app/apps/api

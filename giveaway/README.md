@@ -104,3 +104,20 @@
 - Старый карточный вариант сохранён: dev-параметр `?layout=cards` (только вне production; в production игнорируется), например `/giveaway?mock=running&layout=cards`.
 - Иллюстрации призов: `giveaway/assets/prizes/*-art.svg` (оригинальные, см. `docs/IMAGE-SOURCES.md`); старые `*.svg` не удалены.
 - Раскладка: телефон — 1 колонка, узкий экран — 2 колонки (порядок 1–10), от md — пьедестал мест 1–5 и ряд 6–10. Блок призов стоит выше рабочей области с кодом и билетом.
+- Отслеживание билета (Q99): страница `apps/web/src/app/giveaway/ticket/[token]/page.tsx` (noindex, без призов и шапки розыгрыша) показывает номер, ник, наиграно и статус по `GET /api/giveaway/v1/tickets/track/:token`. Кнопки «Сохранить билет» (PNG на клиенте, `twomc-ticket-K417.png`) и «Скопировать ссылку» — `ticket-actions.tsx`. Барабан — `ticket-reel.tsx` (лента на символ, ~3 с, остановка слева направо, при `prefers-reduced-motion` сразу результат). nginx: `location ^~ /api/giveaway/` уже покрывает маршрут.
+
+## Страница: итоги и эфир (фаза 3)
+
+- Пока розыгрыш не показан в эфире, `/giveaway` выглядит как раньше. Как только `GET /api/giveaway/v1/public/results?mode=live` возвращает `state: "results"`, страница переключается на итоги (`giveaway-results.tsx`): победители выводятся по очереди в порядке `revealOrder` (от 10 места к 1), затем дисквалифицированные и блок «Проверка честности» (хэш снимка, алгоритм, зерно, порядок билетов). При `prefers-reduced-motion` весь список выводится сразу.
+- Обновление: поток SSE `/api/giveaway/v1/stream?mode=` служит только сигналом (`results`, `reset`, `ready`), по сигналу итоги запрашиваются заново; пока поток недоступен (или нет `EventSource`) - опрос раз в 5 с (`use-live-results.ts`). Ошибки итогов обычную страницу не ломают.
+- Тест: `/giveaway?mode=test` показывает тестовый эфир только админ-сессии (иначе экран «войдите в админку»); везде метка «ТЕСТ» (`test-badge.tsx`).
+- Моки (dev, `NEXT_PUBLIC_GIVEAWAY_MOCK=1`): сценарии `results` и `results-test` в `?mock=` (`results-mock.ts`).
+- Картинки призов в итогах и админке берутся из `prize-images.ts` по имени файла из `imageFile` - тем же статическим механизмом, что и `giveaway/assets/prizes/`; отдельного эндпоинта для картинок нет, неизвестное имя - заглушка.
+
+## Админка (фаза 3)
+
+- Адрес: `admin.giveaway.twomc.su` (env `GIVEAWAY_ADMIN_HOST` переопределяет). Только при `GIVEAWAY_ONLY=true`, `src/middleware.ts` + `giveawayHostRoute` (`giveaway-only.ts`): на хосте админки `/` -> `/giveaway/admin` (rewrite), `/giveaway/**` проходит, остальное -> `/`; на других хостах `/giveaway/admin` -> `/giveaway` (307). Локально (не production, `localhost`) админка открыта по `/giveaway/admin`. Без флага основной сайт не затрагивается (тест `giveaway-host.test.ts`). nginx: `deploy/nginx/giveaway.conf`.
+- Вход: кнопка «Войти через Discord» (`/api/giveaway/v1/admin/auth/login`); при любом 401 - экран входа; тексты отказа нейтральные. Выход - «Выйти». CSRF: токен из `GET /admin/session` уходит заголовком `X-Giveaway-Csrf` на все POST/PATCH (`admin-api.ts`).
+- Разделы: Розыгрыш (заморозить, «Рассчитать…» с подтверждением фразой «РАССЧИТАТЬ» и хэшем снимка, показать в эфире, дисквалификация с причиной 3-300 символов), Билеты (поиск, профиль игрока), Настройки (порог, даты по МСК), Призы, Аудит, Тест (время, билеты, массовое наполнение, сброс; только при включённом тестовом режиме). Переключатель «Боевой/Тест»; в тесте постоянная метка «ТЕСТ».
+- Локально на моках: `NEXT_PUBLIC_GIVEAWAY_MOCK=1 pnpm --filter @twomc/web dev`, открыть `/giveaway/admin` (мок админ-API: вход сразу выполнен).
+- Проверка: `pnpm --filter @twomc/web exec vitest run src/features/giveaway`.

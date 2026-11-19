@@ -44,7 +44,13 @@ export type GiveawayCodeStatus =
         thresholdMinutes: number;
       };
     }
-  | { status: 'redeemed'; ticket: string; playerName: string }
+  | {
+      status: 'redeemed';
+      ticket: string;
+      playerName: string;
+      issuedAt: string;
+      trackingToken: string | null;
+    }
   | { status: 'expired' };
 
 function isUniqueViolation(err: unknown): boolean {
@@ -215,6 +221,8 @@ export class GiveawayCodesService {
         status: 'redeemed',
         ticket: last.ticket.ticket,
         playerName: last.ticket.playerName,
+        issuedAt: last.ticket.issuedAt.toISOString(),
+        trackingToken: last.ticket.trackingToken ?? null,
       };
     }
     if (

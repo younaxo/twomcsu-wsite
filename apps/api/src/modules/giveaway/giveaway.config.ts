@@ -22,6 +22,8 @@ export interface GiveawayConfig {
   timestampWindowS: number;
   /// `GIVEAWAY_CAPTCHA_ENABLED` (ADR-G002 п. 2.6); по умолчанию выключено.
   captchaEnabled: boolean;
+  /// Админка и тестовый режим (ADR-G003). Не заданное = закрыто (fail closed).
+  admin: GiveawayAdminConfig;
   defaults: {
     thresholdMinutes: number;
     startAt: Date;
@@ -29,6 +31,23 @@ export interface GiveawayConfig {
     allowedServers: string[];
   };
 }
+
+export interface GiveawayAdminConfig {
+  discordClientId: string | null;
+  discordClientSecret: string | null;
+  discordRedirectUri: string | null;
+  /// Только цифровые Discord ID; пусто - вход закрыт.
+  allowedDiscordIds: string[];
+  /// Точный Origin админки (CSRF).
+  origin: string;
+  testModeEnabled: boolean;
+  prizesDir: string;
+  /// `GIVEAWAY_PRIZES_CONFIG`: путь к giveaway/config/prizes.json; null = по умолчанию.
+  prizesConfigPath: string | null;
+}
+
+export const DEFAULT_ADMIN_ORIGIN = 'https://admin.giveaway.twomc.su';
+export const DEFAULT_PRIZES_DIR = '../../giveaway/prizes';
 
 export interface EnvReader {
   get<T = string>(key: string): T | undefined;
@@ -56,6 +75,10 @@ function toDate(value: unknown, fallback: string): Date {
   return Number.isNaN(d.getTime()) ? new Date(fallback) : d;
 }
 
+function toStr(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 export function readGiveawayConfig(env: EnvReader): GiveawayConfig {
   const rawSecret = env.get<string>('GIVEAWAY_MASTER_SECRET');
   const secret =
@@ -77,6 +100,25 @@ export function readGiveawayConfig(env: EnvReader): GiveawayConfig {
       MAX_TIMESTAMP_WINDOW_S,
     ),
     captchaEnabled: toBoolean(env.get('GIVEAWAY_CAPTCHA_ENABLED'), false),
+    admin: {
+      discordClientId: toStr(env.get('GIVEAWAY_DISCORD_CLIENT_ID')),
+      discordClientSecret: toStr(env.get('GIVEAWAY_DISCORD_CLIENT_SECRET')),
+      discordRedirectUri: toStr(env.get('GIVEAWAY_DISCORD_REDIRECT_URI')),
+      allowedDiscordIds: [
+        ...new Set(
+          String(env.get('GIVEAWAY_ADMIN_DISCORD_IDS') ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => /^[0-9]{5,32}$/.test(s)),
+        ),
+      ],
+      origin: (
+        toStr(env.get('GIVEAWAY_ADMIN_ORIGIN')) ?? DEFAULT_ADMIN_ORIGIN
+      ).replace(/\/+$/, ''),
+      testModeEnabled: toBoolean(env.get('GIVEAWAY_TEST_MODE_ENABLED'), false),
+      prizesDir: toStr(env.get('GIVEAWAY_PRIZES_DIR')) ?? DEFAULT_PRIZES_DIR,
+      prizesConfigPath: toStr(env.get('GIVEAWAY_PRIZES_CONFIG')),
+    },
     defaults: {
       thresholdMinutes: toInt(
         env.get('GIVEAWAY_THRESHOLD_MINUTES'),

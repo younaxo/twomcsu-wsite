@@ -85,6 +85,11 @@ export const COOKIE_PATH = '/api/giveaway';
 /// Билет: буква без I и O (24) + три цифры.
 export const TICKET_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const TICKET_MAX_ATTEMPTS = 8;
+/// Токен ссылки отслеживания: 24 байта CSPRNG = 32 символа base64url; старые
+/// билеты получают 32 hex-символа из миграции (подходят под тот же шаблон).
+export const TRACKING_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
+export const TRACK_PER_IP_MIN = 60;
+export const TRACK_CACHE_MAX_AGE_S = 60;
 
 /// Лимиты (ADR-G002 п. 2.5, 4, 6.1, 6.2).
 export const CODES_PER_SUBNET_HOUR = 30;
@@ -97,3 +102,30 @@ export const REDEEM_PER_UUID_MIN = 10;
 /// (ADR-G002 п. 6.1), поэтому высокий: спам нескольких игроков не блокирует всех.
 export const REDEEM_PER_SERVER_MIN = 600;
 export const MAX_PROGRESS_UUIDS = 100;
+
+/// Фаза 3 (ADR-G003): админка, итоги, эфир.
+export const ADMIN_COOKIE = 'gw_admin';
+export const ADMIN_OAUTH_COOKIE = 'gw_admin_oauth';
+export const ADMIN_COOKIE_PATH = '/api/giveaway/v1';
+export const ADMIN_OAUTH_COOKIE_PATH = '/api/giveaway/v1/admin/auth';
+export const ADMIN_IDLE_MS = 30 * 60 * 1000;
+export const ADMIN_ABSOLUTE_MS = 8 * 60 * 60 * 1000;
+/// Сколько хранить истёкшие и отозванные сессии до удаления (при входе).
+export const ADMIN_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const ADMIN_OAUTH_TTL_S = 600;
+export const ADMIN_LOGIN_PER_10MIN = 20;
+export const ADMIN_API_PER_MIN = 300;
+export const ADMIN_CSRF_HEADER = 'x-giveaway-csrf';
+export const DISCORD_API = 'https://discord.com/api/v10';
+export const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
+export const DISCORD_TIMEOUT_MS = 8000;
+
+export const DRAW_CONFIRM_PHRASE = 'РАССЧИТАТЬ';
+export const STREAM_CHANNEL = 'giveaway:stream';
+export const STREAM_HEARTBEAT_MS = 15_000;
+export const STREAM_MAX_PER_IP = 6;
+export const STREAM_OPEN_PER_MIN = 60;
+export const TEST_MAX_MINUTES_PER_NAME = 1_000_000;
+export const PRIZE_IMAGE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.png$/;
+export const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{1,16}$/;
+export const SNAPSHOT_HASH_PATTERN = /^[0-9a-f]{64}$/;

@@ -152,6 +152,16 @@ describe('AppModule: режим GIVEAWAY_ONLY', () => {
         .send({});
       expect(events.status).not.toBe(404);
 
+      // Контроллеры фазы 3 входят в режим GIVEAWAY_ONLY (маршруты есть).
+      for (const p of [
+        '/giveaway/v1/admin/session',
+        '/giveaway/v1/stream',
+        '/giveaway/v1/public/results',
+      ]) {
+        const r = await request(app.getHttpServer()).get(p);
+        expect(r.status).not.toBe(404);
+      }
+
       const auth = await request(app.getHttpServer())
         .post('/auth/login')
         .send({});

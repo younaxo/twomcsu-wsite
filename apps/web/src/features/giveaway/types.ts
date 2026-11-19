@@ -32,7 +32,14 @@ export interface GiveawayLastAttempt {
 export type GiveawayCodeStatus =
   | { status: 'none' }
   | { status: 'pending'; expiresAt: string; lastAttempt?: GiveawayLastAttempt | null }
-  | { status: 'redeemed'; ticket: string; playerName: string }
+  | {
+      status: 'redeemed';
+      ticket: string;
+      playerName: string;
+      /// Дата выдачи (UTC, ISO) и токен ссылки отслеживания; у старых ответов их нет.
+      issuedAt?: string;
+      trackingToken?: string | null;
+    }
   | { status: 'expired' };
 
 export interface GiveawayApi {

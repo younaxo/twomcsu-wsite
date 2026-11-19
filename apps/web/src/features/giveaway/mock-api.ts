@@ -22,6 +22,8 @@ export const MOCK_SCENARIOS = [
   'offline',
   'finished',
   'not_enough',
+  'results',
+  'results-test',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -31,6 +33,13 @@ export function isMockScenario(value: string | null | undefined): value is MockS
 
 const DAY = 86_400_000;
 const MOCK_CODE = 'K7M2-9QXR-4TBW-H0ZD';
+const MOCK_REDEEMED: GiveawayCodeStatus = {
+  status: 'redeemed',
+  ticket: 'K417',
+  playerName: 'Steve',
+  issuedAt: '2026-12-01T10:00:00.000Z',
+  trackingToken: 'mockTrackingTokenK417abcdefghij',
+};
 
 function publicInfo(status: GiveawayPhase): GiveawayPublicInfo {
   const now = Date.now();
@@ -58,7 +67,11 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 export function createMockGiveawayApi(scenario: MockScenario): GiveawayApi {
   const phase: GiveawayPhase =
-    scenario === 'before' ? 'before' : scenario === 'finished' ? 'finished' : 'running';
+    scenario === 'before'
+      ? 'before'
+      : scenario === 'finished' || scenario === 'results' || scenario === 'results-test'
+        ? 'finished'
+        : 'running';
   let issuedAt: number | null = null;
   let polls = 0;
 
@@ -83,7 +96,7 @@ export function createMockGiveawayApi(scenario: MockScenario): GiveawayApi {
     async getStatus(): Promise<GiveawayCodeStatus> {
       await wait(100);
       if (scenario === 'redeemed') {
-        return { status: 'redeemed', ticket: 'K417', playerName: 'Steve' };
+        return MOCK_REDEEMED;
       }
       if (scenario === 'expired' && issuedAt === null) return { status: 'expired' };
       if (issuedAt === null) return { status: 'none' };
@@ -102,7 +115,7 @@ export function createMockGiveawayApi(scenario: MockScenario): GiveawayApi {
         };
       }
       if (scenario === 'ticket' && polls >= 2) {
-        return { status: 'redeemed', ticket: 'K417', playerName: 'Steve' };
+        return MOCK_REDEEMED;
       }
       return { status: 'pending', expiresAt: new Date(issuedAt + 600_000).toISOString() };
     },

@@ -45,3 +45,8 @@ export function generateTicket(): string {
   const digits = String(randomInt(1000)).padStart(3, '0');
   return `${letter}${digits}`;
 }
+
+/// Токен ссылки отслеживания: 24 байта CSPRNG, base64url (32 символа).
+export function generateTrackingToken(): string {
+  return randomBytes(24).toString('base64url');
+}

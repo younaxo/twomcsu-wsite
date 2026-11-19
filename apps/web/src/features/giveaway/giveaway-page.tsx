@@ -28,6 +28,9 @@ import {
 } from './format';
 import { useNow } from './hooks';
 import { GiveawayHero, WORKSPACE_ID } from './giveaway-hero';
+import type { PlayerProgress } from './how-to';
+import { Reveal } from './reveal';
+import { useSmoothScroll, useWorkspaceNavigation } from './use-workspace-scroll';
 import type { GiveawayLayout } from './layout';
 import { PrizeSections } from './prize-sections';
 import { PrizeShowcase } from './prize-showcase';
@@ -310,6 +313,8 @@ function Running({
           playerName={view.playerName}
           animate={view.animate}
           previously={view.previously}
+          issuedAt={view.issuedAt}
+          trackingToken={view.trackingToken}
         />
       </section>
     );
@@ -358,7 +363,14 @@ function Finished({ view, heroHasStatus }: { view: CodeView; heroHasStatus: bool
         Приём билетов закрыт. Спасибо всем, кто участвовал!
       </p>
       {view.kind === 'ticket' ? (
-        <TicketCard ticket={view.ticket} playerName={view.playerName} animate={false} previously />
+        <TicketCard
+          ticket={view.ticket}
+          playerName={view.playerName}
+          animate={false}
+          previously
+          issuedAt={view.issuedAt}
+          trackingToken={view.trackingToken}
+        />
       ) : null}
     </section>
   );
@@ -421,6 +433,30 @@ function useGiveawayToasts(
   }, [pollIssue]);
 }
 
+/// Прогресс игрока для блока «Как участвовать»: из последней попытки ввода кода в
+/// игре или из выданного билета; иначе неизвестен (блок скрыт).
+export function playerProgress(
+  view: CodeView,
+  info: GiveawayPublicInfo | null,
+): PlayerProgress | null {
+  if (view.kind === 'pending' && view.lastAttempt) {
+    const a = view.lastAttempt;
+    return {
+      minutes: a.minutes,
+      thresholdMinutes: a.thresholdMinutes,
+      remainingMinutes: a.remainingMinutes,
+    };
+  }
+  if (view.kind === 'ticket' && info) {
+    return {
+      minutes: info.thresholdMinutes,
+      thresholdMinutes: info.thresholdMinutes,
+      remainingMinutes: 0,
+    };
+  }
+  return null;
+}
+
 export interface GiveawayPageProps {
   api: GiveawayApi;
   autoIssue?: boolean;
@@ -433,6 +469,9 @@ export function GiveawayPage({ api, autoIssue = false, layout = 'default' }: Giv
   const cards = layout === 'cards';
   const { info, view, pollIssue, issue, reload } = useGiveaway(api, { autoIssue });
   useGiveawayToasts(info, view, pollIssue, issue, reload);
+  useSmoothScroll();
+  const { highlighted } = useWorkspaceNavigation();
+  const readyInfo = info.kind === 'ready' ? info.info : null;
   return (
     <main
       id="main"
@@ -452,48 +491,60 @@ export function GiveawayPage({ api, autoIssue = false, layout = 'default' }: Giv
         </>
       ) : (
         <>
-          <GiveawayHero info={info.kind === 'ready' ? info.info : null} />
+          <GiveawayHero
+            info={readyInfo}
+            code={view.kind === 'pending' && view.code ? formatCode(view.code) : null}
+            progress={playerProgress(view, readyInfo)}
+          />
           <PrizeSections />
         </>
       )}
-      <div
-        id={cards ? undefined : WORKSPACE_ID}
-        tabIndex={cards ? undefined : -1}
-        className={
-          cards
-            ? 'mx-auto w-full max-w-3xl rounded-xl border border-border bg-surface p-5 shadow sm:p-8'
-            : 'mx-auto w-full max-w-3xl scroll-mt-24 border-t border-border pt-12 outline-none'
-        }
-        data-testid={cards ? 'giveaway-card' : 'giveaway-workspace'}
-      >
-        {info.kind === 'loading' ? (
-          <p
-            role="status"
-            className="flex items-center justify-center gap-2 py-10 text-muted-foreground"
-          >
-            <Loader2 aria-hidden="true" className="size-5 animate-spin" />
-            Загружаем…
-          </p>
-        ) : info.kind === 'error' ? (
-          <section className="flex flex-col items-center gap-5 py-4" aria-labelledby="gw-state">
-            <AlertTriangle aria-hidden="true" className="size-10 text-destructive" />
-            <StateHeading id="load-error">
-              <span id="gw-state">Не удалось загрузить розыгрыш</span>
-            </StateHeading>
-            <p className="text-center text-muted-foreground">{errorText(info.error, null)}</p>
-            <ActionButton onClick={reload}>
-              <RefreshCw aria-hidden="true" />
-              Повторить
-            </ActionButton>
-          </section>
-        ) : info.info.status === 'before' ? (
-          <BeforeStart info={info.info} showCountdown={cards} />
-        ) : info.info.status === 'finished' ? (
-          <Finished view={view} heroHasStatus={!cards} />
-        ) : (
-          <Running info={info.info} view={view} issue={issue} />
-        )}
-      </div>
+      <Reveal className="mx-auto w-full max-w-3xl">
+        <div
+          id={cards ? undefined : WORKSPACE_ID}
+          tabIndex={cards ? undefined : -1}
+          data-highlight={cards ? undefined : highlighted}
+          className={
+            cards
+              ? 'w-full rounded-xl border border-border bg-surface p-5 shadow sm:p-8'
+              : cn(
+                  'w-full scroll-mt-24 rounded-xl px-4 py-12 outline-none motion-safe:transition-colors',
+                  highlighted
+                    ? 'bg-primary-soft motion-safe:duration-100'
+                    : 'bg-transparent motion-safe:duration-[1400ms]',
+                )
+          }
+          data-testid={cards ? 'giveaway-card' : 'giveaway-workspace'}
+        >
+          {info.kind === 'loading' ? (
+            <p
+              role="status"
+              className="flex items-center justify-center gap-2 py-10 text-muted-foreground"
+            >
+              <Loader2 aria-hidden="true" className="size-5 animate-spin" />
+              Загружаем…
+            </p>
+          ) : info.kind === 'error' ? (
+            <section className="flex flex-col items-center gap-5 py-4" aria-labelledby="gw-state">
+              <AlertTriangle aria-hidden="true" className="size-10 text-destructive" />
+              <StateHeading id="load-error">
+                <span id="gw-state">Не удалось загрузить розыгрыш</span>
+              </StateHeading>
+              <p className="text-center text-muted-foreground">{errorText(info.error, null)}</p>
+              <ActionButton onClick={reload}>
+                <RefreshCw aria-hidden="true" />
+                Повторить
+              </ActionButton>
+            </section>
+          ) : info.info.status === 'before' ? (
+            <BeforeStart info={info.info} showCountdown={cards} />
+          ) : info.info.status === 'finished' ? (
+            <Finished view={view} heroHasStatus={!cards} />
+          ) : (
+            <Running info={info.info} view={view} issue={issue} />
+          )}
+        </div>
+      </Reveal>
       {info.kind === 'ready' ? (
         <p className="text-center text-sm text-muted-foreground" data-testid="giveaway-dates">
           {formatMsk(info.info.startAtUtc)} — {formatMsk(info.info.cutoffAtUtc)}

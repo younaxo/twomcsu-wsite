@@ -1,5 +1,8 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
+  NotFoundException,
   HttpException,
   HttpStatus,
   ServiceUnavailableException,
@@ -9,7 +12,8 @@ import type { Response } from 'express';
 
 export const unauthorized = () =>
   new UnauthorizedException({ error: 'unauthorized' });
-export const forbidden = () => new ForbiddenException({ error: 'forbidden' });
+export const forbidden = (error = 'forbidden') =>
+  new ForbiddenException({ error });
 export const payloadTooLarge = () =>
   new HttpException(
     { error: 'payload_too_large' },
@@ -38,3 +42,8 @@ export function tooManyRequests(res: Response, retryAfterS: number) {
     HttpStatus.TOO_MANY_REQUESTS,
   );
 }
+
+export const badRequest = (error: string) => new BadRequestException({ error });
+export const conflict = (error: string) => new ConflictException({ error });
+export const notFound = (error = 'not_found') =>
+  new NotFoundException({ error });

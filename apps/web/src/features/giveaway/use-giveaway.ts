@@ -33,7 +33,15 @@ export type CodeView =
       lastAttempt: GiveawayLastAttempt | null;
     }
   /// `animate`: билет только что получен - играем анимацию перебора символов.
-  | { kind: 'ticket'; ticket: string; playerName: string; animate: boolean; previously: boolean }
+  | {
+      kind: 'ticket';
+      ticket: string;
+      playerName: string;
+      animate: boolean;
+      previously: boolean;
+      issuedAt: string | null;
+      trackingToken: string | null;
+    }
   | { kind: 'expired' }
   | { kind: 'error'; error: GiveawayErrorKind; retryAfterSeconds: number | null };
 
@@ -125,6 +133,8 @@ export function useGiveaway(api: GiveawayApi, options: UseGiveawayOptions = {}):
             playerName: status.playerName,
             animate: false,
             previously: true,
+            issuedAt: status.issuedAt ?? null,
+            trackingToken: status.trackingToken ?? null,
           });
         } else if (status.status === 'pending') {
           setView({
@@ -194,6 +204,8 @@ export function useGiveaway(api: GiveawayApi, options: UseGiveawayOptions = {}):
             playerName: status.playerName,
             animate: true,
             previously: false,
+            issuedAt: status.issuedAt ?? null,
+            trackingToken: status.trackingToken ?? null,
           });
           return;
         }

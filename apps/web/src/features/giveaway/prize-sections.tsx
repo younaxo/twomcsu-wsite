@@ -87,7 +87,7 @@ export function PrizeSections({ config = prizesConfig }: { config?: PrizesConfig
             key={p.place}
             data-testid={`prize-${p.place}`}
             data-place={p.place}
-            className="flex flex-col items-center border-t border-border py-14 first:border-t-0 first:pt-4 sm:py-20"
+            className="flex flex-col items-center py-14 first:pt-4 sm:py-20"
           >
             <PrizeBody prize={p} showValue={config.showValue} big />
           </li>
@@ -96,7 +96,7 @@ export function PrizeSections({ config = prizesConfig }: { config?: PrizesConfig
       <ol
         data-testid="prize-list-rest"
         start={rest[0]?.place}
-        className="grid w-full grid-cols-1 gap-x-8 gap-y-16 border-t border-border pt-14 sm:grid-cols-2"
+        className="grid w-full grid-cols-1 gap-x-8 gap-y-16 pt-8 sm:grid-cols-2"
       >
         {rest.map((p) => (
           <li
