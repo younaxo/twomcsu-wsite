@@ -20,6 +20,16 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # Образ itzg стартует от root, меняет владельца /data и затем понижает права до UID/GID (gosu) - без этих capabilities
+    # он не запустится при cap_drop ALL. После понижения процесс сервера capabilities не имеет. Минимальный набор:
+    #   CHOWN (chown /data), SETUID/SETGID (переход на UID/GID), DAC_OVERRIDE (root читает/пишет файлы пользователя gw).
+    # Если в логе будут ошибки chmod на чужих файлах - добавить FOWNER осознанно, не раньше.
+    # Альтернатива без cap_add: запуск целиком от gw (`user: "${MC_UID}:${MC_GID}"`, документация itzg «run as non-root user»).
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     environment:
       # Лицензию Mojang принимает человек: MC_EULA=TRUE задаёт оператор в minecraft-test/mc.env (см. README).
       EULA: "${MC_EULA:?задайте MC_EULA=TRUE в mc.env после ознакомления с https://aka.ms/MinecraftEULA}"
@@ -49,5 +59,6 @@ services:
       # Данные - отдельный каталог на версию: мир нельзя откатывать с 1.21.11 на 1.21.4.
       - ${MC_BASE:-/srv/twomc-giveaway/mc}/data-${MC_VERSION}:/data
       - ${MC_BASE:-/srv/twomc-giveaway/mc}/plugins:/plugins:ro
-      # Ключ сервера mc-test (выдаёт tools/giveaway-key.sh): только чтение, 0600.
-      - ${GIVEAWAY_KEYS_DIR:-/srv/twomc-giveaway/keys}:/keys:ro
+      # Ключ ТОЛЬКО этого сервера (mc-test), один файл (выдаёт tools/giveaway-key.sh; 0600 gw): другие ключи каталога keys
+      # в контейнер не попадают. Файл должен существовать до up (mc-test.sh проверяет), иначе Docker создаст каталог.
+      - ${GIVEAWAY_MC_KEY_FILE:-/srv/twomc-giveaway/keys/mc-test.v1.key}:/keys/mc-test.v1.key:ro

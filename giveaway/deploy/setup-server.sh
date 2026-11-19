@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Первичная настройка VDS (Ubuntu/Debian) под мини-выкладку розыгрыша. Идемпотентно: каждый шаг проверяет «уже сделано».
-# Запускается НА СЕРВЕРЕ ОДИН РАЗ от пользователя с sudo (sudo bash setup-server.sh ...). Без интерактивных вопросов.
+# Запускается НА СЕРВЕРЕ от АДМИНИСТРАТОРА - пользователя провайдера с sudo (sudo bash setup-server.sh ...). Без интерактивных вопросов.
+# Пользователь развёртывания (gw) БЕЗ sudo: администрирование (ufw, certbot, sshd, mc-port-*) делает только админ провайдера.
 # Секреты не выводятся: пароли и GIVEAWAY_MASTER_SECRET создаются openssl rand прямо в файлы (umask 077, права 600),
 # только если файла ещё нет. Файлы и значения в stdout/stderr/логи не попадают.
 #
@@ -8,13 +9,15 @@
 #   setup           первичная настройка (по умолчанию):
 #                     --deploy-user NAME   пользователь без root (по умолчанию gw)
 #                     --pubkey-file PATH   файл с ПУБЛИЧНЫМ ключом агента (одна строка ssh-ed25519/ssh-rsa/ecdsa)
-#                     --ssh-port N         порт sshd (по умолчанию 22)
+#                     --ssh-port N         ТОЛЬКО проверка: порт берётся из sshd -T; если не совпал с фактическим - стоп
 #                     --mc-port N          (необязательно) открыть в ufw порт тестового Minecraft-сервера
 #                     --domain NAME        домен розыгрыша (по умолчанию giveaway.twomc.su; нужен для хуков certbot)
 #   issue-cert      выпуск сертификата Let's Encrypt (после того, как DNS указывает на этот сервер):
 #                     --domain NAME  --email ADDR  --agree-le-tos  [--staging] [--force-dns]
+#   harden-ssh --confirm-key-login   ОТДЕЛЬНЫЙ шаг: отключить пароли и вход root (после проверки входа по ключу gw и админа
+#                   из второй сессии; проверяет authorized_keys, права, порты ufw, sshd -t до reload)
 #   mc-port-open N  разрешить порт тестового MC в ufw (на время теста)
-#   mc-port-close N закрыть этот порт
+#   mc-port-close N снять правило ufw И удалить контейнер тестового MC (ufw не управляет Docker; порт держит MC_BIND)
 #   verify          проверки без секретов (sshd, ufw, fail2ban, время, docker, права, порты)
 #
 # Docker и ufw: Docker публикует порты через iptables в обход ufw. Поэтому compose мини-выкладки публикует наружу только
@@ -26,11 +29,12 @@ umask 022
 BASE=/srv/twomc-giveaway
 DEPLOY_USER=gw
 PUBKEY_FILE=""
-SSH_PORT=22
+SSH_PORT=""
 MC_PORT=""
 DOMAIN=giveaway.twomc.su
 EMAIL=""
 AGREE_TOS=0
+CONFIRM_KEY=0
 STAGING=0
 FORCE_DNS=0
 NGINX_CONTAINER=twomc-giveaway-nginx
@@ -56,6 +60,7 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN="${2:-}"; shift 2 ;;
     --email) EMAIL="${2:-}"; shift 2 ;;
     --agree-le-tos) AGREE_TOS=1; shift ;;
+    --confirm-key-login) CONFIRM_KEY=1; shift ;;
     --staging) STAGING=1; shift ;;
     --force-dns) FORCE_DNS=1; shift ;;
     *) die "Неизвестный параметр: $1" ;;
@@ -76,7 +81,9 @@ check_env() {
   command -v systemctl > /dev/null || die "Нужен systemd."
   [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || die "--deploy-user: недопустимое имя."
   [ "$DEPLOY_USER" != "root" ] || die "--deploy-user не может быть root."
-  [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || die "--ssh-port: 1..65535."
+  if [ -n "$SSH_PORT" ]; then
+    [[ "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$SSH_PORT" -ge 1 ] && [ "$SSH_PORT" -le 65535 ] || die "--ssh-port: 1..65535."
+  fi
   if [ -n "$MC_PORT" ]; then
     [[ "$MC_PORT" =~ ^[0-9]{1,5}$ ]] && [ "$MC_PORT" -ge 1024 ] && [ "$MC_PORT" -le 65535 ] || die "--mc-port: 1024..65535."
   fi
@@ -129,74 +136,157 @@ step_user() {
   fi
   chown "$DEPLOY_USER:$DEPLOY_USER" "$ak"
   chmod 0600 "$ak"
-  grep -Eq '^(ssh-|ecdsa-|sk-)' "$ak" || warn "в authorized_keys пока нет ключей: sshd НЕ будет ужесточён (передайте --pubkey-file)."
+  grep -Eq "^(ssh-|ecdsa-|sk-)" "$ak" || warn "в authorized_keys пока нет ключей (передайте --pubkey-file); harden-ssh без ключа не выполнится."
 }
 
-# ---- 2. sshd: запрет пароля и root --------------------------------------------------------------------------------
-step_sshd() {
-  local home ak dropin="/etc/ssh/sshd_config.d/10-twomc-hardening.conf"
-  home="$(getent passwd "$DEPLOY_USER" | cut -d: -f6)"
-  ak="$home/.ssh/authorized_keys"
-  if ! grep -Eq '^(ssh-|ecdsa-|sk-)' "$ak" 2> /dev/null; then
-    warn "пропуск ужесточения sshd: у $DEPLOY_USER нет ключа (защита от потери доступа)."
-    return 0
-  fi
+# ---- 2. Порт sshd (определяется, не угадывается) ------------------------------------------------------------------
+# Порт берётся из фактической конфигурации (sshd -T, сокет-активация ssh.socket) и из текущей сессии (SSH_CONNECTION).
+# --ssh-port - только проверка совпадения: если указанного порта нет среди фактических, скрипт останавливается (иначе
+# ufw закрыл бы реальный порт и доступ был бы потерян).
+SSH_PORTS=()
+
+detect_ssh_ports() {
+  [ "${#SSH_PORTS[@]}" -eq 0 ] || return 0
   apt_install openssh-server
   command -v sshd > /dev/null || die "sshd не найден."
+  mkdir -p /run/sshd
+  local actual="" p listen
+  actual="$(sshd -T 2> /dev/null | awk '$1=="port"{print $2}' | sort -un | tr '\n' ' ')" || true
+  if systemctl is-active --quiet ssh.socket 2> /dev/null; then
+    listen="$(systemctl show ssh.socket -p Listen --value 2> /dev/null | grep -Eo ':[0-9]+ ' | tr -d ': ' | sort -un | tr '\n' ' ')" || true
+    actual="$actual $listen"
+  fi
+  actual="$(printf '%s\n' $actual | grep -E '^[0-9]+$' | sort -un | tr '\n' ' ')"
+  [ -n "$actual" ] || die "не удалось определить порт sshd (sshd -T пуст): стоп, чтобы не потерять доступ."
+  if [ -n "$SSH_PORT" ]; then
+    case " $actual" in
+      *" $SSH_PORT "*) ;;
+      *) die "--ssh-port $SSH_PORT не совпадает с фактическим портом sshd (${actual% }): стоп. Уберите параметр или исправьте." ;;
+    esac
+  fi
+  for p in $actual; do SSH_PORTS+=("$p"); done
+  # порт текущей сессии (если запущено по ssh): добавляем в разрешённые, даже если он необычный
+  local sp
+  sp="$(awk '{print $4}' <<< "${SSH_CONNECTION:-}")"
+  if [[ "$sp" =~ ^[0-9]{1,5}$ ]]; then
+    case " $actual" in
+      *" $sp "*) ;;
+      *) SSH_PORTS+=("$sp"); warn "порт текущей сессии $sp не входит в конфигурацию sshd: правило ufw добавлено, проверьте." ;;
+    esac
+  fi
+  log "порт(ы) sshd: ${SSH_PORTS[*]}"
+}
+
+ssh_ports_csv() { local IFS=,; printf '%s' "${SSH_PORTS[*]}"; }
+
+# ---- 3. ufw ------------------------------------------------------------------------------------------------------
+step_ufw() {
+  apt_install ufw
+  detect_ssh_ports
+  local p
+  ufw default deny incoming > /dev/null
+  ufw default allow outgoing > /dev/null
+  # Порядок критичен: разрешить порт(ы) sshd ДО ufw enable.
+  for p in "${SSH_PORTS[@]}"; do ufw allow "${p}/tcp" comment 'ssh' > /dev/null; done
+  ufw allow 80/tcp comment 'giveaway http (acme, redirect)' > /dev/null
+  ufw allow 443/tcp comment 'giveaway https' > /dev/null
+  if [ -n "$MC_PORT" ]; then
+    ufw allow "${MC_PORT}/tcp" comment 'minecraft test (временно)' > /dev/null
+    log "ufw: правило для ${MC_PORT}/tcp (ufw НЕ управляет Docker: наружу порт выставляет только MC_BIND=0.0.0.0, см. mc-test.sh)"
+  fi
+  for p in "${SSH_PORTS[@]}"; do
+    ufw show added 2> /dev/null | grep -Eq "^ufw allow ${p}/tcp" || die "ufw: правило для sshd-порта ${p} не найдено; ufw не включается."
+  done
+  if ufw status | grep -q '^Status: active'; then
+    log "ufw уже включён; правила обновлены"
+  else
+    ufw --force enable > /dev/null
+    log "ufw включён: ssh(${SSH_PORTS[*]})/80/443"
+  fi
+  # Docker обходит ufw: БД/Redis/API не публикуются compose, а 25565 привязан к 127.0.0.1 по умолчанию.
+  log "заметка: Docker обходит ufw; публикуются только порты из compose (80/443), см. заголовок скрипта"
+}
+
+# ---- 3b. harden-ssh: отдельный шаг, ПОСЛЕ проверки входа по ключу -------------------------------------------------
+# Отключает пароли и вход root. Запускается только вручную после того, как вход deploy-пользователя И админа
+# (пользователя провайдера с sudo) по ключу проверен из ВТОРОЙ сессии.
+key_file_ok() {   # key_file_ok USER : authorized_keys на месте, права верные (иначе sshd со StrictModes отвергнет), есть валидный ключ
+  local u="$1" home ak tmpk own
+  id "$u" > /dev/null 2>&1 || { warn "пользователя $u нет"; return 1; }
+  home="$(getent passwd "$u" | cut -d: -f6)"
+  ak="$home/.ssh/authorized_keys"
+  [ -s "$ak" ] || { warn "$u: нет непустого $ak"; return 1; }
+  own="$(stat -c '%U' "$ak")"
+  [ "$own" = "$u" ] || { warn "$u: владелец $ak = $own"; return 1; }
+  [ $(( 8#$(stat -c '%a' "$ak") & 8#077 )) -eq 0 ] || { warn "$u: права $ak шире 600"; return 1; }
+  [ $(( 8#$(stat -c '%a' "$home/.ssh") & 8#077 )) -eq 0 ] || { warn "$u: права $home/.ssh шире 700"; return 1; }
+  [ $(( 8#$(stat -c '%a' "$home") & 8#022 )) -eq 0 ] || { warn "$u: домашний каталог доступен на запись группе/всем (StrictModes)"; return 1; }
+  tmpk="$(mktemp)"
+  grep -E '^(ssh-|ecdsa-|sk-)' "$ak" | head -n 1 > "$tmpk" || true
+  if ! ssh-keygen -lf "$tmpk" > /dev/null 2>&1; then
+    rm -f "$tmpk"
+    warn "$u: в $ak нет валидного публичного ключа"
+    return 1
+  fi
+  rm -f "$tmpk"
+}
+
+do_harden_ssh() {
+  local dropin="/etc/ssh/sshd_config.d/10-twomc-hardening.conf" admin="${SUDO_USER:-}" p u
+  [ "$CONFIRM_KEY" -eq 1 ] || die "harden-ssh: нужен --confirm-key-login: подтверждение, что вход по ключу пользователем $DEPLOY_USER и администратором проверен из второй SSH-сессии."
+  { [ -n "$admin" ] && [ "$admin" != "root" ]; } || die "harden-ssh: запускайте через sudo от пользователя провайдера (не root): PermitRootLogin no закроет вход root."
+  key_file_ok "$DEPLOY_USER" || die "harden-ssh: у $DEPLOY_USER нет рабочего ключа; пароли не отключаются."
+  key_file_ok "$admin" || die "harden-ssh: у администратора $admin (sudo) нет рабочего ключа в authorized_keys; отключение паролей закрыло бы вам доступ. Добавьте ключ и проверьте вход."
+  detect_ssh_ports
+  if command -v ufw > /dev/null && ufw status | grep -q '^Status: active'; then
+    for p in "${SSH_PORTS[@]}"; do
+      ufw show added 2> /dev/null | grep -Eq "^ufw allow ${p}/tcp" || die "harden-ssh: ufw активен, но порт sshd ${p} не разрешён."
+    done
+  fi
+  local allow
+  allow="$(sshd -T 2> /dev/null | awk '$1=="allowusers"{ $1=""; print }')"
+  if [ -n "$allow" ]; then
+    for u in "$DEPLOY_USER" "$admin"; do
+      case " $allow " in *" $u "*) ;; *) die "harden-ssh: AllowUsers (${allow# }) не содержит $u: стоп." ;; esac
+    done
+  fi
   install -d -m 0755 /etc/ssh/sshd_config.d
-  if ! grep -Eqi '^\s*Include\s+/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config; then
+  if ! grep -Eqi '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/' /etc/ssh/sshd_config; then
     log "в sshd_config нет Include для sshd_config.d: добавляю в начало (копия: sshd_config.twomc-bak)"
     [ -e /etc/ssh/sshd_config.twomc-bak ] || cp -p /etc/ssh/sshd_config /etc/ssh/sshd_config.twomc-bak
     sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config
   fi
-  local want
-  want="# Управляется setup-server.sh (twomc-giveaway). 10- идёт раньше cloud-init (50-*): первое значение побеждает.
+  local want backup=""
+  want="# Управляется setup-server.sh harden-ssh (twomc-giveaway). 10- идёт раньше cloud-init (50-*): первое значение побеждает.
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 PubkeyAuthentication yes
-MaxAuthTries 3
+MaxAuthTries 6
 X11Forwarding no
 "
   if [ -f "$dropin" ] && [ "$(cat "$dropin")" = "$(printf '%s' "$want")" ]; then
     log "sshd: ужесточение уже применено"
     return 0
   fi
-  local backup=""
-  [ -f "$dropin" ] && { backup="$(mktemp)"; cp -p "$dropin" "$backup"; }
+  if [ -f "$dropin" ]; then
+    backup="$(mktemp)"
+    cp -p "$dropin" "$backup"
+  fi
   printf '%s' "$want" > "$dropin"
   chmod 0644 "$dropin"
   if sshd -t; then
     systemctl reload ssh 2> /dev/null || systemctl reload sshd
-    log "sshd: пароль и root-вход отключены (sshd -t прошёл, конфигурация перечитана)"
-    warn "НЕ закрывайте текущую сессию: проверьте вход пользователем $DEPLOY_USER по ключу из второго окна."
+    log "sshd: пароль и root-вход отключены (sshd -t прошёл до reload, конфигурация перечитана)"
+    if [ "$(sshd -T 2> /dev/null | awk '$1=="passwordauthentication"{print $2}')" != "no" ]; then
+      warn "эффективный PasswordAuthentication не no: другой файл в sshd_config.d перекрывает наш (sshd -T)."
+    fi
+    warn "НЕ закрывайте текущую сессию и консоль провайдера: проверьте новый вход ключом из ДРУГОГО окна."
   else
     if [ -n "$backup" ]; then cp -p "$backup" "$dropin"; else rm -f "$dropin"; fi
-    die "sshd -t не прошёл; изменения откатаны, sshd не перезапускался."
+    die "sshd -t не прошёл; изменения откатаны, sshd не перезагружался."
   fi
-  [ -z "$backup" ] || rm -f "$backup"
-}
-
-# ---- 3. ufw ------------------------------------------------------------------------------------------------------
-step_ufw() {
-  apt_install ufw
-  ufw default deny incoming > /dev/null
-  ufw default allow outgoing > /dev/null
-  ufw allow "${SSH_PORT}/tcp" comment 'ssh' > /dev/null
-  ufw allow 80/tcp comment 'giveaway http (acme, redirect)' > /dev/null
-  ufw allow 443/tcp comment 'giveaway https' > /dev/null
-  if [ -n "$MC_PORT" ]; then
-    ufw allow "${MC_PORT}/tcp" comment 'minecraft test (временно)' > /dev/null
-    log "ufw: открыт порт тестового MC ${MC_PORT}/tcp (закрыть: mc-port-close ${MC_PORT})"
-  fi
-  if ufw status | grep -q '^Status: active'; then
-    log "ufw уже включён; правила обновлены"
-  else
-    ufw --force enable > /dev/null
-    log "ufw включён: 22/80/443"
-  fi
-  # Docker обходит ufw: БД/Redis/API не публикуются compose, а 25565 привязан к 127.0.0.1 по умолчанию.
-  log "заметка: Docker обходит ufw; публикуются только порты из compose (80/443), см. заголовок скрипта"
+  if [ -n "$backup" ]; then rm -f "$backup"; fi
 }
 
 # ---- 4. fail2ban -------------------------------------------------------------------------------------------------
@@ -204,10 +294,11 @@ step_fail2ban() {
   apt_install fail2ban
   if apt-cache show python3-systemd > /dev/null 2>&1; then apt_install python3-systemd; fi
   local jail=/etc/fail2ban/jail.d/twomc-sshd.local want
+  detect_ssh_ports
   want="[sshd]
 enabled = true
 backend = systemd
-port = ${SSH_PORT}
+port = $(ssh_ports_csv)
 maxretry = 5
 findtime = 10m
 bantime = 1h
@@ -300,9 +391,10 @@ step_dirs() {
   for d in data releases state mc; do
     install -d -m 0755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$BASE/$d"
   done
-  # nginx-unprivileged работает под uid 101: certs root:101 0750, privkey 0640, fullchain 0644 (RUNBOOK п.3).
-  install -d -m 0750 -o root -g 101 "$BASE/certs"
-  log "каталоги $BASE/{secrets,keys,backups}=700, certs=root:101 0750, data,releases,state,mc"
+  # certs: каталог root:root 0755 (пользователь развёртывания может проверить наличие файлов через test -s, не читая ключ);
+  # privkey root:101 0640 (nginx-unprivileged = uid 101; для gw недоступен), fullchain 0644 (RUNBOOK п.3).
+  install -d -m 0755 -o root -g root "$BASE/certs"
+  log "каталоги $BASE/{secrets,keys,backups}=700, certs=root:root 0755 (privkey root:101 0640), data,releases,state,mc"
 }
 
 write_secret_file() {   # write_secret_file path  (содержимое со stdin; файл создаётся 0600, владелец deploy-user)
@@ -405,7 +497,7 @@ EOF
 set -e
 [ -n "\${RENEWED_LINEAGE:-}" ] || exit 0
 D=${BASE}/certs
-install -d -m 0750 -o root -g 101 "\$D"
+install -d -m 0755 -o root -g root "\$D"
 install -m 0644 -o root -g 101 "\$RENEWED_LINEAGE/fullchain.pem" "\$D/fullchain.pem.new"
 install -m 0640 -o root -g 101 "\$RENEWED_LINEAGE/privkey.pem" "\$D/privkey.pem.new"
 mv -f "\$D/fullchain.pem.new" "\$D/fullchain.pem"
@@ -423,6 +515,8 @@ EOF
 
 do_issue_cert() {
   [ -n "$EMAIL" ] || die "issue-cert: нужен --email."
+  case "$EMAIL" in -*) die "issue-cert: --email не может начинаться с «-»." ;; esac
+  [[ "$EMAIL" =~ ^[A-Za-z0-9._%+][A-Za-z0-9._%+-]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "issue-cert: --email не похож на адрес почты."
   [ "$AGREE_TOS" -eq 1 ] || die "issue-cert: нужен --agree-le-tos (согласие с условиями Let's Encrypt от имени владельца)."
   command -v certbot > /dev/null || die "certbot не установлен: сначала выполните setup."
   if [ "$FORCE_DNS" -ne 1 ]; then
@@ -443,11 +537,13 @@ do_issue_cert() {
     docker inspect -f '{{.State.Running}}' "$NGINX_CONTAINER" 2> /dev/null | grep -q true \
       || die "порт 80 занят не контейнером $NGINX_CONTAINER; освободите его."
   fi
-  local args=(certonly --standalone --preferred-challenges http -d "$DOMAIN" -m "$EMAIL" --agree-tos --no-eff-email --non-interactive)
-  [ "$STAGING" -eq 1 ] && args+=(--staging --dry-run)
+  # --deploy-hook: certbot сам вызывает копирование сертификатов после выпуска (хук сохраняется и в конфиге продления).
+  local args=(certonly --standalone --preferred-challenges http -d "$DOMAIN" -m "$EMAIL" --agree-tos --no-eff-email --non-interactive
+    --deploy-hook /etc/letsencrypt/renewal-hooks/deploy/twomc-giveaway-install-certs.sh)
+  if [ "$STAGING" -eq 1 ]; then args+=(--staging --dry-run); fi
   certbot "${args[@]}"
   if [ "$STAGING" -ne 1 ]; then
-    RENEWED_LINEAGE="/etc/letsencrypt/live/${DOMAIN}" /etc/letsencrypt/renewal-hooks/deploy/twomc-giveaway-install-certs.sh
+    [ -s "${BASE}/certs/fullchain.pem" ] && [ -s "${BASE}/certs/privkey.pem" ] || die "сертификат выпущен, но не скопирован хуком в ${BASE}/certs: проверьте /var/log/letsencrypt/letsencrypt.log."
     stat -c '%a %U:%G %n' "${BASE}/certs" "${BASE}/certs/"*.pem
     log "сертификат выпущен и установлен; запускайте/перезапускайте nginx: docker compose ... up -d nginx"
   else
@@ -469,6 +565,14 @@ DIR="${GIVEAWAY_BACKUP_DIR:-/srv/twomc-giveaway/backups}"
 C="${GIVEAWAY_PG_CONTAINER:-twomc-giveaway-postgres}"
 mkdir -p "$DIR"
 chmod 0700 "$DIR"
+# Свободное место: нужно не меньше 2 x размер БД + 200 МБ (иначе дамп обрежет диск и заберёт у БД место).
+dbsize="$(docker exec "$C" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select pg_database_size(current_database())"' 2> /dev/null | tr -dc '0-9' || true)"
+avail="$(df -PB1 "$DIR" | awk 'NR==2 {print $4}')"
+need=$(( ${dbsize:-0} * 2 + 200 * 1024 * 1024 ))
+if [ "${avail:-0}" -lt "$need" ]; then
+  echo "backup: мало места на диске (доступно ${avail:-0} Б, нужно ${need} Б); бэкап не выполнен" >&2
+  exit 1
+fi
 tmp="$(mktemp -p "$DIR" .dump.XXXXXX)"
 trap 'rm -f "$tmp"' EXIT
 docker exec "$C" sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$tmp"
@@ -518,16 +622,29 @@ EOF
 }
 
 # ---- Порты тестового MC ------------------------------------------------------------------------------------------
+# ВАЖНО: правило ufw НЕ ограничивает опубликованные порты Docker (iptables DOCKER идёт раньше ufw). Реально порт открывает
+# только привязка MC_BIND=0.0.0.0 у контейнера (mc-test.sh up <версия> --public), закрывает - пересоздание с 127.0.0.1
+# (mc-test.sh up <версия> без --public) либо удаление контейнера (mc-test.sh down). Правило ufw - только вторая линия.
+MC_CONTAINER=twomc-giveaway-mctest
+
 do_mc_port() {
   local action="$1" port="$2"
   [[ "$port" =~ ^[0-9]{4,5}$ ]] && [ "$port" -ge 1024 ] && [ "$port" -le 65535 ] || die "порт: 1024..65535."
   command -v ufw > /dev/null || die "ufw не установлен: сначала setup."
   if [ "$action" = "open" ]; then
     ufw allow "${port}/tcp" comment 'minecraft test (временно)' > /dev/null
-    log "ufw: ${port}/tcp открыт. Для Docker дополнительно нужен MC_BIND=<публичный ip> (minecraft-test/README.md)."
+    log "ufw: ${port}/tcp разрешён (но ufw не управляет Docker). Наружу порт выставляет ТОЛЬКО: mc-test.sh up <версия> --public (MC_BIND=0.0.0.0)."
   else
+    # Закрытие: контейнер удаляется (down) - так порт гарантированно перестаёт слушать; затем снимается правило ufw.
+    if docker inspect "$MC_CONTAINER" > /dev/null 2>&1; then
+      docker rm -f "$MC_CONTAINER" > /dev/null
+      log "контейнер $MC_CONTAINER удалён (данные в ${BASE}/mc/data-* сохранены); для работы только локально: mc-test.sh up <версия> (127.0.0.1)"
+    fi
     ufw delete allow "${port}/tcp" > /dev/null 2>&1 || true
-    log "ufw: правило ${port}/tcp снято. Верните MC_BIND=127.0.0.1 и пересоздайте контейнер MC."
+    log "ufw: правило ${port}/tcp снято."
+    if ss -ltnH "( sport = :${port} )" | grep -v -E '127\.0\.0\.1|\[::1\]' | grep -q .; then
+      warn "порт ${port} всё ещё слушает не на loopback: проверьте docker ps и nmap -Pn <ip> с внешней машины."
+    fi
   fi
 }
 
@@ -557,7 +674,6 @@ check_env
 case "$CMD" in
   setup)
     step_user
-    step_sshd
     step_ufw
     step_fail2ban
     step_time
@@ -566,11 +682,12 @@ case "$CMD" in
     step_secrets
     step_certbot
     step_backup
-    log "готово. Дальше: DNS giveaway -> issue-cert -> deploy.sh (см. RUNBOOK.md). Проверка: sudo bash setup-server.sh verify"
+    log "готово. SSH пока НЕ ужесточён. Дальше: вход gw и админа по ключу из второй сессии -> harden-ssh --confirm-key-login -> DNS -> issue-cert -> deploy.sh (RUNBOOK.md). Проверка: sudo bash setup-server.sh verify"
     ;;
+  harden-ssh) do_harden_ssh ;;
   issue-cert) do_issue_cert ;;
   mc-port-open) do_mc_port open "$POSITIONAL" ;;
   mc-port-close) do_mc_port close "$POSITIONAL" ;;
   verify) do_verify ;;
-  *) die "Неизвестная команда: $CMD (setup | issue-cert | mc-port-open N | mc-port-close N | verify)" ;;
+  *) die "Неизвестная команда: $CMD (setup | harden-ssh | issue-cert | mc-port-open N | mc-port-close N | verify)" ;;
 esac

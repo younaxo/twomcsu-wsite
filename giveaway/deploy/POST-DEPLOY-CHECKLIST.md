@@ -9,7 +9,7 @@
 - [ ] HTTPS и сертификат: `curl -sSI https://$H/ | head -1` -> 404 без ошибок TLS; `echo | openssl s_client -connect $H:443 -servername $H 2>/dev/null | openssl x509 -noout -dates -issuer` (срок, издатель).
 - [ ] Catch-all 444: `curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: evil.example' http://<ip>/` -> `000` (соединение закрыто без ответа); `curl -sk --max-time 5 https://<ip>/` -> ошибка рукопожатия (`ssl_reject_handshake`).
 - [ ] Снаружи доступен ТОЛЬКО `/api/giveaway/`: `/health`, `/api/auth/login`, `/giveaway/v1/events` (без `/api`), `/uploads/x`, `/` -> 404: `for p in /health /api/health /api/auth/login /giveaway/v1/events /uploads/x /; do printf '%s ' $p; curl -sS -o /dev/null -w '%{http_code}\n' https://$H$p; done`.
-- [ ] Порты снаружи (с другой машины): `nmap -Pn <ip>` -> открыты только 22, 80, 443 (25565 - только на время теста MC). 5432/6379/4000 закрыты.
+- [ ] Порты снаружи (с ДРУГОЙ машины, ufw Docker не ограничивает): `nmap -Pn <ip>` -> открыты только порт sshd, 80, 443 (25565 - только при `mc-test.sh up --public`). 5432/6379/4000 закрыты.
 
 ## B. Приёмник и флаг
 - [ ] Без подписи: `curl -sS -o /dev/null -w '%{http_code}\n' -X POST https://$H/api/giveaway/v1/events` -> 401 (не 404/502).
@@ -22,10 +22,11 @@
 ## C. Сервер: время, безопасность, бэкап
 - [ ] `timedatectl` -> `Time zone: UTC`, `System clock synchronized: yes`, `NTP service: active`.
 - [ ] `sudo bash setup-server.sh verify` -> код выхода 0 (sshd: `passwordauthentication no`, `permitrootlogin no`; ufw active; fail2ban sshd; права секретов 600).
+- [ ] ДО этого: `harden-ssh --confirm-key-login` выполнен только после проверки входа ключом (gw и админ) из второй сессии; консоль провайдера была открыта.
 - [ ] sshd: вход паролем и под root невозможен (`ssh -o PubkeyAuthentication=no gw@<ip>` -> Permission denied; `ssh root@<ip>` -> отказ).
 - [ ] fail2ban: `sudo fail2ban-client status sshd` -> jail активен. Свой адрес не банить.
-- [ ] ufw: `sudo ufw status verbose` -> default deny incoming; 22, 80, 443 (и 25565 только на время теста).
-- [ ] Права: `stat -c '%a %U:%G %n' $BASE/secrets $BASE/secrets/*.env $BASE/keys $BASE/backups $BASE/certs $BASE/certs/*` -> 700/600 gw; certs 750 root:101, privkey 640 root:101.
+- [ ] ufw: `sudo ufw status verbose` -> default deny incoming; порт sshd (тот же, что в `sudo sshd -T | grep ^port`), 80, 443 (правило 25565 - только на время теста; оно не открывает и не закрывает порт Docker).
+- [ ] Права: `stat -c '%a %U:%G %n' $BASE/secrets $BASE/secrets/*.env $BASE/keys $BASE/backups $BASE/certs $BASE/certs/*` -> 700/600 gw; certs 755 root:root, privkey 640 root:101, fullchain 644. От `gw` (без sudo): `test -s $BASE/certs/fullchain.pem && test -s $BASE/certs/privkey.pem && echo ok` -> ok (ключ при этом не читается: `head -c1 $BASE/certs/privkey.pem` -> Permission denied).
 - [ ] certbot: `systemctl list-timers | grep -E 'certbot|twomc'` (оба таймера); `sudo certbot renew --dry-run` -> success (nginx на секунды остановится и вернётся; проверить `$C ps` после).
 - [ ] Бэкап создаётся: `systemctl start twomc-giveaway-backup.service && ls -l $BASE/backups` -> `giveaway-daily-<дата>.dump`, права `-rw-------`.
 - [ ] Бэкап восстанавливается (на ВРЕМЕННОЙ базе внутри контейнера, не на рабочей):
@@ -66,4 +67,4 @@ giveaway/deploy/tools/e2e-giveaway.sh /srv/twomc-giveaway/releases/<sha>
 
 ## F. Итог
 - [ ] Записано: sha релиза (`cat $BASE/state/current_release`), дата, результаты A-E, что не пройдено и почему.
-- [ ] Если тест MC завершён: порт 25565 закрыт (`mc-test.sh down`, `setup-server.sh mc-port-close 25565`, `nmap -Pn <ip>`).
+- [ ] Если тест MC завершён: `mc-test.sh down` (или `setup-server.sh mc-port-close 25565` - удаляет контейнер и правило), затем ОБЯЗАТЕЛЬНО `nmap -Pn <ip>` с внешней машины -> 25565 closed/filtered; `docker ps` без `0.0.0.0:25565`.

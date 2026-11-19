@@ -24,21 +24,29 @@
 - [В] DNS-запись `giveaway` в Beget - владелец. Домен `giveaway.twomc.su` уже прописан в `nginx/giveaway.conf` (3 места: `map $gw_domain` и два `server_name`; проверка: `grep -n example.com deploy/nginx/giveaway.conf` ничего не находит). Редирект 80->443 и заголовок `Host` к API берутся из `$gw_domain`, а не из запроса; запросы к чужому Host или по IP получают 444 (catch-all).
 
 ## 1. Сервер и пользователь без root
-Одной командой (один раз, от пользователя с sudo; идемпотентно, без вопросов; секреты не выводит):
+Роли: АДМИНИСТРИРУЕТ пользователь провайдера с sudo (`<admin>`): setup, harden-ssh, issue-cert, ufw, mc-port-*, verify. Пользователь развёртывания `gw` - БЕЗ sudo и без пароля (только ключ агента), работает с `deploy.sh`, `mc-test.sh`, `giveaway-key.sh`; он в группе `docker` (эквивалент root для хоста, принято осознанно). Узкого sudo-правила для `gw` нет и не нужно: наличие сертификата проверяется без чтения ключа (каталог `certs` 0755, см. раздел 3).
+
+ПЕРВЫЙ ПРОГОН - только со ВТОРОЙ открытой SSH-сессией администратора и с открытой веб-консолью провайдера (VNC/serial): если доступ пропадёт, консоль - единственный путь назад.
 ```
-scp -i <ключ-владельца> giveaway/deploy/setup-server.sh <admin>@<ip>:~/      # либо загрузить вместе с каталогом deploy
+scp -i <ключ-админа> giveaway/deploy/setup-server.sh <admin>@<ip>:~/      # либо загрузить вместе с каталогом deploy
 scp ... <файл-с-ПУБЛИЧНЫМ-ключом-агента>.pub <admin>@<ip>:~/agent.pub
-sudo bash setup-server.sh setup --deploy-user gw --pubkey-file ~/agent.pub [--mc-port 25565]
+# 1) setup: sshd НЕ ужесточается. Порт sshd определяется из sshd -T (+ ssh.socket, + порт текущей сессии); --ssh-port только сверяется
+sudo bash setup-server.sh setup --deploy-user gw --pubkey-file ~/agent.pub [--ssh-port <тот же, что у sshd>] [--mc-port 25565]
+# 2) из ВТОРОГО окна проверить вход ключом: gw (ключ агента) и <admin> (его ключ). Только после этого:
+sudo bash setup-server.sh harden-ssh --confirm-key-login
+# 3) снова из нового окна: вход gw и <admin> по ключу работает; пароль и root - отказ
 sudo bash setup-server.sh verify
 ```
-Скрипт: создаёт пользователя `gw` (без пароля, без sudo; в группе `docker` - эквивалент root для хоста, принято осознанно), кладёт публичный ключ в `~gw/.ssh/authorized_keys` (0700/0600), ужесточает sshd drop-in-файлом `10-twomc-hardening.conf` (`PasswordAuthentication no`, `PermitRootLogin no`; `sshd -t` до перезагрузки, откат при ошибке; не применяется, если у `gw` нет ключа), включает ufw (22/80/443, порт тестового MC только при `--mc-port`), fail2ban для sshd (backend systemd), UTC и NTP (timesyncd/chrony, `timedatectl`), Docker Engine + compose plugin из репозитория Docker (отпечаток ключа сверяется), каталоги и секреты, certbot, ежедневный бэкап. До закрытия текущей сессии проверить вход `gw` по ключу из второго окна.
+`setup`: создаёт `gw` (без пароля, без sudo), кладёт публичный ключ в `~gw/.ssh/authorized_keys` (0700/0600), включает ufw (порт(ы) sshd из `sshd -T`, 80, 443; правило ssh добавляется ДО `ufw enable`, иначе стоп; порт тестового MC в ufw - только при `--mc-port`), fail2ban для sshd (порт из `sshd -T`, backend systemd), UTC и NTP, Docker Engine + compose plugin (отпечаток ключа сверяется), каталоги и секреты, certbot, ежедневный бэкап. Если `--ssh-port` не совпал с фактическим портом sshd - стоп без изменений.
+`harden-ssh --confirm-key-login` (отдельный шаг): отказывается работать без флага; требует, чтобы у `gw` И у администратора (`$SUDO_USER`, не root) были непустой `authorized_keys`, валидный ключ и верные права (`~/.ssh` 700, файл 600, домашний каталог не пишется группой/всеми - иначе StrictModes отвергнет ключ); проверяет, что ufw разрешает порт sshd и что `AllowUsers` (если задан) содержит обоих; пишет drop-in `10-twomc-hardening.conf` (`PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `PermitRootLogin no`, `MaxAuthTries 6`), `sshd -t` ДО reload, откат файла при ошибке; после reload проверяет `sshd -T`. Текущую сессию и консоль провайдера не закрывать, пока из другого окна не подтверждён вход.
+Откат ужесточения (через консоль провайдера или оставшуюся сессию): `sudo rm /etc/ssh/sshd_config.d/10-twomc-hardening.conf && sudo sshd -t && sudo systemctl reload ssh`.
 Приватный ключ агента на сервер не передаётся (только публичная часть).
 
-Файрвол: ВАЖНО - Docker публикует порты через iptables в обход правил ufw/firewalld. Поэтому compose мини-выкладки публикует наружу только 80/443; 5432/6379/4000 не публикуются; тестовый MC привязан к `127.0.0.1` и выставляется наружу только вместе с `MC_BIND=0.0.0.0` и `setup-server.sh mc-port-open` (раздел 6). Альтернатива - цепочка `DOCKER-USER` или `GIVEAWAY_HTTP_PORT=<ip>:80`, `GIVEAWAY_HTTPS_PORT=<ip>:443`. После `up` проверить с внешней машины `nmap -Pn <ip>`.
+Файрвол: ВАЖНО - Docker публикует порты через iptables в обход правил ufw/firewalld, правило ufw НЕ закрывает и не открывает опубликованный порт контейнера. Поэтому compose мини-выкладки публикует наружу только 80/443; 5432/6379/4000 не публикуются; тестовый MC привязан к `127.0.0.1`. Открытие порта MC = пересоздание контейнера с `MC_BIND=0.0.0.0` (`mc-test.sh up <версия> --public`), закрытие = `mc-test.sh down` или `up` без `--public`; `setup-server.sh mc-port-close N` удаляет контейнер и снимает правило ufw (раздел 6). Альтернатива - цепочка `DOCKER-USER` или `GIVEAWAY_HTTP_PORT=<ip>:80`, `GIVEAWAY_HTTPS_PORT=<ip>:443`. После любого `up` проверить с внешней машины `nmap -Pn <ip>`.
 
 Время (NTP): окно подписи плагина +-300 с; уход часов даёт отказ событий (`in_future`/`stale`). Проверка: `timedatectl` -> `System clock synchronized: yes`.
 
-Структура каталогов `/srv/twomc-giveaway` (создаёт скрипт): `secrets` 0700, `keys` 0700, `backups` 0700 (владелец `gw`), `certs` root:101 0750, `releases/<sha>`, `state` (`current_release`, `previous_release`), `data`, `mc` (тестовый MC).
+Структура каталогов `/srv/twomc-giveaway` (создаёт скрипт): `secrets` 0700, `keys` 0700, `backups` 0700 (владелец `gw`), `certs` root:root 0755 (`privkey.pem` root:101 0640, `fullchain.pem` 0644), `releases/<sha>`, `state` (`current_release`, `previous_release`), `data`, `mc` (тестовый MC).
 
 ## 2. Секреты (вне репозитория)
 1. `setup-server.sh` создаёт `/srv/twomc-giveaway/secrets/{postgres,redis,api}.env` (0600, владелец `gw`) ТОЛЬКО если файла нет; существующие не трогает. Пароли БД и Redis - `openssl rand -hex 24`, записываются прямо в файлы (umask 077), в вывод не попадают; значения в `api.env` (`DATABASE_URL`, `REDIS_PASSWORD`) совпадают с `postgres.env`/`redis.env`.
@@ -50,10 +58,11 @@ sudo bash setup-server.sh verify
 ## 3. Сертификаты
 - Выпуск - отдельная команда после того, как DNS `giveaway` указывает на сервер (скрипт проверяет, что A-запись совпадает с адресом хоста): `sudo bash setup-server.sh issue-cert --domain giveaway.twomc.su --email <почта-владельца> --agree-le-tos` (`--staging` - пробный прогон `--dry-run`). Согласие с условиями Let's Encrypt даётся явным флагом от имени владельца.
 - Режим: certbot `--standalone` (HTTP-01 на порту 80). nginx-контейнер публикует 80, поэтому для первого выпуска его ещё нет, а при продлении хуки `renewal-hooks` останавливают его на несколько секунд (`pre`), копируют сертификат в `/srv/twomc-giveaway/certs` (`deploy`) и запускают обратно (`post`, только если он работал). Автопродление - `certbot.timer`; проверка: `systemctl list-timers | grep certbot`, `sudo certbot renew --dry-run`.
-- Права (хук ставит их сам): nginx-unprivileged работает под uid 101, поэтому `privkey.pem` - `root:101`, `0640` (не 644), `fullchain.pem` 0644, каталог `certs` `root:101` `0750`:
+- Права (хук ставит их сам): каталог `certs` `root:root` `0755` (так `gw` проверяет наличие файлов через `test -s`, не читая ключ; `deploy.sh` делает именно это); `privkey.pem` - `root:101`, `0640` (nginx-unprivileged работает под uid 101; для `gw` не читается), `fullchain.pem` 0644:
   ```
-  stat -c '%a %U:%G %n' /srv/twomc-giveaway/certs /srv/twomc-giveaway/certs/*   # 750 / 640 root:101
+  stat -c '%a %U:%G %n' /srv/twomc-giveaway/certs /srv/twomc-giveaway/certs/*   # 755 root:root / 640 root:101 / 644
   ```
+  Выпуск использует `certbot --deploy-hook` (копирование выполняется certbot после выпуска и при каждом продлении); e-mail не должен начинаться с «-».
 
 ## 4. Выкладка (после разрешения владельца)
 - [В/А] Перед выкладкой закрепить образы по digest: определить digest `postgres:16-alpine`, `redis:7-alpine`, `nginxinc/nginx-unprivileged:1.27-alpine` (`docker buildx imagetools inspect <образ>` либо `docker pull` и `docker image inspect --format '{{index .RepoDigests 0}}' <образ>`), проверить происхождение и записать в compose как `image: <имя>@sha256:<digest>` отдельным коммитом. Значения в репозитории намеренно не заготовлены.
@@ -64,7 +73,7 @@ export GIVEAWAY_VDS_HOST=<ip-или-имя>  GIVEAWAY_VDS_USER=gw  GIVEAWAY_VDS_
 giveaway/deploy/deploy.sh --dry-run               # что будет выложено
 giveaway/deploy/deploy.sh --rev <коммит>          # выкладка
 ```
-Что делает `deploy.sh`: `git archive` коммита (только отслеживаемые файлы, без `.env*`) -> `$BASE/releases/<sha>`; предпроверки (`api.env` 0600, `DATABASE_URL` указывает на `@postgres:5432/giveaway` - БД мини-выкладки, `GIVEAWAY_ONLY=true`, сертификаты на месте); `compose config -q`; `build api`; `up -d postgres redis`; бэкап (если уже был релиз); миграции профилем `ops` (`prisma migrate deploy`, только на БД мини-выкладки; seed не выполняется); `up -d api nginx`; healthcheck api, доступность api из nginx, ответ приёмника (400/401/503 без подписи), `/health` снаружи 404; при провале - автоматический возврат на предыдущий релиз. Ручной вариант на сервере (то же по шагам):
+Что делает `deploy.sh`: `git archive` коммита (только отслеживаемые файлы, без `.env*`) -> `$BASE/releases/<sha>`; предпроверки (`api.env` 0600, `DATABASE_URL` указывает на `@postgres:5432/giveaway` - БД мини-выкладки, `GIVEAWAY_ONLY=true`, сертификаты на месте); `compose config -q`; `build api`; `up -d postgres redis`; бэкап (если уже был релиз); миграции профилем `ops` (`prisma migrate deploy`, только на БД мини-выкладки; seed не выполняется); `up -d api nginx`; healthcheck api, доступность api из nginx, ответ приёмника (400/401/503 без подписи), `/health` снаружи 404; при провале - автоматический возврат на предыдущий релиз. Ручной вариант на сервере (то же по шагам): Бэкап перед миграциями делается ВСЕГДА, если в БД уже есть таблицы (не зависит от наличия предыдущего релиза); бэкап-скрипт отказывается работать при нехватке места (нужно 2 x размер БД + 200 МБ). Секреты в хвосте лога маскируются, включая `://user:pass@`.
 ```
 cd /srv/twomc-giveaway/releases/<sha>
 export RELEASE=<sha>
@@ -81,7 +90,7 @@ $C up -d api nginx && $C ps
 
 ## 6. Игровой сервер
 - `online-mode=true` в `server.properties` (за прокси - на прокси и защищённый проброс UUID). Проверка: `/giveawaytime` в игре (право `giveaway.admin`) показывает режим; в логе плагина нет предупреждения об `online-mode=false`.
-- Тестовый сервер на этом VDS (1.21.4 и 1.21.11 поочерёдно): `minecraft-test/README.md`.
+- Тестовый сервер на этом VDS (1.21.4 и 1.21.11 поочерёдно): `minecraft-test/README.md`. Порт наружу - только `up --public` (MC_BIND), закрытие - `down`/`mc-port-close`; проверка `nmap -Pn <ip>` с внешней машины.
 - NTP на игровом сервере - как в п.1.
 - `apiUrl` плагина - `https://<домен>` (без пути), `serverId` из `GIVEAWAY_ALLOWED_SERVERS`.
 - Логи команд: `/giveaway <код>` виден в консоли Spigot и в CoreProtect, spy и подобных плагинах. Исключите команды `/giveaway` и `/ticket` из их логов (по документации плагина), включая пересылку логов наружу.

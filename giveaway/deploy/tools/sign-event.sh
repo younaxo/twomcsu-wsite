@@ -52,7 +52,7 @@ TS="$(( $(date -u +%s) + OFFSET ))"
 NONCE="$(openssl rand -base64 24 | tr "+/" "-_" | tr -d "=[:space:]")"   # 32 символа base64url
 OCC="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
 ACTIVE_FIELD=""
-[ "$TYPE" = "heartbeat" ] && ACTIVE_FIELD=",\"active\":${ACTIVE}"
+if [ "$TYPE" = "heartbeat" ]; then ACTIVE_FIELD=",\"active\":${ACTIVE}"; fi
 BODY="{\"schema\":\"twomc.giveaway.v1\",\"events\":[{\"eventId\":\"$(uuid4)\",\"type\":\"${TYPE}\",\"playerUuid\":\"${UUID}\",\"playerName\":\"${NAME}\",\"occurredAt\":\"${OCC}\"${ACTIVE_FIELD}}]}"
 
 KEY_HEX="$(tr -d ' \n\r' < "$KEY_FILE")"
@@ -61,7 +61,7 @@ BODY_SHA="$(printf %s "$BODY" | openssl dgst -sha256 -hex | sed "s/^.* //" | tr 
 CANON="$(printf 'twomc-giveaway-v1\n%s\n%s\n%s\nPOST\n/api/giveaway/v1/events\n%s' "$KEY_ID" "$TS" "$NONCE" "$BODY_SHA")"
 SIG="$(printf %s "$CANON" | openssl dgst -sha256 -mac HMAC -macopt "hexkey:${KEY_HEX}" -hex | sed "s/^.* //" | tr -d "[:space:]")"
 unset KEY_HEX
-[ "$TAMPER" -eq 1 ] && BODY="${BODY} "   # тело изменено после подписи
+if [ "$TAMPER" -eq 1 ]; then BODY="${BODY} "; fi   # тело изменено после подписи
 
 TMPBODY="$(mktemp)"
 trap 'rm -f "$TMPBODY"' EXIT
@@ -73,8 +73,8 @@ send() {
     -H "X-Giveaway-Nonce: ${NONCE}" -H "X-Giveaway-Signature: ${SIG}" \
     --data-binary "$BODY" --max-time 20)"
   echo "HTTP ${out}"
-  [ "$SHOW" -eq 1 ] && { cat "$TMPBODY"; echo; }
+  if [ "$SHOW" -eq 1 ]; then cat "$TMPBODY"; echo; fi
 }
 send
-[ "$REPLAY" -eq 1 ] && { echo "повтор (тот же nonce):"; send; }
+if [ "$REPLAY" -eq 1 ]; then echo "повтор (тот же nonce):"; send; fi
 exit 0

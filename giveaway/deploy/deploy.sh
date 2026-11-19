@@ -109,6 +109,7 @@ fi
 grep -Eq '^DATABASE_URL=postgres(ql)?://[^@]+@postgres:5432/giveaway(\?|$)' "$SECRETS/api.env" \
   || { fail "DATABASE_URL должен указывать на контейнер postgres мини-выкладки (@postgres:5432/giveaway); стоп"; exit 1; }
 grep -q '^GIVEAWAY_ONLY=true' "$SECRETS/api.env" || { fail "в api.env нет GIVEAWAY_ONLY=true; стоп"; exit 1; }
+# certs: каталог 0755 root:root, privkey root:101 0640 - gw не читает ключ, но test -s (stat) работает; содержимое не читается.
 [ -s "$BASE/certs/fullchain.pem" ] && [ -s "$BASE/certs/privkey.pem" ] || { fail "нет сертификатов в $BASE/certs (setup-server.sh issue-cert)"; exit 1; }
 
 log "релиз $SHA, предыдущий: ${PREV:-нет}"
@@ -122,9 +123,15 @@ C "$DIR" "$SHA" up -d postgres redis || { fail "не поднялись postgres
 wait_healthy twomc-giveaway-postgres 60 || { fail "postgres не healthy"; exit 1; }
 wait_healthy twomc-giveaway-redis 60 || { fail "redis не healthy"; exit 1; }
 
-if [ -n "$PREV" ] && [ -x /usr/local/sbin/twomc-giveaway-backup ]; then
-  log "бэкап перед миграциями"
-  /usr/local/sbin/twomc-giveaway-backup < /dev/null || { fail "бэкап не удался; миграции не применяются"; exit 1; }
+# Бэкап ВСЕГДА, если в БД уже есть таблицы (не только при наличии предыдущего релиза). Пустая БД (первая выкладка) - без бэкапа.
+tables="$(printf '%s\n' "select count(*) from pg_tables where schemaname = 'public';" \
+  | docker exec -i twomc-giveaway-postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA' 2> /dev/null | tr -dc '0-9')"
+if [ "${tables:-unknown}" != "0" ]; then
+  log "в БД есть данные (таблиц: ${tables:-не определено}): бэкап перед миграциями"
+  [ -x /usr/local/sbin/twomc-giveaway-backup ] || { fail "нет /usr/local/sbin/twomc-giveaway-backup (setup-server.sh); миграции не применяются"; exit 1; }
+  /usr/local/sbin/twomc-giveaway-backup < /dev/null || { fail "бэкап не удался (в т.ч. мало места); миграции не применяются"; exit 1; }
+else
+  log "БД пуста (первая выкладка): бэкап не нужен"
 fi
 
 if [ "$SKIP_MIGRATE" != "1" ]; then
@@ -136,7 +143,7 @@ log "up api nginx"
 C "$DIR" "$SHA" up -d api nginx || { fail "up не удался"; rollback; exit 1; }
 if ! wait_healthy twomc-giveaway-api 120; then
   fail "api не стал healthy; последние строки лога (без секретов не гарантируются - смотрите осторожно):"
-  docker logs --tail=30 twomc-giveaway-api 2>&1 < /dev/null | sed -E 's/(PASSWORD|SECRET|KEY)=[^ ]*/\1=<скрыто>/g' >&2
+  docker logs --tail=30 twomc-giveaway-api 2>&1 < /dev/null | sed -E -e 's/(PASSWORD|SECRET|KEY)=[^ ]*/\1=<скрыто>/g' -e 's,(://[^/:@ ]+:)[^@ /]+@,\1<скрыто>@,g' >&2
   rollback; exit 1
 fi
 docker exec twomc-giveaway-nginx wget -qO- http://api:4000/health > /dev/null 2>&1 < /dev/null || { fail "nginx не достучался до api"; rollback; exit 1; }
@@ -162,7 +169,7 @@ if [ -n "$ROLLBACK_TO" ]; then
   [[ "$ROLLBACK_TO" =~ ^[0-9a-f]{7,40}$ ]] || { echo "--rollback-to: sha коммита" >&2; exit 2; }
   SHA="$ROLLBACK_TO"
   echo "Откат на $SHA на ${GIVEAWAY_VDS_HOST}"
-  [ "$DRY" -eq 1 ] && { echo "[dry-run] ssh ... bash -s rollback $SHA"; exit 0; }
+  if [ "$DRY" -eq 1 ]; then echo "[dry-run] ssh ... bash -s rollback $SHA"; exit 0; fi
   remote_script | "${SSH[@]}" bash -s -- rollback "$SHA" 0 "$BASE" "$DOMAIN"
   exit $?
 fi
