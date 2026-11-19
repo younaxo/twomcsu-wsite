@@ -3565,3 +3565,63 @@ model BridgeEventLog {
   @@index([receivedAt])
   @@map("bridge_event_log")
 }
+
+// ---------------------------------------------------------------------------
+// Розыгрыш «Анархия Новой Эры», фаза 1 (учёт времени). Подробно:
+// giveaway/docs/ADR-G001-session-time-counting.md. Связей с остальными
+// таблицами нет намеренно (expand-only, изолированный модуль).
+// ---------------------------------------------------------------------------
+
+/// Настройки розыгрыша (одна строка, id = "default"). Нет строки - значения
+/// по умолчанию из окружения (без seed). Время хранится в UTC.
+model GiveawaySettings {
+  id               String   @id @default("default") @db.VarChar(16)
+  thresholdMinutes Int
+  startAt          DateTime
+  cutoffAt         DateTime
+  timezone         String   @default("Europe/Moscow") @db.VarChar(48)
+  allowedServers   String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("giveaway_settings")
+}
+
+/// Игрок розыгрыша: последний известный ник (по самому позднему occurredAt).
+model GiveawayPlayer {
+  playerUuid  String   @id @db.VarChar(36)
+  lastName    String   @db.VarChar(16)
+  firstSeenAt DateTime
+  lastSeenAt  DateTime
+
+  @@map("giveaway_players")
+}
+
+/// Минута-корзина: одна запись на (игрок, минута UTC). Уникальность пары -
+/// идемпотентность и слияние пересечений между серверами. Итог игрока -
+/// число корзин в окне [startAt, cutoffAt].
+model GiveawayMinute {
+  playerUuid String   @db.VarChar(36)
+  minute     DateTime
+  serverSlug String   @db.VarChar(32)
+  receivedAt DateTime @default(now())
+
+  @@id([playerUuid, minute])
+  @@index([minute])
+  @@map("giveaway_minutes")
+}
+
+/// Журнал сессий (join/quit) с идемпотентностью по (сервер, eventId).
+model GiveawaySessionEvent {
+  id         String   @id @default(cuid())
+  serverSlug String   @db.VarChar(32)
+  eventId    String   @db.VarChar(36)
+  type       String   @db.VarChar(8)
+  playerUuid String   @db.VarChar(36)
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  @@unique([serverSlug, eventId])
+  @@index([playerUuid, occurredAt])
+  @@map("giveaway_session_events")
+}

@@ -358,6 +358,31 @@ export const envValidationSchema = Joi.object({
   BRIDGE_LOG_RETENTION_DAYS: Joi.number().integer().min(7).max(365),
   BRIDGE_LOG_CLEANUP_ENABLED: Joi.boolean(),
 
+  /// Розыгрыш «Анархия Новой Эры», фаза 1 (giveaway/docs/ADR-G001). Без
+  /// GIVEAWAY_ENABLED=true и GIVEAWAY_MASTER_SECRET приёмник отвечает 503.
+  /// Секрет не короче 32 байт; задаёт только владелец.
+  GIVEAWAY_ENABLED: Joi.boolean().default(false),
+  GIVEAWAY_MASTER_SECRET: Joi.string()
+    .allow('')
+    .custom((value: string, helpers) =>
+      value === '' || isStrongMasterSecret(Buffer.from(value, 'utf8'))
+        ? value
+        : helpers.error('string.min'),
+    )
+    .messages({
+      'string.min':
+        'GIVEAWAY_MASTER_SECRET: не короче 32 байт и не менее 16 различных байт',
+    })
+    .optional(),
+  GIVEAWAY_KEY_VERSION: Joi.number().integer().min(1).max(999_999),
+  GIVEAWAY_ACCEPT_PREVIOUS_KEY: Joi.boolean(),
+  GIVEAWAY_TIMESTAMP_WINDOW_S: Joi.number().integer().min(5).max(300),
+  GIVEAWAY_THRESHOLD_MINUTES: Joi.number().integer().min(1).max(1_000_000),
+  GIVEAWAY_START_AT: Joi.string().isoDate().allow(''),
+  GIVEAWAY_CUTOFF_AT: Joi.string().isoDate().allow(''),
+  /// Через запятую, формат id сервера: [a-z0-9-]{2,32}.
+  GIVEAWAY_ALLOWED_SERVERS: Joi.string().allow(''),
+
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по
   /// умолчанию даёт 2000/5000 мс, что под нагрузкой даёт P2028.
