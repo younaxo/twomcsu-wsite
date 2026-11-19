@@ -10,11 +10,11 @@
 - Бэкенд: `apps/api/src/modules/giveaway/` (модуль, выключен флагом `GIVEAWAY_ENABLED`).
 - Миграция: `apps/api/prisma/migrations/20261119120000_giveaway_phase1/` (expand-only, ждёт ревью; на production применяет владелец).
 - Утилита ключа сервера: `apps/api/scripts/giveaway-server-key.ts`.
-- Плагин: `giveaway/plugin` (см. раздел «Плагин» ниже). Мини-выкладка (docker compose, nginx) — отдельная работа, пока не добавлена.
+- Плагин: `giveaway/plugin` (см. раздел «Плагин» ниже). Мини-выкладка (docker compose, nginx, скрипты) — раздел «Мини-выкладка» ниже и `deploy/RUNBOOK.md`.
 
 ## Как запустить бэкенд
 
-Окружение: `GIVEAWAY_ENABLED=true`, `GIVEAWAY_MASTER_SECRET` (не короче 32 байт, задаёт владелец), `GIVEAWAY_ALLOWED_SERVERS=<id сервера>`. Остальные ключи `GIVEAWAY_*` необязательны (см. ADR). Без флага или секрета приёмник отвечает 503.
+Окружение: `GIVEAWAY_ENABLED=true`, `GIVEAWAY_MASTER_SECRET` (не короче 32 байт; на VDS его генерирует `deploy/setup-server.sh` на сервере: `openssl rand -hex 32` сразу в файл 0600, без вывода, по решению владельца 2026-11-19; локально - любое значение >= 32 байт), `GIVEAWAY_ALLOWED_SERVERS=<id сервера>`. Остальные ключи `GIVEAWAY_*` необязательны (см. ADR). Без флага или секрета приёмник отвечает 503.
 
 Ключ сервера для плагина (в файл, не в консоль):
 `GIVEAWAY_MASTER_SECRET=... npx ts-node scripts/giveaway-server-key.ts --server-id <id> --version 1 --out <файл>` (из `apps/api`).
@@ -82,6 +82,8 @@
 ## Мини-выкладка
 
 Конфигурация подготовлена в `giveaway/deploy/` (не запускалась): `docker-compose.yml` (postgres 16, redis 7 с паролем, api, nginx; порты БД/Redis/API наружу не публикуются, контейнеры с `no-new-privileges` и `cap_drop`, nginx и api не от root), `nginx/giveaway.conf` (HTTPS, 80 -> 443, только `/api/giveaway/` проксируется, остальное 404; заготовка SSE; тело `events` до 64 КБ), `secrets/*.env.example` (только плейсхолдеры), `RUNBOOK.md` (шаги владельца и агента, откат). Секреты - env-файлы вне репозитория (`/srv/twomc-giveaway/secrets/*.env`, 0600). Проверка синтаксиса: `GIVEAWAY_SECRETS_DIR=<каталог с копиями *.env.example> docker compose -f giveaway/deploy/docker-compose.yml config -q`.
+
+Скрипты выкладки (не запускались на сервере, проверены `bash -n`; подробности - `deploy/RUNBOOK.md`): `deploy/setup-server.sh` (первичная настройка VDS: пользователь без root и без sudo, ufw с портом sshd из sshd -T, fail2ban, отдельный шаг harden-ssh, UTC/NTP, Docker, каталоги, секреты на сервере без вывода, certbot-хуки, ежедневный бэкап 7+4), `deploy/deploy.sh` (выкладка коммита по ssh, миграции только на БД мини-выкладки, healthcheck, автооткат), `deploy/tools/` (`giveaway-key.sh` - ключ сервера игры, `sign-event.sh` - подписанное событие для curl, `e2e-giveaway.sh` - e2e конкурентности на одноразовой БД), `deploy/minecraft-test/` (тестовый MC 1.21.4 и 1.21.11 на том же VDS), `deploy/POST-DEPLOY-CHECKLIST.md` (проверки после выкладки).
 
 ### Режим «всё остальное выключено»
 

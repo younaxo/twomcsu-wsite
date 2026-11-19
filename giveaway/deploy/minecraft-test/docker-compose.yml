@@ -1,0 +1,64 @@
+# Тестовый Minecraft-сервер для проверки плагина розыгрыша на ТОМ ЖЕ VDS (не production-сервер игры).
+# Запуск и смена версии - minecraft-test/mc-test.sh (оболочка над этим файлом). Порядок и проверки - README.md рядом.
+#
+# Выбор: Paper через itzg/minecraft-server (скачивает готовую сборку, ~1 мин). Плагин использует только Bukkit/Spigot API
+# (compileOnly spigot-api), Paper его реализует. Настоящий Spigot через BuildTools тяжелее (компиляция, >1.5 ГБ ОЗУ, 10+ мин)
+# и на этот VDS не рекомендуется; при необходимости - MC_TYPE=SPIGOT (README, раздел «Spigot вместо Paper»).
+# Образ закрепить по digest перед использованием (как в RUNBOOK п.4), тег ниже - для подготовки.
+#
+# Безопасность: online-mode=true (ONLINE_MODE=TRUE), RCON выключен, порт по умолчанию привязан к 127.0.0.1
+# (Docker обходит ufw!). Наружу - только MC_BIND=0.0.0.0 на время теста. Игровой трафик через Cloudflare не проксировать (Q14).
+name: twomc-giveaway-mctest
+
+services:
+  mc:
+    image: itzg/minecraft-server:java21
+    container_name: twomc-giveaway-mctest
+    restart: "no"
+    mem_limit: 1536m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Образ itzg стартует от root, меняет владельца /data и затем понижает права до UID/GID (gosu) - без этих capabilities
+    # он не запустится при cap_drop ALL. После понижения процесс сервера capabilities не имеет. Минимальный набор:
+    #   CHOWN (chown /data), SETUID/SETGID (переход на UID/GID), DAC_OVERRIDE (root читает/пишет файлы пользователя gw).
+    # Если в логе будут ошибки chmod на чужих файлах - добавить FOWNER осознанно, не раньше.
+    # Альтернатива без cap_add: запуск целиком от gw (`user: "${MC_UID}:${MC_GID}"`, документация itzg «run as non-root user»).
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      # Лицензию Mojang принимает человек: MC_EULA=TRUE задаёт оператор в minecraft-test/mc.env (см. README).
+      EULA: "${MC_EULA:?задайте MC_EULA=TRUE в mc.env после ознакомления с https://aka.ms/MinecraftEULA}"
+      TYPE: "${MC_TYPE:-PAPER}"
+      VERSION: "${MC_VERSION:?задайте MC_VERSION (1.21.4 или 1.21.11)}"
+      MEMORY: "1G"
+      UID: "${MC_UID:-1000}"
+      GID: "${MC_GID:-1000}"
+      ONLINE_MODE: "TRUE"
+      ENABLE_RCON: "false"
+      ENABLE_QUERY: "false"
+      MAX_PLAYERS: "5"
+      VIEW_DISTANCE: "6"
+      SIMULATION_DISTANCE: "4"
+      MOTD: "TwoMC giveaway test"
+      # Плагин розыгрыша читает это из окружения (giveaway/plugin/src/main/resources/config.yml).
+      GIVEAWAY_API_URL: "https://${GIVEAWAY_DOMAIN:-giveaway.twomc.su}"
+      GIVEAWAY_SERVER_ID: "mc-test"
+      GIVEAWAY_KEY_VERSION: "1"
+      GIVEAWAY_KEY_FILE: "/keys/mc-test.v1.key"
+    ports:
+      - "${MC_BIND:-127.0.0.1}:${MC_PORT:-25565}:25565"
+    # Домен розыгрыша указывает на этот же хост: идём на nginx через шлюз Docker (не зависит от DNS и hairpin NAT).
+    extra_hosts:
+      - "${GIVEAWAY_DOMAIN:-giveaway.twomc.su}:host-gateway"
+    volumes:
+      # Данные - отдельный каталог на версию: мир нельзя откатывать с 1.21.11 на 1.21.4.
+      - ${MC_BASE:-/srv/twomc-giveaway/mc}/data-${MC_VERSION}:/data
+      - ${MC_BASE:-/srv/twomc-giveaway/mc}/plugins:/plugins:ro
+      # Ключ ТОЛЬКО этого сервера (mc-test), один файл (выдаёт tools/giveaway-key.sh; 0600 gw): другие ключи каталога keys
+      # в контейнер не попадают. Файл должен существовать до up (mc-test.sh проверяет), иначе Docker создаст каталог.
+      - ${GIVEAWAY_MC_KEY_FILE:-/srv/twomc-giveaway/keys/mc-test.v1.key}:/keys/mc-test.v1.key:ro
