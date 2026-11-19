@@ -14,6 +14,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/cn';
 import {
   formatCode,
@@ -30,7 +31,6 @@ import { TicketCard } from './ticket-card';
 import type { GiveawayApi, GiveawayErrorKind, GiveawayPublicInfo } from './types';
 import { useGiveaway, type CodeView } from './use-giveaway';
 
-const SITE_HREF = 'https://twomc.su';
 const GAME_COMMAND = '/giveaway';
 
 const focusRing =
@@ -152,19 +152,19 @@ function BeforeStart({ info }: { info: GiveawayPublicInfo }) {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!copied) return;
     const id = setTimeout(() => setCopied(false), 2000);
     return () => clearTimeout(id);
   }, [copied]);
+  // Сообщения о результате - общий toast сайта (его live-регион озвучивает их).
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(text);
-      setFailed(false);
       setCopied(true);
+      toast.success('Код скопирован');
     } catch {
-      setFailed(true);
+      toast.error('Не удалось скопировать', { description: 'Выделите код вручную.' });
     }
   };
   return (
@@ -180,26 +180,16 @@ function CopyButton({ text }: { text: string }) {
         {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
         {copied ? 'Скопировано' : 'Скопировать'}
       </button>
-      <span role="status" aria-live="polite" className="sr-only">
-        {copied ? 'Код скопирован' : failed ? 'Не удалось скопировать, выделите код вручную' : ''}
-      </span>
-      {failed ? (
-        <span className="text-sm text-destructive">
-          Не удалось скопировать: выделите код вручную.
-        </span>
-      ) : null}
     </>
   );
 }
 
 function PendingCode({
   view,
-  pollIssue,
   onNew,
   thresholdHours,
 }: {
   view: Extract<CodeView, { kind: 'pending' }>;
-  pollIssue: GiveawayErrorKind | null;
   onNew: () => void;
   thresholdHours: number;
 }) {
@@ -268,13 +258,6 @@ function PendingCode({
         <Loader2 aria-hidden="true" className="size-4 motion-safe:animate-spin" />
         Ждём, пока вы введёте код в игре. Страница обновится сама.
       </p>
-      {pollIssue ? (
-        <p className="text-center text-sm text-warning" data-testid="poll-issue">
-          {pollIssue === 'rate_limited'
-            ? 'Проверка идёт реже обычного: слишком много запросов.'
-            : 'Нет связи, пробуем снова…'}
-        </p>
-      ) : null}
       <p className="max-w-prose text-center text-xs text-muted-foreground">
         Если на сервере наиграно меньше {thresholdHours} {pluralHours(thresholdHours)}, игра
         покажет, сколько осталось.
@@ -290,23 +273,14 @@ function PendingCode({
 function Running({
   info,
   view,
-  pollIssue,
   issue,
 }: {
   info: GiveawayPublicInfo;
   view: CodeView;
-  pollIssue: GiveawayErrorKind | null;
   issue: () => void;
 }) {
   if (view.kind === 'pending') {
-    return (
-      <PendingCode
-        view={view}
-        pollIssue={pollIssue}
-        onNew={issue}
-        thresholdHours={info.thresholdHours}
-      />
-    );
+    return <PendingCode view={view} onNew={issue} thresholdHours={info.thresholdHours} />;
   }
   if (view.kind === 'ticket') {
     return (
@@ -342,15 +316,6 @@ function Running({
           Участие бесплатное.
         </p>
       )}
-      {view.kind === 'error' ? (
-        <p
-          role="alert"
-          className="flex w-full max-w-md items-start gap-3 rounded-lg border border-destructive/50 bg-destructive-soft p-4 text-sm text-foreground"
-        >
-          <AlertTriangle aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-destructive" />
-          {errorText(view.error, view.retryAfterSeconds)}
-        </p>
-      ) : null}
       <ActionButton onClick={issue} loading={busy}>
         {view.kind === 'expired' || view.kind === 'error' ? 'Получить код снова' : 'Получить код'}
       </ActionButton>
@@ -393,6 +358,48 @@ function announcement(view: CodeView): string {
   }
 }
 
+type UseGiveawayResult = ReturnType<typeof useGiveaway>;
+
+/// Сообщения об ошибках (429, 503, сеть) - только через общий toast сайта.
+/// Один toast на состояние ошибки (повторы не дублируются, id фиксирован).
+function useGiveawayToasts(
+  info: UseGiveawayResult['info'],
+  view: CodeView,
+  pollIssue: GiveawayErrorKind | null,
+  issue: () => void,
+  reload: () => void,
+) {
+  const loadError = info.kind === 'error' ? info.error : null;
+  useEffect(() => {
+    if (!loadError) return;
+    toast.error('Не удалось загрузить розыгрыш', {
+      id: 'giveaway-load',
+      description: errorText(loadError, null),
+      action: { label: 'Повторить', onClick: reload },
+    });
+  }, [loadError, reload]);
+
+  const issueError = view.kind === 'error' ? view : null;
+  useEffect(() => {
+    if (!issueError) return;
+    toast.error('Не удалось получить код', {
+      id: 'giveaway-issue',
+      description: errorText(issueError.error, issueError.retryAfterSeconds),
+      action: { label: 'Повторить', onClick: issue },
+    });
+  }, [issueError, issue]);
+
+  useEffect(() => {
+    if (!pollIssue) return;
+    toast.warning(
+      pollIssue === 'rate_limited'
+        ? 'Проверка идёт реже обычного: слишком много запросов'
+        : 'Нет связи, пробуем снова…',
+      { id: 'giveaway-poll' },
+    );
+  }, [pollIssue]);
+}
+
 export interface GiveawayPageProps {
   api: GiveawayApi;
   autoIssue?: boolean;
@@ -401,75 +408,63 @@ export interface GiveawayPageProps {
 /// Страница розыгрыша: все состояния. Данные - только через переданный `api`.
 export function GiveawayPage({ api, autoIssue = false }: GiveawayPageProps) {
   const { info, view, pollIssue, issue, reload } = useGiveaway(api, { autoIssue });
+  useGiveawayToasts(info, view, pollIssue, issue, reload);
   return (
-    <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between gap-3 px-4">
-          <a
-            href={SITE_HREF}
-            aria-label="twomc.su — на главный сайт"
-            className={cn('rounded-sm text-xl font-bold tracking-tight', focusRing)}
+    <main
+      id="main"
+      className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:py-12"
+    >
+      <div className="text-center">
+        <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
+          Розыгрыш на «Анархии Новой Эры»
+        </h1>
+      </div>
+      <div
+        className="rounded-xl border border-border bg-surface p-5 shadow sm:p-8"
+        data-testid="giveaway-card"
+      >
+        {info.kind === 'loading' ? (
+          <p
+            role="status"
+            className="flex items-center justify-center gap-2 py-10 text-muted-foreground"
           >
-            tw<span className="text-primary">o</span>mc.su
-          </a>
-          <span className="text-sm text-muted-foreground">Розыгрыш</span>
-        </div>
-      </header>
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:py-12">
-        <div className="text-center">
-          <h1 className="text-balance text-3xl font-bold tracking-tight sm:text-4xl">
-            Розыгрыш на «Анархии Новой Эры»
-          </h1>
-        </div>
-        <div
-          className="rounded-xl border border-border bg-surface p-5 shadow sm:p-8"
-          data-testid="giveaway-card"
-        >
-          {info.kind === 'loading' ? (
-            <p
-              role="status"
-              className="flex items-center justify-center gap-2 py-10 text-muted-foreground"
-            >
-              <Loader2 aria-hidden="true" className="size-5 animate-spin" />
-              Загружаем…
-            </p>
-          ) : info.kind === 'error' ? (
-            <section className="flex flex-col items-center gap-5 py-4" aria-labelledby="gw-state">
-              <AlertTriangle aria-hidden="true" className="size-10 text-destructive" />
-              <StateHeading id="load-error">
-                <span id="gw-state">Не удалось загрузить розыгрыш</span>
-              </StateHeading>
-              <p role="alert" className="text-center text-muted-foreground">
-                {errorText(info.error, null)}
-              </p>
-              <ActionButton onClick={reload}>
-                <RefreshCw aria-hidden="true" />
-                Повторить
-              </ActionButton>
-            </section>
-          ) : info.info.status === 'before' ? (
-            <BeforeStart info={info.info} />
-          ) : info.info.status === 'finished' ? (
-            <Finished view={view} />
-          ) : (
-            <Running info={info.info} view={view} pollIssue={pollIssue} issue={issue} />
-          )}
-        </div>
-        {info.kind === 'ready' ? (
-          <p className="text-center text-sm text-muted-foreground" data-testid="giveaway-dates">
-            {formatMsk(info.info.startAtUtc)} — {formatMsk(info.info.cutoffAtUtc)}
-            {info.info.status === 'running' ? (
-              <>
-                {' '}
-                · Билетов выдано: <span className="tabular-nums">{info.info.ticketsIssued}</span>
-              </>
-            ) : null}
+            <Loader2 aria-hidden="true" className="size-5 animate-spin" />
+            Загружаем…
           </p>
-        ) : null}
-        <div role="status" aria-live="polite" className="sr-only">
-          {announcement(view)}
-        </div>
-      </main>
-    </div>
+        ) : info.kind === 'error' ? (
+          <section className="flex flex-col items-center gap-5 py-4" aria-labelledby="gw-state">
+            <AlertTriangle aria-hidden="true" className="size-10 text-destructive" />
+            <StateHeading id="load-error">
+              <span id="gw-state">Не удалось загрузить розыгрыш</span>
+            </StateHeading>
+            <p className="text-center text-muted-foreground">{errorText(info.error, null)}</p>
+            <ActionButton onClick={reload}>
+              <RefreshCw aria-hidden="true" />
+              Повторить
+            </ActionButton>
+          </section>
+        ) : info.info.status === 'before' ? (
+          <BeforeStart info={info.info} />
+        ) : info.info.status === 'finished' ? (
+          <Finished view={view} />
+        ) : (
+          <Running info={info.info} view={view} issue={issue} />
+        )}
+      </div>
+      {info.kind === 'ready' ? (
+        <p className="text-center text-sm text-muted-foreground" data-testid="giveaway-dates">
+          {formatMsk(info.info.startAtUtc)} — {formatMsk(info.info.cutoffAtUtc)}
+          {info.info.status === 'running' ? (
+            <>
+              {' '}
+              · Билетов выдано: <span className="tabular-nums">{info.info.ticketsIssued}</span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement(view)}
+      </div>
+    </main>
   );
 }

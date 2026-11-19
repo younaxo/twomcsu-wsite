@@ -6,6 +6,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { STATUS_PAGE_URL } from '@/lib/site/config';
 import { useServersOverview } from '@/lib/site/hooks';
+import { resolveShellHref, useShellMode } from '@/lib/site/shell-mode';
 
 export type ServiceHealth = 'operational' | 'degraded' | 'outage' | 'unknown';
 
@@ -41,8 +42,10 @@ const HEALTH: Record<ServiceHealth, { label: string; dot: string }> = {
 /// пока URL не задан — внутренний /status).
 export function ServerStatusButton({ className }: { className?: string }) {
   const overview = useServersOverview();
+  const { mainSiteUrl } = useShellMode();
+  const statusHref = resolveShellHref(mainSiteUrl, STATUS_PAGE_URL);
   const health = overviewHealth(overview.data, overview.isError);
-  const external = /^https?:\/\//.test(STATUS_PAGE_URL);
+  const external = /^https?:\/\//.test(statusHref);
   const content = (
     <>
       <span aria-hidden className={cn('size-2 rounded-full', HEALTH[health].dot)} />
@@ -58,7 +61,7 @@ export function ServerStatusButton({ className }: { className?: string }) {
     <Tooltip content={HEALTH[health].label}>
       {external ? (
         <a
-          href={STATUS_PAGE_URL}
+          href={statusHref}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Статус серверов: ${HEALTH[health].label}`}
@@ -69,7 +72,7 @@ export function ServerStatusButton({ className }: { className?: string }) {
         </a>
       ) : (
         <Link
-          href={STATUS_PAGE_URL}
+          href={statusHref}
           aria-label={`Статус серверов: ${HEALTH[health].label}`}
           data-health={health}
           className={classes}

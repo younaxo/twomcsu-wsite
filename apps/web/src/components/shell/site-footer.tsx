@@ -21,6 +21,7 @@ import {
   type FooterLink,
 } from '@/lib/site/config';
 import { usePublicSiteSettings } from '@/lib/site/hooks';
+import { resolveShellHref, useShellMode } from '@/lib/site/shell-mode';
 import { BrandIcon } from './brand-icon';
 import { LocalePopover } from './locale-popover';
 import { PaymentMethodLogos } from './payment-method-logos';
@@ -28,6 +29,7 @@ import { ServerStatusButton } from './server-status-button';
 import { SiteLogo } from './site-logo';
 
 function FooterLinkItem({ link }: { link: FooterLink }) {
+  const { mainSiteUrl } = useShellMode();
   if (!link.available) {
     return (
       <span className="inline-flex items-center gap-1 text-muted-foreground/70">
@@ -48,6 +50,16 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
       >
         {link.label}
         <ExternalLink aria-hidden className="size-3.5" />
+      </a>
+    );
+  }
+  if (mainSiteUrl !== null) {
+    return (
+      <a
+        href={resolveShellHref(mainSiteUrl, link.href)}
+        className="text-muted-foreground hover:text-foreground"
+      >
+        {link.label}
       </a>
     );
   }

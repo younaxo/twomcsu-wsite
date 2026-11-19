@@ -1,14 +1,15 @@
 'use client';
 
-import { Menu } from 'lucide-react';
+import { LogIn, Menu } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-import { IconButton } from '@/components/ui/button';
+import { Button, IconButton } from '@/components/ui/button';
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/cn';
 import { isSiteNavActive, SITE_NAVIGATION } from '@/lib/site/config';
 import { useAuthStore } from '@/lib/auth/store';
+import { resolveShellHref, useShellMode } from '@/lib/site/shell-mode';
 import { GlobalAlertBar } from './global-alert-bar';
 import { NotificationsPopover } from './notifications-popover';
 import { OnlineCounter } from './sidebar-rail';
@@ -20,26 +21,39 @@ const HEADER_ITEMS = SITE_NAVIGATION.filter((item) => item.header);
 
 function HeaderNav({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const { mainSiteUrl } = useShellMode();
   return (
     <nav aria-label="Основная навигация" className={className}>
       <ul className="flex flex-col gap-1 lg:flex-row lg:items-center">
         {HEADER_ITEMS.map((item) => {
-          const active = isSiteNavActive(item, pathname);
+          // На сайте розыгрыша ссылки ведут на основной сайт: активного пункта нет.
+          const active = mainSiteUrl === null && isSiteNavActive(item, pathname);
+          const itemClassName = cn(
+            'relative flex h-10 items-center rounded px-3 text-sm font-medium transition-colors duration-fast',
+            active
+              ? 'bg-primary-soft text-primary-soft-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          );
           return (
             <li key={item.href}>
-              <Link
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                onClick={onNavigate}
-                className={cn(
-                  'relative flex h-10 items-center rounded px-3 text-sm font-medium transition-colors duration-fast',
-                  active
-                    ? 'bg-primary-soft text-primary-soft-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                )}
-              >
-                {item.label}
-              </Link>
+              {mainSiteUrl !== null ? (
+                <a
+                  href={resolveShellHref(mainSiteUrl, item.href)}
+                  onClick={onNavigate}
+                  className={itemClassName}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={onNavigate}
+                  className={itemClassName}
+                >
+                  {item.label}
+                </Link>
+              )}
             </li>
           );
         })}
@@ -55,6 +69,7 @@ function HeaderNav({ className, onNavigate }: { className?: string; onNavigate?:
 /// На узких экранах навигация уезжает в sheet.
 export function SiteHeader({ className }: { className?: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { mainSiteUrl } = useShellMode();
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
 
   return (
@@ -80,11 +95,24 @@ export function SiteHeader({ className }: { className?: string }) {
         <div className="ml-auto flex items-center gap-1 lg:ml-0">
           {/* На самых узких телефонах (360 px) счётчик онлайна не помещается рядом
               с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
-          <div className="lg:hidden max-[379px]:hidden">
-            <OnlineCounter compact />
-          </div>
-          {authenticated ? <NotificationsPopover /> : null}
-          <ProfileMenu />
+          {mainSiteUrl !== null ? (
+            // Сайт розыгрыша: онлайн, уведомления и профиль требуют API основного
+            // сайта — только вход на основном сайте.
+            <Button asChild size="sm" variant="secondary">
+              <a href={resolveShellHref(mainSiteUrl, '/login')}>
+                <LogIn />
+                Войти
+              </a>
+            </Button>
+          ) : (
+            <>
+              <div className="lg:hidden max-[379px]:hidden">
+                <OnlineCounter compact />
+              </div>
+              {authenticated ? <NotificationsPopover /> : null}
+              <ProfileMenu />
+            </>
+          )}
         </div>
       </div>
       {/* HeaderStack: плашка — часть sticky-шапки и двигается вместе с ней. */}

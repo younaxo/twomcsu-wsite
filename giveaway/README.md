@@ -58,7 +58,9 @@
 
 ## Страница
 
-Маршрут `/giveaway` в `apps/web` (`src/app/giveaway/page.tsx`), код — `apps/web/src/features/giveaway/`. Страница клиентская: ходит только на `/api/giveaway/v1/{public,codes,codes/status}` того же домена (`credentials: same-origin`, cookie `gw_session`), к API сайта не обращается. Все даты — по МСК (`Intl`, `Europe/Moscow`), логотип ведёт на `https://twomc.su`.
+Маршрут `/giveaway` в `apps/web` (`src/app/giveaway/page.tsx`), код — `apps/web/src/features/giveaway/`. Страница клиентская: ходит только на `/api/giveaway/v1/{public,codes,codes/status}` того же домена (`credentials: same-origin`, cookie `gw_session`), к API сайта не обращается. Все даты — по МСК (`Intl`, `Europe/Moscow`).
+
+Каркас: шапка и футер — те же компоненты, что на основном сайте (`components/shell/site-header.tsx`, `site-footer.tsx`), тема и токены общие, сообщения (429/503/сеть, копирование кода) — общий toast (`components/ui/toast`, кнопка «Повторить»). Внешний режим включает `ShellModeProvider` (`lib/site/shell-mode.tsx`), когда на сервере `GIVEAWAY_ONLY=true`: ссылки шапки и футера абсолютные на `MAIN_SITE_URL` (env сервера, по умолчанию `https://twomc.su`; «Войти» → `/login` основного сайта, логотип → корень), «o» в «twomc.su» без оранжевого, блоки футера, которым нужен API основного сайта («Статус серверов», соцсети из настроек), без запросов (пустое состояние/значения по умолчанию). Без `GIVEAWAY_ONLY` каркас не меняется.
 
 Состояния: до старта (обратный отсчёт), идёт, код выдан и ожидание ввода в игре (опрос `codes/status` раз в 2,5 с только пока код pending и вкладка видима, таймер жизни кода, «Скопировать», «Новый код»), анимация перебора символов и итоговый билет с ником (при `prefers-reduced-motion` сразу билет), «билет уже получен», ошибки (429, 503, сеть, код истёк), розыгрыш завершён. При pending `codes/status` может содержать `lastAttempt: {result:"not_enough", minutes, remainingMinutes, thresholdMinutes}`: страница показывает «Время ещё не набрано: X ч Y мин из 50 ч, осталось …», код остаётся действующим, поллинг продолжается.
 
