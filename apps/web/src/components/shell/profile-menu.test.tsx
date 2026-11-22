@@ -198,11 +198,15 @@ describe('Mini profile в header (ADR-0088)', () => {
       'Друзья3',
       'Сообщения',
       'Обращения',
+      'Избранное',
       'Заказы',
       'Выйти',
     ]);
-    // «Избранное» скрыто (Q67), «Заказы» — рабочая ссылка на список заказов.
-    expect(within(menu).queryByRole('menuitem', { name: /Избранное/ })).toBeNull();
+    // «Избранное» и «Заказы» — рабочие ссылки на разделы магазина.
+    expect(within(menu).getByRole('menuitem', { name: 'Избранное' })).toHaveAttribute(
+      'href',
+      '/shop/wishlist',
+    );
     expect(within(menu).getByRole('menuitem', { name: 'Заказы' })).toHaveAttribute(
       'href',
       '/shop/orders',
@@ -389,7 +393,10 @@ describe('Mini profile в header (ADR-0088)', () => {
       'href',
       '/messages',
     );
-    expect(within(nav).queryByRole('button', { name: /Избранное/ })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Избранное' })).toHaveAttribute(
+      'href',
+      '/shop/wishlist',
+    );
     expect(within(nav).getByRole('link', { name: 'Заказы' })).toHaveAttribute(
       'href',
       '/shop/orders',

@@ -82,10 +82,11 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/users',
         label: 'Пользователи',
         icon: 'users',
-        requirement: ['users.view', 'media_requests.view'],
-        keywords: ['игроки', 'аккаунты', 'бан', 'медиа', 'ютуб', 'стример'],
+        requirement: ['users.view', 'media_requests.view', 'users.punishments'],
+        keywords: ['игроки', 'аккаунты', 'бан', 'наказания', 'мут', 'медиа', 'ютуб', 'стример'],
         sections: [
           { href: '/admin/users', label: 'Пользователи', requirement: 'users.view' },
+          { href: '/admin/punishments', label: 'Наказания', requirement: 'users.punishments' },
           {
             href: '/admin/media-requests',
             label: 'Медиа-заявки',
@@ -161,8 +162,29 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/reports',
         label: 'Обращения',
         icon: 'scroll',
-        requirement: 'reports.view',
-        keywords: ['жалобы', 'тикеты', 'обжалования', 'поддержка'],
+        requirement: ['reports.view', 'comment_reports.view', 'profile_reports.view'],
+        keywords: [
+          'жалобы',
+          'тикеты',
+          'обжалования',
+          'поддержка',
+          'комментарии',
+          'профили',
+          'модерация',
+        ],
+        sections: [
+          { href: '/admin/reports', label: 'Обращения', requirement: 'reports.view' },
+          {
+            href: '/admin/moderation/comments',
+            label: 'Жалобы на комментарии',
+            requirement: 'comment_reports.view',
+          },
+          {
+            href: '/admin/moderation/profiles',
+            label: 'Жалобы на профили',
+            requirement: 'profile_reports.view',
+          },
+        ],
       },
     ],
   },
@@ -263,6 +285,17 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         keywords: ['системное', 'сообщение', 'рассылка', 'написать', 'twomc.su'],
       },
       {
+        href: '/admin/notifications',
+        label: 'Уведомления',
+        icon: 'mail',
+        requirement: [
+          'notifications.broadcast',
+          'notifications.webhooks.view',
+          'notifications.stats.view',
+        ],
+        keywords: ['уведомления', 'рассылка', 'вебхук', 'discord', 'push'],
+      },
+      {
         href: '/admin/announcements',
         label: 'Объявления',
         icon: 'megaphone',
@@ -292,8 +325,16 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/servers',
         label: 'Серверы',
         icon: 'database',
-        requirement: 'servers.view',
-        keywords: ['minecraft', 'статус', 'адрес', 'порт', 'игровые'],
+        requirement: ['servers.view', 'server_categories.view'],
+        keywords: ['minecraft', 'статус', 'адрес', 'порт', 'игровые', 'категории'],
+        sections: [
+          { href: '/admin/servers', label: 'Серверы', requirement: 'servers.view' },
+          {
+            href: '/admin/server-categories',
+            label: 'Категории',
+            requirement: 'server_categories.view',
+          },
+        ],
       },
       {
         href: '/admin/system',

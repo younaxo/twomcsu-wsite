@@ -1,6 +1,7 @@
 'use client';
 
 import { RefreshCw } from 'lucide-react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/admin/page-header';
 import { QueryBoundary } from '@/components/admin/query-boundary';
 import { StatusBadge } from '@/components/ui/badge';
@@ -50,10 +51,17 @@ function ServersPageContent() {
                   server.maxPlayers > 0 ? (server.playerCount / server.maxPlayers) * 100 : 0;
                 return (
                   <li key={server.id}>
-                    <Card className="flex h-full flex-col gap-3">
+                    <Card className="relative flex h-full flex-col gap-3 transition-colors hover:border-border-strong">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <h2 className="truncate text-lg font-semibold">{server.name}</h2>
+                          <h2 className="truncate text-lg font-semibold">
+                            <Link
+                              href={`/servers/${encodeURIComponent(server.slug)}`}
+                              className="rounded-sm outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-background"
+                            >
+                              {server.name}
+                            </Link>
+                          </h2>
                           {server.motd ? (
                             <p className="truncate text-sm text-muted-foreground">{server.motd}</p>
                           ) : null}
