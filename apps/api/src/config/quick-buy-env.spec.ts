@@ -62,3 +62,33 @@ describe('envValidationSchema QUICK_BUY_ENABLED (0.5, ADR-0186 Р5)', () => {
     expect(value.QUICK_BUY_ENABLED).toBe(false);
   });
 });
+
+describe('envValidationSchema UNPUNISH_ENABLED (0.12b, ADR-0190)', () => {
+  it('в test включён по умолчанию', () => {
+    const { error, value } = validate({
+      ...common,
+      NODE_ENV: 'test',
+      TURNSTILE_DISABLED: 'true',
+    });
+    expect(error).toBeUndefined();
+    expect(value.UNPUNISH_ENABLED).toBe(true);
+  });
+
+  it('в production и при пустом NODE_ENV выключен', () => {
+    expect(
+      validate({ ...productionSet, NODE_ENV: 'production' }).value
+        .UNPUNISH_ENABLED,
+    ).toBe(false);
+    expect(validate({ ...productionSet }).value.UNPUNISH_ENABLED).toBe(false);
+  });
+
+  it('в production включается только явным true', () => {
+    expect(
+      validate({
+        ...productionSet,
+        NODE_ENV: 'production',
+        UNPUNISH_ENABLED: 'true',
+      }).value.UNPUNISH_ENABLED,
+    ).toBe(true);
+  });
+});

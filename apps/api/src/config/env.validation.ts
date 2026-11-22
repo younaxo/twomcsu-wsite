@@ -409,6 +409,15 @@ const envBaseKeys: Joi.PartialSchemaMap = {
     then: Joi.boolean().default(true),
     otherwise: Joi.boolean().default(false),
   }),
+  /// Платное снятие бана и мута (0.12b, ADR-0190): аварийный выключатель. В dev/test
+  /// по умолчанию включён, в production (и при пустом/неизвестном NODE_ENV)
+  /// выключен, пока владелец не включит явно. Работает вместе с настройкой
+  /// `punishments.paidRemoval` (пустые правила = товар не оформляется).
+  UNPUNISH_ENABLED: Joi.boolean().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.boolean().default(true),
+    otherwise: Joi.boolean().default(false),
+  }),
   /// Жёсткий аварийный запрет выдачи купленного (0.7, ADR-0184 Р10, Q80): явный
   /// false выключает доставку независимо от настройки сайта
   /// `store.delivery.enabled`. Без значения решает настройка (по умолчанию выкл.).

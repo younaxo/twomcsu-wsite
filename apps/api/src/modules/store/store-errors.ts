@@ -76,6 +76,12 @@ export const StoreCheckoutError = {
   NICK_UNAVAILABLE: 'nick_unavailable',
   PAYMENT_UNAVAILABLE: 'payment_unavailable',
   QUICK_BUY_DISABLED: 'quick_buy_disabled',
+  /// Товар недоступен без входа (личный, уникальный, валюта): причина не раскрывается (ADR-0186 Р6).
+  LOGIN_REQUIRED: 'login_required',
+  /// Платное снятие наказаний не настроено или выключено (0.12b): не зависит от ника.
+  PAID_REMOVAL_UNAVAILABLE: 'paid_removal_unavailable',
+  /// Снятие наказания продаётся только по одной штуке на позицию.
+  PAID_REMOVAL_SINGLE_ONLY: 'paid_removal_single_only',
 } as const;
 
 export type StoreCheckoutErrorCode =
@@ -99,5 +105,19 @@ export function quickBuyDisabled() {
   return new ForbiddenException({
     code: StoreCheckoutError.QUICK_BUY_DISABLED,
     message: 'Покупка без входа сейчас недоступна — войдите в аккаунт',
+  });
+}
+
+export function loginRequired() {
+  return new ForbiddenException({
+    code: StoreCheckoutError.LOGIN_REQUIRED,
+    message: 'Этот товар можно купить только после входа в аккаунт',
+  });
+}
+
+export function paidRemovalUnavailable() {
+  return new ServiceUnavailableException({
+    code: StoreCheckoutError.PAID_REMOVAL_UNAVAILABLE,
+    message: 'Снятие наказания за покупку сейчас недоступно',
   });
 }

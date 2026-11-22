@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Header,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -12,6 +14,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { GuestOrderLookupDto } from './dto/guest-order-lookup.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
 import { Throttle } from '@nestjs/throttler';
@@ -37,6 +40,18 @@ export class StoreExtrasController {
   @Post('quick-buy')
   async quickBuy(@Body() dto: QuickBuyDto) {
     return this.orders.quickBuy(dto);
+  }
+
+  /// Страница заказа без входа (0.12a, ADR-0190): токен в теле, ответ без кэша и
+  /// без Referer. Лимит 60/мин на IP (ADR-0186 п. 4); перебор 128-битного токена
+  /// невозможен, лимит защищает от нагрузки.
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  @Header('Referrer-Policy', 'no-referrer')
+  @Post('orders/guest/lookup')
+  async guestOrder(@Body() dto: GuestOrderLookupDto) {
+    return this.orders.getByGuestToken(dto.token);
   }
 }
 
