@@ -31,6 +31,27 @@ export function formatDocumentTitle(count: number, base: string = SITE_NAME): st
   return count > 0 ? `(${formatBadgeCount(count)}) ${base}` : base;
 }
 
+const BADGE_PREFIX = /^(d++?)s+/;
+
+/// Приводит текущий title к итоговому виду, СОХРАНЯЯ заголовок страницы
+/// (из metadata или PageTitle): снимает старый «(N) », для админки заменяет
+/// хвост «twomc.su» на базу с уровнем доступа (`… — twomc.su | A [L]`),
+/// добавляет «(N) » при unread. Пустой title — просто база.
+export function composeDocumentTitle(
+  current: string,
+  count: number,
+  base: string = SITE_NAME,
+): string {
+  let page = current.replace(BADGE_PREFIX, '').trim();
+  // Суффикс админки не должен «залипать» после перехода на публичную страницу.
+  if (base === SITE_NAME) page = page.replace(/ | A [d+]$/, '');
+  if (!page) page = base;
+  else if (base !== SITE_NAME && page.endsWith(SITE_NAME) && !page.endsWith(base)) {
+    page = page.slice(0, -SITE_NAME.length) + base;
+  }
+  return formatDocumentTitle(count, page);
+}
+
 /// Базовый title админ-панели: `twomc.su | A [N]`, где N — уровень доступа
 /// пользователя (ADR-0062) из GET /auth/me. Это НЕ priority роли и не
 /// количество permissions; без загруженного пользователя — просто `twomc.su`.
@@ -161,8 +182,17 @@ export function useDocumentBadgeFor(
   routeKey?: string,
 ): void {
   useEffect(() => {
-    document.title = formatDocumentTitle(count, baseTitle);
+    const apply = () => {
+      const next = composeDocumentTitle(document.title, count, baseTitle);
+      if (document.title !== next) document.title = next;
+    };
+    apply();
     void applyFavicon(count);
+    // Next и PageTitle меняют title после навигации/загрузки данных —
+    // переприменяем бейдж, не теряя заголовок страницы.
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
   }, [count, baseTitle, routeKey]);
 }
 

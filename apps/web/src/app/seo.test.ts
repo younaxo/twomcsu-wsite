@@ -52,7 +52,7 @@ describe('SEO (срез 8.4)', () => {
     expect(meta.keywords).toBeUndefined();
   });
 
-  it('метаданные из настроек сайта; вкладка — всегда «twomc.su»', async () => {
+  it('метаданные из настроек сайта; шаблон вкладки «Раздел — twomc.su»', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() =>
@@ -62,7 +62,7 @@ describe('SEO (срез 8.4)', () => {
       ),
     );
     const meta = await generateMetadata();
-    expect(meta.title).toEqual({ default: 'twomc.su', template: 'twomc.su' });
+    expect(meta.title).toEqual({ default: 'twomc.su', template: '%s — twomc.su' });
     expect(meta.description).toBe('Описание');
     expect(meta.keywords).toEqual(['minecraft']);
     expect(meta.openGraph?.title).toBe('twomc.su — сервер');

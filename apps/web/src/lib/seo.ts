@@ -22,3 +22,13 @@ export interface PublicSiteMeta {
 
 export const DEFAULT_DESCRIPTION =
   'twomc.su — Minecraft-проект с собственными серверами, уникальными механиками, магазином и живым сообществом.';
+
+/// Заголовок записи по slug для `generateMetadata` динамических страниц
+/// (товар, новость, сервер…): `title` или `name` из публичного API. Нет данных
+/// (API недоступен, 404) — `fallback`. Кэш 5 минут, как у настроек сайта.
+export async function fetchEntityTitle(path: string, fallback: string): Promise<string> {
+  const entity = await fetchPublic<{ title?: unknown; name?: unknown }>(path, 300);
+  const raw = typeof entity?.title === 'string' ? entity.title : entity?.name;
+  const title = typeof raw === 'string' ? raw.trim() : '';
+  return title ? title.slice(0, 120) : fallback;
+}

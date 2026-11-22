@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { RegisterForm } from './register-form';
 
 export const metadata: Metadata = {
-  title: { absolute: 'twomc.su' },
+  title: 'Регистрация',
   robots: { index: false, follow: false },
 };
 
