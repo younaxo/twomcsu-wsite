@@ -26,6 +26,13 @@ import {
 export const PAID_REMOVAL_AUDIT_ACTION = 'punishment.paid_removal';
 const PAID_REMOVAL_TYPES = [ProductType.UNBAN, ProductType.UNMUTE];
 
+/// Исполнитель выдачи (delivery) пока отправляет UNBAN/UNMUTE в manual и не
+/// вызывает `recordRemoval`/снятие. Пока признак false, товары снятия НЕ
+/// оформляются (503 `paid_removal_unavailable`) даже при UNPUNISH_ENABLED=true:
+/// игрок не должен платить за снятие, которое не будет выполнено (ADR-0190 п. 15).
+/// Переключается на true тем же коммитом, который подключает снятие к исполнителю.
+export const PAID_REMOVAL_EXECUTOR_WIRED = false;
+
 /// Снятие в момент выдачи неприменимо (наказание уже снято, истекло, изменилось
 /// или не подпадает под правила). Исполнитель переводит задание в
 /// NEEDS_ATTENTION с причиной `not_applicable`; команда не отправляется.
@@ -68,6 +75,11 @@ export class PaidRemovalService {
       'UNPUNISH_ENABLED',
     );
     return raw === true || raw === 'true';
+  }
+
+  /// Подключено ли снятие к исполнителю выдачи (см. PAID_REMOVAL_EXECUTOR_WIRED).
+  isExecutorWired(): boolean {
+    return PAID_REMOVAL_EXECUTOR_WIRED;
   }
 
   async loadRules(): Promise<PaidRemovalRules> {
@@ -115,10 +127,11 @@ export class PaidRemovalService {
     nick: string,
     rules: PaidRemovalRules,
     now: Date,
+    db: Pick<Prisma.TransactionClient, 'paidRemovalRecord'> = this.prisma,
   ): Promise<boolean> {
     if (rules.maxPerNick === null) return false;
     const since = new Date(now.getTime() - rules.periodDays * 86_400_000);
-    const count = await this.prisma.paidRemovalRecord.count({
+    const count = await db.paidRemovalRecord.count({
       where: {
         subjectName: { equals: nick, mode: 'insensitive' },
         createdAt: { gte: since },
@@ -148,7 +161,9 @@ export class PaidRemovalService {
       select: { id: true, type: true },
     });
     if (products.length === 0) return;
-    if (!this.isEnabledByEnv()) throw paidRemovalUnavailable();
+    if (!this.isExecutorWired() || !this.isEnabledByEnv()) {
+      throw paidRemovalUnavailable();
+    }
     const rules = await this.loadRules();
     const kinds = new Set<MinecraftPunishmentKind>();
     for (const p of products) {
@@ -169,14 +184,19 @@ export class PaidRemovalService {
         );
       }
     }
+    // Обе проверки выполняются всегда (без раннего выхода по первой): время
+    // ответа не различает «нет наказания» и «исчерпан лимит» (ADR-0186 п. 8).
+    let available = true;
     for (const kind of kinds) {
       const punishment = await this.activePunishment(nick, kind, rules, now);
-      if (!punishment || (await this.overLimit(nick, rules, now))) {
-        throw checkoutBadRequest(
-          StoreCheckoutError.NICK_UNAVAILABLE,
-          'Этот ник недоступен для покупки',
-        );
-      }
+      const limited = await this.overLimit(nick, rules, now);
+      if (!punishment || limited) available = false;
+    }
+    if (!available) {
+      throw checkoutBadRequest(
+        StoreCheckoutError.NICK_UNAVAILABLE,
+        'Этот ник недоступен для покупки',
+      );
     }
   }
 
@@ -254,6 +274,17 @@ export class PaidRemovalService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Сериализация по нику: два параллельных заказа не обходят лимит и не
+        // снимают одно наказание дважды (проверки выше — до транзакции).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`paid_removal:${nick.toLowerCase()}`}))`;
+        if (await this.overLimit(nick, rules, now, tx)) {
+          throw new PaidRemovalNotApplicableError();
+        }
+        const sameTarget = await tx.paidRemovalRecord.findFirst({
+          where: { punishmentId: punishment.id },
+          select: { id: true },
+        });
+        if (sameTarget) throw new PaidRemovalNotApplicableError();
         await tx.paidRemovalRecord.create({
           data: {
             orderItemId,

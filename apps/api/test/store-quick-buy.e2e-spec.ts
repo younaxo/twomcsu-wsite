@@ -144,6 +144,21 @@ describe('Store quick-buy by nick (e2e)', () => {
     });
   }, 40_000);
 
+  /// Возвращает настройку правил к значению до теста (upsert / удаление, если её не было).
+  async function restoreRules() {
+    if (previousRules) {
+      await prisma.siteSetting.upsert({
+        where: { key: PAID_REMOVAL_SETTING },
+        update: { value: previousRules.value },
+        create: { key: PAID_REMOVAL_SETTING, value: previousRules.value },
+      });
+    } else {
+      await prisma.siteSetting.deleteMany({
+        where: { key: PAID_REMOVAL_SETTING },
+      });
+    }
+  }
+
   afterEach(() => {
     const storage = app.get<{ storage: Record<string, unknown> }>(
       ThrottlerStorage,
@@ -167,14 +182,7 @@ describe('Store quick-buy by nick (e2e)', () => {
     await prisma.minecraftPunishment.deleteMany({
       where: { subjectName: mutedNick },
     });
-    await prisma.siteSetting.deleteMany({
-      where: { key: PAID_REMOVAL_SETTING },
-    });
-    if (previousRules) {
-      await prisma.siteSetting.create({
-        data: { key: PAID_REMOVAL_SETTING, value: previousRules.value },
-      });
-    }
+    await restoreRules();
     await prisma.auditLog.deleteMany({ where: { actorId: systemUserId } });
     await prisma.product.deleteMany({
       where: { slug: { startsWith: `e2e-qb-${unique}` } },
@@ -329,26 +337,48 @@ describe('Store quick-buy by nick (e2e)', () => {
   });
 
   it('снятие мута без правил: paid_removal_unavailable (fail closed), заказа нет', async () => {
-    await prisma.siteSetting.deleteMany({
+    // Пустые правила (не JSON-объект с причинами) = fail closed.
+    await prisma.siteSetting.upsert({
       where: { key: PAID_REMOVAL_SETTING },
+      update: { value: '{}' },
+      create: { key: PAID_REMOVAL_SETTING, value: '{}' },
     });
-    const before = await prisma.order.count({
-      where: { items: { some: { variantId: unmuteVariantId } } },
-    });
+    try {
+      const before = await prisma.order.count({
+        where: { items: { some: { variantId: unmuteVariantId } } },
+      });
+      const res = await quickBuy({
+        variantId: unmuteVariantId,
+        guestMinecraftNick: knownNick,
+      }).expect(503);
+      expect(res.body.code).toBe('paid_removal_unavailable');
+      expect(
+        await prisma.order.count({
+          where: { items: { some: { variantId: unmuteVariantId } } },
+        }),
+      ).toBe(before);
+    } finally {
+      await restoreRules();
+    }
+  });
+
+  it('исполнитель снятия не подключён: снятие не оформляется даже при верных правилах (ADR-0190)', async () => {
+    const removal = app.get(PaidRemovalService);
+    expect(removal.isExecutorWired()).toBe(false);
     const res = await quickBuy({
       variantId: unmuteVariantId,
       guestMinecraftNick: knownNick,
     }).expect(503);
     expect(res.body.code).toBe('paid_removal_unavailable');
-    expect(
-      await prisma.order.count({
-        where: { items: { some: { variantId: unmuteVariantId } } },
-      }),
-    ).toBe(before);
   });
 
   describe('платное снятие мута при настроенных правилах', () => {
     beforeAll(async () => {
+      // Исполнитель снятия ещё не подключён (ADR-0190 п. 15): здесь проверяем
+      // остальную цепочку, поэтому признак подменяется только в этом блоке.
+      jest
+        .spyOn(app.get(PaidRemovalService), 'isExecutorWired')
+        .mockReturnValue(true);
       await prisma.minecraftPunishment.create({
         data: {
           kind: 'MUTE',
@@ -374,6 +404,10 @@ describe('Store quick-buy by nick (e2e)', () => {
         update: { value },
         create: { key: PAID_REMOVAL_SETTING, value },
       });
+    });
+
+    afterAll(() => {
+      jest.restoreAllMocks();
     });
 
     it('ник без наказания: nick_unavailable (без раскрытия причины)', async () => {

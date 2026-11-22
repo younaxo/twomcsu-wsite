@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client';
-import { PaidRemovalService } from './paid-removal.service';
+import {
+  PAID_REMOVAL_EXECUTOR_WIRED,
+  PaidRemovalService,
+} from './paid-removal.service';
 
 const NOW = new Date('2026-11-23T12:00:00Z');
 const RULES = JSON.stringify({
@@ -23,6 +26,9 @@ interface Opts {
   item?: object | null;
   actor?: object | null;
   createError?: Error;
+  executorWired?: boolean;
+  txRecords?: number;
+  txSameTarget?: object | null;
 }
 
 const GOOD_PUNISHMENT = {
@@ -36,7 +42,10 @@ const GOOD_PUNISHMENT = {
 
 function setup(o: Opts = {}) {
   const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     paidRemovalRecord: {
+      count: jest.fn().mockResolvedValue(o.txRecords ?? 0),
+      findFirst: jest.fn().mockResolvedValue(o.txSameTarget ?? null),
       create: jest.fn().mockImplementation(async () => {
         if (o.createError) throw o.createError;
         return {};
@@ -82,6 +91,11 @@ function setup(o: Opts = {}) {
     config as never,
     audit as never,
   );
+  // Исполнитель снятия не подключён (ADR-0190 п. 15); остальные сценарии
+  // проверяют цепочку при подключённом, отдельный тест — реальный признак.
+  jest
+    .spyOn(service, 'isExecutorWired')
+    .mockReturnValue(o.executorWired ?? true);
   return { service, prisma, tx, audit };
 }
 
@@ -99,6 +113,34 @@ const line = (productId = 'pr1', quantity = 1) => [{ productId, quantity }];
 const unban = [{ id: 'pr1', type: 'UNBAN' }];
 
 describe('PaidRemovalService.assertPurchasable (0.12b)', () => {
+  it('исполнитель снятия не подключён: paid_removal_unavailable даже при env=true и верных правилах', async () => {
+    const { service, prisma } = setup({
+      productTypes: unban,
+      rules: RULES,
+      executorWired: false,
+    });
+    expect(await codeOf(service.assertPurchasable(line(), 'Steve', NOW))).toBe(
+      'paid_removal_unavailable',
+    );
+    expect(prisma.siteSetting.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('признак подключения исполнителя в коде = false, пока снятие не подключено (ADR-0190)', () => {
+    expect(PAID_REMOVAL_EXECUTOR_WIRED).toBe(false);
+  });
+
+  it('nick_unavailable: оба запроса (наказание и лимит) выполняются всегда', async () => {
+    const { service, prisma } = setup({
+      productTypes: unban,
+      rules: RULES,
+      punishment: null,
+    });
+    expect(await codeOf(service.assertPurchasable(line(), 'Steve', NOW))).toBe(
+      'nick_unavailable',
+    );
+    expect(prisma.paidRemovalRecord.count).toHaveBeenCalledTimes(1);
+  });
+
   it('обычный товар: правила не читаются, проходит', async () => {
     const { service, prisma } = setup({ productTypes: [] });
     await expect(
@@ -242,6 +284,40 @@ describe('PaidRemovalService.recordRemoval (0.12b)', () => {
         }),
       }),
     );
+  });
+
+  it('в транзакции: блокировка по нику, перепроверка лимита и цели', async () => {
+    const { service, tx } = setup({ item, rules: RULES });
+    await service.recordRemoval('i1', NOW);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.paidRemovalRecord.count).toHaveBeenCalledTimes(1);
+    expect(tx.paidRemovalRecord.findFirst).toHaveBeenCalledWith({
+      where: { punishmentId: 'p1' },
+      select: { id: true },
+    });
+  });
+
+  it('параллельный заказ на тот же ник: лимит исчерпан внутри транзакции — не применимо, записи нет', async () => {
+    // До транзакции лимит свободен (records=0), победитель успел записать (txRecords=1).
+    const { service, tx, audit } = setup({ item, rules: RULES, txRecords: 1 });
+    expect(await codeOf(service.recordRemoval('i1', NOW))).toBe(
+      'paid_removal_not_applicable',
+    );
+    expect(tx.paidRemovalRecord.create).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('параллельный заказ на то же наказание: запись по punishmentId уже есть — не применимо', async () => {
+    const { service, tx, audit } = setup({
+      item,
+      rules: RULES,
+      txSameTarget: { id: 'r0' },
+    });
+    expect(await codeOf(service.recordRemoval('i1', NOW))).toBe(
+      'paid_removal_not_applicable',
+    );
+    expect(tx.paidRemovalRecord.create).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
   it('повтор (запись уже есть): created=false, аудит и транзакция не повторяются', async () => {

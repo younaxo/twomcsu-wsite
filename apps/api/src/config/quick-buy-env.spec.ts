@@ -74,6 +74,16 @@ describe('envValidationSchema UNPUNISH_ENABLED (0.12b, ADR-0190)', () => {
     expect(value.UNPUNISH_ENABLED).toBe(true);
   });
 
+  it('в development включён', () => {
+    expect(
+      validate({
+        ...common,
+        NODE_ENV: 'development',
+        TURNSTILE_DISABLED: 'true',
+      }).value.UNPUNISH_ENABLED,
+    ).toBe(true);
+  });
+
   it('в production и при пустом NODE_ENV выключен', () => {
     expect(
       validate({ ...productionSet, NODE_ENV: 'production' }).value
