@@ -8,7 +8,9 @@ export async function generateMetadata({
 }: {
   params: { slug: string };
 }): Promise<Metadata> {
-  return { title: await fetchEntityTitle(`/store/products/${encodeURIComponent(params.slug)}`, 'Товар') };
+  return {
+    title: await fetchEntityTitle(`/store/products/${encodeURIComponent(params.slug)}`, 'Товар'),
+  };
 }
 
 export default function Layout({ children }: { children: ReactNode }) {
