@@ -4573,7 +4573,7 @@ B. Платное снятие бана и мута (UNBAN, UNMUTE).
 
 **Зависимости.** `recordRemoval` вызывается исполнителем выдачи ПЕРЕД отправкой команды `unban`/`unmute`; сам вызов и привязка `punishmentId`/`uuid` к позиции зависят от шаблонов команд 0.11 (ADR-0189) и исполнителя 0.13 и в 0.12 не подключены: до тех пор UNBAN/UNMUTE выдаются на `manual`, а снятие в игре делает человек. `PaidRemovalService` экспортирован из `StoreModule`.
 
-**Миграция.** `20261123100000_quickbuy_guest_token_paid_removal`, expand-only (две nullable-колонки, UNIQUE-индекс, новая таблица). Откат: код не использует колонки при revert PR; данные остаются.
+**Миграция.** `20261123110000_quickbuy_guest_token_paid_removal`, expand-only (две nullable-колонки, UNIQUE-индекс, новая таблица). Откат: код не использует колонки при revert PR; данные остаются.
 
 **Откат.** `QUICK_BUY_ENABLED=false`, `UNPUNISH_ENABLED=false` или `punishments.paidRemoval.enabled=false`; товары UNBAN/UNMUTE деактивировать; revert PR.
 
