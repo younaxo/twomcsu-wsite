@@ -10,15 +10,15 @@
 |---|---|---|---|---|---|
 | `/` | логотип, моб. навигация | `(site)/page.tsx` | работает на реальном API | `site/*` | - |
 | `/shop` | шапка, rail, моб., футер | `(site)/shop` + `[slug]` | работает (модуль `store`) | `store/catalog,categories,products` | - |
-| `/shop#bonus` | rail (Бонусы) | якорь на `/shop` | проверить | - | убедиться, что на `/shop` есть блок `#bonus` |
+| `/shop#bonus` | rail (Бонусы) | якорь на `/shop` | работает (проверено 2026-11-22: `<section id="bonus">` в `shop/page.tsx`) | - | - |
 | `/rules` | шапка, футер | `(site)/rules` + `[slug]` | работает | `topics` | - |
-| `/servers` | шапка, rail, футер | `(site)/servers` | работает (SLP, модуль `minecraft`) | `servers/*` | страницы `/servers/[slug]` нет |
+| `/servers` | шапка, rail, футер | `(site)/servers` | работает (SLP, модуль `minecraft`) | `servers/*` | сделано 2026-11-22: `/servers/[slug]` (карточка, статус, график, игроки), ссылки из списка |
 | `/shop/cart` | поповер корзины | `(site)/shop/cart` | работает (Skeleton/Empty/Error есть) | `store/cart` | ссылка не битая, см. раздел 404 |
 | `/shop/checkout` | поповер корзины | `(site)/shop/checkout` | работает | `store/checkout`, `checkout-config` | платёж только мок/песочница (hard gate) |
 | `/login?next=/shop` | поповер корзины | `(auth)/login` | работает | `auth` | - |
 | `/notifications` | поповер уведомлений | `(site)/notifications` | работает (модуль `notifications`) | `notifications` | - |
 | `/status` | кнопка статуса | `(site)/status` | работает | `site`, `minecraft` | - |
-| `/#quick-start` | футер | якорь на `/` | проверить | - | сверить id блока на главной |
+| `/#quick-start` | футер | якорь на `/` | работает (проверено 2026-11-22: `HomeSection id="quick-start"`) | - | - |
 | `/wiki` | футер (`available:false`) | нет | заглушка («Скоро», без ссылки) | - | отдельное решение владельца |
 | `/news` | футер | `(site)/news` + `[slug]` | работает | `admin/news`, публичный список | - |
 | `/vote` | футер | `(site)/vote` | работает (модуль `voting`) | `voting` | - |
@@ -34,15 +34,16 @@
 | `/messages` | профиль-меню | `(site)/messages` + `[id]`, `invite/[code]` | работает | `messages` | - |
 | `/support` | профиль-меню | `(site)/support` + `[reportNumber]`, `new/[type]` | работает | `moderation/reports` | - |
 | `/shop/orders` | профиль-меню (если store включён) | `(site)/shop/orders` + `[orderNumber]` | работает | `store/orders` | - |
-| «Избранное» | профиль-меню | пункт скрыт (Q67) | бэкенд есть, страницы нет | `store/wishlist` | страница избранного + пункт меню |
+| «Избранное» | профиль-меню | `(site)/shop/wishlist` | сделано 2026-11-22: страница + пункт меню (при включённом модуле store) | `store/wishlist` | - |
 | `/admin` | профиль-меню (по праву входа) | `admin/page.tsx` | работает | `admin/*`, `site` | - |
 | Админка: users, media-requests, roles(+`[id]`), permissions, positions, departments, custom-positions | `lib/admin/navigation.ts` | все есть | работает | `admin/users`, `admin/departments`, `admin/custom-positions`, `admin/media-requests` | - |
+| Админка: punishments (подраздел «Пользователей») | navigation.ts | `admin/punishments` | сделано 2026-11-22: список, фильтры, выдавший скрыт по умолчанию (Q31) | `admin/punishments` | карточка и скрытие выдавшего (POST/DELETE issuer-hidden) - позже |
 | Админка: content, news(+new,`[id]`), events, topics(+new,`[id]`), forms(+`[id]`), voting, reports(+`[reportNumber]`) | navigation.ts | все есть | работает | `admin/news,events,topics,forms,voting/sites`, `moderation/reports` | конструктор форм - блок J |
 | Админка: achievements, awards | navigation.ts | есть | работает | `admin/achievements` | - |
 | Админка: store/products, categories, orders(+`[id]`), delivery(+`[id]`), promocodes, discounts | navigation.ts | есть | работает | `admin/store/*`, `admin/orders`, `admin/delivery/tasks`, `admin/promocodes` | - |
 | Админка: finance | navigation.ts | `admin/finance` | проверить | `admin/store/stats`, `wallet` (контроллера finance нет) | проверить, что это не пустая обёртка |
 | Админка: chat, communications, announcements, appearance, servers, system, storage, settings, security, audit-log, exports, tools | navigation.ts, quick-actions, status-overview | все есть | работает | `admin/chat`, `admin/communications`, `admin/servers`, `admin/system`, `admin/system/storage`, `admin` | `tools`, `exports`, `audit-log` - сверить контроллеры точечно |
-| `/admin/system?tab=maintenance` и `?tab=modules`, `/admin/announcements?new=1` | quick-actions, status-overview | `admin/system`, `admin/announcements` | работает | `admin/system` | проверить, что страницы читают `tab` и `new` |
+| `/admin/system?tab=maintenance` и `?tab=modules`, `/admin/announcements?new=1` | quick-actions, status-overview | `admin/system`, `admin/announcements` | работает | `admin/system` | проверено 2026-11-22: `system/page.tsx` читает `tab`, `announcements-panel` читает `new=1` |
 | `/admin/broadcast` | нет ссылки | страница есть | осиротевшая страница | - | включить в меню или решить судьбу |
 
 Сводка (по строкам таблицы, группы считаются одной строкой): работает на реальном API - 26; честное пустое состояние - 1 (`/leaderboards`); заглушка или Скоро - 1 (`/wiki`); флаг выключен - 1 (`/bans`); бэкенд есть, страницы нет - 1 (избранное); требуют проверки - 4 (якоря `#bonus` и `#quick-start`, finance, query-параметры админки); осиротевшая страница - 1; 404 - 0.
@@ -59,21 +60,21 @@
 
 ## Бэкенд есть, страницы нет
 
-- `store/wishlist` - страницы избранного нет.
+- ~~`store/wishlist`~~ - сделано 2026-11-22 (`/shop/wishlist`).
 - `store/bundles`, `admin/store/bundles`, `admin/store/currencies` - админ-страниц нет.
-- `admin/punishments` - админ-страницы наказаний нет.
+- ~~`admin/punishments`~~ - сделано 2026-11-22 (`/admin/punishments`, список).
 - `admin/streams`, `streams` - страниц нет.
 - `admin/notifications` - админ-UI уведомлений нет.
 - `admin/server-categories` - UI нет.
 - `moderation/users`, `moderation/news/comments` - очереди жалоб без UI.
-- `servers/:slug` (история и график) - страницы `/servers/[slug]` нет.
+- ~~`servers/:slug`~~ - сделано 2026-11-22 (`/servers/[slug]`).
 
 ## Предложение порядка доработок
 
-1. Быстрые проверки (S): якоря `#bonus` и `#quick-start`, query-параметры админки, состояние `/bans` при выключенном флаге.
-2. `/servers/[slug]` с графиком - данные и API уже есть.
-3. Страница избранного и пункт меню профиля - `store/wishlist` готов.
-4. Админ-страница наказаний (`admin/punishments`) - контроллер есть; затем включение `punishments.public.enabled` по решению владельца.
+1. Быстрые проверки (S): якоря и query-параметры админки - сделано 2026-11-22; состояние `/bans` при выключенном флаге - осталось.
+2. `/servers/[slug]` с графиком - сделано 2026-11-22.
+3. Страница избранного и пункт меню профиля - сделано 2026-11-22.
+4. Админ-страница наказаний (`admin/punishments`) - список сделан 2026-11-22; осталось включение `punishments.public.enabled` по решению владельца.
 5. Очереди жалоб на комментарии и профили (`moderation/*`) в админке.
 6. Админ-UI уведомлений и категорий серверов.
 7. Конструктор форм (редактор полей поверх `admin/forms`).

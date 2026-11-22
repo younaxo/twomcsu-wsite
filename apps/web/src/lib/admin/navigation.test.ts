@@ -90,6 +90,14 @@ describe('admin navigation', () => {
     );
   });
 
+  it('наказания — подраздел «Пользователей» по праву users.punishments', () => {
+    const users = findNavItem('/admin/punishments')!;
+    expect(users.label).toBe('Пользователи');
+    const only = effective(['users.punishments']);
+    expect(checkPermissions(only, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    expect(resolveNavItem(users, (r) => checkPermissions(only, r)).href).toBe('/admin/punishments');
+  });
+
   it('новости — подраздел «Контента» (ADR-0143)', () => {
     expect(findNavItem('/admin/news/abc')?.label).toBe('Контент');
     const content = findNavItem('/admin/content')!;

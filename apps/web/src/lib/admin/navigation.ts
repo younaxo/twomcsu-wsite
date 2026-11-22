@@ -82,10 +82,11 @@ export const ADMIN_NAV: AdminNavGroup[] = [
         href: '/admin/users',
         label: 'Пользователи',
         icon: 'users',
-        requirement: ['users.view', 'media_requests.view'],
-        keywords: ['игроки', 'аккаунты', 'бан', 'медиа', 'ютуб', 'стример'],
+        requirement: ['users.view', 'media_requests.view', 'users.punishments'],
+        keywords: ['игроки', 'аккаунты', 'бан', 'наказания', 'мут', 'медиа', 'ютуб', 'стример'],
         sections: [
           { href: '/admin/users', label: 'Пользователи', requirement: 'users.view' },
+          { href: '/admin/punishments', label: 'Наказания', requirement: 'users.punishments' },
           {
             href: '/admin/media-requests',
             label: 'Медиа-заявки',
