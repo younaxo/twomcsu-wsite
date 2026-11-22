@@ -453,6 +453,11 @@ export const PERMISSIONS = [
   { key: 'orders.cancel', module: 'orders', description: 'Отмена заказа' },
   { key: 'orders.refund', module: 'orders', description: 'Возврат средств по заказу' },
   {
+    key: 'store.refund.override',
+    module: 'store',
+    description: 'Возврат по ошибке после выдачи товара (только владелец, свежий код 2FA)',
+  },
+  {
     key: 'store.delivery.view',
     module: 'store',
     description: 'Просмотр заданий выдачи купленного в админке',

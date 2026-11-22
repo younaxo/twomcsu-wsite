@@ -1133,6 +1133,16 @@ enum OrderStatus {
   FAILED
   CANCELLED
   REFUNDED
+  /// 0.9 (ADR-0188): возврат отправлен провайдеру, итог ещё не известен.
+  REFUND_PENDING
+  /// 0.9: провайдер отказал в возврате; повтор возможен тем же ключом.
+  REFUND_FAILED
+}
+
+enum OrderRefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
 }
 
 model Category {
@@ -1364,17 +1374,48 @@ model Order {
   cancelledAt              DateTime?
   refundedAt               DateTime?
   cancelReason             String?
+  /// Последняя сверка статуса платежа у провайдера (0.9), чтобы не опрашивать заказ каждый проход.
+  paymentReconciledAt      DateTime?
   createdAt                DateTime    @default(now())
   updatedAt                DateTime    @updatedAt
 
-  user      User?       @relation(fields: [userId], references: [id])
-  promoCode PromoCode?  @relation(fields: [promoCodeId], references: [id])
+  user      User?         @relation(fields: [userId], references: [id])
+  promoCode PromoCode?    @relation(fields: [promoCodeId], references: [id])
   items     OrderItem[]
+  refunds   OrderRefund[]
 
   @@index([userId])
   @@index([status])
+  @@index([status, createdAt])
   @@index([orderNumber])
   @@map("orders")
+}
+
+/// Возвраты по заказу (0.9, ADR-0188). Ключ идемпотентности уникален и
+/// передаётся провайдеру; записи не удаляются (журнал денег).
+model OrderRefund {
+  id                   String            @id @default(cuid())
+  orderId              String
+  amount               Decimal           @db.Decimal(10, 2)
+  reason               String            @db.VarChar(1000)
+  /// NORMAL — до выдачи; OVERRIDE — возврат по ошибке после выдачи (Q85).
+  kind                 String            @default("NORMAL") @db.VarChar(16)
+  status               OrderRefundStatus @default(PENDING)
+  idempotencyKey       String            @unique @db.VarChar(128)
+  providerRefundId     String?           @db.VarChar(128)
+  errorCode            String?           @db.VarChar(64)
+  /// Выданное нельзя отозвать автоматически (игровые выдачи): нужен ручной отзыв.
+  requiresManualRevoke Boolean           @default(false)
+  actorId              String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  completedAt          DateTime?
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("order_refunds")
 }
 
 model OrderItem {
