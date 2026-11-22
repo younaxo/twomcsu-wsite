@@ -7,6 +7,7 @@ import type {
   WalletSummaryDto,
 } from '@twomc/shared';
 import {
+  Heart,
   LifeBuoy,
   MessageSquare,
   Package,
@@ -66,8 +67,9 @@ export function miniProfileEntries(
     { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: '/messages' },
     { key: 'support', label: 'Обращения', icon: LifeBuoy, href: '/support' },
   ];
-  // «Избранное» скрыто до появления раздела (Q67): пункт без href не показываем.
+  // «Избранное» и «Заказы» — разделы магазина: при выключенном модуле скрыты (Q67).
   if (storeEnabled) {
+    entries.push({ key: 'wishlist', label: 'Избранное', icon: Heart, href: '/shop/wishlist' });
     entries.push({ key: 'orders', label: 'Заказы', icon: Package, href: '/shop/orders' });
   }
   return entries;

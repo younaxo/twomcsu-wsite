@@ -1,10 +1,10 @@
 'use client';
 
-import { ClipboardList } from 'lucide-react';
+import { ClipboardList, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
-import { PermissionGate } from '@/components/admin/permission-gate';
+import { Can, PermissionGate } from '@/components/admin/permission-gate';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -110,6 +110,13 @@ function FormsList() {
                   </span>
                 </div>
                 <span className="flex flex-wrap gap-1">
+                  {can('forms.edit') && form.status !== 'ARCHIVED' ? (
+                    <Button size="sm" variant="secondary" asChild>
+                      <Link href={`/admin/forms/${encodeURIComponent(form.id)}/edit`}>
+                        Изменить
+                      </Link>
+                    </Button>
+                  ) : null}
                   {can('forms.publish') && (form.status === 'DRAFT' || form.status === 'CLOSED') ? (
                     <Button
                       size="sm"
@@ -191,7 +198,20 @@ export default function AdminFormsPage() {
   return (
     <PermissionGate requirement="forms.view">
       <div className="flex flex-col gap-4">
-        <PageHeader title="Формы" description="Анкеты, заявки и опросы — ответы и статистика." />
+        <PageHeader
+          title="Формы"
+          description="Анкеты, заявки и опросы — конструктор, ответы и статистика."
+          actions={
+            <Can requirement="forms.create">
+              <Button asChild>
+                <Link href="/admin/forms/new">
+                  <Plus />
+                  Новая форма
+                </Link>
+              </Button>
+            </Can>
+          }
+        />
         <FormsList />
       </div>
     </PermissionGate>

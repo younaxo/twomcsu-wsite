@@ -90,6 +90,14 @@ describe('admin navigation', () => {
     );
   });
 
+  it('наказания — подраздел «Пользователей» по праву users.punishments', () => {
+    const users = findNavItem('/admin/punishments')!;
+    expect(users.label).toBe('Пользователи');
+    const only = effective(['users.punishments']);
+    expect(checkPermissions(only, ADMIN_ENTRY_REQUIREMENT)).toBe(true);
+    expect(resolveNavItem(users, (r) => checkPermissions(only, r)).href).toBe('/admin/punishments');
+  });
+
   it('новости — подраздел «Контента» (ADR-0143)', () => {
     expect(findNavItem('/admin/news/abc')?.label).toBe('Контент');
     const content = findNavItem('/admin/content')!;
@@ -124,5 +132,30 @@ describe('admin navigation', () => {
     expect(resolveNavItem(content, (r) => checkPermissions(topicsOnly, r)).href).toBe(
       '/admin/topics',
     );
+  });
+
+  it('очереди жалоб, уведомления и категории серверов видны по своим правам', () => {
+    const can = (perms: string[]) => (r: Parameters<typeof checkPermissions>[1]) =>
+      checkPermissions(effective(perms), r);
+
+    const reports = findNavItem('/admin/moderation/profiles')!;
+    expect(reports.label).toBe('Обращения');
+    const profilesOnly = resolveNavItem(reports, can(['profile_reports.view']));
+    expect(profilesOnly.href).toBe('/admin/moderation/profiles');
+    expect(profilesOnly.sections?.map((s) => s.href)).toEqual(['/admin/moderation/profiles']);
+    expect(checkPermissions(effective(['comment_reports.view']), ADMIN_ENTRY_REQUIREMENT)).toBe(
+      true,
+    );
+
+    const notifications = findNavItem('/admin/notifications')!;
+    expect(
+      checkPermissions(effective(['notifications.stats.view']), notifications.requirement),
+    ).toBe(true);
+    expect(checkPermissions(effective(['users.view']), notifications.requirement)).toBe(false);
+
+    const servers = findNavItem('/admin/server-categories')!;
+    expect(servers.label).toBe('Серверы');
+    const categoriesOnly = resolveNavItem(servers, can(['server_categories.view']));
+    expect(categoriesOnly.href).toBe('/admin/server-categories');
   });
 });
