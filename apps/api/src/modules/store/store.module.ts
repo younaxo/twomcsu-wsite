@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TwoFactorService } from '../auth/two-factor/two-factor.service';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { BundlesAdminController } from './bundles-admin.controller';
 import { BundlesController } from './bundles.controller';
@@ -23,6 +24,10 @@ import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
 import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
+import { RefundsAdminController } from './refunds-admin.controller';
+import { RefundsService } from './refunds.service';
+import { StoreReconcileScheduler } from './store-reconcile.scheduler';
+import { StoreReconcileService } from './store-reconcile.service';
 import { PricingService } from './pricing.service';
 import { PromocodesAdminController } from './promocodes-admin.controller';
 import { PromocodesController } from './promocodes.controller';
@@ -55,6 +60,7 @@ import { WishlistService } from './wishlist.service';
     OrdersController,
     StoreExtrasController,
     OrdersAdminController,
+    RefundsAdminController,
     PaymentsWebhookController,
     StoreStatsAdminController,
   ],
@@ -75,6 +81,11 @@ import { WishlistService } from './wishlist.service';
     PaymentProviderRegistry,
     TestPaymentProvider,
     MockHttpPaymentProvider,
+    // Свой экземпляр: AuthModule не экспортирует TwoFactorService (ADR-0188).
+    TwoFactorService,
+    RefundsService,
+    StoreReconcileService,
+    StoreReconcileScheduler,
   ],
   exports: [OrdersService, StoreStatsService],
 })

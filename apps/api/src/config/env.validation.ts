@@ -419,6 +419,27 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
   /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
   DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
+  /// Возвраты и сверка платежей (0.9, ADR-0188). По умолчанию выкл.: эндпоинты
+  /// возвратов отвечают 503 `refunds_disabled`, фоновая сверка не работает.
+  STORE_REFUNDS_ENABLED: Joi.boolean().default(false),
+  /// Сверять заказы старше N минут (после последней сверки — тоже не чаще).
+  STORE_REFUNDS_RECONCILE_MIN_AGE_MINUTES: Joi.number()
+    .integer()
+    .min(1)
+    .max(1440)
+    .default(15),
+  /// Окно сверки: заказы старше N часов не опрашиваются (по умолчанию 72).
+  STORE_REFUNDS_RECONCILE_WINDOW_HOURS: Joi.number()
+    .integer()
+    .min(1)
+    .max(720)
+    .default(72),
+  /// Размер пачки одного прохода сверки.
+  STORE_REFUNDS_RECONCILE_BATCH: Joi.number()
+    .integer()
+    .min(1)
+    .max(500)
+    .default(50),
 };
 
 const strongGiveawaySecret = Joi.string()

@@ -259,7 +259,15 @@ export interface FinanceOverview {
   revenueByWeek: { week: IsoDateString; revenue: DecimalString }[];
 }
 
-export const ORDER_STATUSES = ['PENDING', 'COMPLETED', 'FAILED', 'CANCELLED', 'REFUNDED'] as const;
+export const ORDER_STATUSES = [
+  'PENDING',
+  'COMPLETED',
+  'FAILED',
+  'CANCELLED',
+  'REFUNDED',
+  'REFUND_PENDING',
+  'REFUND_FAILED',
+] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export interface OrderItemDto {

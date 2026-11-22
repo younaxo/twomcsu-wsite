@@ -50,6 +50,8 @@ const STATUS_META: Record<
   FAILED: { label: 'Ошибка', tone: 'destructive' },
   CANCELLED: { label: 'Отменён', tone: 'neutral' },
   REFUNDED: { label: 'Возврат', tone: 'info' },
+  REFUND_PENDING: { label: 'Возврат обрабатывается', tone: 'warning' },
+  REFUND_FAILED: { label: 'Возврат не удался', tone: 'destructive' },
 };
 
 function useDebounced<T>(value: T, delay = 300): T {

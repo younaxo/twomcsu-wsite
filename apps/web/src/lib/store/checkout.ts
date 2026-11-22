@@ -19,7 +19,14 @@ export interface CheckoutConfig {
   quickBuyEnabled: boolean;
 }
 
-export type OrderStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+export type OrderStatus =
+  | 'PENDING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'REFUNDED'
+  | 'REFUND_PENDING'
+  | 'REFUND_FAILED';
 
 /// Статус выдачи для покупателя (0.7, ADR-0184 п. 10): только три значения, без
 /// внутренних деталей. `null`/отсутствует — заказ не завершён (или API старый).
@@ -224,7 +231,27 @@ export const ORDER_STATUS_TEXT: Record<OrderStatus, { label: string; description
     label: 'Возвращён',
     description: 'Средства по заказу возвращены.',
   },
+  REFUND_PENDING: {
+    label: 'Возврат обрабатывается',
+    description: 'Возврат средств запущен, обычно он занимает немного времени.',
+  },
+  REFUND_FAILED: {
+    label: 'Возврат не удался',
+    description: 'Возврат не прошёл. Напишите в поддержку, мы разберёмся.',
+  },
 };
+
+const UNKNOWN_ORDER_STATUS_TEXT = {
+  label: 'Статус уточняется',
+  description: 'Если статус не меняется, обратитесь в поддержку.',
+};
+
+/// Текст статуса с запасным вариантом: новый статус сервера не ломает страницу.
+export function orderStatusText(status: string): { label: string; description: string } {
+  return Object.hasOwn(ORDER_STATUS_TEXT, status)
+    ? ORDER_STATUS_TEXT[status as OrderStatus]
+    : UNKNOWN_ORDER_STATUS_TEXT;
+}
 
 export type CheckoutField = 'nick' | 'offer' | null;
 

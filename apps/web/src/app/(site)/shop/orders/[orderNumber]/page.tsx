@@ -18,7 +18,7 @@ import { formatMoney, formatNumber } from '@/lib/format';
 import { isPositive } from '@/lib/store/cart';
 import {
   DELIVERY_STATUS_TEXT,
-  ORDER_STATUS_TEXT,
+  orderStatusText,
   orderHref,
   readDeliveryStatus,
   useOrder,
@@ -42,7 +42,7 @@ function itemTitle(item: OrderItemView): string {
 }
 
 function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: boolean }) {
-  const text = ORDER_STATUS_TEXT[order.status];
+  const text = orderStatusText(order.status);
   const delivery = readDeliveryStatus(order.deliveryStatus);
   return (
     <div className="flex max-w-3xl flex-col gap-4">
