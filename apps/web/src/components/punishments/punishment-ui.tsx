@@ -115,11 +115,14 @@ export function PunishmentsErrorState({
   onRetry,
   retrying,
   size = 'md',
+  unavailableTitle = 'Данные временно недоступны',
 }: {
   error: unknown;
   onRetry: () => void;
   retrying?: boolean;
   size?: 'sm' | 'md';
+  /// Заголовок при 503 (источник наказаний ещё не загружен).
+  unavailableTitle?: string;
 }) {
   if (error instanceof ApiError) {
     if (error.status === 401) {
@@ -164,7 +167,7 @@ export function PunishmentsErrorState({
       return (
         <ErrorState
           size={size}
-          title="Данные временно недоступны"
+          title={unavailableTitle}
           description="Список наказаний сейчас не загружается. Попробуйте позже."
           onRetry={onRetry}
           retrying={retrying}

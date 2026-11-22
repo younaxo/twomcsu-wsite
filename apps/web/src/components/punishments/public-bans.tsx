@@ -191,6 +191,7 @@ export function PublicBansList() {
           error={query.error}
           onRetry={() => query.refetch()}
           retrying={query.isFetching}
+          unavailableTitle="Список наказаний временно недоступен"
         />
       ) : items.length === 0 ? (
         <EmptyState

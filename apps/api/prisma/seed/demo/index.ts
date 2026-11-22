@@ -4,12 +4,17 @@ import {
   DEMO_CATEGORIES,
   DEMO_FORMS,
   DEMO_NEWS,
+  DEMO_PUNISHMENT_SCOPE,
+  DEMO_PUNISHMENT_SOURCE,
   DEMO_PUNISHMENTS,
   DEMO_SERVER_CATEGORY,
   DEMO_SERVERS,
   DEMO_SETTINGS,
   DEMO_VOTE_SITE,
   buildDemoProducts,
+  buildDemoPunishmentRow,
+  buildDemoSyncState,
+  demoPunishmentSourceId,
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
@@ -193,39 +198,36 @@ async function main(): Promise<void> {
       });
     }
 
+    const punishNow = new Date();
     for (const p of DEMO_PUNISHMENTS) {
-      const startedAt = daysAgo(p.daysAgo);
-      const until =
-        p.durationDays === null
-          ? null
-          : new Date(startedAt.getTime() + p.durationDays * DAY);
-      const data = {
-        subjectName: p.subjectName,
-        reason: p.reason,
-        status: p.status,
-        startedAt,
-        until,
-        executorIsConsole: true,
-        issuerHidden: true,
-        rowHash: `demo${String(p.sourceId).padStart(60, '0')}`,
-      };
+      const data = buildDemoPunishmentRow(p, punishNow);
       await prisma.minecraftPunishment.upsert({
         where: {
           source_sourceScope_kind_sourceId: {
-            source: 'demo',
-            sourceScope: 'demo',
+            source: DEMO_PUNISHMENT_SOURCE,
+            sourceScope: DEMO_PUNISHMENT_SCOPE,
             kind: p.kind,
-            sourceId: BigInt(p.sourceId),
+            sourceId: demoPunishmentSourceId(p.sourceId),
           },
         },
         create: {
-          source: 'demo',
-          sourceScope: 'demo',
+          source: DEMO_PUNISHMENT_SOURCE,
+          sourceScope: DEMO_PUNISHMENT_SCOPE,
           kind: p.kind,
-          sourceId: BigInt(p.sourceId),
+          sourceId: demoPunishmentSourceId(p.sourceId),
           ...data,
         },
         update: data,
+      });
+    }
+    for (const st of buildDemoSyncState(punishNow)) {
+      await prisma.punishmentSyncState.upsert({
+        where: { source_kind: { source: st.source, kind: st.kind } },
+        create: st,
+        update: {
+          initialSyncDoneAt: st.initialSyncDoneAt,
+          lastSuccessAt: st.lastSuccessAt,
+        },
       });
     }
 
