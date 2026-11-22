@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { ForgotPasswordForm } from './forgot-form';
 
 export const metadata: Metadata = {
-  title: { absolute: 'twomc.su' },
+  title: 'Восстановление пароля',
   robots: { index: false, follow: false },
 };
 

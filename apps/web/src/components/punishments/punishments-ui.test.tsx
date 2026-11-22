@@ -163,7 +163,7 @@ describe('/bans: публичный список', () => {
 
     mocks.get.mockRejectedValueOnce(apiError(503, { code: 'punishments_unavailable' }));
     const second = render(<PublicBansList />, { wrapper: Providers });
-    expect(await screen.findByText('Данные временно недоступны')).toBeInTheDocument();
+    expect(await screen.findByText('Список наказаний временно недоступен')).toBeInTheDocument();
     second.unmount();
 
     mocks.get.mockRejectedValueOnce(apiError(404, { code: 'punishments_public_disabled' }));
