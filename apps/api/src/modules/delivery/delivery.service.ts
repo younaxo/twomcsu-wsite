@@ -15,6 +15,7 @@ import {
   DeliveryResult,
   DeliveryTaskSnapshot,
 } from './delivery-executor.interface';
+import { renderCommand, CommandTemplateError } from './command-template';
 import { deliverableNickOrNull } from './delivery-nick';
 import { sanitizeDeliveryError } from './delivery-status';
 import {
@@ -196,12 +197,19 @@ export class DeliveryService {
           select: {
             id: true,
             giftToUserId: true,
+            productId: true,
+            variantId: true,
+            variant: { select: { duration: true } },
             product: { select: { decorationId: true } },
           },
         },
       },
     });
     if (!order || order.items.length === 0) return 0;
+
+    // 0.11: шаблоны команд читаются, только если включены и доставка, и
+    // исполнитель «команда»; иначе поведение 0.7 (manual) не меняется.
+    const templates = await this.loadTemplates(tx, order.items);
 
     const giftIds = [
       ...new Set(
@@ -218,12 +226,34 @@ export class DeliveryService {
     }
 
     const data = order.items.map((item) => {
-      const executorKind = this.selectExecutor(item.product?.decorationId);
-      const executor = this.executors.get(executorKind);
       const isGift = Boolean(item.giftToUserId);
       const rawNick = isGift
         ? (giftNicks.get(item.giftToUserId!) ?? null)
         : order.guestMinecraftNick;
+      let executorKind = this.selectExecutor(item.product?.decorationId);
+      let renderedCommand: string | null = null;
+      let templateVersion: number | null = null;
+      if (executorKind === EXECUTOR_MANUAL && templates) {
+        const tpl = this.pickTemplate(templates, item);
+        const nick = deliverableNickOrNull(rawNick);
+        if (tpl && nick) {
+          try {
+            // Подстановка только через общий валидатор; сбой -> manual.
+            renderedCommand = renderCommand(tpl.template, {
+              username: nick,
+              duration: item.variant?.duration,
+            });
+            templateVersion = tpl.version;
+            executorKind = EXECUTOR_COMMAND;
+          } catch (error) {
+            if (!(error instanceof CommandTemplateError)) throw error;
+            this.logger.warn(
+              `Шаблон команды не применён: item=${item.id} (${error.code}); выдача вручную`,
+            );
+          }
+        }
+      }
+      const executor = this.executors.get(executorKind);
       return {
         orderItemId: item.id,
         step: 1,
@@ -234,6 +264,8 @@ export class DeliveryService {
         // Р9: ник проверяется и при создании задания; негодный не сохраняется.
         nick: deliverableNickOrNull(rawNick),
         recipientUserId: isGift ? item.giftToUserId : order.userId,
+        // Без шаблона поля не задаются: поведение 0.7 (null в БД) не меняется.
+        ...(renderedCommand ? { renderedCommand, templateVersion } : {}),
       };
     });
     const created = await tx.deliveryTask.createMany({
@@ -241,6 +273,59 @@ export class DeliveryService {
       skipDuplicates: true,
     });
     return created.count;
+  }
+
+  /// Шаблоны команд позиций заказа или null, если команды выключены.
+  private async loadTemplates(
+    tx: Prisma.TransactionClient,
+    items: { productId: string | null }[],
+  ): Promise<
+    | {
+        productId: string;
+        variantId: string | null;
+        template: string;
+        version: number;
+      }[]
+    | null
+  > {
+    const productIds = [
+      ...new Set(items.flatMap((i) => (i.productId ? [i.productId] : []))),
+    ];
+    if (productIds.length === 0) return null;
+    if (!(await this.isEnabled())) return null;
+    if (!(await this.settings()).commandEnabled) return null;
+    return tx.deliveryCommandTemplate.findMany({
+      where: { productId: { in: productIds } },
+      select: {
+        productId: true,
+        variantId: true,
+        template: true,
+        version: true,
+      },
+    });
+  }
+
+  /// Шаблон варианта приоритетнее шаблона товара.
+  private pickTemplate(
+    templates: {
+      productId: string;
+      variantId: string | null;
+      template: string;
+      version: number;
+    }[],
+    item: { productId: string | null; variantId: string | null },
+  ) {
+    if (!item.productId) return null;
+    return (
+      templates.find(
+        (t) =>
+          t.productId === item.productId &&
+          t.variantId === item.variantId &&
+          t.variantId,
+      ) ??
+      templates.find((t) => t.productId === item.productId && !t.variantId) ??
+      null
+    );
   }
 
   /// Шаг ПОСЛЕ коммита вебхука оплаты: заказ уже COMPLETED и деньги

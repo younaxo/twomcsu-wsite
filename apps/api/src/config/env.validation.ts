@@ -434,6 +434,12 @@ const envBaseKeys: Joi.PartialSchemaMap = {
     .min(1)
     .max(720)
     .default(72),
+  /// Срок REFUND_PENDING без ответа провайдера (часы), затем FAILED (0.9/0.11).
+  STORE_REFUNDS_PENDING_TIMEOUT_HOURS: Joi.number()
+    .integer()
+    .min(1)
+    .max(720)
+    .default(72),
   /// Размер пачки одного прохода сверки.
   STORE_REFUNDS_RECONCILE_BATCH: Joi.number()
     .integer()

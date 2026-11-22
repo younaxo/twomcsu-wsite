@@ -467,6 +467,17 @@ export const PERMISSIONS = [
     module: 'store',
     description: 'Ручная отметка выдачи и повтор выдачи купленного',
   },
+  {
+    key: 'store.delivery.templates.manage',
+    module: 'store',
+    description:
+      'Шаблоны игровых команд выдачи товаров (только владелец, свежий код 2FA, всё в аудите)',
+  },
+  {
+    key: 'store.settings.manage',
+    module: 'store',
+    description: 'Тексты и правила магазина: снятие банов и мутов, возвраты, описания перков',
+  },
   { key: 'store.stats', module: 'store', description: 'Просмотр общей статистики магазина' },
   {
     key: 'store.stats.overview.view',

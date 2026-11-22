@@ -26,6 +26,13 @@ import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.se
 import { PaymentsWebhookController } from './payments-webhook.controller';
 import { RefundsAdminController } from './refunds-admin.controller';
 import { RefundsService } from './refunds.service';
+import { DeliveryTemplatesAdminController } from './delivery-templates-admin.controller';
+import { DeliveryTemplatesService } from './delivery-templates.service';
+import {
+  StoreSettingsAdminController,
+  StoreTextsController,
+} from './store-settings.controller';
+import { StoreSettingsService } from './store-settings.service';
 import { StoreReconcileScheduler } from './store-reconcile.scheduler';
 import { StoreReconcileService } from './store-reconcile.service';
 import { PricingService } from './pricing.service';
@@ -61,6 +68,9 @@ import { WishlistService } from './wishlist.service';
     StoreExtrasController,
     OrdersAdminController,
     RefundsAdminController,
+    DeliveryTemplatesAdminController,
+    StoreSettingsAdminController,
+    StoreTextsController,
     PaymentsWebhookController,
     StoreStatsAdminController,
   ],
@@ -84,6 +94,8 @@ import { WishlistService } from './wishlist.service';
     // Свой экземпляр: AuthModule не экспортирует TwoFactorService (ADR-0188).
     TwoFactorService,
     RefundsService,
+    DeliveryTemplatesService,
+    StoreSettingsService,
     StoreReconcileService,
     StoreReconcileScheduler,
   ],
