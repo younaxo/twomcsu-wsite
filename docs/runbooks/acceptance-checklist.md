@@ -12,8 +12,8 @@
 
 ## B. DNS и Cloudflare (Q4, Q14, Q56)
 
-- [ ] Схема прокси выбрана (Q4): `клиент -> nginx -> api` либо `Cloudflare -> nginx -> api`; `TRUST_PROXY=1`.
-- [ ] Если Cloudflare: real_ip и закрытие origin по `cloudflare-real-ip.md` (диапазоны актуальны, файрвол origin, Authenticated Origin Pulls по желанию).
+- [ ] Схема прокси (Q4): по умолчанию `клиент -> nginx -> api` (DNS в Beget, без Cloudflare — как в infrastructure/nginx.twomc.su.conf.example); `TRUST_PROXY=1`. Вариант `Cloudflare -> nginx -> api` — только по отдельному решению владельца.
+- [ ] Только если владелец выбрал Cloudflare: real_ip и закрытие origin по `cloudflare-real-ip.md` (диапазоны актуальны, файрвол origin, Authenticated Origin Pulls по желанию).
 - [ ] Игровой трафик Minecraft НЕ проксируется через Cloudflare (Q14); для игрового хоста отдельное имя и адрес без проксирования (Q56, вариант а).
 - [ ] Путь `/webhooks/payments/` достижим снаружи по HTTPS (проверка: запрос без подписи даёт 401 или 404, не 502 и не таймаут).
 

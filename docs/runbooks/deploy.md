@@ -43,8 +43,8 @@
 
 1. Остановить приложения: `docker compose --env-file .env -f infrastructure/docker-compose.prod.yml stop api web`.
 2. Выбрать снимок: `ls -lt "$PREDEPLOY_BACKUP_DIR"`; имя содержит sha релиза и время.
-3. Сохранить текущее состояние перед восстановлением (ещё один `pg_dump -Fc` тем же способом).
-4. Восстановить в чистую БД: `pg_restore --clean --if-exists --no-owner -d "$POSTGRES_DB"` внутри контейнера postgres, подав файл на stdin (`exec -T postgres ... < снимок`), либо в пересозданную пустую БД.
+3. ОБЯЗАТЕЛЬНО сохранить текущее состояние перед восстановлением (ещё один `pg_dump -Fc` тем же способом) и убедиться, что файл не пустой. Без этого шага не продолжать: следующий шаг необратим, а restore-drill (P3-03b) ещё не выполнен.
+4. НЕОБРАТИМО. Восстановить в чистую БД: `pg_restore --clean --if-exists --no-owner -d "$POSTGRES_DB"` внутри контейнера postgres, подав файл на stdin (`exec -T postgres ... < снимок`), либо в пересозданную пустую БД.
 5. Запустить предыдущий релиз: `infrastructure/deploy.sh rollback` (образы) и проверить health.
 6. Репетиция restore-drill на синтетических данных и бэкапы по расписанию — задача P3-03b; до её завершения восстановление не отрепетировано (риск R3/R8).
 
@@ -76,7 +76,7 @@
 Выполняются на любой машине без Docker и без доступа к серверу; ничего не запускают на production.
 
 1. Синтаксис: `bash -n infrastructure/deploy.sh` и `for f in infrastructure/backup/*.sh; do bash -n "$f"; done` - ожидается код 0 у каждого (на 2026-11-23: deploy.sh, backup.sh, restore.sh, restore-drill.sh - 0).
-2. shellcheck (если установлен; временное окружение `pip install shellcheck-py` в venv вне репозитория): `shellcheck infrastructure/deploy.sh infrastructure/backup/*.sh`. На 2026-11-23 в окружении агента shellcheck не установлен - не выполнялась.
+2. shellcheck (если установлен; пакет ОС (например, `apt install shellcheck`) либо закреплённая версия с проверкой хеша; без незакреплённых установок): `shellcheck infrastructure/deploy.sh infrastructure/backup/*.sh`. На 2026-11-23 в окружении агента shellcheck не установлен - не выполнялась.
 3. Маркеры релиза не попадают в git: `git check-ignore .release .release.prev` - обе строки выводятся.
 4. Ранний выход по `PREDEPLOY_BACKUP_KEEP=0`: `PREDEPLOY_BACKUP_KEEP=0 infrastructure/deploy.sh` выходит с кодом 1 до снимка, НО только в checkout на сервере, где есть `.env`, чистая ветка `main` и сеть: скрипт сначала проверяет `.env` (иначе код 1 по другой причине), чистоту дерева и ветку, затем выполняет `git pull --ff-only`. На рабочей машине не запускать: результат кода 1 не доказывает проверку именно `KEEP`; смотреть текст сообщения «PREDEPLOY_BACKUP_KEEP='0' некорректно».
 5. Compose без `.env`: dummy-файл вне репозитория с `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `TRUST_PROXY=1`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, затем `docker compose --env-file <dummy.env> -f infrastructure/docker-compose.prod.yml config -q`. Нужен Docker; без любой из обязательных переменных команда падает (fail-fast). Примечание: сервис `api` читает `env_file: ../.env`, поэтому для `config` нужен и файл `.env` рядом с репозиторием (можно пустой временный, удалить после).
