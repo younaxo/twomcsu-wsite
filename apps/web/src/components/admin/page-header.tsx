@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageTitle } from '@/components/shell/page-title';
 import { cn } from '@/lib/cn';
 import { formatNumber } from '@/lib/format';
 
@@ -33,6 +34,7 @@ export function PageHeader({
   ];
   return (
     <div className={cn('flex flex-col gap-4', className)} {...props}>
+      {typeof title === 'string' ? <PageTitle title={title} /> : null}
       {breadcrumbs && breadcrumbs.length > 0 ? <Breadcrumbs items={items} /> : null}
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">

@@ -135,11 +135,11 @@ function ShopPageContent() {
             data.items.length === 0 ? (
               <EmptyState
                 icon={<ShoppingBag />}
-                title={filtered ? 'Ничего не найдено' : 'Товаров пока нет'}
+                title={filtered ? 'Ничего не найдено' : 'Пока нет данных'}
                 description={
                   filtered
                     ? 'Попробуйте другое название или сбросьте фильтры.'
-                    : 'Каталог наполняется администрацией.'
+                    : 'Товаров и наборов пока нет: каталог наполняется администрацией.'
                 }
                 action={
                   filtered ? (

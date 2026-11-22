@@ -7,7 +7,7 @@ export async function fetchPublic<T>(path: string, revalidate: number): Promise<
   try {
     const response = await fetch(`${API_URL}${path}`, {
       next: { revalidate },
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(1500),
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -22,3 +22,19 @@ export interface PublicSiteMeta {
 
 export const DEFAULT_DESCRIPTION =
   'twomc.su — Minecraft-проект с собственными серверами, уникальными механиками, магазином и живым сообществом.';
+
+const SAFE_SLUG = /^[\w-]{1,100}$/;
+
+/// Заголовок записи по slug для `generateMetadata` динамических страниц
+/// (товар, новость, сервер…): `title` или `name` из публичного API. Нет данных
+/// (API недоступен, 404) — `fallback`. Кэш 5 минут, как у настроек сайта.
+export async function fetchEntityTitle(path: string, fallback: string): Promise<string> {
+  // Слаг — последний сегмент пути; всё, что не `[\w-]{1,100}` (`..`, `%2e%2e`,
+  // слэши, длинные строки), отбрасываем без запроса к API.
+  const slug = path.slice(path.lastIndexOf('/') + 1);
+  if (!SAFE_SLUG.test(slug)) return fallback;
+  const entity = await fetchPublic<{ title?: unknown; name?: unknown }>(path, 300);
+  const raw = typeof entity?.title === 'string' ? entity.title : entity?.name;
+  const title = typeof raw === 'string' ? raw.trim() : '';
+  return title ? title.slice(0, 120) : fallback;
+}

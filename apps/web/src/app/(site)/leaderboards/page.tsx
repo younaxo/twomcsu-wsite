@@ -93,7 +93,7 @@ function LeaderboardsContent() {
       ) : entries.length === 0 ? (
         <EmptyState
           icon={<Trophy />}
-          title="Рейтинг пока пуст"
+          title="Пока нет данных"
           description={meta.empty}
           action={
             board === 'coins' ? (

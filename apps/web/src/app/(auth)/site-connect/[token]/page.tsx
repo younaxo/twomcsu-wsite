@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { SiteConnectView } from './site-connect-view';
 
 export const metadata: Metadata = {
-  title: { absolute: 'twomc.su' },
+  title: 'Привязка аккаунта',
   robots: { index: false, follow: false },
 };
 
