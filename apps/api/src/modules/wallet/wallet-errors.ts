@@ -17,6 +17,8 @@ export const WalletError = {
   IDEMPOTENCY_CONFLICT: 'wallet_idempotency_conflict',
   AMOUNT_INVALID: 'wallet_amount_invalid',
   ADJUST_LIMIT: 'wallet_adjust_limit',
+  ADJUST_DAILY_LIMIT: 'wallet_adjust_daily_limit',
+  SELF_ADJUST_FORBIDDEN: 'wallet_self_adjust_forbidden',
   REASON_REQUIRED: 'wallet_reason_required',
   TWO_FACTOR_REQUIRED: 'wallet_two_factor_required',
   TWO_FACTOR_INVALID: 'wallet_two_factor_invalid',

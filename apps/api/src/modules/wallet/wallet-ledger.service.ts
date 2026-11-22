@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, WalletEntryKind, WalletLedgerEntry } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,13 +50,96 @@ export interface LedgerPage {
 /// блокировкой строки кошелька `FOR UPDATE`; перед каждой записью сумма
 /// журнала сверяется с балансом (расхождение -> отказ `wallet_inconsistent`).
 @Injectable()
-export class WalletLedgerService {
+export class WalletLedgerService implements OnModuleInit {
   private readonly logger = new Logger(WalletLedgerService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
+
+  /// При включённом флаге сверяет материализованные балансы с журналом и
+  /// пишет в лог предупреждение, если есть расхождения (например, не сведены
+  /// прежние балансы проводкой OPENING_BALANCE, runbook wallet-ledger). Не
+  /// останавливает запуск: записи по расходящимся кошелькам и так отклоняются
+  /// (wallet_inconsistent).
+  async onModuleInit(): Promise<void> {
+    if (!this.isEnabled()) return;
+    try {
+      const bad = await this.findInconsistentWallets(10);
+      if (bad.length > 0) {
+        this.logger.error(
+          `Кошелёк включён, но ${bad.length}+ балансов RUBY не сходятся с журналом (первые: ${bad
+            .map((b) => b.userId)
+            .join(
+              ', ',
+            )}). Сведите их проводкой OPENING_BALANCE до работы с кошельком`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Сверка кошельков при запуске не выполнена: ${String(error)}`,
+      );
+    }
+  }
+
+  /// Кошельки RUBY, где баланс != сумма журнала (чтение, без блокировок).
+  async findInconsistentWallets(
+    limit = 100,
+  ): Promise<{ userId: string; balance: bigint; ledger: bigint }[]> {
+    return this.prisma.$queryRaw<
+      { userId: string; balance: bigint; ledger: bigint }[]
+    >`
+      SELECT w."userId" AS "userId", w.balance AS balance,
+             COALESCE(SUM(l.amount), 0)::bigint AS ledger
+      FROM wallets w
+      LEFT JOIN wallet_ledger_entries l
+        ON l."userId" = w."userId" AND l.currency = 'RUBY'::"WalletCurrency"
+      WHERE w.currency = 'RUBY'::"WalletCurrency"
+      GROUP BY w."userId", w.balance
+      HAVING w.balance <> COALESCE(SUM(l.amount), 0)
+      LIMIT ${limit}`;
+  }
+
+  /// Свести прежний баланс пользователя с журналом проводкой OPENING_BALANCE
+  /// (разница balance - сумма журнала, ключ `opening-balance:<userId>`,
+  /// идемпотентно). Вызывать внутри транзакции (служебный скрипт владельца).
+  /// Журнал выше баланса сводить нечем -> wallet_inconsistent. Баланс не
+  /// меняется: проводка лишь догоняет журнал.
+  async postOpeningBalance(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    actorId: string | null = null,
+  ): Promise<PostEntryResult | null> {
+    const key = `opening-balance:${userId}`;
+    const existing = await tx.walletLedgerEntry.findUnique({
+      where: { idempotencyKey: key },
+    });
+    if (existing) return { entry: existing, created: false };
+    const rows = await tx.$queryRaw<{ balance: bigint }[]>`
+      SELECT balance FROM wallets
+      WHERE "userId" = ${userId} AND currency = 'RUBY'::"WalletCurrency"
+      FOR UPDATE`;
+    const row = rows[0];
+    if (!row) return null;
+    const sum = await this.sumLedger(tx, userId);
+    const delta = row.balance - sum;
+    if (delta === 0n) return null;
+    if (delta < 0n) throw walletInconsistent();
+    const entry = await tx.walletLedgerEntry.create({
+      data: {
+        userId,
+        currency: 'RUBY',
+        amount: delta,
+        balanceAfter: row.balance,
+        kind: 'OPENING_BALANCE',
+        idempotencyKey: key,
+        reason: 'opening_balance',
+        actorId,
+      },
+    });
+    return { entry, created: true };
+  }
 
   isEnabled(): boolean {
     return walletLedgerEnabled(this.config);

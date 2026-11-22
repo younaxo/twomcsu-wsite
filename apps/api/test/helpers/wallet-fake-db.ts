@@ -21,6 +21,12 @@ export function createFakeDb() {
   const entries: FakeEntry[] = [];
   const balances = new Map<string, bigint>();
   let seq = 0;
+  /// Заказы (по умолчанию COMPLETED), активные возвраты, позиции (по умолчанию
+  /// 1 ₽ за штуку при 100 шт.) и журнал порядка блокировок.
+  const orders = new Map<string, { status: string }>();
+  const activeRefunds = new Set<string>();
+  const items = new Map<string, { unitPrice: string; totalPrice: string }>();
+  const locks: string[] = [];
   let queue: Promise<unknown> = Promise.resolve();
 
   const matches = (e: FakeEntry, where: Record<string, unknown> = {}) =>
@@ -51,13 +57,44 @@ export function createFakeDb() {
     $queryRaw: jest.fn(
       (strings: TemplateStringsArray, ...values: unknown[]) => {
         const text = sqlText(strings);
+        if (text.includes('FROM wallet_ledger_entries')) {
+          const total = entries
+            .filter((e) => e.kind === 'ADMIN_ADJUST' && e.actorId === values[0])
+            .reduce(
+              (sum, e) => sum + (e.amount < 0n ? -e.amount : e.amount),
+              0n,
+            );
+          return Promise.resolve([{ total }]);
+        }
+        if (text.includes('FROM orders')) {
+          locks.push('order');
+          const id = values[0] as string;
+          return Promise.resolve([
+            { id, status: orders.get(id)?.status ?? 'COMPLETED' },
+          ]);
+        }
         if (text.includes('FROM wallets')) {
+          locks.push('wallet');
           const b = balances.get(values[0] as string);
           return Promise.resolve(b === undefined ? [] : [{ balance: b }]);
         }
         return Promise.resolve([]);
       },
     ),
+    orderRefund: {
+      findFirst: jest.fn(({ where }: { where: { orderId: string } }) =>
+        Promise.resolve(
+          activeRefunds.has(where.orderId) ? { id: 'r-active' } : null,
+        ),
+      ),
+    },
+    orderItem: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          items.get(where.id) ?? { unitPrice: '1.00', totalPrice: '100.00' },
+        ),
+      ),
+    },
     walletLedgerEntry: {
       findUnique: jest.fn(({ where }: { where: { idempotencyKey: string } }) =>
         Promise.resolve(
@@ -132,5 +169,5 @@ export function createFakeDb() {
     },
   };
 
-  return { entries, balances, tx, prisma };
+  return { entries, balances, orders, activeRefunds, items, locks, tx, prisma };
 }

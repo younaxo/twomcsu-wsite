@@ -438,6 +438,13 @@ const envBaseKeys: Joi.PartialSchemaMap = {
     .min(1)
     .max(10000000)
     .default(100000),
+  /// Суточный лимит суммы корректировок одного администратора (сумма модулей
+  /// за скользящие 24 часа), рубины.
+  WALLET_ADJUST_DAILY_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(1000000000)
+    .default(500000),
   /// Возвраты и сверка платежей (0.9, ADR-0188). По умолчанию выкл.: эндпоинты
   /// возвратов отвечают 503 `refunds_disabled`, фоновая сверка не работает.
   STORE_REFUNDS_ENABLED: Joi.boolean().default(false),

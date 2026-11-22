@@ -1,6 +1,7 @@
 import './helpers/wallet-env';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { ThrottlerStorage } from '@nestjs/throttler';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
@@ -103,6 +104,35 @@ describe('Кошелёк рубинов (0.15, e2e)', () => {
     renderedCommand: null,
   });
 
+  /// Заказ и позиция под задание: исполнитель блокирует заказ и сверяет цену
+  /// (1 ₽ за рубин), поэтому заказ должен существовать и быть оплачен.
+  async function seedOrder(
+    orderItemId: string,
+    quantity: number,
+    userId: string,
+    status: OrderStatus = OrderStatus.COMPLETED,
+  ) {
+    const price = new Prisma.Decimal(quantity);
+    await prisma.order.create({
+      data: {
+        id: `o-${orderItemId}`,
+        orderNumber: `WL-${orderItemId}`,
+        userId,
+        status,
+        subtotal: price,
+        total: price,
+        items: {
+          create: {
+            id: orderItemId,
+            quantity,
+            unitPrice: 1,
+            totalPrice: price,
+          },
+        },
+      },
+    });
+  }
+
   const adjust = (u: TestUser, userId: string, body: Record<string, unknown>) =>
     http()
       .post(`/admin/wallet/users/${userId}/adjust`)
@@ -157,6 +187,9 @@ describe('Кошелёк рубинов (0.15, e2e)', () => {
       where: { role: { slug: { in: roleSlugs } } },
     });
     await prisma.role.deleteMany({ where: { slug: { in: roleSlugs } } });
+    await prisma.order.deleteMany({
+      where: { orderNumber: { startsWith: `WL-i-${unique}` } },
+    });
     await prisma.refreshToken.deleteMany({ where: { userId: { in: users } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: users } } });
     await prisma.user.deleteMany({ where: { id: { in: users } } });
@@ -173,6 +206,7 @@ describe('Кошелёк рубинов (0.15, e2e)', () => {
   });
 
   it('покупка: +100 рубинов, повтор не зачисляет вторично, баланс и история видны', async () => {
+    await seedOrder(`i-${unique}-a`, 100, player.id);
     const t = task(`i-${unique}-a`, 100, player.id);
     await expect(executor.execute(t)).resolves.toMatchObject({
       kind: 'delivered',
@@ -204,6 +238,25 @@ describe('Кошелёк рубинов (0.15, e2e)', () => {
     expect(history.body.items[0].actorId).toBeUndefined();
   });
 
+  it('заказ в возврате или цена не 1 ₽ за рубин: рубины не зачисляются', async () => {
+    const refunding = `i-${unique}-r`;
+    await seedOrder(refunding, 50, player.id, OrderStatus.REFUND_PENDING);
+    await expect(
+      executor.execute(task(refunding, 50, player.id)),
+    ).resolves.toEqual({ kind: 'failed', reason: 'order_refund_in_progress' });
+    const wrongPrice = `i-${unique}-p`;
+    await seedOrder(wrongPrice, 50, player.id);
+    await prisma.orderItem.update({
+      where: { id: wrongPrice },
+      data: { unitPrice: 2, totalPrice: 100 },
+    });
+    await expect(
+      executor.execute(task(wrongPrice, 50, player.id)),
+    ).resolves.toEqual({ kind: 'unknown', reason: 'currency_price_mismatch' });
+    const recon = await ledger.reconcile(player.id);
+    expect(recon.ledger).toBe(100n);
+  });
+
   it('баланс = сумма журнала (сверка)', async () => {
     const recon = await ledger.reconcile(player.id);
     expect(recon.consistent).toBe(true);
@@ -225,6 +278,11 @@ describe('Кошелёк рубинов (0.15, e2e)', () => {
 
   it('корректировка: без wallet.adjust 403; неверный код 403; причина обязательна', async () => {
     await adjust(viewer, player.id, { amount: '10' }).expect(403);
+    // свой кошелёк корректировать нельзя
+    const self = await adjust(adjuster, adjuster.id, { amount: '10' }).expect(
+      403,
+    );
+    expect(self.body.code).toBe('wallet_self_adjust_forbidden');
     await adjust(adjuster, player.id, {
       amount: '10',
       twoFactorCode: '000000',

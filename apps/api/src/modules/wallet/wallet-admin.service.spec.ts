@@ -3,7 +3,12 @@ import { WalletAdminService } from './wallet-admin.service';
 import { WalletLedgerService } from './wallet-ledger.service';
 
 function setup(
-  opts: { enabled?: boolean; method?: string; max?: number } = {},
+  opts: {
+    enabled?: boolean;
+    method?: string;
+    max?: number;
+    daily?: number;
+  } = {},
 ) {
   const db = createFakeDb();
   const config = {
@@ -12,7 +17,9 @@ function setup(
         ? (opts.enabled ?? true)
         : k === 'WALLET_ADJUST_MAX'
           ? opts.max
-          : undefined,
+          : k === 'WALLET_ADJUST_DAILY_MAX'
+            ? opts.daily
+            : undefined,
     ),
   };
   const ledger = new WalletLedgerService(db.prisma as never, config as never);
@@ -118,6 +125,33 @@ describe('WalletAdminService (0.15)', () => {
       'wallet_amount_invalid',
     );
     expect(s.twoFactor.verify).not.toHaveBeenCalled();
+  });
+
+  it('свой кошелёк: 403 wallet_self_adjust_forbidden, 2FA не тратится', async () => {
+    const s = setup();
+    expect(await code(s.service.adjust('a1', dto(), 'a1'))).toBe(
+      'wallet_self_adjust_forbidden',
+    );
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    expect(s.db.entries).toHaveLength(0);
+  });
+
+  it('суточный лимит суммы на актёра: превышение откатывает, повтор requestId не считается', async () => {
+    const s = setup({ daily: 100 });
+    await s.service.adjust('u1', dto({ amount: '60', requestId: 'r1' }), 'a1');
+    // 60 + |-50| = 110 > 100
+    expect(
+      await code(s.service.adjust('u1', dto({ amount: '-50' }), 'a1')),
+    ).toBe('wallet_adjust_daily_limit');
+    // повтор того же requestId возвращает прежнюю проводку
+    const replay = await s.service.adjust(
+      'u1',
+      dto({ amount: '60', requestId: 'r1' }),
+      'a1',
+    );
+    expect(replay.replayed).toBe(true);
+    // другой актёр считается отдельно
+    await s.service.adjust('u1', dto({ amount: '40' }), 'a2');
   });
 
   it('причина обязательна', async () => {

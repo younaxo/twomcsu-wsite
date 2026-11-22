@@ -343,6 +343,9 @@ export class RefundsService {
     actorId: string,
   ): Promise<bigint> {
     if (!this.wallet) return 0n;
+    // Единый порядок блокировок: заказ -> кошелёк (так же, как у исполнителя
+    // wallet при зачислении). Повторная блокировка в той же транзакции безопасна.
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${order.id} FOR UPDATE`;
     const summary = await this.wallet.orderCreditSummary(tx, order.id);
     if (summary.credited === 0n) return 0n;
     if (!this.wallet.isEnabled()) throw walletDisabled();

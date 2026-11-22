@@ -247,6 +247,7 @@ function setup(
   );
   return {
     service,
+    tx,
     order,
     refunds,
     refundSpy,
@@ -676,6 +677,20 @@ describe('RefundsService: рубины кошелька (0.15)', () => {
         'orders.refund.override_requested',
     )![1] as { changes: { rubiesReversed: string } };
     expect(requested.changes.rubiesReversed).toBe('100');
+  });
+
+  it('порядок блокировок: заказ (в т.ч. повторно в списании рубинов) раньше кошелька', async () => {
+    const { s } = await seeded();
+    await s.service.override('o1', dto(), 'a1');
+    const texts = (
+      s.tx.$queryRaw.mock.calls as unknown as [TemplateStringsArray][]
+    ).map(([strings]) => strings.join('?'));
+    const firstWallet = texts.findIndex((t) => t.includes('FROM wallets'));
+    expect(firstWallet).toBeGreaterThan(0);
+    const before = texts.slice(0, firstWallet);
+    expect(
+      before.filter((t) => t.includes('FROM orders')).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 
   it('частичный возврат 25 из 100 ₽ списывает пропорционально 25 рубинов', async () => {

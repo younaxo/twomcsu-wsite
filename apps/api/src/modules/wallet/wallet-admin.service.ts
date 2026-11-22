@@ -7,7 +7,7 @@ import { INCR_EXPIRE_SCRIPT } from '../bridge/bridge-redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { AdjustWalletDto } from './dto/wallet.dto';
-import { walletAdjustMax } from './wallet-config';
+import { walletAdjustDailyMax, walletAdjustMax } from './wallet-config';
 import {
   walletBadRequest,
   walletForbidden,
@@ -82,6 +82,13 @@ export class WalletAdminService {
         `Корректировка не более ${max} за раз`,
       );
     }
+    // Свой кошелёк корректировать нельзя (разделение обязанностей).
+    if (userId === actorId) {
+      throw walletForbidden(
+        WalletError.SELF_ADJUST_FORBIDDEN,
+        'Нельзя корректировать собственный кошелёк',
+      );
+    }
     // Порядок: формат -> пользователь -> 2FA (код не сгорает из-за опечатки).
     await this.assertUser(userId);
     await this.assertFreshTwoFactor(actorId, dto.twoFactorCode);
@@ -89,7 +96,11 @@ export class WalletAdminService {
     const key = dto.requestId
       ? `adjust:${actorId}:${dto.requestId}`
       : `adjust:${randomUUID()}`;
+    const dailyMax = BigInt(walletAdjustDailyMax(this.config));
     const result = await this.prisma.$transaction(async (tx) => {
+      // Корректировки одного актёра сериализуются (иначе параллельные запросы
+      // к разным кошелькам обходят суточный лимит).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet-adjust:${actorId}`}))`;
       const posted = await this.ledger.post(tx, {
         userId,
         amount,
@@ -99,6 +110,19 @@ export class WalletAdminService {
         actorId,
       });
       if (posted.created) {
+        // Сумма модулей за 24 часа, включая эту проводку; превышение откатывает
+        // транзакцию. Повтор по requestId (created=false) не считается.
+        const rows = await tx.$queryRaw<{ total: bigint | null }[]>`
+          SELECT COALESCE(SUM(ABS(amount)), 0)::bigint AS total
+          FROM wallet_ledger_entries
+          WHERE kind = 'ADMIN_ADJUST'::"WalletEntryKind" AND "actorId" = ${actorId}
+            AND "createdAt" >= ${new Date(Date.now() - 24 * 60 * 60 * 1000)}`;
+        if ((rows[0]?.total ?? 0n) > dailyMax) {
+          throw walletBadRequest(
+            WalletError.ADJUST_DAILY_LIMIT,
+            `Суточный лимит корректировок ${dailyMax} рубинов исчерпан`,
+          );
+        }
         await this.audit.logInTx(tx, {
           actorId,
           action: 'wallet.adjusted',

@@ -208,4 +208,44 @@ describe('WalletLedgerService (0.15)', () => {
       expect(db.balances.get('u1')).toBe(50n);
     });
   });
+
+  describe('OPENING_BALANCE (бэкфилл прежних балансов)', () => {
+    const open = (
+      db: ReturnType<typeof createFakeDb>,
+      service: WalletLedgerService,
+    ) =>
+      db.prisma.$transaction((tx) =>
+        service.postOpeningBalance(tx as never, 'u1', 'owner'),
+      );
+
+    it('сводит прежний баланс с журналом, идемпотентно, баланс не меняется', async () => {
+      const { service, db, post } = setup();
+      db.balances.set('u1', 70n);
+      // до сведения запись в кошелёк отклоняется
+      expect(await code(post())).toBe('wallet_inconsistent');
+      const res = await open(db, service);
+      expect(res?.created).toBe(true);
+      expect(db.entries[0]).toMatchObject({
+        kind: 'OPENING_BALANCE',
+        amount: 70n,
+        balanceAfter: 70n,
+        idempotencyKey: 'opening-balance:u1',
+      });
+      expect(db.balances.get('u1')).toBe(70n);
+      const again = await open(db, service);
+      expect(again?.created).toBe(false);
+      expect(db.entries).toHaveLength(1);
+      // после сведения обычные проводки работают
+      await post();
+      expect(db.balances.get('u1')).toBe(170n);
+    });
+
+    it('уже сходится — ничего не пишет; журнал выше баланса — wallet_inconsistent', async () => {
+      const { service, db, post } = setup();
+      await post();
+      expect(await open(db, service)).toBeNull();
+      db.balances.set('u1', 10n);
+      expect(await code(open(db, service))).toBe('wallet_inconsistent');
+    });
+  });
 });

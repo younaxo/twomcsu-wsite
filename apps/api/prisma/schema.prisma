@@ -512,6 +512,8 @@ enum WalletEntryKind {
   ADMIN_ADJUST
   REFUND_REVERSAL
   REFUND_RESTORE
+  /// Начальный остаток (сведение прежних wallets.balance с журналом, runbook wallet-ledger).
+  OPENING_BALANCE
 }
 
 /// Журнал кошелька (0.15, ADR-0191): append-only, баланс = сумма проводок.
