@@ -24,6 +24,14 @@ describe('заголовки страниц', () => {
     expect(composeDocumentTitle('', 0)).toBe('twomc.su');
   });
 
+  it('composeDocumentTitle: бейдж + суффикс, повторное применение идемпотентно', () => {
+    const admin = 'twomc.su | A [5]';
+    const once = composeDocumentTitle('Новости — twomc.su', 4, admin);
+    expect(once).toBe('(4) Новости — twomc.su | A [5]');
+    expect(composeDocumentTitle(once, 4, admin)).toBe(once);
+    expect(composeDocumentTitle(composeDocumentTitle(once, 4, admin), 4, admin)).toBe(once);
+  });
+
   it('composeDocumentTitle: суффикс админки добавляется и не залипает на сайте', () => {
     const admin = 'twomc.su | A [5]';
     expect(composeDocumentTitle('Новости — twomc.su', 0, admin)).toBe('Новости — twomc.su | A [5]');

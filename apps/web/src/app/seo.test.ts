@@ -96,4 +96,16 @@ describe('SEO (срез 8.4)', () => {
     );
     expect(await fetchEntityTitle('/news/a', 'Новость')).toBe('Новость');
   });
+
+  it('fetchEntityTitle: небезопасный слаг — fallback без запроса к API', async () => {
+    const fetchMock = vi.fn(() => json({ title: 'Секрет' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const slugs = ['..', '%2e%2e', 'a%2Fb', 'a%5Cb', 'x'.repeat(101), ''];
+    for (const slug of slugs) {
+      expect(await fetchEntityTitle(`/news/${slug}`, 'Новость')).toBe('Новость');
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await fetchEntityTitle(`/news/${'x'.repeat(100)}`, 'Новость')).toBe('Секрет');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

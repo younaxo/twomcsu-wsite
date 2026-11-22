@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { safeHandle } from '@/lib/safe-handle';
 
 /// Заголовок вкладки — «ник — twomc.su»; ник берётся из адреса. Данные профиля
 /// сервер не рендерит (страница клиентская), поэтому приватное в метаданные
@@ -13,16 +14,6 @@ export function generateMetadata({ params }: { params: { username: string } }): 
     openGraph: { title: `${handle} — twomc.su`, description, type: 'profile' },
     twitter: { title: `${handle} — twomc.su`, description },
   };
-}
-
-function safeHandle(raw: string): string {
-  let value = raw;
-  try {
-    value = decodeURIComponent(raw);
-  } catch {
-    // Битый %-escape — показываем как есть.
-  }
-  return value.slice(0, 32);
 }
 
 export default function PublicProfileLayout({ children }: { children: ReactNode }) {
