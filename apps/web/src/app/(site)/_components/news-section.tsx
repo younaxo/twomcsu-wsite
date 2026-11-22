@@ -104,8 +104,8 @@ function NewsGrid({ items }: { items: NewsListItem[] }) {
       <EmptyState
         size="sm"
         icon={<Newspaper />}
-        title="Публикаций пока нет"
-        description="Раздел наполняется редакцией twomc.su."
+        title="Пока нет данных"
+        description="Публикаций пока нет: раздел наполняется редакцией twomc.su."
       />
     );
   }

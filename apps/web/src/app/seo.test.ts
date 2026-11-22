@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fetchEntityTitle } from '@/lib/seo';
 import { generateMetadata } from './layout';
 import robots from './robots';
 import sitemap from './sitemap';
@@ -66,5 +67,33 @@ describe('SEO (срез 8.4)', () => {
     expect(meta.description).toBe('Описание');
     expect(meta.keywords).toEqual(['minecraft']);
     expect(meta.openGraph?.title).toBe('twomc.su — сервер');
+  });
+
+  it('fetchEntityTitle: название из API, обрезка, fallback при 404 и сбое сети', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => json({ name: '  Набор Старт  ' })),
+    );
+    expect(await fetchEntityTitle('/store/products/start', 'Товар')).toBe('Набор Старт');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => json({ title: 'x'.repeat(300) })),
+    );
+    expect((await fetchEntityTitle('/news/a', 'Новость')).length).toBe(120);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('{}', { status: 404 }))),
+    );
+    expect(await fetchEntityTitle('/news/a', 'Новость')).toBe('Новость');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new Error('ECONNREFUSED'))),
+    );
+    expect(await fetchEntityTitle('/news/a', 'Новость')).toBe('Новость');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => json({})),
+    );
+    expect(await fetchEntityTitle('/news/a', 'Новость')).toBe('Новость');
   });
 });

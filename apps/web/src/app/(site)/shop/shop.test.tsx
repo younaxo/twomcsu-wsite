@@ -117,7 +117,7 @@ describe('каталог /shop', () => {
   it('пустой каталог — пояснение без кнопки сброса', async () => {
     route({ '/store/categories': [], '/store/products': list([]) });
     render(<ShopPage />, { wrapper: Providers });
-    expect(await screen.findByText('Товаров пока нет')).toBeInTheDocument();
+    expect(await screen.findByText('Пока нет данных')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Сбросить/ })).not.toBeInTheDocument();
   });
 

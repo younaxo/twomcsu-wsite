@@ -31,7 +31,7 @@ export function formatDocumentTitle(count: number, base: string = SITE_NAME): st
   return count > 0 ? `(${formatBadgeCount(count)}) ${base}` : base;
 }
 
-const BADGE_PREFIX = /^(d++?)s+/;
+const BADGE_PREFIX = /^\(\d+\+?\)\s+/;
 
 /// Приводит текущий title к итоговому виду, СОХРАНЯЯ заголовок страницы
 /// (из metadata или PageTitle): снимает старый «(N) », для админки заменяет
@@ -44,7 +44,7 @@ export function composeDocumentTitle(
 ): string {
   let page = current.replace(BADGE_PREFIX, '').trim();
   // Суффикс админки не должен «залипать» после перехода на публичную страницу.
-  if (base === SITE_NAME) page = page.replace(/ | A [d+]$/, '');
+  if (base === SITE_NAME) page = page.replace(/ \| A \[\d+\]$/, '');
   if (!page) page = base;
   else if (base !== SITE_NAME && page.endsWith(SITE_NAME) && !page.endsWith(base)) {
     page = page.slice(0, -SITE_NAME.length) + base;
