@@ -7,6 +7,7 @@ import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import { TwoFactorService } from '../src/modules/auth/two-factor/two-factor.service';
 
 jest.setTimeout(30_000);
@@ -132,6 +133,15 @@ describe('Шаблоны команд и тексты магазина (0.11, e2
       },
     });
     productId = product.id;
+  });
+
+  /// PUT шаблона ограничен 10/мин; спека делает больше запросов с одного IP,
+  /// поэтому счётчики лимитера сбрасываются после каждого теста.
+  afterEach(() => {
+    const storage = app.get<{ storage: Record<string, unknown> }>(
+      ThrottlerStorage,
+    );
+    for (const key of Object.keys(storage.storage)) delete storage.storage[key];
   });
 
   afterAll(async () => {
