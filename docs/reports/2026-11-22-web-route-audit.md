@@ -30,7 +30,7 @@
 | Политика Mojang | футер | внешний URL | работает (external-link-guard) | - | - |
 | `/u/{username}` | профиль-меню | `(site)/u/[username]` | работает | `users/:username/public` | - |
 | `/settings` | профиль-меню | `(site)/settings` + 8 вложенных | работает | `users/me/*`, `auth`, `punishments/me` | - |
-| `/friends` | профиль-меню | `(site)/friends` | работает | `friends` | поиска игроков (`GET /users/search`) нет |
+| `/friends` | профиль-меню | `(site)/friends` | работает | `friends` | поиска игроков (`GET /users/search`) нет: проверено 2026-11-23, страница поиска не делалась (нет API) |
 | `/messages` | профиль-меню | `(site)/messages` + `[id]`, `invite/[code]` | работает | `messages` | - |
 | `/support` | профиль-меню | `(site)/support` + `[reportNumber]`, `new/[type]` | работает | `moderation/reports` | - |
 | `/shop/orders` | профиль-меню (если store включён) | `(site)/shop/orders` + `[orderNumber]` | работает | `store/orders` | - |
@@ -38,13 +38,16 @@
 | `/admin` | профиль-меню (по праву входа) | `admin/page.tsx` | работает | `admin/*`, `site` | - |
 | Админка: users, media-requests, roles(+`[id]`), permissions, positions, departments, custom-positions | `lib/admin/navigation.ts` | все есть | работает | `admin/users`, `admin/departments`, `admin/custom-positions`, `admin/media-requests` | - |
 | Админка: punishments (подраздел «Пользователей») | navigation.ts | `admin/punishments` | сделано 2026-11-22: список, фильтры, выдавший скрыт по умолчанию (Q31) | `admin/punishments` | карточка и скрытие выдавшего (POST/DELETE issuer-hidden) - позже |
-| Админка: content, news(+new,`[id]`), events, topics(+new,`[id]`), forms(+`[id]`), voting, reports(+`[reportNumber]`) | navigation.ts | все есть | работает | `admin/news,events,topics,forms,voting/sites`, `moderation/reports` | конструктор форм - блок J |
+| Админка: content, news(+new,`[id]`), events, topics(+new,`[id]`), forms(+`new`, `[id]`, `[id]/edit`), voting, reports(+`[reportNumber]`) | navigation.ts | все есть | работает | `admin/news,events,topics,forms,voting/sites`, `moderation/reports` | конструктор форм сделан 2026-11-23 |
+| Админка: moderation/comments, moderation/profiles (пункт «Жалобы на контент») | navigation.ts | есть | сделано 2026-11-23: очередь, фильтр статуса, принять/отклонить с заметкой, жёсткое удаление комментария с подтверждением | `admin/comment-reports`, `admin/profile-reports`, `moderation/comments/:id/hard-delete` | - |
+| Админка: notifications | navigation.ts | `admin/notifications` | сделано 2026-11-23 | `admin/notifications/*` | - |
+| Админка: server-categories | navigation.ts (подраздел «Серверов») | `admin/server-categories` | сделано 2026-11-23 | `admin/server-categories` | - |
 | Админка: achievements, awards | navigation.ts | есть | работает | `admin/achievements` | - |
 | Админка: store/products, categories, orders(+`[id]`), delivery(+`[id]`), promocodes, discounts | navigation.ts | есть | работает | `admin/store/*`, `admin/orders`, `admin/delivery/tasks`, `admin/promocodes` | - |
-| Админка: finance | navigation.ts | `admin/finance` | проверить | `admin/store/stats`, `wallet` (контроллера finance нет) | проверить, что это не пустая обёртка |
+| Админка: finance | navigation.ts | `admin/finance` | проверено 2026-11-23: не пустая обёртка (обзор с графиком продаж, топ товаров, заказы с экспортом, возвраты; права `finance.*`) | `admin/store/stats`, `wallet` (контроллера finance нет) | - |
 | Админка: chat, communications, announcements, appearance, servers, system, storage, settings, security, audit-log, exports, tools | navigation.ts, quick-actions, status-overview | все есть | работает | `admin/chat`, `admin/communications`, `admin/servers`, `admin/system`, `admin/system/storage`, `admin` | `tools`, `exports`, `audit-log` - сверить контроллеры точечно |
 | `/admin/system?tab=maintenance` и `?tab=modules`, `/admin/announcements?new=1` | quick-actions, status-overview | `admin/system`, `admin/announcements` | работает | `admin/system` | проверено 2026-11-22: `system/page.tsx` читает `tab`, `announcements-panel` читает `new=1` |
-| `/admin/broadcast` | нет ссылки | страница есть | осиротевшая страница | - | включить в меню или решить судьбу |
+| `/admin/broadcast` | нет ссылки | страница-редирект на `/admin/announcements` (ADR-0081) | не осиротевшая: проверено 2026-11-23, пункт «Объявления» уже в меню по праву, ключевое слово broadcast в палитре | - | отдельная ссылка не нужна; массовые уведомления - см. `/admin/notifications` |
 
 Сводка (по строкам таблицы, группы считаются одной строкой): работает на реальном API - 26; честное пустое состояние - 1 (`/leaderboards`); заглушка или Скоро - 1 (`/wiki`); флаг выключен - 1 (`/bans`); бэкенд есть, страницы нет - 1 (избранное); требуют проверки - 4 (якоря `#bonus` и `#quick-start`, finance, query-параметры админки); осиротевшая страница - 1; 404 - 0.
 
@@ -64,9 +67,9 @@
 - `store/bundles`, `admin/store/bundles`, `admin/store/currencies` - админ-страниц нет.
 - ~~`admin/punishments`~~ - сделано 2026-11-22 (`/admin/punishments`, список).
 - `admin/streams`, `streams` - страниц нет.
-- `admin/notifications` - админ-UI уведомлений нет.
-- `admin/server-categories` - UI нет.
-- `moderation/users`, `moderation/news/comments` - очереди жалоб без UI.
+- ~~`admin/notifications`~~ - сделано 2026-11-23 (`/admin/notifications`: рассылка с подтверждением, вебхуки с маской адреса, статистика).
+- ~~`admin/server-categories`~~ - сделано 2026-11-23 (`/admin/server-categories`, подраздел «Серверов»).
+- ~~очереди жалоб на комментарии и профили~~ - сделано 2026-11-23 (`/admin/moderation/comments`, `/admin/moderation/profiles`; контроллер `admin/comment-reports`, `admin/profile-reports`). `moderation/users/*` (mute/warn/kick/ban) - действия над пользователем, не очереди; отдельного UI нет.
 - ~~`servers/:slug`~~ - сделано 2026-11-22 (`/servers/[slug]`).
 
 ## Предложение порядка доработок
@@ -75,20 +78,20 @@
 2. `/servers/[slug]` с графиком - сделано 2026-11-22.
 3. Страница избранного и пункт меню профиля - сделано 2026-11-22.
 4. Админ-страница наказаний (`admin/punishments`) - список сделан 2026-11-22; осталось включение `punishments.public.enabled` по решению владельца.
-5. Очереди жалоб на комментарии и профили (`moderation/*`) в админке.
-6. Админ-UI уведомлений и категорий серверов.
-7. Конструктор форм (редактор полей поверх `admin/forms`).
-8. Решить судьбу `/admin/broadcast`, проверить `finance`.
-9. Поиск игроков (`GET /users/search`) - нужен новый бэкенд, последним.
+5. Очереди жалоб на комментарии и профили - сделано 2026-11-23.
+6. Админ-UI уведомлений и категорий серверов - сделано 2026-11-23.
+7. Конструктор форм - сделано 2026-11-23 (`/admin/forms/new`, `/admin/forms/[id]/edit`: поля, типы, порядок, предпросмотр; у формы с ответами поля заблокированы, ADR-0152).
+8. `/admin/broadcast` - редирект на объявления, оставлен; `finance` проверен - сделано 2026-11-23.
+9. Поиск игроков (`GET /users/search`) - пропущено 2026-11-23: публичного API поиска нет (`GET /users` - админский список по праву `users.view`); нужен новый бэкенд.
 10. Wiki и рейтинги из игры - после решения владельца и приёмника Bridge.
 
 ## Блок J: недостающие админ-страницы
 
 Источник: `docs/reports/2026-11-17-J-inventory-07-10.md` (на 2026-11-17; частично устарел, админка магазина с тех пор появилась). Недостающее:
 
-- UI очередей жалоб на комментарии и профили (API есть).
-- UI админ-уведомлений (`admin/notifications`).
-- Конструктор форм: создание формы и редактор полей (API `admin/forms` есть).
+- ~~UI очередей жалоб на комментарии и профили~~ - сделано 2026-11-23.
+- ~~UI админ-уведомлений (`admin/notifications`)~~ - сделано 2026-11-23.
+- ~~Конструктор форм~~ - сделано 2026-11-23.
 - Подписи «в разработке» у автомодерации.
 - Рассылки в фоне (J-08-4) - нужна аддитивная миграция, только локальная БД.
 - Найдено сверх J: админ-страница наказаний, bundles, currencies, streams, server-categories.
