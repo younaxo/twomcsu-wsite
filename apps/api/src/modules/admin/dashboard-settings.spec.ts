@@ -50,7 +50,7 @@ describe('DashboardService.upsertSettings: store.offerVersion', () => {
 });
 
 describe('DashboardService.upsertSettings: защищённые ключи', () => {
-  it.each(['store.delivery.enabled', 'store.text.refund_policy'])(
+  it.each(['store.delivery.extra_command_roots', 'store.text.x'])(
     'ключ %p отклоняется кодом settings_key_protected, запись не выполняется',
     async (key) => {
       const { service, upsert } = setup();
@@ -66,6 +66,15 @@ describe('DashboardService.upsertSettings: защищённые ключи', () 
       expect(upsert).not.toHaveBeenCalled();
     },
   );
+
+  it('store.delivery.enabled проходит как до 0.11', async () => {
+    const { service, upsert } = setup();
+    await service.upsertSettings(
+      { settings: { 'store.delivery.enabled': 'true' } },
+      'admin',
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
 
   it('обычный ключ проходит как прежде', async () => {
     const { service, upsert } = setup();

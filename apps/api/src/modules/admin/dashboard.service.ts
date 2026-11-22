@@ -9,6 +9,7 @@ import {
   STORE_OFFER_VERSION_MAX_LENGTH,
   STORE_OFFER_VERSION_SETTING,
 } from '../store/checkout-policy.service';
+import { EXTRA_ROOTS_SETTING } from '../delivery/command-template';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,9 +19,11 @@ import { UpsertSettingsDto } from './dto/upsert-settings.dto';
 
 const ONLINE_WINDOW_MINUTES = 5;
 
-/// Префиксы ключей SiteSetting, которые пишут только специальные эндпоинты
-/// (store-settings: store.text.*; delivery-templates: store.delivery.*).
-const PROTECTED_SETTING_PREFIXES = ['store.delivery.', 'store.text.'] as const;
+/// Ключи SiteSetting, которые пишут только специальные эндпоинты:
+/// store.text.* (store-settings) и точный ключ корней команд (2FA и аудит).
+/// Остальные store.delivery.* (enabled, maxAttempts, ...) пишутся общим PUT.
+const PROTECTED_SETTING_PREFIXES = ['store.text.'] as const;
+const PROTECTED_SETTING_KEYS: readonly string[] = [EXTRA_ROOTS_SETTING];
 
 @Injectable()
 export class DashboardService {
@@ -135,6 +138,7 @@ export class DashboardService {
     // Ключи со своими защищёнными эндпоинтами (2FA, аудит «было/стало»,
     // отдельные права) через общий settings.edit писать нельзя (ADR-0189).
     const protectedKey = Object.keys(dto.settings).find((key) =>
+      PROTECTED_SETTING_KEYS.includes(key) ||
       PROTECTED_SETTING_PREFIXES.some((prefix) => key.startsWith(prefix)),
     );
     if (protectedKey !== undefined) {
