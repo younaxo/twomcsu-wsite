@@ -168,6 +168,12 @@ describe('Возвраты: чистые функции', () => {
         refundRow('FAILED', '300.00') as never,
       ]),
     ).toBe('349.90');
+    expect(
+      remainingToRefund('450.00', [
+        refundRow('SUCCEEDED', '100.00') as never,
+        refundRow('PENDING', '50.00') as never,
+      ]),
+    ).toBe('300.00');
   });
 
   it('валидация: причина и код обязательны, override требует слово', () => {
@@ -204,6 +210,28 @@ describe('Возвраты: чистые функции', () => {
     expect(describeRefundError(err(403, 'refund_two_factor_invalid'))).toMatchObject({
       field: 'twoFactorCode',
     });
+  });
+
+  it('неизвестные коды и не-ApiError: общий текст без серверных сообщений', () => {
+    const generic = describeRefundError(new ApiError(500, ['SQL boom stack'], { code: 'weird' }));
+    expect(generic.message).toBe('Не удалось выполнить действие (код: weird)');
+    expect(describeRefundError(new ApiError(500, ['SQL boom stack'])).message).not.toMatch(/SQL/);
+    const plain = describeRefundError(new Error('secret internals'));
+    expect(plain.message).toBe('Не удалось выполнить действие (код: unknown)');
+    const busy = new ApiError(409, ['x'], { code: 'delivery_in_progress' });
+    expect(describeRefundError(busy).message).toMatch(/выдаётся/);
+  });
+
+  it('код 2FA: ровно 6 цифр', () => {
+    const opts = { withAmount: false, requireConfirm: false };
+    const base = { reason: 'ок', amount: '' };
+    expect(validateRefundForm({ ...base, twoFactorCode: '1234567' }, opts).twoFactorCode).toBe(
+      'Код — 6 цифр',
+    );
+    expect(validateRefundForm({ ...base, twoFactorCode: '12345' }, opts).twoFactorCode).toBe(
+      'Код — 6 цифр',
+    );
+    expect(validateRefundForm({ ...base, twoFactorCode: '123456' }, opts)).toEqual({});
   });
 
   it('меню: пункт «Возвраты» по праву orders.refund', () => {
@@ -295,6 +323,54 @@ describe('Возврат в карточке заказа', () => {
       'Слишком много попыток',
     );
     expect(within(dialog).getByLabelText(/Код 2FA/)).toHaveValue('');
+  });
+
+  it('поле кода: one-time-code; после любой ошибки очищается; причина с HTML сохраняется текстом', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.refund');
+    mocks.post.mockRejectedValue(new ApiError(500, ['boom'], { code: 'weird' }));
+    const { user, dialog } = await openRefundDialog('Вернуть');
+    const codeInput = within(dialog).getByLabelText(/Код 2FA/);
+    expect(codeInput).toHaveAttribute('autocomplete', 'one-time-code');
+    await user.type(within(dialog).getByLabelText(/Причина возврата/), '<b>x</b>');
+    await user.type(codeInput, '123456');
+    await user.click(within(dialog).getByRole('button', { name: 'Вернуть' }));
+    expect(await within(dialog).findByTestId('refund-error')).toHaveTextContent(
+      'Не удалось выполнить действие (код: weird)',
+    );
+    expect(within(dialog).getByLabelText(/Код 2FA/)).toHaveValue('');
+    expect(within(dialog).getByLabelText(/Причина возврата/)).toHaveValue('<b>x</b>');
+  });
+
+  it('двойная отправка: пока запрос идёт, второй POST не уходит', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.refund');
+    let resolve: (v: unknown) => void = () => {};
+    mocks.post.mockImplementation(() => new Promise((r) => (resolve = r)));
+    const { user, dialog } = await openRefundDialog('Вернуть');
+    await user.type(within(dialog).getByLabelText(/Причина возврата/), 'x');
+    await user.type(within(dialog).getByLabelText(/Код 2FA/), '123456');
+    const submit = within(dialog).getByRole('button', { name: 'Вернуть' });
+    await user.click(submit);
+    await user.click(submit);
+    await user.keyboard('{Enter}');
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    resolve({ refund: refundRow('SUCCEEDED'), orderStatus: 'REFUNDED' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('история: причина с HTML отображается текстом', async () => {
+    mocks.granted.add('orders.view');
+    mocks.granted.add('orders.refund');
+    refundsReply = () => ({
+      items: [{ ...refundRow('FAILED'), reason: '<img src=x onerror=alert(1)>' }],
+      total: 1,
+      page: 1,
+      limit: 100,
+    });
+    render(<AdminStoreOrderCardPage />, { wrapper: Providers });
+    expect(await screen.findByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
+    expect(document.querySelector('img[src="x"]')).toBeNull();
   });
 
   it('refund_in_progress (409) — понятный текст в окне', async () => {

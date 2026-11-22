@@ -2,7 +2,7 @@
 
 import { TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type RefObject } from 'react';
 import { FormErrorSummary, FormField, useFocusFirstInvalid } from '@/components/admin/form-field';
 import { PageSection } from '@/components/admin/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -85,6 +85,7 @@ function RefundDialog({
   open,
   onOpenChange,
   onDone,
+  fallbackFocusRef,
 }: {
   action: RefundAction;
   order: AdminOrderCard;
@@ -92,6 +93,8 @@ function RefundDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: (message: string) => void;
+  /// Куда вернуть фокус, если инициатор размонтирован или неактивен.
+  fallbackFocusRef: RefObject<HTMLElement | null>;
 }) {
   const mutation = useRefundAction(action);
   const text = ACTION_TEXT[action];
@@ -166,7 +169,16 @@ function RefundDialog({
         }}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          if (openerRef.current instanceof HTMLElement) openerRef.current.focus();
+          const opener = openerRef.current;
+          if (
+            opener instanceof HTMLElement &&
+            opener.isConnected &&
+            !opener.hasAttribute('disabled')
+          ) {
+            opener.focus();
+          } else {
+            fallbackFocusRef.current?.focus();
+          }
         }}
         onEscapeKeyDown={(event) => {
           if (mutation.isPending) event.preventDefault();
@@ -211,7 +223,7 @@ function RefundDialog({
               <FormField
                 label="Сумма возврата, ₽"
                 error={errors.amount}
-                hint={`Остаток к возврату: ${formatMoney(remaining)}. Пусто — вернуть остаток.`}
+                hint={`Остаток к возврату: ${formatMoney(remaining)} (с учётом обрабатываемых возвратов). Пусто — вернуть остаток.`}
               >
                 <Input
                   inputMode="decimal"
@@ -250,7 +262,7 @@ function RefundDialog({
               <Input
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                maxLength={8}
+                maxLength={6}
                 value={code}
                 onChange={(e) => {
                   setCode(e.target.value.replace(/\s/g, ''));
@@ -324,6 +336,7 @@ export function OrderRefundPanel({ order }: { order: AdminOrderCard }) {
   const refunds = useOrderRefunds(order.id, allowed);
   const [dialog, setDialog] = useState<RefundAction | null>(null);
   const [result, setResult] = useState('');
+  const headingRef = useRef<HTMLSpanElement>(null);
 
   if (!allowed) return null;
 
@@ -337,7 +350,13 @@ export function OrderRefundPanel({ order }: { order: AdminOrderCard }) {
   const otherError = refunds.isError && !disabled;
 
   return (
-    <PageSection title="Возврат">
+    <PageSection
+      title={
+        <span ref={headingRef} tabIndex={-1} className="outline-none focus-visible:underline">
+          Возврат
+        </span>
+      }
+    >
       <div
         className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
         data-testid="refund-panel"
@@ -416,6 +435,7 @@ export function OrderRefundPanel({ order }: { order: AdminOrderCard }) {
             if (!next) setDialog(null);
           }}
           onDone={setResult}
+          fallbackFocusRef={headingRef}
         />
       ) : null}
     </PageSection>

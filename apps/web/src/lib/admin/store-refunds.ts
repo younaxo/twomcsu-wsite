@@ -160,11 +160,12 @@ export function centsToDecimal(cents: number): string {
   return `${whole}.${frac}`;
 }
 
-/// Остаток к возврату: итог заказа минус успешные возвраты (целые копейки).
+/// Остаток к возврату: итог заказа минус успешные и обрабатываемые (PENDING)
+/// возвраты (целые копейки).
 export function remainingToRefund(total: string, refunds: readonly AdminRefund[]): string {
   const totalCents = toCents(total) ?? 0;
   const refunded = refunds
-    .filter((r) => r.status === 'SUCCEEDED')
+    .filter((r) => r.status === 'SUCCEEDED' || r.status === 'PENDING')
     .reduce((sum, r) => sum + (toCents(r.amount) ?? 0), 0);
   return centsToDecimal(Math.max(0, totalCents - refunded));
 }
@@ -204,7 +205,7 @@ export function validateRefundForm(
   }
   const code = values.twoFactorCode.trim();
   if (!code) errors.twoFactorCode = 'Введите код из приложения 2FA';
-  else if (!/^\d{6,8}$/.test(code)) errors.twoFactorCode = 'Код — 6 цифр';
+  else if (!/^\d{6}$/.test(code)) errors.twoFactorCode = 'Код — 6 цифр';
   if (options.requireConfirm && (values.confirmText ?? '').trim() !== OVERRIDE_CONFIRM_WORD) {
     errors.confirmText = `Введите слово ${OVERRIDE_CONFIRM_WORD} для подтверждения`;
   }
@@ -249,12 +250,20 @@ const CODE_TEXT: Record<string, { message: string; field?: keyof RefundFormError
   },
   refund_use_refunds_api: { message: 'Этот заказ возвращается только через раздел возвратов.' },
   refund_not_pending: { message: 'У заказа нет возврата в ожидании.' },
+  delivery_in_progress: {
+    message: 'Товар сейчас выдаётся. Дождитесь результата выдачи и повторите.',
+  },
 };
+
+/// Общий текст для неизвестных ошибок: серверные сообщения и error.message не показываем.
+function genericRefundError(code: string | null | undefined): string {
+  return `Не удалось выполнить действие (код: ${code || 'unknown'})`;
+}
 
 /// Понятные русские тексты по машинным кодам API; 429 — «Слишком много попыток».
 export function describeRefundError(error: unknown): RefundErrorInfo {
   const base: RefundErrorInfo = {
-    message: error instanceof Error ? error.message : 'Неизвестная ошибка',
+    message: genericRefundError(error instanceof ApiError ? error.code : null),
     field: null,
     needsTwoFactorSetup: false,
     disabled: false,
@@ -288,7 +297,7 @@ export function describeRefundError(error: unknown): RefundErrorInfo {
       message: 'Состояние заказа изменилось. Данные обновлены, повторите попытку.',
     };
   }
-  return { ...base, message: error.messages.join('. ') };
+  return { ...base, message: genericRefundError(error.code ?? String(error.status)) };
 }
 
 /// Итог операции для aria-live сообщения.
