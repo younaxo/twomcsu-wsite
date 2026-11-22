@@ -34,6 +34,7 @@
     "db:validate": "dotenv -e ../../.env -- prisma validate",
     "db:studio": "dotenv -e ../../.env -- prisma studio",
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
+    "db:seed:demo": "dotenv -e ../../.env -- ts-node prisma/seed/demo/index.ts",
     "postinstall": "prisma generate",
     "grant-role": "dotenv -e ../../.env -- ts-node scripts/grant-role.ts",
     "bridge:register": "dotenv -e ../../.env -- ts-node scripts/bridge-register-server.ts",
