@@ -172,7 +172,7 @@ describe('Админка магазина: товары (0.3)', () => {
   it('создание: POST без isActive/gameCommands, цена строкой, поле «выдача» не показано', async () => {
     grantAll();
     const { user, dialog } = await openCreate();
-    expect(within(dialog).getByText(/настраивается владельцем в подэтапе 0\.11/)).toBeVisible();
+    expect(within(dialog).getByTestId('delivery-note')).toBeVisible();
     expect(within(dialog).queryByLabelText(/команд/i)).toBeNull();
     await user.type(within(dialog).getByLabelText(/Название/), 'Алмазный ключ');
     await user.type(within(dialog).getByLabelText(/Slug/), 'diamond-key');
