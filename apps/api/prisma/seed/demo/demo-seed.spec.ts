@@ -114,7 +114,12 @@ describe('demo seed data', () => {
   it('состояние синхронизации: litebans, все виды, initialSyncDoneAt', () => {
     const now = new Date();
     const states = buildDemoSyncState(now);
-    expect(states.map((s) => s.kind).sort()).toEqual(['BAN', 'KICK', 'MUTE', 'WARN']);
+    expect(states.map((s) => s.kind).sort()).toEqual([
+      'BAN',
+      'KICK',
+      'MUTE',
+      'WARN',
+    ]);
     for (const s of states) {
       expect(s.source).toBe('litebans');
       expect(s.initialSyncDoneAt).toBe(now);
