@@ -17,6 +17,8 @@ import { TwoFactorService } from '../auth/two-factor/two-factor.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { WalletError, walletDisabled } from '../wallet/wallet-errors';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 import {
   CreateStoreRefundDto,
   ListStoreRefundsQueryDto,
@@ -74,6 +76,8 @@ export class RefundsService {
     private readonly audit: AuditService,
     private readonly twoFactor: TwoFactorService,
     private readonly redis: RedisService,
+    /// Журнал кошелька (0.15, ADR-0191): возврат непотраченных рубинов.
+    private readonly wallet?: WalletLedgerService,
   ) {}
 
   isEnabled(): boolean {
@@ -282,6 +286,15 @@ export class RefundsService {
               idempotencyKey: `refund:${id}:${order.refunds.length + 1}`,
             },
           });
+      const reversedRubies = await this.reverseRubies(
+        tx,
+        order,
+        refund,
+        amount,
+        remaining,
+        reason,
+        actorId,
+      );
       await tx.order.update({
         where: { id },
         data: { status: OrderStatus.REFUND_PENDING },
@@ -303,10 +316,78 @@ export class RefundsService {
           total: order.total.toFixed(2),
           reason,
           retry: !!retry,
+          ...(reversedRubies > 0n
+            ? { rubiesReversed: reversedRubies.toString() }
+            : {}),
         },
       });
       return { refund, paymentId: order.paymentId, provider };
     }, TX_OPTIONS);
+  }
+
+  /// Рубины, купленные по заказу (0.15, ADR-0191): возврат денег = списание
+  /// непотраченного остатка рубинов проводкой REFUND_REVERSAL в той же
+  /// транзакции, под блокировкой кошелька. Размер: весь остаток по заказу при
+  /// возврате всего остатка суммы, иначе пропорционально (вверх), не больше
+  /// остатка по заказу; баланса должно хватать, иначе отказ `refund_rubies_spent`
+  /// (до обращения к провайдеру: деньги не уходят). Флаг выкл. и рубины по
+  /// заказу есть -> 503 `wallet_disabled` (иначе деньги вернулись бы, а рубины
+  /// остались). Возвращает списанное (0 — рубинов по заказу нет).
+  private async reverseRubies(
+    tx: Prisma.TransactionClient,
+    order: { id: string; userId: string | null; total: Prisma.Decimal },
+    refund: OrderRefund,
+    amount: Prisma.Decimal,
+    remaining: Prisma.Decimal,
+    reason: string,
+    actorId: string,
+  ): Promise<bigint> {
+    if (!this.wallet) return 0n;
+    const summary = await this.wallet.orderCreditSummary(tx, order.id);
+    if (summary.credited === 0n) return 0n;
+    if (!this.wallet.isEnabled()) throw walletDisabled();
+    const credited = summary.credited;
+    const net = summary.net;
+    const proportional = BigInt(
+      new Prisma.Decimal(credited.toString())
+        .times(amount)
+        .div(order.total)
+        .toDecimalPlaces(0, Prisma.Decimal.ROUND_UP)
+        .toFixed(0),
+    );
+    const needed = amount.equals(remaining)
+      ? net
+      : proportional < net
+        ? proportional
+        : net;
+    if (needed <= 0n) return 0n;
+    const recipient = await tx.walletLedgerEntry.findFirst({
+      where: { orderId: order.id, kind: 'PURCHASE' },
+      select: { userId: true },
+    });
+    if (!recipient) return 0n;
+    try {
+      await this.wallet.reverseForRefund(tx, {
+        userId: recipient.userId,
+        orderId: order.id,
+        refundId: refund.id,
+        needed,
+        actorId,
+        reason: `refund:${reason}`.slice(0, 500),
+      });
+    } catch (error) {
+      if (
+        (error as { getResponse?: () => { code?: string } }).getResponse?.()
+          ?.code === WalletError.INSUFFICIENT
+      ) {
+        throw refundConflict(
+          RefundError.RUBIES_SPENT,
+          'Рубины по заказу уже потрачены или списаны: вернуть можно только непотраченный остаток',
+        );
+      }
+      throw error;
+    }
+    return needed;
   }
 
   private parseAmount(
@@ -472,6 +553,8 @@ export class RefundsService {
     code: string,
   ): Promise<void> {
     if (refund.status === OrderRefundStatus.FAILED) return;
+    // 0.15: возврат не состоялся — вернуть списанные под него рубины.
+    await this.wallet?.restoreForRefund(tx, refund.id, refund.actorId);
     await tx.orderRefund.update({
       where: { id: refund.id },
       data: {
@@ -511,6 +594,34 @@ export class RefundsService {
     );
     const full = refunded.gte(order.total);
     let requiresManualRevoke = false;
+
+    // 0.15: деньги фактически ушли после «отказа» (списание рубинов было
+    // откачено) — списываем рубины заново; если не вышло, нужен ручной разбор.
+    if (refund.status === OrderRefundStatus.FAILED && this.wallet) {
+      try {
+        await this.reverseRubies(
+          tx,
+          order,
+          refund,
+          refund.amount,
+          order.total.minus(refunded.minus(refund.amount)),
+          refund.reason,
+          refund.actorId as string,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Возврат ${refund.id}: рубины не списаны после позднего успеха`,
+        );
+        requiresManualRevoke = true;
+        await this.auditSystem(
+          tx,
+          refund,
+          'orders.refund.rubies_unreversed',
+          'critical',
+          { code: (error as { message?: string }).message ?? 'unknown' },
+        );
+      }
+    }
     if (full) {
       await this.delivery.cancelOpenTasks(tx, order.id);
       if (refund.kind === 'OVERRIDE') {

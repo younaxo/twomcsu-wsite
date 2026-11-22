@@ -39,6 +39,8 @@ export const DELIVERY_RECONCILE_LOOKBACK_MS = 72 * 3_600_000;
 export const EXECUTOR_MANUAL = 'manual';
 export const EXECUTOR_SITE = 'site';
 export const EXECUTOR_COMMAND = 'command';
+/// Зачисление рубинов на кошелёк (0.15, ADR-0191).
+export const EXECUTOR_WALLET = 'wallet';
 
 /// Возврат запрещён, если любое задание позиции в этих статусах (ADR-0184 Р4).
 export const REFUND_BLOCKING_STATUSES: readonly DeliveryTaskStatus[] = [

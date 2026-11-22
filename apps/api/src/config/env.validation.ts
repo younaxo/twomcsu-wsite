@@ -428,6 +428,16 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
   /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
   DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
+  /// Журнал кошелька рубинов (0.15, ADR-0191). По умолчанию выкл.: API
+  /// кошелька (история, админ) отвечает 503 `wallet_disabled`, исполнитель
+  /// wallet не зачисляет, возврат рубинов — как до 0.15.
+  WALLET_LEDGER_ENABLED: Joi.boolean().default(false),
+  /// Потолок одной ручной корректировки, рубины (по модулю).
+  WALLET_ADJUST_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(10000000)
+    .default(100000),
   /// Возвраты и сверка платежей (0.9, ADR-0188). По умолчанию выкл.: эндпоинты
   /// возвратов отвечают 503 `refunds_disabled`, фоновая сверка не работает.
   STORE_REFUNDS_ENABLED: Joi.boolean().default(false),

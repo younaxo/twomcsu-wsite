@@ -26,6 +26,8 @@ export const RefundError = {
   USE_REFUNDS_API: 'refund_use_refunds_api',
   TWO_FACTOR_LOCKED: 'refund_two_factor_locked',
   NOT_PENDING: 'refund_not_pending',
+  /// Рубины по заказу уже потрачены или списаны: вернуть можно только остаток (0.15).
+  RUBIES_SPENT: 'refund_rubies_spent',
 } as const;
 
 export type RefundErrorCode = (typeof RefundError)[keyof typeof RefundError];

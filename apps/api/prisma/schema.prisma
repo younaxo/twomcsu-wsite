@@ -506,6 +506,41 @@ model Wallet {
   @@map("wallets")
 }
 
+/// Вид проводки журнала кошелька (0.15, ADR-0191).
+enum WalletEntryKind {
+  PURCHASE
+  ADMIN_ADJUST
+  REFUND_REVERSAL
+  REFUND_RESTORE
+}
+
+/// Журнал кошелька (0.15, ADR-0191): append-only, баланс = сумма проводок.
+/// Без внешних ключей намеренно (журнал переживает пользователя и заказ);
+/// UPDATE/DELETE запрещены триггером БД и кодом. `idempotencyKey` UNIQUE:
+/// покупка — `purchase:<orderItemId>:<step>`, возврат — по id возврата.
+model WalletLedgerEntry {
+  id             String          @id @default(cuid())
+  userId         String
+  currency       WalletCurrency  @default(RUBY)
+  /// Целое со знаком (+ зачисление, - списание), ненулевое.
+  amount         BigInt
+  /// Баланс сразу после проводки (>= 0).
+  balanceAfter   BigInt
+  kind           WalletEntryKind
+  idempotencyKey String          @unique @db.VarChar(160)
+  reason         String?         @db.VarChar(500)
+  actorId        String?
+  orderId        String?
+  orderItemId    String?
+  refundId       String?
+  createdAt      DateTime        @default(now())
+
+  @@index([userId, createdAt(sort: Desc), id])
+  @@index([orderId])
+  @@index([refundId])
+  @@map("wallet_ledger_entries")
+}
+
 /// Регистрация с подтверждением почты (ADR-0070). Пароль здесь НЕ хранится:
 /// он передаётся только на финальном шаге и сразу хешируется в User.
 /// Код — только HMAC-хеш; одноразовый токен завершения — тоже хеш.

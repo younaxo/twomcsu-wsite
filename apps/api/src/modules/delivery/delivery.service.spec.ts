@@ -250,7 +250,7 @@ describe('DeliveryService.createTasksForOrder (0.7)', () => {
     const select = tx.order.findUnique.mock.calls[0][0].select;
     expect(JSON.stringify(select)).not.toContain('gameCommands');
     expect(select.items.select.product).toEqual({
-      select: { decorationId: true },
+      select: { decorationId: true, type: true },
     });
   });
 
