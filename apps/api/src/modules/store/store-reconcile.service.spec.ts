@@ -45,6 +45,8 @@ function setup(
         .mockResolvedValueOnce([{ id: 'ro1' }]),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    user: { findFirst: jest.fn().mockResolvedValue({ id: 'sys' }) },
+    auditLog: { findFirst: jest.fn().mockResolvedValue(null) },
   };
   const config = {
     get: jest.fn((k: string) =>
@@ -57,14 +59,16 @@ function setup(
   const refunds = {
     syncPendingRefund: jest.fn().mockResolvedValue('resolved'),
   };
+  const audit = { log: jest.fn().mockResolvedValue(undefined) };
   const service = new StoreReconcileService(
     prisma as never,
     config as never,
     { get: () => provider } as never,
     orders$ as never,
     refunds as never,
+    audit as never,
   );
-  return { service, prisma, orders$, refunds, provider, config };
+  return { service, prisma, orders$, refunds, provider, config, audit };
 }
 
 describe('StoreReconcileService (0.9)', () => {
@@ -154,6 +158,27 @@ describe('StoreReconcileService (0.9)', () => {
     });
     await s.service.runOnce(NOW);
     expect(s.orders$.handleWebhook).not.toHaveBeenCalled();
+    expect(s.audit.log).toHaveBeenCalledTimes(1);
+    expect((s.audit.log.mock.calls[0][0] as { action: string }).action).toBe(
+      'orders.order.external_refund_detected',
+    );
+  });
+
+  it('аудит внешнего возврата пишется один раз на заказ', async () => {
+    const s = setup([order()], {
+      status: 'succeeded',
+      refundedAmount: D('10.00'),
+    });
+    s.prisma.auditLog.findFirst.mockResolvedValue({ id: 'x' });
+    await s.service.runOnce(NOW);
+    expect(s.audit.log).not.toHaveBeenCalled();
+  });
+
+  it('просроченные REFUND_PENDING считаются в отчёте', async () => {
+    const s = setup([], {});
+    s.refunds.syncPendingRefund.mockResolvedValue('expired');
+    const r = await s.service.runOnce(NOW);
+    expect(r.refundsExpired).toBe(1);
   });
 
   it('ошибка провайдера по одному заказу не роняет проход; REFUND_PENDING сверяется', async () => {
@@ -161,6 +186,6 @@ describe('StoreReconcileService (0.9)', () => {
     const r = await s.service.runOnce(NOW);
     expect(r.errors).toBe(1);
     expect(r.refundsResolved).toBe(1);
-    expect(s.refunds.syncPendingRefund).toHaveBeenCalledWith('ro1');
+    expect(s.refunds.syncPendingRefund).toHaveBeenCalledWith('ro1', NOW);
   });
 });

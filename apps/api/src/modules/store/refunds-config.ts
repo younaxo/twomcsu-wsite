@@ -5,6 +5,7 @@ export const REFUNDS_ENV = {
   minAgeMinutes: 'STORE_REFUNDS_RECONCILE_MIN_AGE_MINUTES',
   windowHours: 'STORE_REFUNDS_RECONCILE_WINDOW_HOURS',
   batch: 'STORE_REFUNDS_RECONCILE_BATCH',
+  pendingTimeoutHours: 'STORE_REFUNDS_PENDING_TIMEOUT_HOURS',
 } as const;
 
 /// Интервал таймера сверки (процесс, не настройка): 5 минут.
@@ -46,4 +47,10 @@ export function reconcileSettings(config: ConfigService): ReconcileSettings {
     windowHours: numberSetting(config, REFUNDS_ENV.windowHours, 72, 1, 720),
     batch: numberSetting(config, REFUNDS_ENV.batch, 50, 1, 500),
   };
+}
+
+/// Срок ожидания ответа провайдера по REFUND_PENDING, часы (по умолчанию 72):
+/// после него сверка переводит возврат в REFUND_FAILED с аудитом.
+export function pendingRefundTimeoutHours(config: ConfigService): number {
+  return numberSetting(config, REFUNDS_ENV.pendingTimeoutHours, 72, 1, 720);
 }

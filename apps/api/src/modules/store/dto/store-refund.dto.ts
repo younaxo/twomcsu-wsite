@@ -56,3 +56,15 @@ export class ListStoreRefundsQueryDto {
   @MaxLength(40)
   orderId?: string;
 }
+
+/// Ручная отметка «возврат не удался» (REFUND_PENDING без ответа провайдера).
+export class MarkStoreRefundFailedDto {
+  @Transform(trim)
+  @IsString()
+  @Length(1, 1000)
+  reason!: string;
+
+  @IsString()
+  @Length(6, 8)
+  twoFactorCode!: string;
+}

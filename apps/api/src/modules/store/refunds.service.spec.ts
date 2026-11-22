@@ -22,6 +22,7 @@ interface FakeRefund {
   requiresManualRevoke: boolean;
   actorId: string | null;
   createdAt: Date;
+  updatedAt: Date;
   completedAt: Date | null;
 }
 
@@ -33,6 +34,7 @@ function setup(
     deliveredItems?: number;
     twoFactor?: 'totp' | null;
     paymentMethod?: string | null;
+    timeoutHours?: number;
     refundFn?: PaymentProvider['refund'];
     revokeLeft?: number;
   } = {},
@@ -102,6 +104,7 @@ function setup(
           errorCode: null,
           requiresManualRevoke: false,
           createdAt: new Date(seq),
+          updatedAt: new Date(seq),
           completedAt: null,
           ...data,
         } as FakeRefund;
@@ -185,10 +188,31 @@ function setup(
         opts.twoFactor === undefined ? 'totp' : opts.twoFactor,
       ),
   };
+  const counters = new Map<string, number>();
+  const redis = {
+    client: {
+      get: jest.fn((k: string) =>
+        Promise.resolve(counters.has(k) ? String(counters.get(k)) : null),
+      ),
+      incr: jest.fn((k: string) => {
+        counters.set(k, (counters.get(k) ?? 0) + 1);
+        return Promise.resolve(counters.get(k)!);
+      }),
+      expire: jest.fn().mockResolvedValue(1),
+      del: jest.fn((k: string) => {
+        counters.delete(k);
+        return Promise.resolve(1);
+      }),
+    },
+  };
   const registry = { get: jest.fn(() => provider) };
   const config = {
     get: jest.fn((k: string) =>
-      k === 'STORE_REFUNDS_ENABLED' ? (opts.enabled ?? true) : undefined,
+      k === 'STORE_REFUNDS_ENABLED'
+        ? (opts.enabled ?? true)
+        : k === 'STORE_REFUNDS_PENDING_TIMEOUT_HOURS'
+          ? opts.timeoutHours
+          : undefined,
     ),
   };
   const service = new RefundsService(
@@ -198,6 +222,7 @@ function setup(
     delivery as never,
     audit as never,
     twoFactor as never,
+    redis as never,
   );
   return {
     service,
@@ -209,6 +234,8 @@ function setup(
     twoFactor,
     provider,
     ledger,
+    redis,
+    counters,
   };
 }
 
@@ -409,10 +436,14 @@ describe('RefundsService (0.9)', () => {
     });
     const res = await s.service.create('o1', dto(), 'a1');
     expect(res.orderStatus).toBe(OrderStatus.REFUND_PENDING);
-    expect(await s.service.syncPendingRefund('o1')).toBe('pending');
+    expect(await s.service.syncPendingRefund('o1', new Date(1000))).toBe(
+      'pending',
+    );
     // провайдер на деле выполнил возврат
     s.ledger.refund('pay-1', D('100.00'), 'external');
-    expect(await s.service.syncPendingRefund('o1')).toBe('resolved');
+    expect(await s.service.syncPendingRefund('o1', new Date(1000))).toBe(
+      'resolved',
+    );
     expect(s.order.status).toBe(OrderStatus.REFUNDED);
   });
 
@@ -448,6 +479,122 @@ describe('RefundsService (0.9)', () => {
   });
 });
 
+describe('RefundsService: срок REFUND_PENDING и ручной выход (0.9, правки ревью)', () => {
+  const HOUR = 3_600_000;
+  const timeoutProvider = () =>
+    Promise.reject(new PaymentProviderError('timeout'));
+
+  it('REFUND_PENDING дольше 72 ч без ответа провайдера -> REFUND_FAILED с аудитом', async () => {
+    const s = setup({ refundFn: timeoutProvider });
+    await s.service.create('o1', dto(), 'a1');
+    expect(s.order.status).toBe(OrderStatus.REFUND_PENDING);
+    expect(await s.service.syncPendingRefund('o1', new Date(71 * HOUR))).toBe(
+      'pending',
+    );
+    expect(await s.service.syncPendingRefund('o1', new Date(73 * HOUR))).toBe(
+      'expired',
+    );
+    expect(s.order.status).toBe(OrderStatus.REFUND_FAILED);
+    expect(s.refunds[0].status).toBe('FAILED');
+    expect(s.refunds[0].errorCode).toBe('provider_timeout');
+    const failed = s.audit.logInTx.mock.calls.filter(
+      (c) => (c[1] as { action: string }).action === 'orders.refund.failed',
+    );
+    expect(failed).toHaveLength(1);
+  });
+
+  it('срок берётся из настройки', async () => {
+    const s = setup({ refundFn: timeoutProvider, timeoutHours: 1 });
+    await s.service.create('o1', dto(), 'a1');
+    expect(await s.service.syncPendingRefund('o1', new Date(2 * HOUR))).toBe(
+      'expired',
+    );
+  });
+
+  it('после REFUND_FAILED повтор использует ту же попытку и ключ', async () => {
+    const s = setup({ refundFn: timeoutProvider });
+    await s.service.create('o1', dto(), 'a1');
+    await s.service.syncPendingRefund('o1', new Date(73 * HOUR));
+    const key = s.refunds[0].idempotencyKey;
+    await s.service.create('o1', dto(), 'a1');
+    expect(s.refunds).toHaveLength(1);
+    expect(s.refunds[0].idempotencyKey).toBe(key);
+  });
+
+  it('ручной выход: причина и 2FA обязательны, итог REFUND_FAILED, критичный аудит админа', async () => {
+    const s = setup({ refundFn: timeoutProvider });
+    await s.service.create('o1', dto(), 'a1');
+    expect(
+      await code(s.service.markPendingFailed('o1', dto({ reason: ' ' }), 'a2')),
+    ).toBe('refund_reason_required');
+    expect(
+      await code(
+        s.service.markPendingFailed('o1', dto({ twoFactorCode: '' }), 'a2'),
+      ),
+    ).toBe('refund_two_factor_required');
+    expect(s.order.status).toBe(OrderStatus.REFUND_PENDING);
+    const res = await s.service.markPendingFailed('o1', dto(), 'a2');
+    expect(res.orderStatus).toBe(OrderStatus.REFUND_FAILED);
+    expect(res.refund.errorCode).toBe('manual_failed');
+    const mark = s.audit.logInTx.mock.calls.find(
+      (c) =>
+        (c[1] as { action: string }).action === 'orders.refund.marked_failed',
+    )![1] as { actorId: string; severity: string };
+    expect(mark.actorId).toBe('a2');
+    expect(mark.severity).toBe('critical');
+  });
+
+  it('ручной выход без возврата в ожидании -> 409', async () => {
+    const s = setup();
+    expect(await code(s.service.markPendingFailed('o1', dto(), 'a2'))).toBe(
+      'refund_not_pending',
+    );
+  });
+
+  it('перебор 2FA: после 5 неверных кодов -> 429, verify не вызывается', async () => {
+    const s = setup({ twoFactor: null });
+    for (let i = 0; i < 5; i += 1) {
+      expect(await code(s.service.create('o1', dto(), 'a1'))).toBe(
+        'refund_two_factor_invalid',
+      );
+    }
+    s.twoFactor.verify.mockClear();
+    expect(await code(s.service.create('o1', dto(), 'a1'))).toBe(
+      'refund_two_factor_locked',
+    );
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    expect(await code(s.service.create('o1', dto(), 'a9'))).toBe(
+      'refund_two_factor_invalid',
+    );
+  });
+
+  it('верный код сбрасывает счётчик неудач', async () => {
+    const s = setup();
+    s.counters.set('store:refund:2fa-fail:a1', 3);
+    await s.service.create('o1', dto(), 'a1');
+    expect(s.counters.has('store:refund:2fa-fail:a1')).toBe(false);
+  });
+
+  it('сумма провайдера не совпала: возврат остаётся PENDING, аудит расхождения', async () => {
+    const s = setup({
+      refundFn: () =>
+        Promise.resolve({
+          refundId: 'rf-x',
+          status: 'succeeded',
+          amount: D('1.00'),
+        } as Awaited<ReturnType<PaymentProvider['refund']>>),
+    });
+    const log = jest.fn().mockResolvedValue(undefined);
+    (s.audit as unknown as { log: jest.Mock }).log = log;
+    const res = await s.service.create('o1', dto(), 'a1');
+    expect(res.orderStatus).toBe(OrderStatus.REFUND_PENDING);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect((log.mock.calls[0][0] as { action: string }).action).toBe(
+      'orders.refund.amount_mismatch',
+    );
+  });
+});
+
 describe('RefundsAdminController: права (0.9)', () => {
   const perms = (method: keyof RefundsAdminController): string[] =>
     Reflect.getMetadata(
@@ -458,6 +605,7 @@ describe('RefundsAdminController: права (0.9)', () => {
   it('создание и список — orders.refund; override — оба права', () => {
     expect(perms('list')).toEqual(['orders.refund']);
     expect(perms('create')).toEqual(['orders.refund']);
+    expect(perms('markFailed')).toEqual(['orders.refund']);
     expect(perms('override')).toEqual([
       'orders.refund',
       'store.refund.override',

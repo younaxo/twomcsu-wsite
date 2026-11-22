@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { isPaymentProviderError } from './payment/payment-provider.errors';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
@@ -15,6 +16,7 @@ export interface ReconcileReport {
   stillPending: number;
   errors: number;
   refundsResolved: number;
+  refundsExpired: number;
 }
 
 /// Фоновая сверка (0.9, ADR-0188), только при STORE_REFUNDS_ENABLED=true.
@@ -35,6 +37,7 @@ export class StoreReconcileService {
     private readonly registry: PaymentProviderRegistry,
     private readonly orders: OrdersService,
     private readonly refunds: RefundsService,
+    private readonly audit: AuditService,
   ) {}
 
   isEnabled(): boolean {
@@ -49,6 +52,7 @@ export class StoreReconcileService {
       stillPending: 0,
       errors: 0,
       refundsResolved: 0,
+      refundsExpired: 0,
     };
     if (!this.isEnabled()) return report;
     const s = reconcileSettings(this.config);
@@ -90,6 +94,7 @@ export class StoreReconcileService {
           this.logger.warn(
             `Сверка: заказ ${order.id} возвращён у провайдера вне сайта, нужен ручной разбор`,
           );
+          await this.auditExternalRefund(order, status.refundedAmount);
           continue;
         }
         if (status.status === 'failed') {
@@ -141,9 +146,9 @@ export class StoreReconcileService {
     });
     for (const o of pendingRefunds) {
       try {
-        if ((await this.refunds.syncPendingRefund(o.id)) === 'resolved') {
-          report.refundsResolved += 1;
-        }
+        const res = await this.refunds.syncPendingRefund(o.id, now);
+        if (res === 'resolved') report.refundsResolved += 1;
+        if (res === 'expired') report.refundsExpired += 1;
       } catch (error) {
         report.errors += 1;
         this.logger.warn(
@@ -152,5 +157,43 @@ export class StoreReconcileService {
       }
     }
     return report;
+  }
+
+  /// След в аудите: заказ, не завершённый на сайте, возвращён у провайдера.
+  /// Аудит не должен ронять сверку; без системного аккаунта — только лог.
+  private async auditExternalRefund(
+    order: { id: string; orderNumber: string; status: OrderStatus },
+    refundedAmount: Prisma.Decimal,
+  ): Promise<void> {
+    try {
+      const system = await this.prisma.user.findFirst({
+        where: { accountType: 'SYSTEM' },
+        select: { id: true },
+      });
+      if (!system) return;
+      // Один след на заказ: сверка повторяет опрос, аудит не плодим.
+      const already = await this.prisma.auditLog.findFirst({
+        where: {
+          action: 'orders.order.external_refund_detected',
+          targetId: order.id,
+        },
+        select: { id: true },
+      });
+      if (already) return;
+      await this.audit.log({
+        actorId: system.id,
+        action: 'orders.order.external_refund_detected',
+        targetType: 'order',
+        targetId: order.id,
+        severity: 'warning',
+        changes: {
+          orderNumber: order.orderNumber,
+          orderStatus: order.status,
+          refundedAmount: refundedAmount.toFixed(2),
+        },
+      });
+    } catch {
+      this.logger.warn(`Сверка: не записан аудит по заказу ${order.id}`);
+    }
   }
 }

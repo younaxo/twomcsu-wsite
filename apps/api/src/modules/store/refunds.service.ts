@@ -16,14 +16,16 @@ import { AuditService } from '../audit/audit.service';
 import { TwoFactorService } from '../auth/two-factor/two-factor.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 import {
   CreateStoreRefundDto,
   ListStoreRefundsQueryDto,
+  MarkStoreRefundFailedDto,
 } from './dto/store-refund.dto';
 import { isPaymentProviderError } from './payment/payment-provider.errors';
 import { PaymentProvider } from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
-import { refundsEnabled } from './refunds-config';
+import { pendingRefundTimeoutHours, refundsEnabled } from './refunds-config';
 import {
   refundBadRequest,
   refundConflict,
@@ -31,6 +33,7 @@ import {
   refundForbidden,
   RefundError,
   refundPaymentUnavailable,
+  refundTwoFactorLocked,
   refundUnprocessable,
 } from './refund-errors';
 
@@ -40,6 +43,12 @@ export interface RefundResult {
   refund: OrderRefund;
   orderStatus: OrderStatus;
 }
+
+/// Защита кода 2FA возврата от перебора: не более N неверных кодов за окно.
+const TWO_FACTOR_MAX_FAILURES = 5;
+const TWO_FACTOR_WINDOW_SECONDS = 15 * 60;
+const twoFactorFailKey = (actorId: string) =>
+  `store:refund:2fa-fail:${actorId}`;
 
 const TX_OPTIONS = { maxWait: 10_000, timeout: 10_000 } as const;
 const DELIVERED_TASK_STATUSES = [
@@ -64,6 +73,7 @@ export class RefundsService {
     private readonly delivery: DeliveryService,
     private readonly audit: AuditService,
     private readonly twoFactor: TwoFactorService,
+    private readonly redis: RedisService,
   ) {}
 
   isEnabled(): boolean {
@@ -142,15 +152,23 @@ export class RefundsService {
         'Нужен свежий код двухфакторной аутентификации',
       );
     }
+    const key = twoFactorFailKey(actorId);
+    const failures = Number(await this.redis.client.get(key)) || 0;
+    if (failures >= TWO_FACTOR_MAX_FAILURES) throw refundTwoFactorLocked();
     const method = await this.twoFactor.verify(actorId, code, {
       allowBackup: false,
     });
     if (method !== 'totp') {
+      const count = await this.redis.client.incr(key);
+      if (count === 1) {
+        await this.redis.client.expire(key, TWO_FACTOR_WINDOW_SECONDS);
+      }
       throw refundForbidden(
         RefundError.TWO_FACTOR_INVALID,
         'Неверный код двухфакторной аутентификации',
       );
     }
+    await this.redis.client.del(key);
   }
 
   private async begin(
@@ -374,6 +392,7 @@ export class RefundsService {
         this.logger.warn(
           `Возврат ${refund.id}: сумма провайдера не совпала, нужен ручной разбор`,
         );
+        await this.auditAmountMismatch(refund, result.amount);
         return this.snapshot(refund.id);
       }
       if (result.status === 'succeeded') {
@@ -580,9 +599,100 @@ export class RefundsService {
     });
   }
 
-  /// Сверка REFUND_PENDING по статусу платежа у провайдера. Возвращает
-  /// итог: 'resolved' (возврат отражён у провайдера) либо 'pending'.
-  async syncPendingRefund(orderId: string): Promise<'resolved' | 'pending'> {
+  /// Расхождение суммы ответа провайдера и попытки: возврат остаётся
+  /// REFUND_PENDING (ручной разбор), но след в аудите обязателен.
+  private async auditAmountMismatch(
+    refund: OrderRefund,
+    providerAmount: Prisma.Decimal,
+  ): Promise<void> {
+    try {
+      await this.audit.log({
+        actorId: refund.actorId as string,
+        action: 'orders.refund.amount_mismatch',
+        targetType: 'order',
+        targetId: refund.orderId,
+        severity: 'critical',
+        changes: {
+          refundId: refund.id,
+          expected: refund.amount.toFixed(2),
+          providerAmount: providerAmount.toFixed(2),
+        },
+      });
+    } catch {
+      this.logger.error(
+        `Возврат ${refund.id}: не записан аудит расхождения суммы`,
+      );
+    }
+  }
+
+  /// Ручной выход админа (право orders.refund проверяет контроллер): отметить
+  /// зависший REFUND_PENDING как неудавшийся. Нужны свежая 2FA и причина.
+  /// Если провайдер на деле вернул деньги, итог придёт со сверкой/повтором:
+  /// повтор с той же суммой идёт прежним ключом идемпотентности.
+  async markPendingFailed(
+    idOrNumber: string,
+    dto: MarkStoreRefundFailedDto,
+    actorId: string,
+  ): Promise<RefundResult> {
+    this.assertEnabled();
+    const reason = (dto.reason ?? '').trim();
+    if (!reason) {
+      throw refundBadRequest(
+        RefundError.REASON_REQUIRED,
+        'Причина обязательна',
+      );
+    }
+    await this.assertFreshTwoFactor(actorId, dto.twoFactorCode);
+    const found = await this.prisma.order.findFirst({
+      where: { OR: [{ id: idOrNumber }, { orderNumber: idOrNumber }] },
+      select: { id: true },
+    });
+    if (!found) throw new NotFoundException('Заказ не найден');
+    const refundId = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM orders WHERE id = ${found.id} FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException('Заказ не найден');
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: found.id },
+        include: {
+          refunds: { where: { status: OrderRefundStatus.PENDING }, take: 1 },
+        },
+      });
+      const pending = order.refunds[0];
+      if (order.status !== OrderStatus.REFUND_PENDING || !pending) {
+        throw refundConflict(
+          RefundError.NOT_PENDING,
+          'У заказа нет возврата в ожидании',
+        );
+      }
+      await this.markFailed(tx, pending, 'manual_failed');
+      await this.audit.logInTx(tx, {
+        actorId,
+        action: 'orders.refund.marked_failed',
+        targetType: 'order',
+        targetId: order.id,
+        severity: 'critical',
+        changes: {
+          orderNumber: order.orderNumber,
+          refundId: pending.id,
+          amount: pending.amount.toFixed(2),
+          reason,
+        },
+      });
+      return pending.id;
+    }, TX_OPTIONS);
+    return this.snapshot(refundId);
+  }
+
+  /// Сверка REFUND_PENDING по статусу платежа у провайдера. Итог: 'resolved'
+  /// (возврат отражён у провайдера), 'expired' (ответа нет дольше срока
+  /// STORE_REFUNDS_PENDING_TIMEOUT_HOURS -> REFUND_FAILED с аудитом) или
+  /// 'pending'. Срок считается от последнего обновления попытки (повтор его
+  /// сбрасывает).
+  async syncPendingRefund(
+    orderId: string,
+    now: Date = new Date(),
+  ): Promise<'resolved' | 'pending' | 'expired'> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: {
@@ -596,21 +706,31 @@ export class RefundsService {
     const provider = order.paymentProvider
       ? this.registry.get(order.paymentProvider)
       : undefined;
-    if (!order.paymentId || !provider || !provider.isConfigured()) {
-      return 'pending';
+    if (order.paymentId && provider && provider.isConfigured()) {
+      const status = await provider.getPaymentStatus(order.paymentId);
+      const succeeded = await this.prisma.orderRefund.findMany({
+        where: { orderId, status: OrderRefundStatus.SUCCEEDED },
+        select: { amount: true },
+      });
+      const expected = succeeded.reduce(
+        (sum, r) => sum.plus(r.amount),
+        pending.amount,
+      );
+      if (status.refundedAmount.gte(expected)) {
+        await this.applyOutcome(pending.id, 'succeeded');
+        return 'resolved';
+      }
     }
-    const status = await provider.getPaymentStatus(order.paymentId);
-    const succeeded = await this.prisma.orderRefund.findMany({
-      where: { orderId, status: OrderRefundStatus.SUCCEEDED },
-      select: { amount: true },
-    });
-    const expected = succeeded.reduce(
-      (sum, r) => sum.plus(r.amount),
-      pending.amount,
-    );
-    if (status.refundedAmount.gte(expected)) {
-      await this.applyOutcome(pending.id, 'succeeded');
-      return 'resolved';
+    const timeoutMs = pendingRefundTimeoutHours(this.config) * 3_600_000;
+    const since = pending.updatedAt.getTime();
+    if (now.getTime() - since >= timeoutMs) {
+      await this.applyOutcome(
+        pending.id,
+        'failed',
+        undefined,
+        'provider_timeout',
+      );
+      return 'expired';
     }
     return 'pending';
   }

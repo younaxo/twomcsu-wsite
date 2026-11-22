@@ -3,6 +3,8 @@ import {
   ConflictException,
   ForbiddenException,
   ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
   UnprocessableEntityException,
 } from '@nestjs/common';
 
@@ -22,6 +24,8 @@ export const RefundError = {
   RUBIES_UNSUPPORTED: 'refund_rubies_unsupported',
   PAYMENT_UNAVAILABLE: 'payment_unavailable',
   USE_REFUNDS_API: 'refund_use_refunds_api',
+  TWO_FACTOR_LOCKED: 'refund_two_factor_locked',
+  NOT_PENDING: 'refund_not_pending',
 } as const;
 
 export type RefundErrorCode = (typeof RefundError)[keyof typeof RefundError];
@@ -49,3 +53,13 @@ export const refundPaymentUnavailable = () =>
     code: RefundError.PAYMENT_UNAVAILABLE,
     message: 'Платёжный провайдер недоступен',
   });
+
+/// Слишком много неверных кодов 2FA подряд (защита от перебора).
+export const refundTwoFactorLocked = () =>
+  new HttpException(
+    {
+      code: RefundError.TWO_FACTOR_LOCKED,
+      message: 'Слишком много неверных кодов. Повторите позже',
+    },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
