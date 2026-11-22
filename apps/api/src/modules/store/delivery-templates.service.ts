@@ -217,8 +217,19 @@ export class DeliveryTemplatesService {
       throw forbidden('two_factor_required', 'Нужен свежий код 2FA');
     }
     const key = failKey(actorId);
-    const failures = Number(await this.redis.client.get(key)) || 0;
-    if (failures >= TWO_FACTOR_MAX_FAILURES) {
+    // INCR + EXPIRE атомарно одним Lua-скриптом ДО проверки кода: параллельные
+    // запросы не обходят лимит гонкой «прочитал-проверил-увеличил».
+    const attempts = Number(
+      await this.redis.client.eval(
+        INCR_EXPIRE_SCRIPT,
+        1,
+        key,
+        '1',
+        String(TWO_FACTOR_WINDOW_SECONDS),
+        'first',
+      ),
+    );
+    if (attempts > TWO_FACTOR_MAX_FAILURES) {
       throw new HttpException(
         {
           code: 'template_two_factor_locked',
@@ -231,15 +242,6 @@ export class DeliveryTemplatesService {
       allowBackup: false,
     });
     if (method !== 'totp') {
-      // INCR + EXPIRE атомарно одним Lua-скриптом (без «вечного» счётчика).
-      await this.redis.client.eval(
-        INCR_EXPIRE_SCRIPT,
-        1,
-        key,
-        '1',
-        String(TWO_FACTOR_WINDOW_SECONDS),
-        'first',
-      );
       throw forbidden('two_factor_invalid', 'Неверный код 2FA');
     }
     await this.redis.client.del(key);

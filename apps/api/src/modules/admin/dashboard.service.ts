@@ -1,5 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
 import {
   STORE_OFFER_VERSION_MAX_LENGTH,
   STORE_OFFER_VERSION_SETTING,
@@ -12,6 +17,10 @@ import { BroadcastDto } from './dto/broadcast.dto';
 import { UpsertSettingsDto } from './dto/upsert-settings.dto';
 
 const ONLINE_WINDOW_MINUTES = 5;
+
+/// Префиксы ключей SiteSetting, которые пишут только специальные эндпоинты
+/// (store-settings: store.text.*; delivery-templates: store.delivery.*).
+const PROTECTED_SETTING_PREFIXES = ['store.delivery.', 'store.text.'] as const;
 
 @Injectable()
 export class DashboardService {
@@ -123,6 +132,20 @@ export class DashboardService {
   }
 
   async upsertSettings(dto: UpsertSettingsDto, actorId: string) {
+    // Ключи со своими защищёнными эндпоинтами (2FA, аудит «было/стало»,
+    // отдельные права) через общий settings.edit писать нельзя (ADR-0189).
+    const protectedKey = Object.keys(dto.settings).find((key) =>
+      PROTECTED_SETTING_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    );
+    if (protectedKey !== undefined) {
+      throw new HttpException(
+        {
+          code: 'settings_key_protected',
+          message: `Ключ ${protectedKey} меняется только через специальный раздел`,
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
     const offerVersion = dto.settings[STORE_OFFER_VERSION_SETTING];
     if (
       offerVersion !== undefined &&

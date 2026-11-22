@@ -265,6 +265,31 @@ describe('DeliveryTemplatesService (0.11)', () => {
     expect(s.twoFactor.verify).not.toHaveBeenCalled();
   });
 
+  it('счётчик растёт ДО проверки кода (INCR перед verify), один раз на попытку', async () => {
+    const s = setup({ twoFactor: null });
+    const order: string[] = [];
+    s.redis.client.eval.mockImplementationOnce(async () => {
+      order.push('incr');
+      return 1;
+    });
+    s.twoFactor.verify.mockImplementationOnce(async () => {
+      order.push('verify');
+      return null;
+    });
+    await status(s.service.upsert('p1', dto() as never, 'a1'));
+    expect(order).toEqual(['incr', 'verify']);
+    expect(s.redis.client.eval).toHaveBeenCalledTimes(1);
+  });
+
+  it('шестая попытка: 429 даже при верном коде, verify не вызывается', async () => {
+    const s = setup({ fails: 5 });
+    expect(await status(s.service.upsert('p1', dto() as never, 'a1'))).toBe(
+      429,
+    );
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    expect(s.rows.size).toBe(0);
+  });
+
   it('верный код сбрасывает счётчик', async () => {
     const s = setup({ fails: 2 });
     await s.service.upsert('p1', dto() as never, 'a1');
