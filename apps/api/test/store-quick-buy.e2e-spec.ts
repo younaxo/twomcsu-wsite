@@ -282,7 +282,7 @@ describe('Store quick-buy by nick (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .expect(404);
     // Номер заказа вместо токена и случайный токен — один и тот же 404.
-    const byNumber = await lookup(orderNumber).expect(400);
+    const byNumber = await lookup(orderNumber).expect(404);
     expect(byNumber.body).not.toHaveProperty('orderNumber');
     const wrong = await lookup(
       createHash('sha256').update(`x${unique}`).digest('base64url'),
