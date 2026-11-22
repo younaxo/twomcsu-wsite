@@ -12,6 +12,7 @@ import {
   buildDemoProducts,
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
+import { demoFieldId, demoResponseId } from './keys';
 
 const DAY = 86_400_000;
 const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
@@ -111,41 +112,45 @@ async function main(): Promise<void> {
           status: 'PUBLISHED',
         },
       });
-      let fields = await prisma.formField.findMany({
-        where: { formId: form.id },
-        orderBy: { order: 'asc' },
-      });
-      if (fields.length === 0) {
-        for (const [order, fld] of f.fields.entries()) {
-          await prisma.formField.create({
-            data: {
+      const fields = [];
+      for (const [order, fld] of f.fields.entries()) {
+        const fieldData = {
+          type: fld.type,
+          label: fld.label,
+          isRequired: fld.isRequired,
+          options: fld.options,
+          order,
+        };
+        fields.push(
+          await prisma.formField.upsert({
+            where: { id: demoFieldId(f.slug, order) },
+            create: {
+              id: demoFieldId(f.slug, order),
               formId: form.id,
-              type: fld.type,
-              label: fld.label,
-              isRequired: fld.isRequired,
-              options: fld.options,
-              order,
+              ...fieldData,
             },
-          });
-        }
-        fields = await prisma.formField.findMany({
-          where: { formId: form.id },
-          orderBy: { order: 'asc' },
-        });
+            update: fieldData,
+          }),
+        );
       }
-      let response = await prisma.formResponse.findFirst({
-        where: { formId: form.id, metadata: { path: ['demo'], equals: true } },
+      const responseId = demoResponseId(f.slug);
+      const existingResponse = await prisma.formResponse.findUnique({
+        where: { id: responseId },
+        select: { id: true },
       });
-      if (!response) {
-        response = await prisma.formResponse.create({
-          data: {
-            formId: form.id,
-            isAnonymous: true,
-            isComplete: true,
-            completedAt: new Date(),
-            metadata: { demo: true },
-          },
-        });
+      const response = await prisma.formResponse.upsert({
+        where: { id: responseId },
+        create: {
+          id: responseId,
+          formId: form.id,
+          isAnonymous: true,
+          isComplete: true,
+          completedAt: new Date(),
+          metadata: { demo: true },
+        },
+        update: {},
+      });
+      if (!existingResponse) {
         await prisma.form.update({
           where: { id: form.id },
           data: { responsesCount: { increment: 1 } },

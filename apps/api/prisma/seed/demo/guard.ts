@@ -8,10 +8,20 @@ export interface DemoGuardInput {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
+/// Белый список query-параметров: любые другие (host, hostaddr, socket, ...)
+/// могут сменить адрес подключения и потому отклоняются (без учёта регистра).
+const SAFE_QUERY_PARAMS = new Set(['schema', 'sslmode', 'connection_limit']);
+
 export function isLocalDatabaseUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return LOCAL_HOSTS.has(new URL(url).hostname.toLowerCase());
+    const parsed = new URL(url);
+    if (parsed.hostname.includes(',') || parsed.host.includes(','))
+      return false;
+    for (const key of parsed.searchParams.keys()) {
+      if (!SAFE_QUERY_PARAMS.has(key.toLowerCase())) return false;
+    }
+    return LOCAL_HOSTS.has(parsed.hostname.toLowerCase());
   } catch {
     return false;
   }

@@ -10,6 +10,7 @@ import {
   demoSeedRefusals,
   isLocalDatabaseUrl,
 } from './guard';
+import { demoFieldId, demoResponseId } from './keys';
 
 const ok = {
   NODE_ENV: 'development',
@@ -101,5 +102,41 @@ describe('demo seed data', () => {
     expect(DEMO_FORMS.length).toBeGreaterThanOrEqual(2);
     expect(DEMO_SERVERS.map((s) => s.name)).toContain('Анархия Новой Эры');
     expect(DEMO_SERVERS.some((s) => /NullCord/.test(s.name))).toBe(true);
+  });
+});
+
+describe('demo seed guard: query params', () => {
+  const base = 'postgresql://u:p@localhost:5432/db';
+  it.each([
+    '?host=evil.com',
+    '?HOST=evil.com',
+    '?hostaddr=1.2.3.4',
+    '?socket=/tmp',
+    '?foo=1',
+  ])('rejects %s', (q) => expect(isLocalDatabaseUrl(base + q)).toBe(false));
+  it('allows safe params', () => {
+    expect(isLocalDatabaseUrl(base + '?schema=public')).toBe(true);
+    expect(
+      isLocalDatabaseUrl(
+        base + '?schema=public&sslmode=disable&connection_limit=5',
+      ),
+    ).toBe(true);
+  });
+  it('rejects comma in host', () => {
+    expect(
+      isLocalDatabaseUrl('postgresql://u:p@localhost,evil.com:5432/db'),
+    ).toBe(false);
+  });
+});
+
+describe('demo seed form keys', () => {
+  it('are stable and unique', () => {
+    const ids = DEMO_FORMS.flatMap((f) =>
+      f.fields.map((_, i) => demoFieldId(f.slug, i)),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(demoFieldId('a', 0)).toBe(demoFieldId('a', 0));
+    const rs = DEMO_FORMS.map((f) => demoResponseId(f.slug));
+    expect(new Set(rs).size).toBe(rs.length);
   });
 });
