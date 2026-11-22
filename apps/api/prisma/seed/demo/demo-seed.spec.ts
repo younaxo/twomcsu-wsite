@@ -4,6 +4,9 @@ import {
   DEMO_PUNISHMENTS,
   DEMO_SERVERS,
   buildDemoProducts,
+  buildDemoPunishmentRow,
+  buildDemoSyncState,
+  demoPunishmentSourceId,
 } from './data';
 import {
   assertDemoSeedAllowed,
@@ -94,6 +97,27 @@ describe('demo seed data', () => {
       expect(`${p.reason} ${p.subjectName}`).not.toMatch(
         /\d+\.\d+\.\d+\.\d+|@|https?:/,
       );
+    }
+  });
+  it('строки-зеркала: выдавший скрыт, без IP, id сдвинуты', () => {
+    const now = new Date('2026-01-10T00:00:00Z');
+    for (const p of DEMO_PUNISHMENTS) {
+      const row = buildDemoPunishmentRow(p, now);
+      expect(row.issuerHidden).toBe(true);
+      expect(row.ipBan).toBe(false);
+      expect(row.rowHash).toHaveLength(64);
+      expect(demoPunishmentSourceId(p.sourceId) >= 900_000_000n).toBe(true);
+    }
+    const ban = buildDemoPunishmentRow(DEMO_PUNISHMENTS[0], now);
+    expect(ban.startedAt.getTime()).toBe(now.getTime() - 2 * 86_400_000);
+  });
+  it('состояние синхронизации: litebans, все виды, initialSyncDoneAt', () => {
+    const now = new Date();
+    const states = buildDemoSyncState(now);
+    expect(states.map((s) => s.kind).sort()).toEqual(['BAN', 'KICK', 'MUTE', 'WARN']);
+    for (const s of states) {
+      expect(s.source).toBe('litebans');
+      expect(s.initialSyncDoneAt).toBe(now);
     }
   });
   it('состав остальных данных', () => {
