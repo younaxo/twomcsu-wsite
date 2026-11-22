@@ -27,6 +27,77 @@ export const DURATION_TOKENS: Readonly<Record<string, string>> = {
 /// Допустимый литерал вне переменных: латиница, цифры, пробел и `_ - . : , +`.
 /// Всё остальное (`; & | $ \` ( ) < > \ " ' ! ? * / [ ] { } @ %`, переводы
 /// строк, управляющие и не-ASCII символы) запрещено.
+/// Белый список корней команд (первое слово шаблона, без учёта регистра).
+/// Допущение ADR-0189: набор для выдачи групп и предметов. Расширяется
+/// настройкой (`EXTRA_ROOTS_SETTING`) только по праву
+/// `store.delivery.templates.manage`; запрет ниже сильнее расширения.
+export const DEFAULT_COMMAND_ROOTS: readonly string[] = [
+  'lp',
+  'luckperms',
+  'give',
+  'crate',
+  'cratekey',
+  'eco',
+];
+/// Явный запрет: опасные и служебные команды не разрешаются никогда.
+export const FORBIDDEN_COMMAND_ROOTS: readonly string[] = [
+  'op',
+  'deop',
+  'stop',
+  'restart',
+  'reload',
+  'rl',
+  'whitelist',
+  'ban',
+  'ban-ip',
+  'banip',
+  'pardon',
+  'pardon-ip',
+  'kick',
+  'execute',
+  'sudo',
+  'console',
+  'plugman',
+  'pl',
+  'plugins',
+  'minecraft:op',
+  'save-all',
+  'save-off',
+  'setworldspawn',
+  'gamemode',
+  'fill',
+  'rcon',
+  'bukkit:reload',
+  'bukkit:stop',
+];
+/// Настройка (`site_settings`): дополнительные корни через запятую.
+export const EXTRA_ROOTS_SETTING = 'store.delivery.extra_command_roots';
+const ROOT_RE = /^[a-z0-9_-]{1,32}$/;
+
+/// Разбор и проверка списка расширения корней. Бросает `root_forbidden` /
+/// `root_invalid`.
+export function normalizeRoots(input: unknown): string[] {
+  const list =
+    typeof input === 'string'
+      ? input.split(',')
+      : Array.isArray(input)
+        ? input
+        : [];
+  const out = new Set<string>();
+  for (const item of list) {
+    const root = typeof item === 'string' ? item.trim().toLowerCase() : '';
+    if (root === '') continue;
+    if (!ROOT_RE.test(root)) {
+      throw err('root_invalid', 'Корень команды: латиница, цифры, _ и -');
+    }
+    if (FORBIDDEN_COMMAND_ROOTS.includes(root)) {
+      throw err('root_forbidden', `Корень «${root}» запрещён`);
+    }
+    out.add(root);
+  }
+  return [...out];
+}
+
 const LITERAL_RE = /^[A-Za-z0-9_ .:,+-]*$/;
 const VARIABLE_RE = /\{([^{}]*)\}/g;
 
@@ -41,7 +112,10 @@ export type TemplateErrorCode =
   | 'template_leading_slash'
   | 'invalid_nick'
   | 'invalid_duration'
-  | 'rendered_too_long';
+  | 'rendered_too_long'
+  | 'root_not_allowed'
+  | 'root_forbidden'
+  | 'root_invalid';
 
 export class CommandTemplateError extends Error {
   constructor(
@@ -58,7 +132,10 @@ const err = (code: TemplateErrorCode, message: string) =>
 
 /// Проверяет шаблон и возвращает его нормализованный вид (без внешних
 /// пробелов). Бросает `CommandTemplateError`.
-export function validateTemplate(raw: unknown): string {
+export function validateTemplate(
+  raw: unknown,
+  extraRoots: readonly string[] = [],
+): string {
   if (typeof raw !== 'string') {
     throw err('template_empty', 'Шаблон должен быть строкой');
   }
@@ -82,6 +159,13 @@ export function validateTemplate(raw: unknown): string {
   }
   if (template.startsWith('/')) {
     throw err('template_leading_slash', 'Шаблон не должен начинаться с «/»');
+  }
+  const root = template.split(' ')[0].toLowerCase();
+  if (FORBIDDEN_COMMAND_ROOTS.includes(root)) {
+    throw err('root_forbidden', `Команда «${root}» запрещена`);
+  }
+  if (!DEFAULT_COMMAND_ROOTS.includes(root) && !extraRoots.includes(root)) {
+    throw err('root_not_allowed', `Команда «${root}» не в белом списке`);
   }
   const counts: Record<string, number> = {};
   for (const match of template.matchAll(VARIABLE_RE)) {
@@ -126,8 +210,9 @@ export interface TemplateValues {
 export function renderCommand(
   template: string,
   values: TemplateValues,
+  extraRoots: readonly string[] = [],
 ): string {
-  const valid = validateTemplate(template);
+  const valid = validateTemplate(template, extraRoots);
   if (!isDeliverableNick(values.username)) {
     throw err(
       'invalid_nick',

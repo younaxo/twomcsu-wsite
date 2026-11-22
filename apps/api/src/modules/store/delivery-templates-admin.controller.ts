@@ -18,6 +18,7 @@ import { DeliveryTemplatesService } from './delivery-templates.service';
 import {
   ListDeliveryTemplatesQueryDto,
   PreviewDeliveryTemplateDto,
+  SetCommandRootsDto,
   UpsertDeliveryTemplateDto,
 } from './dto/delivery-template.dto';
 
@@ -40,6 +41,22 @@ export class DeliveryTemplatesAdminController {
   @RequirePermissions('store.delivery.templates.manage')
   preview(@Body() dto: PreviewDeliveryTemplateDto) {
     return this.templates.preview(dto);
+  }
+
+  @Get('roots')
+  @RequirePermissions('store.delivery.templates.manage')
+  async roots() {
+    return this.templates.getRoots();
+  }
+
+  @Put('roots')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @RequirePermissions('store.delivery.templates.manage')
+  async setRoots(
+    @Body() dto: SetCommandRootsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.templates.setRoots(dto, user.id);
   }
 
   @Put('products/:productId')

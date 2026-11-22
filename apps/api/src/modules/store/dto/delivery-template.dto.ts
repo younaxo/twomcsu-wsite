@@ -1,6 +1,8 @@
 import { ProductDuration } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsEnum,
   IsOptional,
   IsString,
@@ -49,4 +51,18 @@ export class ListDeliveryTemplatesQueryDto {
   @IsString()
   @MaxLength(40)
   productId?: string;
+}
+
+export class SetCommandRootsDto {
+  /// Дополнительные корни команд (первое слово шаблона); запрещённые
+  /// отклоняются валидатором.
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(32, { each: true })
+  roots!: string[];
+
+  @IsString()
+  @Length(6, 8)
+  twoFactorCode!: string;
 }

@@ -15,7 +15,21 @@ import {
   DeliveryResult,
   DeliveryTaskSnapshot,
 } from './delivery-executor.interface';
-import { renderCommand, CommandTemplateError } from './command-template';
+import {
+  renderCommand,
+  CommandTemplateError,
+  EXTRA_ROOTS_SETTING,
+  normalizeRoots,
+} from './command-template';
+
+/// Битая настройка не должна ронять выдачу: при ошибке расширения нет.
+function safeRoots(raw: string | undefined): string[] {
+  try {
+    return normalizeRoots(raw ?? '');
+  } catch {
+    return [];
+  }
+}
 import { deliverableNickOrNull } from './delivery-nick';
 import { sanitizeDeliveryError } from './delivery-status';
 import {
@@ -49,6 +63,8 @@ export interface DeliverySettings {
   enabled: boolean;
   commandEnabled: boolean;
   maxAttempts: number;
+  /// Расширение белого списка корней команд (ADR-0189).
+  extraCommandRoots: string[];
 }
 
 interface ClaimedTask {
@@ -130,6 +146,7 @@ export class DeliveryService {
             DELIVERY_ENABLED_SETTING,
             DELIVERY_COMMAND_ENABLED_SETTING,
             DELIVERY_MAX_ATTEMPTS_SETTING,
+            EXTRA_ROOTS_SETTING,
           ],
         },
       },
@@ -146,6 +163,7 @@ export class DeliveryService {
         Number.isInteger(parsedMax) && parsedMax >= 1 && parsedMax <= 20
           ? parsedMax
           : DELIVERY_DEFAULT_MAX_ATTEMPTS,
+      extraCommandRoots: safeRoots(get(EXTRA_ROOTS_SETTING)),
     };
     this.settingsCache = { at: now, value };
     return value;
@@ -210,6 +228,9 @@ export class DeliveryService {
     // 0.11: шаблоны команд читаются, только если включены и доставка, и
     // исполнитель «команда»; иначе поведение 0.7 (manual) не меняется.
     const templates = await this.loadTemplates(tx, order.items);
+    const extraRoots = templates
+      ? (await this.settings()).extraCommandRoots
+      : [];
 
     const giftIds = [
       ...new Set(
@@ -239,10 +260,14 @@ export class DeliveryService {
         if (tpl && nick) {
           try {
             // Подстановка только через общий валидатор; сбой -> manual.
-            renderedCommand = renderCommand(tpl.template, {
-              username: nick,
-              duration: item.variant?.duration,
-            });
+            renderedCommand = renderCommand(
+              tpl.template,
+              {
+                username: nick,
+                duration: item.variant?.duration,
+              },
+              extraRoots,
+            );
             templateVersion = tpl.version;
             executorKind = EXECUTOR_COMMAND;
           } catch (error) {

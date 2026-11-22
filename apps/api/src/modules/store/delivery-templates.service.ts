@@ -8,8 +8,13 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { TwoFactorService } from '../auth/two-factor/two-factor.service';
+import { INCR_EXPIRE_SCRIPT } from '../bridge/bridge-redis.service';
 import {
   CommandTemplateError,
+  DEFAULT_COMMAND_ROOTS,
+  EXTRA_ROOTS_SETTING,
+  FORBIDDEN_COMMAND_ROOTS,
+  normalizeRoots,
   renderCommand,
   validateTemplate,
 } from '../delivery/command-template';
@@ -17,6 +22,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import {
   PreviewDeliveryTemplateDto,
+  SetCommandRootsDto,
   UpsertDeliveryTemplateDto,
 } from './dto/delivery-template.dto';
 
@@ -57,18 +63,77 @@ export class DeliveryTemplatesService {
   }
 
   /// Итоговая команда без отправки. Ничего не пишет.
-  preview(dto: PreviewDeliveryTemplateDto): { command: string } {
+  async preview(dto: PreviewDeliveryTemplateDto): Promise<{ command: string }> {
+    const extra = await this.extraRoots();
     try {
       return {
-        command: renderCommand(dto.template, {
-          username: dto.username,
-          duration: dto.duration,
-        }),
+        command: renderCommand(
+          dto.template,
+          { username: dto.username, duration: dto.duration },
+          extra,
+        ),
       };
     } catch (error) {
       if (error instanceof CommandTemplateError) throw badTemplate(error);
       throw error;
     }
+  }
+
+  /// Расширение белого списка: хранится в `site_settings`; битое значение
+  /// трактуется как «нет расширения».
+  private async extraRoots(): Promise<string[]> {
+    const row = await this.prisma.siteSetting.findUnique({
+      where: { key: EXTRA_ROOTS_SETTING },
+    });
+    try {
+      return normalizeRoots(row?.value ?? '');
+    } catch {
+      return [];
+    }
+  }
+
+  async getRoots() {
+    return {
+      defaults: [...DEFAULT_COMMAND_ROOTS],
+      forbidden: [...FORBIDDEN_COMMAND_ROOTS],
+      extra: await this.extraRoots(),
+    };
+  }
+
+  /// Расширение корней: право `store.delivery.templates.manage`, свежая
+  /// 2FA, аудит. Запрещённые корни отклоняются.
+  async setRoots(dto: SetCommandRootsDto, actorId: string) {
+    let roots: string[];
+    try {
+      roots = normalizeRoots(dto.roots);
+    } catch (error) {
+      if (error instanceof CommandTemplateError) throw badTemplate(error);
+      throw error;
+    }
+    await this.assertFreshTwoFactor(actorId, dto.twoFactorCode);
+    const value = roots.join(',');
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.siteSetting.findUnique({
+        where: { key: EXTRA_ROOTS_SETTING },
+      });
+      await tx.siteSetting.upsert({
+        where: { key: EXTRA_ROOTS_SETTING },
+        create: { key: EXTRA_ROOTS_SETTING, value },
+        update: { value },
+      });
+      await this.audit.logInTx(tx, {
+        actorId,
+        action: 'store.delivery.roots.updated',
+        targetType: 'site_setting',
+        targetId: EXTRA_ROOTS_SETTING,
+        severity: 'critical',
+        changes: {
+          before: before?.value ?? '',
+          after: value,
+        } as Prisma.InputJsonValue,
+      });
+    });
+    return { extra: roots };
   }
 
   async upsert(
@@ -78,13 +143,11 @@ export class DeliveryTemplatesService {
   ) {
     let template: string;
     try {
-      template = validateTemplate(dto.template);
+      template = validateTemplate(dto.template, await this.extraRoots());
     } catch (error) {
       if (error instanceof CommandTemplateError) throw badTemplate(error);
       throw error;
     }
-    await this.assertFreshTwoFactor(actorId, dto.twoFactorCode);
-
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       select: { id: true, slug: true },
@@ -97,6 +160,9 @@ export class DeliveryTemplatesService {
       });
       if (!variant) throw new NotFoundException('Вариант товара не найден');
     }
+    // Существование товара и варианта проверено ДО 2FA: код не сгорает
+    // из-за опечатки в id.
+    await this.assertFreshTwoFactor(actorId, dto.twoFactorCode);
     const scopeKey = scopeKeyOf(productId, dto.variantId);
 
     return this.prisma.$transaction(async (tx) => {
@@ -165,10 +231,15 @@ export class DeliveryTemplatesService {
       allowBackup: false,
     });
     if (method !== 'totp') {
-      const count = await this.redis.client.incr(key);
-      if (count === 1) {
-        await this.redis.client.expire(key, TWO_FACTOR_WINDOW_SECONDS);
-      }
+      // INCR + EXPIRE атомарно одним Lua-скриптом (без «вечного» счётчика).
+      await this.redis.client.eval(
+        INCR_EXPIRE_SCRIPT,
+        1,
+        key,
+        '1',
+        String(TWO_FACTOR_WINDOW_SECONDS),
+        'first',
+      );
       throw forbidden('two_factor_invalid', 'Неверный код 2FA');
     }
     await this.redis.client.del(key);

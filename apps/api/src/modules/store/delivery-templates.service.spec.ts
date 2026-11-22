@@ -19,10 +19,18 @@ interface Row {
 }
 
 function setup(
-  opts: { twoFactor?: 'totp' | 'backup' | null; fails?: number } = {},
+  opts: {
+    twoFactor?: 'totp' | 'backup' | null;
+    fails?: number;
+    extraRoots?: string;
+  } = {},
 ) {
   const rows = new Map<string, Row>();
   const tx = {
+    siteSetting: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({}),
+    },
     deliveryCommandTemplate: {
       findUnique: jest.fn(async ({ where }: { where: { scopeKey: string } }) =>
         rows.get(where.scopeKey) ? { ...rows.get(where.scopeKey)! } : null,
@@ -67,6 +75,11 @@ function setup(
         ),
     },
     deliveryCommandTemplate: { findMany: jest.fn().mockResolvedValue([]) },
+    siteSetting: {
+      findUnique: jest.fn(async () =>
+        opts.extraRoots ? { value: opts.extraRoots } : null,
+      ),
+    },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
   const audit = { logInTx: jest.fn().mockResolvedValue(undefined) };
@@ -82,11 +95,10 @@ function setup(
   const redis = {
     client: {
       get: jest.fn(async (k: string) => counters.get(k) ?? null),
-      incr: jest.fn(async (k: string) => {
+      eval: jest.fn(async (_script: string, _n: number, k: string) => {
         counters.set(k, (counters.get(k) ?? 0) + 1);
         return counters.get(k);
       }),
-      expire: jest.fn().mockResolvedValue(1),
       del: jest.fn(async (k: string) => {
         counters.delete(k);
       }),
@@ -154,10 +166,10 @@ describe('DeliveryTemplatesService (0.11)', () => {
   });
 
   it.each([
-    'unban {username}; op {username}',
-    'unban {username}\nstop',
-    'unban {nick}',
-    'unban now',
+    'give {username}; op {username}',
+    'give {username}\nstop',
+    'give {nick}',
+    'give now',
   ])('плохой шаблон %j: 400, 2FA не тратится, записи нет', async (template) => {
     const s = setup();
     expect(
@@ -166,6 +178,52 @@ describe('DeliveryTemplatesService (0.11)', () => {
     expect(s.twoFactor.verify).not.toHaveBeenCalled();
     expect(s.rows.size).toBe(0);
     expect(s.audit.logInTx).not.toHaveBeenCalled();
+  });
+
+  it('несуществующий товар/вариант: 404 ДО 2FA, код не тратится', async () => {
+    const s = setup();
+    expect(await status(s.service.upsert('nope', dto() as never, 'a1'))).toBe(
+      404,
+    );
+    expect(
+      await status(
+        s.service.upsert('p1', dto({ variantId: 'zzz' }) as never, 'a1'),
+      ),
+    ).toBe(404);
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    expect(s.redis.client.eval).not.toHaveBeenCalled();
+  });
+
+  it('корень вне белого списка: 400, 2FA не тратится; расширение разрешает', async () => {
+    const s = setup();
+    const t = dto({ template: 'unban {username}' }) as never;
+    expect(await status(s.service.upsert('p1', t, 'a1'))).toBe(400);
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    const s2 = setup({ extraRoots: 'unban' });
+    await s2.service.upsert('p1', t, 'a1');
+    expect(s2.rows.size).toBe(1);
+  });
+
+  it('запрещённый корень отклоняется даже в расширении', async () => {
+    const s = setup({ extraRoots: 'op' });
+    const t = dto({ template: 'op {username}' }) as never;
+    expect(await status(s.service.upsert('p1', t, 'a1'))).toBe(400);
+  });
+
+  it('setRoots: запрещённый корень 400 без 2FA; успех пишет и аудирует', async () => {
+    const s = setup();
+    expect(
+      await status(
+        s.service.setRoots({ roots: ['op'], twoFactorCode: '123456' }, 'a1'),
+      ),
+    ).toBe(400);
+    expect(s.twoFactor.verify).not.toHaveBeenCalled();
+    const out = await s.service.setRoots(
+      { roots: ['Unban', 'unban', 'mute-off'], twoFactorCode: '123456' },
+      'a1',
+    );
+    expect(out.extra).toEqual(['unban', 'mute-off']);
+    expect(s.audit.logInTx).toHaveBeenCalled();
   });
 
   it('без кода 2FA: 403, запись не идёт', async () => {
@@ -183,7 +241,7 @@ describe('DeliveryTemplatesService (0.11)', () => {
     expect(await status(s.service.upsert('p1', dto() as never, 'a1'))).toBe(
       403,
     );
-    expect(s.redis.client.incr).toHaveBeenCalled();
+    expect(s.redis.client.eval).toHaveBeenCalledTimes(1);
     expect(s.rows.size).toBe(0);
     expect(s.audit.logInTx).not.toHaveBeenCalled();
   });
@@ -235,9 +293,9 @@ describe('DeliveryTemplatesService (0.11)', () => {
   });
 
   describe('preview', () => {
-    it('возвращает команду и ничего не пишет', () => {
+    it('возвращает команду и ничего не пишет', async () => {
       const s = setup();
-      const out = s.service.preview({
+      const out = await s.service.preview({
         template: 'lp user {username} parent addtemp ares {duration}',
         username: 'Steve',
         duration: 'WEEK_1',
@@ -247,12 +305,12 @@ describe('DeliveryTemplatesService (0.11)', () => {
       expect(s.prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('негодный ник и шаблон: 400', () => {
+    it('негодный ник и шаблон: 400', async () => {
       const s = setup();
-      const run = (over: Record<string, unknown>) => {
+      const run = async (over: Record<string, unknown>) => {
         try {
-          s.service.preview({
-            template: 'unban {username}',
+          await s.service.preview({
+            template: 'give {username}',
             username: 'Steve',
             duration: 'WEEK_1',
             ...over,
@@ -262,9 +320,9 @@ describe('DeliveryTemplatesService (0.11)', () => {
           return (e as HttpException).getStatus();
         }
       };
-      expect(run({ username: 'a;b' })).toBe(400);
-      expect(run({ username: 'x'.repeat(40) })).toBe(400);
-      expect(run({ template: 'unban {username} | x' })).toBe(400);
+      expect(await run({ username: 'a;b' })).toBe(400);
+      expect(await run({ username: 'x'.repeat(40) })).toBe(400);
+      expect(await run({ template: 'give {username} | x' })).toBe(400);
     });
   });
 });

@@ -3,6 +3,7 @@ import {
   DURATION_TOKENS,
   RENDERED_COMMAND_MAX_LENGTH,
   TEMPLATE_MAX_LENGTH,
+  normalizeRoots,
   renderCommand,
   validateTemplate,
 } from './command-template';
@@ -21,42 +22,42 @@ describe('validateTemplate (0.11)', () => {
   it.each([
     'lp user {username} parent addtemp ares {duration}',
     'give {username} diamond 1',
-    'unban {username}',
-    '  mute-off {username}  ',
+    'give {username}',
+    '  eco {username}  ',
   ])('принимает %j', (t) => {
     expect(validateTemplate(t)).toBe(t.trim());
   });
 
   it.each([
-    ['unban {username}; op {username}', 'template_forbidden_chars'],
-    ['unban {username} && stop', 'template_forbidden_chars'],
-    ['unban {username} | tee x', 'template_forbidden_chars'],
-    ['unban $(whoami) {username}', 'template_forbidden_chars'],
-    ['unban `id` {username}', 'template_forbidden_chars'],
-    ['unban {username} > f', 'template_forbidden_chars'],
-    ['unban {username} "x"', 'template_forbidden_chars'],
-    ['unban {username} \\n', 'template_forbidden_chars'],
-    ['unban {username} @a', 'template_forbidden_chars'],
-    ['unban {username} %s', 'template_forbidden_chars'],
-    ['unban {username} ${x}', 'template_unknown_variable'],
-    ['unban {username} ｓ', 'template_forbidden_chars'],
-    ['unban {username}\nstop', 'template_control_chars'],
-    ['unban {username}\r\nstop', 'template_control_chars'],
-    ['unban {username}\u0000', 'template_control_chars'],
-    ['unban {username}\u2028op', 'template_control_chars'],
+    ['give {username}; op {username}', 'template_forbidden_chars'],
+    ['give {username} && stop', 'template_forbidden_chars'],
+    ['give {username} | tee x', 'template_forbidden_chars'],
+    ['give $(whoami) {username}', 'template_forbidden_chars'],
+    ['give `id` {username}', 'template_forbidden_chars'],
+    ['give {username} > f', 'template_forbidden_chars'],
+    ['give {username} "x"', 'template_forbidden_chars'],
+    ['give {username} \\n', 'template_forbidden_chars'],
+    ['give {username} @a', 'template_forbidden_chars'],
+    ['give {username} %s', 'template_forbidden_chars'],
+    ['give {username} ${x}', 'template_unknown_variable'],
+    ['give {username} ｓ', 'template_forbidden_chars'],
+    ['give {username}\nstop', 'template_control_chars'],
+    ['give {username}\r\nstop', 'template_control_chars'],
+    ['give {username}\u0000', 'template_control_chars'],
+    ['give {username}\u2028op', 'template_control_chars'],
     ['/unban {username}', 'template_leading_slash'],
-    ['unban {nick}', 'template_unknown_variable'],
-    ['unban {USERNAME}', 'template_unknown_variable'],
-    ['unban {username', 'template_forbidden_chars'],
-    ['unban username}', 'template_forbidden_chars'],
-    ['unban {{username}}', 'template_forbidden_chars'],
-    ['unban {}', 'template_unknown_variable'],
-    ['unban now', 'template_username_required'],
-    ['unban {duration}', 'template_username_required'],
+    ['give {nick}', 'template_unknown_variable'],
+    ['give {USERNAME}', 'template_unknown_variable'],
+    ['give {username', 'template_forbidden_chars'],
+    ['give username}', 'template_forbidden_chars'],
+    ['give {{username}}', 'template_forbidden_chars'],
+    ['give {}', 'template_unknown_variable'],
+    ['give now', 'template_username_required'],
+    ['give {duration}', 'template_username_required'],
     ['', 'template_empty'],
     ['   ', 'template_empty'],
     [
-      'a {username} {username} {username} {username} {username}',
+      'give {username} {username} {username} {username} {username}',
       'template_too_many_variables',
     ],
   ])('отклоняет %j как %s', (t, code) => {
@@ -65,7 +66,9 @@ describe('validateTemplate (0.11)', () => {
 
   it('длина шаблона ограничена', () => {
     const ok =
-      'a'.repeat(TEMPLATE_MAX_LENGTH - '{username}'.length) + '{username}';
+      'give ' +
+      'a'.repeat(TEMPLATE_MAX_LENGTH - 'give '.length - '{username}'.length) +
+      '{username}';
     expect(ok.length).toBe(TEMPLATE_MAX_LENGTH);
     expect(validateTemplate(ok)).toBe(ok);
     expect(codeOf(() => validateTemplate(ok + 'a'))).toBe('template_too_long');
@@ -88,11 +91,11 @@ describe('renderCommand (0.11)', () => {
 
   it('подставляет все вхождения', () => {
     expect(
-      renderCommand('say {username} {username}', {
+      renderCommand('give {username} {username}', {
         username: 'Alex',
         duration: 'FOREVER',
       }),
-    ).toBe('say Alex Alex');
+    ).toBe('give Alex Alex');
   });
 
   it.each(Object.keys(DURATION_TOKENS))('срок %s из перечня', (d) => {
@@ -157,11 +160,56 @@ describe('renderCommand (0.11)', () => {
   it('повторно проверяет шаблон (плохой шаблон не рендерится)', () => {
     expect(
       codeOf(() =>
-        renderCommand('x {username}; y', {
+        renderCommand('give {username}; y', {
           username: 'Steve',
           duration: 'WEEK_1',
         }),
       ),
     ).toBe('template_forbidden_chars');
+  });
+});
+
+describe('белый список корней команд (0.11, ADR-0189)', () => {
+  it('по умолчанию разрешены lp, luckperms, give, crate, cratekey, eco', () => {
+    for (const r of ['lp', 'luckperms', 'give', 'crate', 'cratekey', 'eco']) {
+      expect(validateTemplate(`${r} {username} x`)).toBe(`${r} {username} x`);
+    }
+    expect(validateTemplate('LP {username} x')).toBe('LP {username} x');
+  });
+
+  it('корень вне списка отклоняется, расширение его разрешает', () => {
+    expect(codeOf(() => validateTemplate('unban {username}'))).toBe(
+      'root_not_allowed',
+    );
+    expect(validateTemplate('unban {username}', ['unban'])).toBe(
+      'unban {username}',
+    );
+  });
+
+  it.each([
+    'op',
+    'deop',
+    'stop',
+    'reload',
+    'whitelist',
+    'ban-ip',
+    'execute',
+    'sudo',
+    'console',
+    'plugman',
+    'OP',
+  ])('запрет %s сильнее расширения', (root) => {
+    expect(
+      codeOf(() =>
+        validateTemplate(`${root} {username}`, [root.toLowerCase()]),
+      ),
+    ).toBe('root_forbidden');
+    expect(codeOf(() => normalizeRoots([root]))).toBe('root_forbidden');
+  });
+
+  it('normalizeRoots: нормализует, убирает дубли, отклоняет мусор', () => {
+    expect(normalizeRoots('Foo, foo ,bar-1,')).toEqual(['foo', 'bar-1']);
+    expect(codeOf(() => normalizeRoots('a;b'))).toBe('root_invalid');
+    expect(normalizeRoots(undefined)).toEqual([]);
   });
 });
