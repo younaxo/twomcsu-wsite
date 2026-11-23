@@ -31,4 +31,11 @@ export class QuickBuyDto {
   @IsOptional()
   @IsEmail()
   contactEmail?: string;
+
+  /// Способ оплаты (0.8b, ADR-0193): код из GET /store/payment-methods. Проверяет
+  /// маршрутизатор со своими кодами (payment_method_*), не общая валидация.
+  @IsOptional()
+  @IsString()
+  @Length(1, 32)
+  paymentMethod?: string;
 }

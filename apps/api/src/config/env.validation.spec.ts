@@ -484,3 +484,57 @@ describe('envValidationSchema GIVEAWAY_ONLY', () => {
     ).toMatch(/JWT_ACCESS_SECRET/);
   });
 });
+
+describe('envValidationSchema PAYMENT_METHODS (0.8b, ADR-0193)', () => {
+  const validate = (v: Record<string, unknown>) =>
+    envValidationSchema.validate(v, { allowUnknown: true, abortEarly: false });
+  const prod = {
+    DATABASE_URL: 'postgresql://u:p@localhost:5432/db',
+    JWT_ACCESS_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    NODE_ENV: 'production',
+    TRUST_PROXY: '1',
+    TURNSTILE_DISABLED: 'false',
+    TURNSTILE_SECRET_KEY: 'test-secret',
+    COOKIE_SECURE: 'true',
+  };
+
+  it('вне production по умолчанию пусто', () => {
+    const { error, value } = validate({ ...base });
+    expect(error).toBeUndefined();
+    expect(value.PAYMENT_METHODS).toBe('');
+  });
+
+  it('вне production допустимы пары способ:провайдер', () => {
+    expect(
+      validate({
+        ...base,
+        PAYMENT_METHODS: 'SBP:mock-ru,CRYPTO:mock-crypto',
+      }).error,
+    ).toBeUndefined();
+  });
+
+  it.each(['SBP', 'BTC:mock-ru', 'SBP:mock-ru,', 'SBP:Mock_RU'])(
+    'вне production %p отвергается',
+    (raw) => {
+      expect(
+        validate({ ...base, PAYMENT_METHODS: raw }).error?.message,
+      ).toMatch(/PAYMENT_METHODS/);
+    },
+  );
+
+  it('production: непустое значение отвергается (fail closed), пустое допустимо', () => {
+    const bad = validate({ ...prod, PAYMENT_METHODS: 'SBP:mock-ru' });
+    expect(bad.error?.message).toMatch(/PAYMENT_METHODS/);
+    const ok = validate({ ...prod });
+    expect(ok.error?.message ?? '').not.toMatch(/PAYMENT_METHODS/);
+    expect(ok.value.PAYMENT_METHODS).toBe('');
+  });
+
+  it('пустой NODE_ENV = production: способы отвергаются', () => {
+    expect(
+      validate({ ...base, NODE_ENV: '', PAYMENT_METHODS: 'SBP:mock-ru' }).error
+        ?.message,
+    ).toMatch(/PAYMENT_METHODS/);
+  });
+});

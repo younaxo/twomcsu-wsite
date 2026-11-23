@@ -75,6 +75,10 @@ export const StoreCheckoutError = {
   /// Единый ответ на «ник неизвестен сайту»: причина не раскрывается (ADR-0186).
   NICK_UNAVAILABLE: 'nick_unavailable',
   PAYMENT_UNAVAILABLE: 'payment_unavailable',
+  /// Маршрутизатор способов оплаты (0.8b, ADR-0193).
+  PAYMENT_METHOD_REQUIRED: 'payment_method_required',
+  PAYMENT_METHOD_INVALID: 'payment_method_invalid',
+  PAYMENT_METHOD_UNAVAILABLE: 'payment_method_unavailable',
   QUICK_BUY_DISABLED: 'quick_buy_disabled',
   /// Товар недоступен без входа (личный, уникальный, валюта): причина не раскрывается (ADR-0186 Р6).
   LOGIN_REQUIRED: 'login_required',
@@ -119,5 +123,27 @@ export function paidRemovalUnavailable() {
   return new ServiceUnavailableException({
     code: StoreCheckoutError.PAID_REMOVAL_UNAVAILABLE,
     message: 'Снятие наказания за покупку сейчас недоступно',
+  });
+}
+
+export function paymentMethodRequired() {
+  return new BadRequestException({
+    code: StoreCheckoutError.PAYMENT_METHOD_REQUIRED,
+    message: 'Выберите способ оплаты',
+  });
+}
+
+export function paymentMethodInvalid() {
+  return new BadRequestException({
+    code: StoreCheckoutError.PAYMENT_METHOD_INVALID,
+    message: 'Неизвестный способ оплаты',
+  });
+}
+
+/// Способ выключен либо у него нет рабочего провайдера: причина не раскрывается.
+export function paymentMethodUnavailable() {
+  return new BadRequestException({
+    code: StoreCheckoutError.PAYMENT_METHOD_UNAVAILABLE,
+    message: 'Этот способ оплаты сейчас недоступен',
   });
 }
