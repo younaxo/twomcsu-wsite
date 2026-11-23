@@ -19,6 +19,7 @@ import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button, IconButton } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
+import { QuickBuyPanel } from '@/components/store/quick-buy-panel';
 import { ProtectedImage } from '@/components/ui/protected-image';
 import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -437,6 +438,14 @@ function ProductDetails({ product }: { product: StoreProduct }) {
                         ? `В корзине уже ${sameVariant.quantity} шт. этого варианта — количество увеличится.`
                         : 'Оплата заказа появится в ближайшем обновлении.'}
               </p>
+              {!signedIn ? (
+                <QuickBuyPanel
+                  key={selected.id}
+                  variantId={selected.id}
+                  quantity={unique ? 1 : quantity}
+                  productName={product.name}
+                />
+              ) : null}
               {signedIn ? (
                 <div aria-live="polite" role="status" data-testid="cart-feedback">
                   {feedback?.kind === 'ok' ? (
