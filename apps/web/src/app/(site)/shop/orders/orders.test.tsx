@@ -178,3 +178,31 @@ describe('/settings/purchases', () => {
     );
   });
 });
+
+describe('/shop/orders: безопасные ошибки и мобильная раскладка', () => {
+  it('ошибка списка не показывает сырое сообщение API', async () => {
+    mocks.get.mockRejectedValue(new ApiError(500, ['SECRET prisma stack trace']));
+    render(<OrdersPage />, { wrapper: Providers });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(/SECRET/)).toBeNull();
+  });
+
+  it('503 — «недоступно», без сырого сообщения', async () => {
+    mocks.get.mockRejectedValue(new ApiError(503, ['upstream down internal']));
+    render(<OrdersPage />, { wrapper: Providers });
+    expect(await screen.findByText('Сервер временно не отвечает')).toBeInTheDocument();
+    expect(screen.queryByText(/upstream/)).toBeNull();
+  });
+
+  it('401 от сервера — ссылка «Войти»', async () => {
+    mocks.get.mockRejectedValue(new ApiError(401, ['Unauthorized']));
+    render(<OrdersPage />, { wrapper: Providers });
+    expect(await screen.findByRole('link', { name: 'Войти' })).toBeInTheDocument();
+  });
+
+  it('ссылка «Все заказы» в кратком списке имеет цель касания не меньше 40px', async () => {
+    mocks.get.mockResolvedValue({ items: [order(1)], total: 5, page: 1, limit: 1 });
+    render(<OrdersList limit={1} />, { wrapper: Providers });
+    expect(await screen.findByRole('link', { name: 'Все заказы' })).toHaveClass('min-h-10');
+  });
+});

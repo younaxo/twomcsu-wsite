@@ -105,3 +105,45 @@ export function getErrorMessage(error: unknown): string {
   }
   return 'Неизвестная ошибка';
 }
+
+/// Безопасный общий текст для пользователя: НЕ содержит сообщений API
+/// (они могут быть техническими: тексты валидации, имена полей, SQL/стек).
+/// Подбирается по классу ошибки; детали — в коде ошибки (`getErrorCode`).
+export function getSafeErrorMessage(error: unknown): string {
+  if (error instanceof NetworkError) {
+    return error.message;
+  }
+  if (error instanceof ApiError) {
+    if (error.code === 'admin_2fa_required') {
+      return 'Для этого действия включите двухфакторную аутентификацию в настройках безопасности.';
+    }
+    switch (error.status) {
+      case 401:
+        return 'Сессия закончилась. Войдите в аккаунт и повторите.';
+      case 403:
+        return 'У вашего аккаунта нет доступа к этому разделу.';
+      case 404:
+        return 'Такой записи нет или она была удалена.';
+      case 429:
+        return 'Слишком много запросов. Подождите немного и повторите.';
+      case 503:
+        return 'Раздел сейчас недоступен. Попробуйте позже.';
+      default:
+        return error.status >= 500
+          ? 'На сервере что-то пошло не так. Попробуйте ещё раз чуть позже.'
+          : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
+    }
+  }
+  return 'Не удалось загрузить данные. Попробуйте обновить страницу.';
+}
+
+/// Короткий код для обращения в поддержку: код ошибки API или HTTP-статус.
+export function getErrorCode(error: unknown): string | null {
+  if (error instanceof ApiError) {
+    return error.code ?? String(error.status);
+  }
+  if (error instanceof NetworkError) {
+    return 'network';
+  }
+  return null;
+}

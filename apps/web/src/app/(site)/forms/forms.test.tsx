@@ -291,6 +291,11 @@ describe('Формы (срез 3.6)', () => {
     mocks.routes['/forms/invite/old'] = new ApiError(403, ['Приглашение истекло']);
     render(<InviteFormPage />, { wrapper: Providers });
     expect(await screen.findByText('Приглашение недействительно')).toBeInTheDocument();
-    expect(screen.getByText('Приглашение истекло')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Приглашение истекло, уже использовано или выдано другому аккаунту. Войдите под нужным аккаунтом или запросите новое приглашение.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Приглашение истекло')).toBeNull();
   });
 });

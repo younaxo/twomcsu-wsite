@@ -121,7 +121,7 @@ export function HomeShowcase() {
       title="Механики, которых нет в ванильном Minecraft"
       description="Собственные игровые системы, события с режиссурой и предметы, созданные для этого проекта."
     >
-      <div className="grid gap-4 md:grid-cols-3 md:grid-rows-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 md:grid-rows-3">
         {large ? <FeatureCard feature={large} /> : null}
         {small.map((feature) => (
           <FeatureCard key={feature.id} feature={feature} />
