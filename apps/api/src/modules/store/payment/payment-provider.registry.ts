@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isProductionLike } from '../../../config/node-env';
 import { MockHttpPaymentProvider } from './mock-http-payment-provider.service';
+import {
+  MOCK_METHOD_PROVIDER_SPECS,
+  MockMethodPaymentProvider,
+} from './mock-method-payment-provider';
 import { PaymentProvider } from './payment-provider.interface';
 import { TestPaymentProvider } from './test-payment-provider.service';
 
@@ -28,6 +32,13 @@ export class PaymentProviderRegistry {
       this.providers.set(testProvider.name, testProvider);
       if (mockHttpProvider) {
         this.providers.set(mockHttpProvider.name, mockHttpProvider);
+      }
+      // Мок-провайдеры маршрутизатора (0.8b): тоже только dev/test, без сети.
+      for (const spec of MOCK_METHOD_PROVIDER_SPECS) {
+        this.providers.set(
+          spec.name,
+          new MockMethodPaymentProvider(this.config, spec),
+        );
       }
     }
   }

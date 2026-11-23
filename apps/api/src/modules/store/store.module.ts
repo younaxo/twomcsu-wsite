@@ -25,6 +25,7 @@ import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
 import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
+import { PaymentRouter } from './payment/payment-router.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
 import { RefundsAdminController } from './refunds-admin.controller';
 import { RefundsService } from './refunds.service';
@@ -94,6 +95,7 @@ import { WishlistService } from './wishlist.service';
     PaymentProviderRegistry,
     TestPaymentProvider,
     MockHttpPaymentProvider,
+    PaymentRouter,
     // Свой экземпляр: AuthModule не экспортирует TwoFactorService (ADR-0188).
     TwoFactorService,
     RefundsService,
