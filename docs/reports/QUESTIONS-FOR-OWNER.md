@@ -923,3 +923,11 @@
 - Факт: «Data limit exceeded» в CI — лимит анонимной загрузки из public.ecr.aws (образы postgres/redis), не Docker Hub.
 - Допущение: до применения патча (docs/reports/2026-11-23-ci-registry-mirror-patch.md, зеркало mirror.gcr.io) агент перезапускает упавшие проверки с паузами; workflows не меняет.
 - Статус: ОТКРЫТ (нужно действие владельца в веб-редакторе GitHub).
+
+## Q105. Тестовый стенд test-website.twomc.su (23.11.2026)
+
+- Факты: VDS переустановлен владельцем; ключ поставлен одним входом по паролю (пароль не выводился, файл удалён по разрешению владельца); root и пароли по SSH выключены; ufw 22/80/443; fail2ban sshd ignoreip = IP владельца, maxretry 10, bantime 10m; стенд из main (релиз af42e55de96e), verify.sh 21 OK / 0 FAIL; тест-покупка дошла до COMPLETED.
+- Возможный дефект продукта: cookie `two_factor_challenge` ставится с Path=/auth (apps/api/src/modules/auth/refresh-cookie.ts:44), а на стенде API под /api — в браузере ввод кода 2FA может отвечать «время истекло». Допущение: исправить отдельным срезом (путь cookie из конфигурации/префикса API) после проверки в браузере.
+- Допущения: админ стенда — bootstrap-владелец stand_owner (2FA включена, TOTP-секрет и резервные коды в /home/twomc/test-website-accounts.txt, 600); игроку stand_player2 вручную добавлен привязанный ник StandPlayer в БД стенда (иначе покупка отвечает nick_unavailable); выдача на игровой сервер не проверяется — сервера нет (isDelivered=false); SMTP не настроен — коды и письма в логах API; режим API NODE_ENV=development за basic auth.
+- Владельцу: сменить пароль root в панели хостинга и сделать снимок диска.
+- Статус: ОТКРЫТ (допущения действуют).
