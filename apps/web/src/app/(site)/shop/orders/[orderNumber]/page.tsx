@@ -109,7 +109,9 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
                   </span>
                 ) : null}
               </span>
-              <span className="tabular">{formatMoney(item.totalPrice)}</span>
+              <span className="shrink-0 whitespace-nowrap tabular">
+                {formatMoney(item.totalPrice)}
+              </span>
             </li>
           ))}
         </ul>
