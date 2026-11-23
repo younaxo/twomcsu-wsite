@@ -223,6 +223,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'orders.refund',
           'store.delivery.templates.manage',
           'store.settings.manage',
+          'store.bundles.view',
           'store.bundles.create',
           'store.bundles.edit',
           'store.bundles.delete',
@@ -274,7 +275,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           {
             href: '/admin/store/bundles',
             label: 'Наборы',
-            requirement: ['store.bundles.create', 'store.bundles.edit', 'store.bundles.delete'],
+            requirement: 'store.bundles.view',
           },
           {
             href: '/admin/store/currencies',

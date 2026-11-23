@@ -10,7 +10,9 @@ import { Button } from '@/components/ui/button';
 import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from '@/components/ui/toast';
+import { Pagination, PaginationSummary } from '@/components/ui/pagination';
 import {
+  ADMIN_BUNDLES_PAGE_SIZE,
   describeBundleError,
   useAdminBundles,
   useBundleActions,
@@ -20,16 +22,9 @@ import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDate, formatMoney } from '@/lib/format';
 import { BundleDialog } from './_components/bundle-dialog';
 
-/// Наборы магазина (слой 1.3). Права: создание/правка/удаление —
-/// `store.bundles.create|edit|delete`; отдельного права просмотра в API нет,
-/// страница доступна при любом из трёх. Список — публичный `GET /store/bundles`:
-/// выключенные и просроченные наборы в нём не видны (нет админского списка).
-
-const ANY_BUNDLE_PERMISSION = [
-  'store.bundles.create',
-  'store.bundles.edit',
-  'store.bundles.delete',
-] as const;
+/// Наборы магазина (слой 1.3). Просмотр — `store.bundles.view`
+/// (`GET /admin/store/bundles`: все наборы, включая выключенные и просроченные);
+/// создание/правка/удаление — `store.bundles.create|edit|delete`.
 
 function validityText(bundle: AdminBundle): string {
   if (!bundle.validFrom && !bundle.validUntil) return 'Без срока';
@@ -40,10 +35,31 @@ function validityText(bundle: AdminBundle): string {
 
 function BundlesTable() {
   const { can } = usePermissions();
-  const list = useAdminBundles();
+  const [page, setPage] = useState(1);
+  const list = useAdminBundles(page);
   const { update, remove } = useBundleActions();
   const [editing, setEditing] = useState<AdminBundle | null | undefined>(undefined);
   const [deleting, setDeleting] = useState<AdminBundle | null>(null);
+  const [disabling, setDisabling] = useState<AdminBundle | null>(null);
+  const rows = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / ADMIN_BUNDLES_PAGE_SIZE));
+
+  function setActive(bundle: AdminBundle, isActive: boolean) {
+    update.mutate(
+      { id: bundle.id, body: { isActive } },
+      {
+        onSuccess: () => {
+          toast.success(isActive ? 'Набор включён' : 'Набор выключен');
+          setDisabling(null);
+        },
+        onError: (error) => {
+          toast.error(describeBundleError(error).message);
+          setDisabling(null);
+        },
+      },
+    );
+  }
 
   const columns: DataGridColumn<AdminBundle>[] = [
     {
@@ -95,16 +111,7 @@ function BundlesTable() {
                 size="sm"
                 variant="ghost"
                 loading={update.isPending && update.variables?.id === b.id}
-                onClick={() =>
-                  update.mutate(
-                    { id: b.id, body: { isActive: !b.isActive } },
-                    {
-                      onSuccess: () =>
-                        toast.success(b.isActive ? 'Набор выключен' : 'Набор включён'),
-                      onError: (error) => toast.error(describeBundleError(error).message),
-                    },
-                  )
-                }
+                onClick={() => (b.isActive ? setDisabling(b) : setActive(b, true))}
               >
                 {b.isActive ? 'Выключить' : 'Включить'}
               </Button>
@@ -122,10 +129,6 @@ function BundlesTable() {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground" data-testid="bundles-list-note">
-        В списке только включённые наборы внутри срока действия: у API нет админского списка.
-        Выключенный набор пропадает отсюда, вернуть его можно только по известному идентификатору.
-      </p>
       {can('store.bundles.create') ? (
         <div className="flex justify-end">
           <Button onClick={() => setEditing(null)}>
@@ -137,15 +140,32 @@ function BundlesTable() {
       <div data-testid="admin-bundles">
         <DataGrid
           columns={columns}
-          rows={list.data ?? []}
+          rows={rows}
           getRowId={(b) => b.id}
           loading={list.isPending}
           error={list.isError ? list.error : undefined}
           onRetry={() => list.refetch()}
-          empty={<EmptyState icon={<Package />} title="Активных наборов нет" />}
+          empty={<EmptyState icon={<Package />} title="Наборов пока нет" />}
           caption="Наборы: название, цена, число позиций, срок, состояние, действия"
         />
       </div>
+      {total > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PaginationSummary page={page} limit={ADMIN_BUNDLES_PAGE_SIZE} total={total} />
+          {totalPages > 1 ? (
+            <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          ) : null}
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={disabling !== null}
+        onOpenChange={(open) => !open && setDisabling(null)}
+        title={`Выключить набор «${disabling?.name ?? ''}»?`}
+        description="Набор пропадёт с витрины. Включить его обратно можно в любой момент."
+        confirmLabel="Выключить"
+        loading={update.isPending}
+        onConfirm={() => setActive(disabling!, false)}
+      />
       {editing !== undefined ? (
         <BundleDialog
           key={editing?.id ?? 'new'}
@@ -181,7 +201,7 @@ function BundlesTable() {
 
 export default function AdminStoreBundlesPage() {
   return (
-    <PermissionGate requirement={ANY_BUNDLE_PERMISSION}>
+    <PermissionGate requirement="store.bundles.view">
       <div className="flex flex-col gap-4">
         <PageHeader
           title="Наборы"

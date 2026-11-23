@@ -15,10 +15,9 @@ import {
 } from './store-products';
 
 /// Админка наборов магазина (слой 1.3). Контракт — bundles-admin.controller.ts:
-/// POST/PATCH/DELETE `/admin/store/bundles` (`store.bundles.create|edit|delete`).
-/// Админского списка в API нет: список читается публичным `GET /store/bundles`,
-/// который отдаёт только активные наборы внутри срока действия. Выключенный
-/// или просроченный набор в списке не виден (ограничение API, см. отчёт).
+/// GET `/admin/store/bundles` (`store.bundles.view`, все наборы, включая
+/// выключенные и просроченные, с пагинацией) и POST/PATCH/DELETE
+/// (`store.bundles.create|edit|delete`).
 
 export interface AdminBundleItem {
   id?: string;
@@ -202,11 +201,21 @@ export const adminBundleKeys = { all: ['admin', 'store', 'bundles'] as const };
 
 const BASE = '/admin/store/bundles';
 
-/// Только активные наборы внутри срока действия (публичный эндпоинт).
-export function useAdminBundles(enabled = true) {
+export const ADMIN_BUNDLES_PAGE_SIZE = 30;
+
+export interface AdminBundlesPage {
+  items: AdminBundle[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/// Все наборы (включая выключенные и просроченные), постранично.
+export function useAdminBundles(page = 1, enabled = true) {
   return useQuery({
-    queryKey: adminBundleKeys.all,
-    queryFn: () => api.get<AdminBundle[]>('/store/bundles'),
+    queryKey: [...adminBundleKeys.all, page] as const,
+    queryFn: () =>
+      api.get<AdminBundlesPage>(`${BASE}?page=${page}&limit=${ADMIN_BUNDLES_PAGE_SIZE}`),
     enabled,
   });
 }

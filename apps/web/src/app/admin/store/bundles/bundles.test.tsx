@@ -71,30 +71,55 @@ beforeEach(() => {
   mocks.post.mockResolvedValue(BUNDLE);
   mocks.patch.mockResolvedValue(BUNDLE);
   mocks.delete.mockResolvedValue({ success: true });
-  mocks.get.mockImplementation(async (path: string) => (path === '/store/bundles' ? [BUNDLE] : []));
+  mocks.get.mockImplementation(async (path: string) =>
+    path.startsWith('/admin/store/bundles')
+      ? { items: [BUNDLE], total: 1, page: 1, limit: 30 }
+      : null,
+  );
 });
 
 describe('Наборы (1.3): права', () => {
   it('без прав на наборы — экран 403, запросов нет', () => {
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
-    expect(screen.getByText(/store\.bundles\.create/)).toBeInTheDocument();
+    expect(screen.getByText(/store\.bundles\.view/)).toBeInTheDocument();
     expect(mocks.get).not.toHaveBeenCalled();
   });
 
-  it('с одним правом delete: список и «Удалить», без «Изменить» и «Новый набор»', async () => {
-    mocks.granted.add('store.bundles.delete');
+  it('только view: список из админского эндпоинта, без кнопок действий', async () => {
+    mocks.granted.add('store.bundles.view');
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
     const grid = await screen.findByTestId('admin-bundles');
     expect(await within(grid).findByText('Стартовый набор')).toBeInTheDocument();
-    expect(within(grid).getByRole('button', { name: 'Удалить' })).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledWith('/admin/store/bundles?page=1&limit=30');
+    expect(within(grid).queryByRole('button', { name: 'Удалить' })).toBeNull();
     expect(within(grid).queryByRole('button', { name: 'Изменить' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Новый набор' })).toBeNull();
-    expect(screen.getByTestId('bundles-list-note')).toHaveTextContent(/только включённые/);
+  });
+
+  it('выключенный набор виден в списке и включается обратно без подтверждения', async () => {
+    mocks.granted.add('store.bundles.view');
+    mocks.granted.add('store.bundles.edit');
+    mocks.get.mockResolvedValue({
+      items: [{ ...BUNDLE, isActive: false }],
+      total: 1,
+      page: 1,
+      limit: 30,
+    });
+    const user = userEvent.setup();
+    render(<AdminStoreBundlesPage />, { wrapper: Providers });
+    const grid = await screen.findByTestId('admin-bundles');
+    expect(await within(grid).findByText('Выключен')).toBeInTheDocument();
+    await user.click(within(grid).getByRole('button', { name: 'Включить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/admin/store/bundles/bn1', { isActive: true }),
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
 
 describe('Наборы (1.3): действия', () => {
   it('удаление: ConfirmDialog, до подтверждения DELETE не уходит', async () => {
+    mocks.granted.add('store.bundles.view');
     mocks.granted.add('store.bundles.delete');
     const user = userEvent.setup();
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
@@ -112,19 +137,63 @@ describe('Наборы (1.3): действия', () => {
     await waitFor(() => expect(mocks.delete).toHaveBeenCalledWith('/admin/store/bundles/bn1'));
   });
 
-  it('выключение — PATCH только с isActive', async () => {
+  it('выключение: ConfirmDialog, PATCH только с isActive после подтверждения', async () => {
+    mocks.granted.add('store.bundles.view');
     mocks.granted.add('store.bundles.edit');
     const user = userEvent.setup();
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
     const grid = await screen.findByTestId('admin-bundles');
     await user.click(await within(grid).findByRole('button', { name: 'Выключить' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/Выключить набор «Стартовый набор»/)).toBeInTheDocument();
+    expect(mocks.patch).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Отмена' }));
+    expect(mocks.patch).not.toHaveBeenCalled();
+    await user.click(await within(grid).findByRole('button', { name: 'Выключить' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Выключить' }),
+    );
     await waitFor(() =>
       expect(mocks.patch).toHaveBeenCalledWith('/admin/store/bundles/bn1', { isActive: false }),
     );
   });
 
+  it.each([
+    ['403 без кода', new ApiError(403, ['Forbidden']), /Недостаточно прав/],
+    [
+      '403 admin_2fa_required',
+      new ApiError(403, ['Forbidden'], { code: 'admin_2fa_required' }),
+      /двухфакторная/,
+    ],
+    ['5xx', new ApiError(500, ['boom']), /отключите его вместо удаления/],
+  ])('удаление, ошибка %s: тост с понятным текстом, диалог закрыт', async (_n, error, text) => {
+    mocks.granted.add('store.bundles.view');
+    mocks.granted.add('store.bundles.delete');
+    mocks.delete.mockRejectedValue(error);
+    const user = userEvent.setup();
+    render(<AdminStoreBundlesPage />, { wrapper: Providers });
+    const grid = await screen.findByTestId('admin-bundles');
+    await user.click(await within(grid).findByRole('button', { name: 'Удалить' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Удалить' }),
+    );
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith(expect.stringMatching(text)),
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('ошибка 5xx при загрузке списка — состояние ошибки, не пустой список', async () => {
+    mocks.granted.add('store.bundles.view');
+    mocks.get.mockRejectedValue(new ApiError(500, ['boom']));
+    render(<AdminStoreBundlesPage />, { wrapper: Providers });
+    const grid = await screen.findByTestId('admin-bundles');
+    await waitFor(() => expect(within(grid).queryByText('Стартовый набор')).toBeNull());
+    expect(within(grid).queryByText('Наборов пока нет')).toBeNull();
+  });
+
   it('создание: пустая форма — ошибки и нет POST; нет состава — ошибка состава', async () => {
-    for (const key of ['store.bundles.create']) mocks.granted.add(key);
+    for (const key of ['store.bundles.view', 'store.bundles.create']) mocks.granted.add(key);
     const user = userEvent.setup();
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
     await user.click(await screen.findByRole('button', { name: 'Новый набор' }));
@@ -142,6 +211,7 @@ describe('Наборы (1.3): действия', () => {
   });
 
   it('правка названия — PATCH только с name', async () => {
+    mocks.granted.add('store.bundles.view');
     mocks.granted.add('store.bundles.edit');
     const user = userEvent.setup();
     render(<AdminStoreBundlesPage />, { wrapper: Providers });
@@ -172,6 +242,8 @@ describe('Наборы (1.3): валидация и ошибки', () => {
     const item = { productId: 'p', variantId: '', quantity: '1' };
     expect(validateBundleItems([item])).toBeNull();
     expect(validateBundleItems([item, item])).toMatch(/дважды/);
+    expect(validateBundleItems([item, { ...item, quantity: '5' }])).toMatch(/дважды/);
+    expect(validateBundleItems([item, { ...item, variantId: 'v1' }])).toBeNull();
     expect(validateBundleItems([{ ...item, quantity: '0' }])).toMatch(/Количество/);
     expect(bundleDiscountPercent('75.00', '100.00')).toBe(25);
     expect(bundleDiscountPercent('150.00', '100.00')).toBeNull();
@@ -201,11 +273,7 @@ describe('Навигация магазина (1.3): наборы', () => {
   it('«Наборы» — подраздел с любым из прав набора', () => {
     const store = ADMIN_NAV.find((group) => group.id === 'store')!.items[0]!;
     const section = store.sections!.find((s) => s.href === '/admin/store/bundles')!;
-    expect(section.requirement).toEqual([
-      'store.bundles.create',
-      'store.bundles.edit',
-      'store.bundles.delete',
-    ]);
+    expect(section.requirement).toBe('store.bundles.view');
     expect(store.requirement).toEqual(expect.arrayContaining(['store.bundles.edit']));
   });
 });
