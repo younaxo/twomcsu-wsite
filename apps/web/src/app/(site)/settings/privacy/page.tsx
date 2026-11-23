@@ -112,14 +112,17 @@ function PrivacyEditor({ profile }: { profile: OwnProfileDto }) {
       <section className={island} aria-label="Кто что может">
         <h3 className="text-sm font-semibold">Доступ</h3>
         {POLICIES.map((policy) => (
-          <div key={policy.key} className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            key={policy.key}
+            className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+          >
             <span className="text-sm">{policy.label}</span>
             <Select
               value={profile[policy.key]}
               disabled={update.isPending}
               onValueChange={(value) => void save({ [policy.key]: value })}
             >
-              <SelectTrigger className="w-52" aria-label={policy.label}>
+              <SelectTrigger className="w-full sm:w-52" aria-label={policy.label}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

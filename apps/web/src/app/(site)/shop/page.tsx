@@ -24,7 +24,10 @@ function CatalogSkeleton() {
   return (
     <div role="status" data-testid="catalog-skeleton">
       <span className="sr-only">Загрузка каталога…</span>
-      <ul aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ul
+        aria-hidden
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
         {Array.from({ length: 8 }, (_, index) => (
           <li key={index}>
             <Skeleton className="h-64 w-full rounded-lg" />
@@ -157,7 +160,7 @@ function ShopPageContent() {
               <>
                 <ul
                   data-testid="catalog-list"
-                  className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                  className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 >
                   {data.items.map((product) => (
                     <ProductCard key={product.id} product={product} />
@@ -182,8 +185,8 @@ function ShopPageContent() {
 
       <section id="bonus" aria-labelledby="bonus-title" className="scroll-mt-24">
         <Card variant="sunken" className="flex items-center gap-3">
-          <Gift aria-hidden className="size-5 text-primary" />
-          <div>
+          <Gift aria-hidden className="size-5 shrink-0 text-primary" />
+          <div className="min-w-0 break-words">
             <h2 id="bonus-title" className="text-sm font-semibold">
               Бонусы
             </h2>

@@ -595,7 +595,7 @@ function CartContent() {
         data-testid="cart-promo-problem"
         className="flex flex-col items-start gap-3 rounded-lg bg-warning-soft p-4"
       >
-        <p className="text-sm font-medium">{cartErrorMessage(query.error)}</p>
+        <p className="text-sm font-medium">Не удалось открыть корзину.</p>
         <p className="text-sm text-muted-foreground">
           Сохранённый промокод больше не подходит к корзине. Уберите его, и корзина откроется.
         </p>

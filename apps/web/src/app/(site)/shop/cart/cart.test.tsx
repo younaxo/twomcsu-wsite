@@ -346,7 +346,8 @@ describe('корзина /shop/cart', () => {
     mocks.del.mockResolvedValue(cart());
     render(<CartPage />, { wrapper: Providers });
     const problem = await screen.findByTestId('cart-promo-problem');
-    expect(problem).toHaveTextContent('Срок действия промокода истёк');
+    expect(problem).toHaveTextContent('Не удалось открыть корзину');
+    expect(problem).not.toHaveTextContent('Срок действия промокода истёк');
     await user.click(within(problem).getByRole('button', { name: 'Убрать промокод' }));
     expect(mocks.del).toHaveBeenCalledWith('/store/cart/promo');
     expect(await screen.findByTestId('cart-total')).toBeInTheDocument();
