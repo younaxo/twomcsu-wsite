@@ -1,6 +1,6 @@
 'use client';
 
-import { LogIn, Menu } from 'lucide-react';
+import { LogIn, Menu, Search } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -121,6 +121,11 @@ export function SiteHeader({ className }: { className?: string }) {
               <div className="lg:hidden max-[379px]:hidden">
                 <OnlineCounter compact />
               </div>
+              <Button asChild variant="ghost" size="icon">
+                <Link href="/players" aria-label="Поиск игроков" data-testid="players-link">
+                  <Search />
+                </Link>
+              </Button>
               {authenticated ? <NotificationsPopover /> : null}
               <ProfileMenu />
             </>
