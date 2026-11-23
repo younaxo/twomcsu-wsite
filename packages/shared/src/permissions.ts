@@ -403,6 +403,11 @@ export const PERMISSIONS = [
     module: 'store',
     description: 'Управление вариантами (ценами) товара',
   },
+  {
+    key: 'store.bundles.view',
+    module: 'store',
+    description: 'Просмотр наборов товаров в админке (включая выключенные)',
+  },
   { key: 'store.bundles.create', module: 'store', description: 'Создание набора товаров' },
   { key: 'store.bundles.edit', module: 'store', description: 'Редактирование набора товаров' },
   { key: 'store.bundles.delete', module: 'store', description: 'Удаление набора товаров' },

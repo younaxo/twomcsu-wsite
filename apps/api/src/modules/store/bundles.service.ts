@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBundleDto } from './dto/create-bundle.dto';
+import { ListAdminBundlesQueryDto } from './dto/list-admin-bundles-query.dto';
 import { UpdateBundleDto } from './dto/update-bundle.dto';
 import { PUBLIC_PRODUCT_BRIEF_SELECT } from './public-product';
 
@@ -44,6 +45,21 @@ export class BundlesService {
       include: PUBLIC_BUNDLE_INCLUDE,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async listAdmin(query: ListAdminBundlesQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 30;
+    const [items, total] = await Promise.all([
+      this.prisma.bundle.findMany({
+        include: BUNDLE_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.bundle.count(),
+    ]);
+    return { items, total, page, limit };
   }
 
   async getBySlug(slug: string) {

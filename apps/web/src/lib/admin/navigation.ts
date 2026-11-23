@@ -223,6 +223,11 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'orders.refund',
           'store.delivery.templates.manage',
           'store.settings.manage',
+          'store.bundles.view',
+          'store.bundles.create',
+          'store.bundles.edit',
+          'store.bundles.delete',
+          'store.currencies.view',
         ],
         keywords: [
           'возвраты',
@@ -237,6 +242,9 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'заказы',
           'промокоды',
           'скидки',
+          'наборы',
+          'валюты',
+          'курсы',
         ],
         sections: [
           { href: '/admin/store/products', label: 'Товары', requirement: 'store.products.view' },
@@ -264,6 +272,16 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           },
           { href: '/admin/store/promocodes', label: 'Промокоды', requirement: 'promocodes.view' },
           { href: '/admin/store/discounts', label: 'Скидки', requirement: 'store.discounts.view' },
+          {
+            href: '/admin/store/bundles',
+            label: 'Наборы',
+            requirement: 'store.bundles.view',
+          },
+          {
+            href: '/admin/store/currencies',
+            label: 'Валюты',
+            requirement: 'store.currencies.view',
+          },
         ],
       },
     ],
