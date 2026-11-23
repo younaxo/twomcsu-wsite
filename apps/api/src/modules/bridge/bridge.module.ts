@@ -5,6 +5,7 @@ import { BRIDGE_CONFIG, readBridgeConfig } from './bridge.config';
 import { PunishmentsModule } from '../punishments/punishments.module';
 import { BridgeMirrorSubscriber } from './bridge-mirror.subscriber';
 import { BridgeLogRetentionScheduler } from './bridge-log-retention.scheduler';
+import { BridgeDeliveryService } from './bridge-delivery.service';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgePunishmentSource } from './bridge-punishment.source';
 import { BridgeRateLimitGuard } from './bridge-rate-limit.guard';
@@ -28,10 +29,11 @@ import { BridgeSignatureGuard } from './bridge-signature.guard';
     BridgePunishmentSource,
     BridgeMirrorSubscriber,
     BridgeIngestService,
+    BridgeDeliveryService,
     BridgeSignatureGuard,
     BridgeRateLimitGuard,
     BridgeLogRetentionScheduler,
   ],
-  exports: [BridgePunishmentSource],
+  exports: [BridgePunishmentSource, BridgeDeliveryService],
 })
 export class BridgeModule {}

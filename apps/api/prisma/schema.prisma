@@ -1567,7 +1567,9 @@ model DeliveryTask {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem OrderItem          @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  /// Задание Bridge (0.13, ADR-0194): одно на задание выдачи.
+  bridgeJob BridgeDeliveryJob?
 
   @@unique([orderItemId, step])
   @@index([status, nextAttemptAt])
@@ -3671,6 +3673,46 @@ model BridgeServer {
   createdAt            DateTime           @default(now())
 
   @@map("bridge_servers")
+}
+
+enum BridgeDeliveryJobStatus {
+  QUEUED
+  CLAIMED
+  DONE
+  FAILED
+  UNKNOWN
+  CANCELLED
+}
+
+/// Очередь заданий выдачи для плагина Bridge (0.13, ADR-0194). Ключ
+/// идемпотентности: orderItemId:step (общий для всех попыток задания).
+/// Сервер забирает QUEUED-задания только своего serverSlug и подтверждает их
+/// по claimToken. Команда — уже проверенная по белому списку 0.11.
+model BridgeDeliveryJob {
+  id             String                  @id @default(cuid())
+  idempotencyKey String                  @unique @db.VarChar(80)
+  taskId         String                  @unique
+  /// Номер попытки задания выдачи, породившей очередь (сверяется при захвате).
+  attempt        Int
+  serverSlug     String                  @db.VarChar(32)
+  command        String                  @db.VarChar(256)
+  status         BridgeDeliveryJobStatus @default(QUEUED)
+  /// Токен захвата: подтверждение принимается только с ним (привязка к серверу).
+  claimToken     String?                 @db.VarChar(64)
+  claimCount     Int                     @default(0)
+  claimedAt      DateTime?
+  /// После этого момента QUEUED-задание не выдаётся (страховка при сбое сайта).
+  expiresAt      DateTime
+  /// Закрытый код ответа плагина (латиница, цифры, _); свободного текста нет.
+  ackCode        String?                 @db.VarChar(48)
+  ackedAt        DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  task DeliveryTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([serverSlug, status, expiresAt])
+  @@map("bridge_delivery_jobs")
 }
 
 /// Журнал дедупликации событий `punishment.*` (ADR-0182). Не хранит `data`: только

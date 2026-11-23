@@ -66,7 +66,7 @@ describe('DataGrid', () => {
         onRetry={onRetry}
       />,
     );
-    expect(screen.getByRole('alert')).toHaveTextContent('Внутренняя ошибка сервера');
+    expect(screen.getByRole('alert')).toHaveTextContent('Сервер временно не отвечает');
     await userEvent.click(screen.getByRole('button', { name: 'Повторить' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

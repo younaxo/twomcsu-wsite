@@ -82,7 +82,11 @@ function OrderSummary({ cart }: { cart: CartView }) {
                     × {formatNumber(item.quantity)}
                   </span>
                 </span>
-                {line ? <span className="tabular">{formatMoney(line.lineTotal)}</span> : null}
+                {line ? (
+                  <span className="shrink-0 whitespace-nowrap tabular">
+                    {formatMoney(line.lineTotal)}
+                  </span>
+                ) : null}
               </li>
             );
           })}
@@ -120,7 +124,10 @@ function OrderSummary({ cart }: { cart: CartView }) {
         </div>
         <p className="text-xs text-muted-foreground">
           Итог рассчитывает сервер при оформлении заказа.{' '}
-          <Link href="/shop/cart" className="text-primary underline-offset-2 hover:underline">
+          <Link
+            href="/shop/cart"
+            className="inline-flex min-h-10 items-center text-primary underline-offset-2 hover:underline"
+          >
             Изменить корзину
           </Link>
         </p>

@@ -13,6 +13,7 @@ const cfg = (over: Partial<BridgeConfig> = {}): BridgeConfig => ({
   keyOverlapDays: 7,
   applyLatencyLimitMs: 2000,
   bodyReadTimeoutMs: 10000,
+  deliveryEnabled: false,
   ...over,
 });
 
@@ -121,7 +122,11 @@ describe('bridge body parser (M3, без express)', () => {
 
   it('LIMIT + 1 байт -> 413 payload_too_large', async () => {
     srv = await start(cfg());
-    const res = await post(srv.port, '/bridge/v1/events', jsonOfSize(LIMIT + 1));
+    const res = await post(
+      srv.port,
+      '/bridge/v1/events',
+      jsonOfSize(LIMIT + 1),
+    );
     expect(res.status).toBe(413);
     expect(JSON.parse(res.text)).toEqual({ error: 'payload_too_large' });
     expect(srv.hits).toHaveLength(0);
