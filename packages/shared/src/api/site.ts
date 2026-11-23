@@ -160,6 +160,8 @@ export interface PublicSiteSettings {
   /// Сезонная система (ADR-0079): настройки + серверное время; кампанию по
   /// реестру выбирает клиент, но по `serverTime`.
   seasonal?: PublicSeasonalSettings;
+  /// Включён ли публичный список наказаний (Q74); отсутствует у старого API.
+  punishmentsPublicEnabled?: boolean;
   updatedAt: IsoDateString;
 }
 

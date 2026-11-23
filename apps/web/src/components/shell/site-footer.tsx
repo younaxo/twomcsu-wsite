@@ -21,6 +21,7 @@ import {
   type FooterLink,
   type SocialSlot,
 } from '@/lib/site/config';
+import { usePublicPunishmentsEnabled } from '@/lib/punishments/use-public-enabled';
 import { usePublicSiteSettings } from '@/lib/site/hooks';
 import { getGiveawaySocialLinks } from '@/features/giveaway/social-links';
 import { resolveShellHref, useShellMode } from '@/lib/site/shell-mode';
@@ -46,7 +47,10 @@ const SHELL_ROOT_HREFS = new Set(['/#quick-start', '/shop', '/servers']);
 function FooterLinkItem({ link }: { link: FooterLink }) {
   const { mainSiteUrl } = useShellMode();
   const shell = mainSiteUrl !== null;
-  if (!link.available || (shell && SHELL_SOON_HREFS.has(link.href))) {
+  const bansEnabled = usePublicPunishmentsEnabled();
+  // Q74: «Список наказаний» активен только при включённом разделе.
+  const bansOff = link.href === '/bans' && !shell && !bansEnabled;
+  if (!link.available || bansOff || (shell && SHELL_SOON_HREFS.has(link.href))) {
     return (
       <span
         {...(shell ? { role: 'link', 'aria-disabled': true, tabIndex: 0 } : {})}
