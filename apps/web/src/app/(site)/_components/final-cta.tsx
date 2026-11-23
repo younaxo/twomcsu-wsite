@@ -45,7 +45,7 @@ export function HomeFinalCta() {
           id="cta-title"
           className="mt-1 font-display text-3xl font-bold tracking-tight md:text-5xl"
         >
-          <span className="font-mono">{SERVER_ADDRESS}</span>
+          <span className="break-all font-mono">{SERVER_ADDRESS}</span>
         </h2>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span className="inline-flex items-center gap-2">

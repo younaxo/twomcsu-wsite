@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { SoonItem } from './soon-item';
 
@@ -21,6 +22,17 @@ describe('SoonItem («Скоро»)', () => {
     expect(el).not.toHaveAttribute('role');
     expect(el.className).toContain('cursor-not-allowed');
     fireEvent.click(el);
+  });
+
+  it('фокусируется с клавиатуры; контраст без двойного ослабления', async () => {
+    const user = userEvent.setup();
+    render(<SoonItem>Wiki</SoonItem>);
+    const el = screen.getByText('Wiki').closest('[data-soon]') as HTMLElement;
+    expect(el).toHaveAttribute('tabindex', '0');
+    await user.tab();
+    expect(el).toHaveFocus();
+    expect(el.className).not.toMatch(/text-muted-foreground\/\d+/);
+    expect(el.className).not.toMatch(/opacity-\d+/);
   });
 
   it('скринридер читает «Скоро»; видимая метка скрыта от AT и отключаема', () => {

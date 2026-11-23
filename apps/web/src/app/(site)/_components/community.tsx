@@ -35,7 +35,7 @@ export function HomeCommunity() {
           description="Администрация добавит их в настройках сайта."
         />
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {socials.map((social) => (
             <li key={social.key}>
               <a

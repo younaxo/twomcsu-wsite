@@ -44,7 +44,7 @@ function ProductSkeleton() {
     <div
       role="status"
       data-testid="product-skeleton"
-      className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+      className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
     >
       <span className="sr-only">Загрузка товара…</span>
       <Skeleton className="aspect-[4/3] w-full rounded-lg" />
@@ -65,7 +65,7 @@ function Gallery({ product }: { product: StoreProduct }) {
   const [index, setIndex] = useState(0);
   const current = pictures[Math.min(index, pictures.length - 1)];
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-surface-sunken">
         {current ? (
           <ProtectedImage
@@ -133,7 +133,7 @@ function VariantPicker({
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-sm font-semibold">Вариант</legend>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {variants.map((variant) => {
           const checked = variant.id === value;
           return (
@@ -345,7 +345,7 @@ function ProductDetails({ product }: { product: StoreProduct }) {
   };
 
   return (
-    <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Gallery product={product} />
       <div className="flex min-w-0 flex-col gap-5">
         <div className="flex flex-col gap-2">
@@ -357,9 +357,11 @@ function ProductDetails({ product }: { product: StoreProduct }) {
               <Badge icon={<Gift aria-hidden className="size-3.5" />}>Можно подарить</Badge>
             ) : null}
           </div>
-          <h1 className="font-display text-2xl font-bold md:text-3xl">{product.name}</h1>
+          <h1 className="font-display break-words text-2xl font-bold md:text-3xl">
+            {product.name}
+          </h1>
           {product.description ? (
-            <p className="text-base text-muted-foreground">{product.description}</p>
+            <p className="break-words text-base text-muted-foreground">{product.description}</p>
           ) : null}
         </div>
 

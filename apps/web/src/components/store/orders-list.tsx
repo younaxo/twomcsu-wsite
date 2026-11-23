@@ -130,7 +130,7 @@ export function OrdersList({
           Показаны последние {data.items.length} из {data.total}.{' '}
           <Link
             href="/shop/orders"
-            className="font-medium text-primary underline-offset-2 hover:underline"
+            className="inline-flex min-h-10 items-center font-medium text-primary underline-offset-2 hover:underline"
           >
             Все заказы
           </Link>

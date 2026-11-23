@@ -74,7 +74,10 @@ function Showcase() {
         title="Пока нечего показать"
         description="Получите достижение — и его можно будет добавить на витрину профиля."
         action={
-          <Link href="/achievements" className="text-sm font-medium text-primary hover:underline">
+          <Link
+            href="/achievements"
+            className="inline-flex min-h-10 items-center text-sm font-medium text-primary hover:underline"
+          >
             Все достижения
           </Link>
         }
@@ -108,7 +111,7 @@ function Showcase() {
               const achievement = byId.get(id);
               if (!achievement) return null;
               return (
-                <li key={id} className="flex items-center gap-2 text-sm">
+                <li key={id} className="flex min-w-0 items-center gap-2 text-sm">
                   <span className="w-5 text-center text-xs text-muted-foreground">{index + 1}</span>
                   <AchievementIcon iconUrl={achievement.iconUrl} completed />
                   <span className="min-w-0 flex-1 truncate">{achievement.name}</span>
@@ -143,7 +146,7 @@ function Showcase() {
       </section>
       <section className={island} aria-label="Полученные достижения">
         <h3 className="text-sm font-semibold">Полученные достижения</h3>
-        <div className="grid gap-1 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
           {completed.map(({ achievement }) => {
             const checked = selected.includes(achievement.id);
             return (

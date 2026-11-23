@@ -225,7 +225,7 @@ function Devices() {
       </h2>
       <ul className="divide-y divide-border-subtle">
         {devices.data.map((device) => (
-          <li key={device.id} className="flex items-center justify-between gap-3 py-2.5">
+          <li key={device.id} className="flex min-w-0 items-center justify-between gap-3 py-2.5">
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{device.deviceName ?? 'Браузер'}</p>
               <p className="text-xs text-subtle-foreground">
