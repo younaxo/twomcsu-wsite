@@ -44,7 +44,6 @@ beforeEach(() => {
             kills: [],
             coins: [],
             achievements: [entry(1, 'Steve', 3)],
-            purchases: [],
           }
         : {},
     ),
@@ -72,5 +71,29 @@ describe('Рейтинги (срез 5.8)', () => {
     expect(screen.getByText(/Статистика из игры появится/)).toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Монеты' }));
     expect(screen.getByRole('link', { name: 'Голосование' })).toHaveAttribute('href', '/vote');
+  });
+
+  it('«Покупки» не показываются', async () => {
+    render(<LeaderboardsPage />, { wrapper: Providers });
+    await screen.findByTestId('leaderboard');
+    expect(screen.queryByRole('radio', { name: 'Покупки' })).not.toBeInTheDocument();
+  });
+
+  it('флаг раздела выключен — «Раздел скоро»', async () => {
+    mocks.get.mockResolvedValue({
+      enabled: false,
+      playtime: [],
+      kills: [],
+      coins: [],
+      achievements: [],
+    });
+    render(<LeaderboardsPage />, { wrapper: Providers });
+    expect(await screen.findByText('Раздел скоро')).toBeInTheDocument();
+  });
+
+  it('ошибка загрузки — состояние ошибки с повтором', async () => {
+    mocks.get.mockRejectedValue(new Error('boom'));
+    render(<LeaderboardsPage />, { wrapper: Providers });
+    expect(await screen.findByRole('button', { name: /повтор/i })).toBeInTheDocument();
   });
 });

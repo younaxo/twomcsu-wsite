@@ -7,6 +7,7 @@ import { configureApp } from './../src/configure-app';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PermissionService } from '../src/modules/roles/permission.service';
+import { LeaderboardsService } from '../src/modules/leaderboards/leaderboards.service';
 import { RedisService } from '../src/modules/redis/redis.service';
 
 // См. auth.e2e-spec.ts — риск конкуренции за ресурсы под полным сьютом.
@@ -99,6 +100,13 @@ describe('Gamification (e2e)', () => {
 
     prisma = app.get(PrismaService);
     permissions = app.get(PermissionService);
+    // Публичная статистика выключена по умолчанию: включаем флаг (не сбрасываем —
+    // другие наборы идут параллельно на той же БД).
+    await prisma.siteSetting.upsert({
+      where: { key: 'stats.public.enabled' },
+      create: { key: 'stats.public.enabled', value: 'true' },
+      update: { value: 'true' },
+    });
 
     admin = await createUser('admin');
     alice = await createUser('alice');
@@ -629,6 +637,8 @@ describe('Gamification (e2e)', () => {
     await prisma.playerStatistics.create({
       data: { userId: bob.id, kills: 500, playTime: 1000 },
     });
+    // Рейтинги кэшируются: запись в БД напрямую кэш не сбрасывает.
+    app.get(LeaderboardsService).invalidate();
 
     const leaderboards = await request(app.getHttpServer())
       .get('/leaderboards')
@@ -651,9 +661,12 @@ describe('Gamification (e2e)', () => {
       create: { userId: alice.id, kills: 2_000_000_000 },
       update: { kills: 2_000_000_000 },
     });
-    const kills = async () =>
-      (await request(app.getHttpServer()).get('/leaderboards').expect(200)).body
-        .kills as Array<{ userId: string; rank: number }>;
+    const kills = async () => {
+      app.get(LeaderboardsService).invalidate();
+      return (
+        await request(app.getHttpServer()).get('/leaderboards').expect(200)
+      ).body.kills as Array<{ userId: string; rank: number }>;
+    };
 
     await prisma.user.update({
       where: { id: alice.id },
