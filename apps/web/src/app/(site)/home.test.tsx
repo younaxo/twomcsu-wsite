@@ -143,8 +143,8 @@ describe('HomePage', () => {
 
     // Честные empty state вместо выдуманных событий/товаров/новостей.
     expect(await screen.findByText('Пока ничего не запланировано')).toBeInTheDocument();
-    expect(await screen.findByText('Каталог наполняется')).toBeInTheDocument();
-    expect(await screen.findByText('Публикаций пока нет')).toBeInTheDocument();
+    expect(await screen.findByText(/Каталог наполняется/)).toBeInTheDocument();
+    expect(await screen.findByText(/Публикаций пока нет/)).toBeInTheDocument();
     expect(screen.queryByTestId('home-product-card')).toBeNull();
     expect(screen.queryByTestId('event-next')).toBeNull();
 

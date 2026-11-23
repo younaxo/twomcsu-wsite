@@ -412,3 +412,49 @@ export const DEMO_VOTE_SITE = {
 export const DEMO_SETTINGS: Record<string, string> = {
   'punishments.public.enabled': 'true',
 };
+
+/// Публичный список читает только `source='litebans'`, `sourceScope='default'`
+/// и требует `PunishmentSyncState.initialSyncDoneAt` по виду. Демо-строки кладутся
+/// туда же; sourceId сдвинут, чтобы не пересечься с реальными id LiteBans.
+export const DEMO_PUNISHMENT_SOURCE = 'litebans';
+export const DEMO_PUNISHMENT_SCOPE = 'default';
+export const DEMO_PUNISHMENT_ID_OFFSET = 900_000_000;
+export const DEMO_PUNISHMENT_KINDS: MinecraftPunishmentKind[] = [
+  'BAN',
+  'MUTE',
+  'WARN',
+  'KICK',
+];
+
+export function demoPunishmentSourceId(sourceId: number): bigint {
+  return BigInt(DEMO_PUNISHMENT_ID_OFFSET + sourceId);
+}
+
+/// Поля строки-зеркала: без IP и контактов, выдавший скрыт (Q31).
+export function buildDemoPunishmentRow(p: DemoPunishment, now: Date) {
+  const startedAt = new Date(now.getTime() - p.daysAgo * 86_400_000);
+  return {
+    subjectName: p.subjectName,
+    reason: p.reason,
+    status: p.status,
+    startedAt,
+    until:
+      p.durationDays === null
+        ? null
+        : new Date(startedAt.getTime() + p.durationDays * 86_400_000),
+    ipBan: false,
+    executorIsConsole: true,
+    issuerHidden: true,
+    rowHash: `demo${String(p.sourceId).padStart(60, '0')}`,
+  };
+}
+
+/// Состояние синхронизации «первичная загрузка выполнена» для каждого вида.
+export function buildDemoSyncState(now: Date) {
+  return DEMO_PUNISHMENT_KINDS.map((kind) => ({
+    source: DEMO_PUNISHMENT_SOURCE,
+    kind,
+    initialSyncDoneAt: now,
+    lastSuccessAt: now,
+  }));
+}
