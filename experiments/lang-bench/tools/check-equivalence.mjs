@@ -1,7 +1,7 @@
 // Проверка эквивалентности реализаций расчёта корзины (Node, без зависимостей; нужен Node >= 22.18 для .ts).
 //   node tools/check-equivalence.mjs --inproc ts-current,ts-batch
 //   node tools/check-equivalence.mjs --http ts-current=http://127.0.0.1:8081,ts-batch=http://127.0.0.1:8082,rust=http://127.0.0.1:8083,java=http://127.0.0.1:8084
-// Опции: --golden fixtures/golden.json  --carts generated/carts.json  --dataset fixtures/dataset.json  --min-carts 1000
+// Опции: --no-golden (пропустить golden: нужно при большом наборе правил, где ручные ожидания неприменимы)  --golden fixtures/golden.json  --carts generated/carts.json  --dataset fixtures/dataset.json  --min-carts 1000
 // Правила: 1) golden должен совпасть с КАЖДОЙ реализацией (ожидания посчитаны вручную);
 //          2) на сгенерированных корзинах все реализации совпадают с первой (сравнение JSON как значения, деньги - строками);
 //          3) денежные строки в каноническом виде; 4) для 400 сравнивается status и code (message не сравнивается).
@@ -63,8 +63,9 @@ function moneyProblems(body) {
 let failures = 0;
 const report = (msg) => { failures += 1; if (failures <= 20) console.log(`РАСХОЖДЕНИЕ: ${msg}`); };
 
-const golden = JSON.parse(readFileSync(goldenPath, 'utf8')).cases;
-for (const t of targets) {
+const NO_GOLDEN = argv.includes('--no-golden'); // на большом наборе правил ожидания golden неприменимы (H1): только сравнение между вариантами
+const golden = NO_GOLDEN ? [] : JSON.parse(readFileSync(goldenPath, 'utf8')).cases;
+for (const t of NO_GOLDEN ? [] : targets) {
   let bad = 0;
   for (const c of golden) {
     const got = view(await t.call(c));
