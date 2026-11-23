@@ -1,0 +1,102 @@
+# CDN статики cdn-files.twomc.su (только чтение, только статика). Подстановка (envsubst, только ${CDN_DOMAIN}).
+# Установка: infrastructure/cdn/install-cdn.sh -> server/cdn-setup.sh. Файл: /etc/nginx/conf.d/cdn-files.conf
+# Корень /srv/cdn-files заполняется ТОЛЬКО синхронизацией по SSH (sync-cdn.sh); публично - GET/HEAD/OPTIONS.
+
+# CORS: Origin из белого списка отражается в ответе; для остальных заголовок не выдаётся (пустое значение add_header не пишется).
+map $http_origin $cdn_cors_origin {
+    default                              "";
+    "https://twomc.su"                   $http_origin;
+    "https://test-website.twomc.su"      $http_origin;
+    "https://giveaway.twomc.su"          $http_origin;
+}
+
+# Кэш: имя с хэшем содержимого (8-64 hex-символа, хотя бы одна буква a-f, перед ним . _ - или /) - неизменяемое, на год.
+# Остальное - коротко (при Cloudflare позже: purge по необходимости).
+map $uri $cdn_cache_control {
+    default                                                                     "public, max-age=300";
+    "~*[/._-](?=[0-9]*[a-f])[0-9a-f]{8,64}\.(png|jpe?g|webp|avif|gif|svg|ico|woff2?|css|js)$"   "public, max-age=31536000, immutable";
+}
+
+# SVG: любые скрипты и внешние ресурсы запрещены политикой (только inline-стили).
+map $uri $cdn_csp {
+    default       "";
+    "~*\.svg$"    "default-src 'none'; style-src 'unsafe-inline'";
+}
+
+limit_req_zone $binary_remote_addr zone=cdn_files:10m rate=60r/s;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${CDN_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${CDN_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${CDN_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${CDN_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    server_tokens off;
+    root /srv/cdn-files;
+    autoindex off;
+    client_max_body_size 1k;         # загрузки через HTTP не принимаются вообще
+    limit_req zone=cdn_files burst=300 nodelay;
+
+    # MIME: стандартная таблица + явные webp/avif.
+    include /etc/nginx/mime.types;
+    types {
+        image/webp webp;
+        image/avif avif;
+    }
+    default_type application/octet-stream;
+
+    # gzip: сжимаемые форматы (webp/avif/png/jpg уже сжаты - в списке их нет).
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types image/svg+xml image/x-icon image/vnd.microsoft.icon text/css application/javascript text/javascript application/json font/ttf application/vnd.ms-fontobject text/plain;
+
+    # Заголовки на всём (add_header без always не пишется в 4xx: длинный кэш и CSP не липнут к ошибкам).
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Vary "Origin" always;
+    add_header Access-Control-Allow-Origin $cdn_cors_origin always;
+    add_header Cross-Origin-Resource-Policy "cross-origin" always;
+    add_header X-Robots-Tag "noindex" always;
+    add_header Strict-Transport-Security "max-age=86400" always;
+    add_header Cache-Control $cdn_cache_control;
+    add_header Content-Security-Policy $cdn_csp;
+
+    # Только чтение.
+    if ($request_method !~ ^(GET|HEAD|OPTIONS)$) { return 405; }
+
+    # Скрытые файлы и служебное - никогда.
+    location ~ /\. { return 404; }
+
+    # Предпроверочный запрос CORS (простые GET его не требуют; для fetch с заголовками).
+    # add_header внутри if сбрасывает унаследованные, поэтому нужные повторены.
+    location / {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin $cdn_cors_origin always;
+            add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+            add_header Access-Control-Max-Age 86400 always;
+            add_header Vary "Origin" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            return 204;
+        }
+        # Каталоги не листаются и не отдаются: try_files проверяет только файлы, иначе 404.
+        try_files $uri =404;
+    }
+}

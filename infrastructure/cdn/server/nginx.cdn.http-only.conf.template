@@ -1,0 +1,13 @@
+# Временный HTTP-блок для выпуска сертификата CDN (webroot). Подстановка: envsubst '${CDN_DOMAIN}'.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${CDN_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
