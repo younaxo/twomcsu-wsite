@@ -139,7 +139,9 @@ export function PunishmentsErrorState({
         <ErrorState
           size={size}
           title={
-            error.code === 'punishments_not_found' ? 'Наказание не найдено' : 'Раздел недоступен'
+            error.code === 'punishments_not_found'
+              ? 'Наказание не найдено'
+              : 'Раздел пока недоступен'
           }
           description={
             error.code === 'punishments_not_found'

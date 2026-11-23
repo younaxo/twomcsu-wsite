@@ -34,7 +34,9 @@ function OrderRow({ order }: { order: OrderView }) {
         className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-surface px-4 py-3 shadow-sm transition-colors duration-fast hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-sm font-semibold tabular">Заказ № {order.orderNumber}</span>
+          <span className="break-all text-sm font-semibold tabular">
+            Заказ № {order.orderNumber}
+          </span>
           <span className="text-xs text-muted-foreground">
             {order.createdAt ? formatDateTime(order.createdAt) : 'Дата неизвестна'}
           </span>
