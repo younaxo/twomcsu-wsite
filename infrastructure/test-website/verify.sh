@@ -10,7 +10,7 @@ fail=0
 check() { # имя, ожидание, факт
   if [[ "$3" == $2 ]]; then echo "OK   $1: $3"; else echo "FAIL $1: ожидалось $2, получено $3"; fail=1; fi
 }
-authed() { printf 'user = "%s"\n' "$(cat "$BASIC_FILE")" | curl -K - "$@"; }
+authed() { printf 'user = "%s"\n' "$(grep -v '^Устарело' "$BASIC_FILE" | head -1)" | curl -K - "$@"; }
 
 envval() { grep -E "^$1=" "$STAND_ROOT/stand.env" 2>/dev/null | head -1 | cut -d= -f2-; }
 check "stand.env права 600" "600" "$(stat -c %a "$STAND_ROOT/stand.env" 2>/dev/null || echo none)"
