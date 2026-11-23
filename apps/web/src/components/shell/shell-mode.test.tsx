@@ -86,7 +86,8 @@ describe('каркас: режим сайта розыгрыша (внешний
       /^Достижения/,
       /^Формы и заявки/,
     ]) {
-      const el = col.getByRole('link', { name });
+      expect(col.queryByRole('link', { name })).toBeNull();
+      const el = col.getByText(name).closest('[data-soon]') as HTMLElement;
       expect(el).toHaveAttribute('aria-disabled', 'true');
       expect(el).not.toHaveAttribute('href');
       expect(el.className).toContain('cursor-not-allowed');
