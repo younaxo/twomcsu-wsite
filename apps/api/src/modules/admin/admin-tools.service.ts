@@ -280,6 +280,14 @@ export class AdminToolsService {
     return { ...alert, updatedByUsername: author?.username ?? null };
   }
 
+  /// Флаг публичного списка наказаний (Q74) для публичных настроек: только булево.
+  async getPublicPunishmentsEnabled(): Promise<boolean> {
+    const row = await this.prisma.siteSetting.findUnique({
+      where: { key: 'punishments.public.enabled' },
+    });
+    return row?.value === 'true';
+  }
+
   /// Плашка для публичных настроек: только включённая и с текстом.
   async getPublicSiteAlert() {
     const alert = await this.prisma.siteAlert.findUnique({

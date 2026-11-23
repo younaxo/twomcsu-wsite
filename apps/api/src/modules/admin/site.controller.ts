@@ -18,13 +18,15 @@ export class SiteController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Get('settings')
   async publicSettings() {
-    const [s, alert, socialLinks, seasonal, status] = await Promise.all([
-      this.tools.getSiteSettings(),
-      this.tools.getPublicSiteAlert(),
-      this.socialLinks.listPublic(),
-      this.tools.getPublicSeasonal(),
-      this.siteStatus.snapshot(),
-    ]);
+    const [s, alert, socialLinks, seasonal, status, punishmentsPublic] =
+      await Promise.all([
+        this.tools.getSiteSettings(),
+        this.tools.getPublicSiteAlert(),
+        this.socialLinks.listPublic(),
+        this.tools.getPublicSeasonal(),
+        this.siteStatus.snapshot(),
+        this.tools.getPublicPunishmentsEnabled(),
+      ]);
     // Флаги модулей — из реестра модулей (ADR-0082), а не из старых полей.
     const on = (key: string) => !status.disabled.has(key);
     return {
@@ -49,6 +51,7 @@ export class SiteController {
       },
       alert,
       seasonal,
+      punishmentsPublicEnabled: punishmentsPublic,
       updatedAt: s.updatedAt,
     };
   }

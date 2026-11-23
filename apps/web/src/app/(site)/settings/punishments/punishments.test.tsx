@@ -88,6 +88,6 @@ describe('Настройки → Наказания', () => {
     const list = await screen.findByTestId('punishments');
     const links = list.querySelectorAll('a');
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute('href', '/support/new/punishment_appeal');
+    expect(links[0]).toHaveAttribute('href', '/support/new/punishment_appeal?punishment=a');
   });
 });
