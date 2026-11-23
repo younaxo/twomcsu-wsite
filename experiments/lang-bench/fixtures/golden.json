@@ -1741,6 +1741,142 @@
           "code": "VALIDATION"
         }
       }
+    },
+    {
+      "name": "G71 валидация: quantity записано как 5.0",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":null,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":5.0}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G72 валидация: quantity записано как 1e1",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":null,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1e1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G73 валидация: quantity записано как 1E+1",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":null,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1E+1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G74 валидация: quantity 5.5",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":null,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":5.5}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G75 валидация: userCompletedOrders записано как 5.0",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":5.0,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G76 валидация: userCompletedOrders записано как 1e2",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":1e2,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G77 валидация: userCompletedOrders записано как 0.0",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":0.0,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G78 целое quantity 5 принимается (эталон для G71)",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":null,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":5}]}",
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 5,
+              "unitPrice": "100",
+              "lineSubtotal": "500",
+              "bulkDiscount": "0",
+              "lineTotal": "500"
+            }
+          ],
+          "subtotal": "500",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "500"
+        }
+      }
+    },
+    {
+      "name": "G79 userCompletedOrders = 2147483647 (граница int32) принимается",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":2147483647,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1}]}",
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "10",
+          "loyaltyDiscountTotal": "10",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "10",
+          "total": "90"
+        }
+      }
+    },
+    {
+      "name": "G80 валидация: userCompletedOrders = 2147483648 (больше int32)",
+      "rawBody": "{\"now\":\"2026-11-23T12:00:00Z\",\"userCompletedOrders\":2147483648,\"promoCode\":null,\"items\":[{\"id\":\"i1\",\"productId\":\"p010\",\"productType\":\"BADGE\",\"unitPrice\":\"100.00\",\"quantity\":1}]}",
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
     }
   ]
 }

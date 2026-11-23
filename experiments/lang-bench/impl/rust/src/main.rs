@@ -250,7 +250,8 @@ fn parse_request(v: &Value) -> R<Parsed> {
     let uco = match obj.get("userCompletedOrders") {
         None | Some(Value::Null) => None,
         Some(x) => match x.as_i64() {
-            Some(n) if n >= 0 => Some(n),
+            // CONTRACT.md: целое 0..=2147483647, записанное целым литералом (5.0 и 1e2 для serde_json - f64, as_i64 даёт None)
+            Some(n) if (0..=i64::from(i32::MAX)).contains(&n) => Some(n),
             _ => return Err(bad("VALIDATION")),
         },
     };

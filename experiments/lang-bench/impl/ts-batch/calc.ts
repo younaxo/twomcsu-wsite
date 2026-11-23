@@ -63,6 +63,23 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const PRICE_RE = /^(0|[1-9][0-9]*)(\.[0-9]{1,2})?$/;
 const NOW_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const PROMO_RE = /^[A-Za-z0-9_-]{1,32}$/;
+const MAX_UCO = 2_147_483_647; // как int32 в Java; Rust ограничивает так же (CONTRACT.md, «Целые числа»)
+
+/// Маркер числа, записанного НЕ как целый литерал (5.0, 1e2, 0.5e1): такие значения отклоняются (CONTRACT.md).
+/// Нужен потому, что JSON.parse теряет различие между 5 и 5.0; различие восстанавливается по исходному тексту (context.source).
+export class NonIntegerLiteral { source: string; constructor(source: string) { this.source = source; } }
+const STRING_RE = /"(?:[^"\\]|\\.)*"/g;
+const NON_INT_HINT_RE = /[0-9][.eE]/;
+const INT_LITERAL_RE = /^(0|-?[1-9][0-9]*)$/;
+
+/// Разбор тела запроса. Быстрый путь - обычный JSON.parse, если вне строк нет цифры с точкой/экспонентой;
+/// иначе JSON.parse с reviver (Node >= 21, доступ к исходному тексту числа), который помечает нецелые записи.
+/// Бросает SyntaxError на некорректном JSON.
+export function parseJsonBody(text: string): unknown {
+  if (!NON_INT_HINT_RE.test(text.replace(STRING_RE, '""'))) return JSON.parse(text);
+  return JSON.parse(text, (_k, v, ctx: { source?: string } = {}) =>
+    typeof v === 'number' && ctx.source !== undefined && !INT_LITERAL_RE.test(ctx.source) ? new NonIntegerLiteral(ctx.source) : v);
+}
 
 /// Проверки по CONTRACT.md. Возвращает Parsed либо готовую ошибку 400.
 export function parseRequest(raw: unknown): Parsed | Result {
@@ -70,7 +87,7 @@ export function parseRequest(raw: unknown): Parsed | Result {
   const now = raw.now;
   if (typeof now !== 'string' || !NOW_RE.test(now)) return bad('VALIDATION', 'now');
   const uco = raw.userCompletedOrders ?? null;
-  if (uco !== null && !(typeof uco === 'number' && Number.isInteger(uco) && uco >= 0)) {
+  if (uco !== null && !(typeof uco === 'number' && Number.isInteger(uco) && uco >= 0 && uco <= MAX_UCO)) {
     return bad('VALIDATION', 'userCompletedOrders');
   }
   const promoCode = raw.promoCode ?? null;

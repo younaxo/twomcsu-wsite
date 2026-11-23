@@ -161,6 +161,7 @@ public final class Main {
     Integer uco = null;
     JsonNode ucoN = root.get("userCompletedOrders");
     if (!isMissing(ucoN)) {
+      // CONTRACT.md, «Целые числа»: 5.0 и 1e2 - DoubleNode (isIntegralNumber ложно) -> 400; int32 даёт canConvertToInt
       if (!ucoN.isIntegralNumber() || !ucoN.canConvertToInt() || ucoN.asInt() < 0) throw new ApiError("VALIDATION");
       uco = ucoN.asInt();
     }

@@ -1,7 +1,7 @@
 // HTTP-обёртка (node:http, без фреймворка и зависимостей). Запуск: node server.ts (Node >= 22.18 / 24, type stripping).
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { calculate } from './calc.ts';
+import { calculate, parseJsonBody } from './calc.ts';
 import { MemoryStore } from './store.ts';
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -37,7 +37,7 @@ const server = createServer((req, res) => {
     if (aborted) return;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      parsed = parseJsonBody(Buffer.concat(chunks).toString('utf8'));
     } catch {
       return send(400, { code: 'VALIDATION', message: 'JSON' });
     }

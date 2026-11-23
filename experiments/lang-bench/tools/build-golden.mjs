@@ -26,6 +26,9 @@ const err = (code) => ({ status: 400, body: { code } });
 
 const cases = [];
 const add = (name, request, expected) => cases.push({ name, request, expected });
+// Кейс с СЫРЫМ телом: нужен там, где важна запись числа (5.0, 1e2), которую JSON.stringify(объект) не сохранит.
+const addRaw = (name, rawBody, expected) => cases.push({ name, rawBody, expected });
+const rawReq = (uco, quantity) => `{"now":"${NOW}","userCompletedOrders":${uco},"promoCode":null,"items":[{"id":"i1","productId":"p010","productType":"BADGE","unitPrice":"100.00","quantity":${quantity}}]}`;
 
 add('G01 одна позиция без скидок', req([it('i1', 'p010', 'BADGE', '199.99', 1)]),
   ok([['i1', 'p010', 1, '199.99', '199.99', '0', '199.99']], '199.99', '0', '0', '0', '0', null, '0', '199.99'));
@@ -118,6 +121,20 @@ add('G67 позиция: товар без типа', req([it('i1', 'p010', null
 add('G68 позиция: набор с типом', req([{ id: 'i1', productId: null, productType: 'KEY', unitPrice: '1.00', quantity: 1 }]), err('CART_ITEM_INVALID'));
 add('G69 валидация: userCompletedOrders отрицательное', req([it('i1', 'p010', 'BADGE', '1.00', 1)], { userCompletedOrders: -1 }), err('VALIDATION'));
 add('G70 валидация: цена в виде числа, не строки', req([{ id: 'i1', productId: 'p010', productType: 'BADGE', unitPrice: 1.5, quantity: 1 }]), err('VALIDATION'));
+
+// Правило целых чисел (CONTRACT.md): число принимается только если записано целым литералом (без точки и экспоненты).
+addRaw('G71 валидация: quantity записано как 5.0', rawReq('null', '5.0'), err('VALIDATION'));
+addRaw('G72 валидация: quantity записано как 1e1', rawReq('null', '1e1'), err('VALIDATION'));
+addRaw('G73 валидация: quantity записано как 1E+1', rawReq('null', '1E+1'), err('VALIDATION'));
+addRaw('G74 валидация: quantity 5.5', rawReq('null', '5.5'), err('VALIDATION'));
+addRaw('G75 валидация: userCompletedOrders записано как 5.0', rawReq('5.0', '1'), err('VALIDATION'));
+addRaw('G76 валидация: userCompletedOrders записано как 1e2', rawReq('1e2', '1'), err('VALIDATION'));
+addRaw('G77 валидация: userCompletedOrders записано как 0.0', rawReq('0.0', '1'), err('VALIDATION'));
+addRaw('G78 целое quantity 5 принимается (эталон для G71)', rawReq('null', '5'),
+  ok([['i1', 'p010', 5, '100', '500', '0', '500']], '500', '0', '0', '0', '0', null, '0', '500'));
+addRaw('G79 userCompletedOrders = 2147483647 (граница int32) принимается', rawReq('2147483647', '1'),
+  ok([['i1', 'p010', 1, '100', '100', '0', '100']], '100', '0', '10', '10', '0', null, '10', '90'));
+addRaw('G80 валидация: userCompletedOrders = 2147483648 (больше int32)', rawReq('2147483648', '1'), err('VALIDATION'));
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'golden.json');
 writeFileSync(out, JSON.stringify({ description: 'Golden-фикстуры (ожидания посчитаны вручную, см. tools/build-golden.mjs)', cases }, null, 2) + '\n');

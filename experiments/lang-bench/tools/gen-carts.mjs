@@ -68,9 +68,20 @@ function makeCart(index, forcedItems) {
 const carts = [];
 for (let i = 0; i < COUNT; i += 1) carts.push(makeCart(i + 1));
 
+// Валидационные корзины с СЫРЫМ телом (запись чисел; CONTRACT.md, «Целые числа»). Добавляются ПОСЛЕ COUNT основных,
+// не расходуют генератор случайных чисел (основные корзины не меняются). Для нагрузчика не используются.
+const rawBody = (uco, quantity) => `{"now":"${NOWS[0]}","userCompletedOrders":${uco},"promoCode":"SUMMER10","items":[{"id":"i1","productId":"p001","productType":"BADGE","unitPrice":"10.00","quantity":${quantity}},{"id":"i2","productId":"p020","productType":"KEY","unitPrice":"33.33","quantity":3}]}`;
+let rawCount = 0;
+for (const uco of ['null', '0', '5', '20', '5.0', '1e2', '0.0', '2147483647', '2147483648']) {
+  for (const q of ['1', '10', '50', '5.0', '1e1', '1E+1', '5.5', '10000']) {
+    rawCount += 1;
+    carts.push({ name: `raw-${rawCount}-uco${uco}-q${q}`, rawBody: rawBody(uco, q) });
+  }
+}
+
 mkdirSync(join(root, 'generated'), { recursive: true });
 mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, JSON.stringify({ seed: SEED, count: COUNT, carts }) + '\n');
+writeFileSync(OUT, JSON.stringify({ seed: SEED, count: COUNT, rawCount, carts }) + '\n');
 
 // Профили для нагрузчика: фиксированная корзина (товары, без скидок-исключений: с промокодом и лояльностью).
 for (const [name, n] of [['small', 3], ['medium', 10], ['large', 50]]) {
@@ -101,4 +112,4 @@ if (RULES > 0) {
   }
   writeFileSync(join(root, 'generated', 'dataset-large.json'), JSON.stringify(big) + '\n');
 }
-console.log(`carts: ${COUNT} (seed ${SEED}) -> ${OUT}${RULES > 0 ? `; dataset-large: +${RULES} rules` : ''}`);
+console.log(`carts: ${COUNT} + ${rawCount} сырых валидационных (seed ${SEED}) -> ${OUT}${RULES > 0 ? `; dataset-large: +${RULES} rules` : ''}`);

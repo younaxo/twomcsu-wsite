@@ -7,7 +7,7 @@
 ```
 CONTRACT.md                  HTTP-контракт POST /store/cart/calculate (+ GET /health), правила, канонический вид денег
 fixtures/dataset.json        правила скидок, тиры лояльности, промокоды (синтетика, без ПДн)
-fixtures/golden.json         48 golden-кейсов, ожидания посчитаны ВРУЧНУЮ (tools/build-golden.mjs)
+fixtures/golden.json         58 golden-кейсов (в т.ч. с сырым телом rawBody), ожидания посчитаны ВРУЧНУЮ (tools/build-golden.mjs)
 tools/build-golden.mjs       собирает golden.json из спецификации с литеральными ожиданиями
 tools/gen-carts.mjs          детерминированный генератор корзин (seed, N >= 1000), профили нагрузки, большой набор правил
 tools/check-equivalence.mjs  эквивалентность: golden на каждой реализации + сравнение всех на сгенерированных корзинах

@@ -24,15 +24,25 @@ for (const name of inproc ? inproc.split(',') : []) {
   const calc = await import(pathToFileURL(join(root, 'impl', name, 'calc.ts')).href);
   const { MemoryStore } = await import(pathToFileURL(join(root, 'impl', name, 'store.ts')).href);
   const store = new MemoryStore(datasetPath, 0);
-  targets.push({ name: `inproc:${name}`, call: (request) => calc.calculate(structuredClone(request), store) });
+  // c.rawBody (если есть) идёт через parseJsonBody - как тело HTTP-запроса сервера (различие 5 и 5.0 сохраняется)
+  targets.push({
+    name: `inproc:${name}`,
+    call: (c) => {
+      if (c.rawBody === undefined) return calc.calculate(structuredClone(c.request), store);
+      let parsed;
+      try { parsed = calc.parseJsonBody(c.rawBody); } catch { return Promise.resolve({ status: 400, body: { code: 'VALIDATION' } }); }
+      return calc.calculate(parsed, store);
+    },
+  });
 }
 const http = opt('http', '');
 for (const pair of http ? http.split(',') : []) {
   const [name, url] = pair.split('=');
   targets.push({
     name: `http:${name}`,
-    call: async (request) => {
-      const res = await fetch(`${url}/store/cart/calculate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
+    call: async (c) => {
+      const body = c.rawBody !== undefined ? c.rawBody : JSON.stringify(c.request);
+      const res = await fetch(`${url}/store/cart/calculate`, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
       return { status: res.status, body: await res.json() };
     },
   });
@@ -57,7 +67,7 @@ const golden = JSON.parse(readFileSync(goldenPath, 'utf8')).cases;
 for (const t of targets) {
   let bad = 0;
   for (const c of golden) {
-    const got = view(await t.call(c.request));
+    const got = view(await t.call(c));
     if (got.status === 200) for (const p of moneyProblems(got.body)) { report(`${t.name} golden "${c.name}": неканонический формат ${p}`); bad += 1; }
     if (canon(got) !== canon(c.expected)) { bad += 1; report(`${t.name} golden "${c.name}"\n  ожидалось ${canon(c.expected)}\n  получено  ${canon(got)}`); }
   }
@@ -74,10 +84,10 @@ const CONCURRENCY = 16;
 for (let i = 0; i < carts.length; i += CONCURRENCY) {
   const batch = carts.slice(i, i + CONCURRENCY);
   await Promise.all(batch.map(async (c) => {
-    const want = view(await ref.call(c.request));
+    const want = view(await ref.call(c));
     if (want.status === 200) { ok200 += 1; for (const p of moneyProblems(want.body)) report(`${ref.name} ${c.name}: неканонический формат ${p}`); } else err400 += 1;
     for (const t of others) {
-      const got = view(await t.call(c.request));
+      const got = view(await t.call(c));
       compared += 1;
       if (canon(got) !== canon(want)) report(`${c.name}: ${t.name} != ${ref.name}\n  ${ref.name}: ${canon(want).slice(0, 400)}\n  ${t.name}: ${canon(got).slice(0, 400)}`);
     }
