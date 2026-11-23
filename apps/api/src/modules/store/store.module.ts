@@ -19,6 +19,7 @@ import { OrdersAdminController } from './orders-admin.controller';
 import { OrdersController, StoreExtrasController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { CheckoutPolicyService } from './checkout-policy.service';
+import { PaidRemovalService } from './paid-removal.service';
 import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
@@ -87,6 +88,7 @@ import { WishlistService } from './wishlist.service';
     OrdersService,
     NickResolver,
     CheckoutPolicyService,
+    PaidRemovalService,
     StoreStatsService,
     PaymentProviderRegistry,
     TestPaymentProvider,
@@ -99,6 +101,6 @@ import { WishlistService } from './wishlist.service';
     StoreReconcileService,
     StoreReconcileScheduler,
   ],
-  exports: [OrdersService, StoreStatsService],
+  exports: [OrdersService, StoreStatsService, PaidRemovalService],
 })
 export class StoreModule {}

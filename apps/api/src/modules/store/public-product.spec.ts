@@ -196,6 +196,7 @@ describe('заказ покупателя: без служебных полей'
       {} as never,
       {} as never,
       {} as never,
+      { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
     );
     await service.listMine('u1');
     const item = findMany.mock.calls[0][0].include.items.include;
@@ -222,6 +223,7 @@ describe('заказ покупателя: без служебных полей'
       {} as never,
       {} as never,
       {} as never,
+      { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
     );
     await service.listAdmin({});
     const include = findMany.mock.calls[0][0].include;
@@ -275,6 +277,7 @@ describe('мои заказы (0.6): только свои, пагинация, 
       {} as never,
       {} as never,
       {} as never,
+      { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, findMany, count };
   }
