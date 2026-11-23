@@ -1,0 +1,1746 @@
+{
+  "description": "Golden-фикстуры (ожидания посчитаны вручную, см. tools/build-golden.mjs)",
+  "cases": [
+    {
+      "name": "G01 одна позиция без скидок",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "199.99",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "199.99",
+              "lineSubtotal": "199.99",
+              "bulkDiscount": "0",
+              "lineTotal": "199.99"
+            }
+          ],
+          "subtotal": "199.99",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "199.99"
+        }
+      }
+    },
+    {
+      "name": "G02 объём: процент (p001, 10 шт)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p001",
+            "productType": "KEY",
+            "unitPrice": "10.00",
+            "quantity": 10
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p001",
+              "quantity": 10,
+              "unitPrice": "10",
+              "lineSubtotal": "100",
+              "bulkDiscount": "5",
+              "lineTotal": "95"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "5",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "5",
+          "total": "95"
+        }
+      }
+    },
+    {
+      "name": "G03 объём: берётся максимальная из двух (p001, 50 шт)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p001",
+            "productType": "KEY",
+            "unitPrice": "2.00",
+            "quantity": 50
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p001",
+              "quantity": 50,
+              "unitPrice": "2",
+              "lineSubtotal": "100",
+              "bulkDiscount": "10",
+              "lineTotal": "90"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "10",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "10",
+          "total": "90"
+        }
+      }
+    },
+    {
+      "name": "G04 объём: фиксированная при minAmount (p002)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p002",
+            "productType": "BADGE",
+            "unitPrice": "25.00",
+            "quantity": 5
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p002",
+              "quantity": 5,
+              "unitPrice": "25",
+              "lineSubtotal": "125",
+              "bulkDiscount": "15",
+              "lineTotal": "110"
+            }
+          ],
+          "subtotal": "125",
+          "bulkDiscountTotal": "15",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "15",
+          "total": "110"
+        }
+      }
+    },
+    {
+      "name": "G05 объём: сумма ниже minAmount, скидки нет",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p002",
+            "productType": "BADGE",
+            "unitPrice": "10.00",
+            "quantity": 5
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p002",
+              "quantity": 5,
+              "unitPrice": "10",
+              "lineSubtotal": "50",
+              "bulkDiscount": "0",
+              "lineTotal": "50"
+            }
+          ],
+          "subtotal": "50",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "50"
+        }
+      }
+    },
+    {
+      "name": "G06 объём: minAmount включительно (ровно 100)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p002",
+            "productType": "BADGE",
+            "unitPrice": "20.00",
+            "quantity": 5
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p002",
+              "quantity": 5,
+              "unitPrice": "20",
+              "lineSubtotal": "100",
+              "bulkDiscount": "15",
+              "lineTotal": "85"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "15",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "15",
+          "total": "85"
+        }
+      }
+    },
+    {
+      "name": "G07 объём по типу KEY, дробный результат",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p020",
+            "productType": "KEY",
+            "unitPrice": "33.33",
+            "quantity": 3
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p020",
+              "quantity": 3,
+              "unitPrice": "33.33",
+              "lineSubtotal": "99.99",
+              "bulkDiscount": "7.49925",
+              "lineTotal": "92.49075"
+            }
+          ],
+          "subtotal": "99.99",
+          "bulkDiscountTotal": "7.49925",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "7.49925",
+          "total": "92.49075"
+        }
+      }
+    },
+    {
+      "name": "G08 объём: BONUS ведёт себя как фиксированная",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p030",
+            "productType": "PRIVILEGE",
+            "unitPrice": "30.00",
+            "quantity": 2
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p030",
+              "quantity": 2,
+              "unitPrice": "30",
+              "lineSubtotal": "60",
+              "bulkDiscount": "20",
+              "lineTotal": "40"
+            }
+          ],
+          "subtotal": "60",
+          "bulkDiscountTotal": "20",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "20",
+          "total": "40"
+        }
+      }
+    },
+    {
+      "name": "G09 объём: фиксированная больше суммы строки ограничивается суммой",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p040",
+            "productType": "CURRENCY",
+            "unitPrice": "1.00",
+            "quantity": 100
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p040",
+              "quantity": 100,
+              "unitPrice": "1",
+              "lineSubtotal": "100",
+              "bulkDiscount": "100",
+              "lineTotal": "0"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "100",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "100",
+          "total": "0"
+        }
+      }
+    },
+    {
+      "name": "G10 объём: неактивное правило игнорируется",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p003",
+            "productType": "BADGE",
+            "unitPrice": "10.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p003",
+              "quantity": 1,
+              "unitPrice": "10",
+              "lineSubtotal": "10",
+              "bulkDiscount": "0",
+              "lineTotal": "10"
+            }
+          ],
+          "subtotal": "10",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "10"
+        }
+      }
+    },
+    {
+      "name": "G11 набор (bundle): скидки за объём нет",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": null,
+            "productType": null,
+            "unitPrice": "500.00",
+            "quantity": 2
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": null,
+              "quantity": 2,
+              "unitPrice": "500",
+              "lineSubtotal": "1000",
+              "bulkDiscount": "0",
+              "lineTotal": "1000"
+            }
+          ],
+          "subtotal": "1000",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "1000"
+        }
+      }
+    },
+    {
+      "name": "G12 две строки одного товара: количество по строкам, не суммарно",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p001",
+            "productType": "KEY",
+            "unitPrice": "10.00",
+            "quantity": 5
+          },
+          {
+            "id": "i2",
+            "productId": "p001",
+            "productType": "KEY",
+            "unitPrice": "10.00",
+            "quantity": 5
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p001",
+              "quantity": 5,
+              "unitPrice": "10",
+              "lineSubtotal": "50",
+              "bulkDiscount": "0",
+              "lineTotal": "50"
+            },
+            {
+              "cartItemId": "i2",
+              "productId": "p001",
+              "quantity": 5,
+              "unitPrice": "10",
+              "lineSubtotal": "50",
+              "bulkDiscount": "0",
+              "lineTotal": "50"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G13 DECORATION 2.5 %",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p050",
+            "productType": "DECORATION",
+            "unitPrice": "40.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p050",
+              "quantity": 1,
+              "unitPrice": "40",
+              "lineSubtotal": "40",
+              "bulkDiscount": "1",
+              "lineTotal": "39"
+            }
+          ],
+          "subtotal": "40",
+          "bulkDiscountTotal": "1",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "1",
+          "total": "39"
+        }
+      }
+    },
+    {
+      "name": "G14 пустая корзина",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": []
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [],
+          "subtotal": "0",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "0"
+        }
+      }
+    },
+    {
+      "name": "G20 лояльность 5 % (5 заказов)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 5,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "5",
+          "loyaltyDiscountTotal": "5",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "5",
+          "total": "95"
+        }
+      }
+    },
+    {
+      "name": "G21 лояльность 2.5 %, дробный результат",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 1,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "99.99",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "99.99",
+              "lineSubtotal": "99.99",
+              "bulkDiscount": "0",
+              "lineTotal": "99.99"
+            }
+          ],
+          "subtotal": "99.99",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "2.5",
+          "loyaltyDiscountTotal": "2.49975",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "2.49975",
+          "total": "97.49025"
+        }
+      }
+    },
+    {
+      "name": "G22 лояльность: неактивный тир пропускается (100 заказов -> 10 %)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 100,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "200.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "200",
+              "lineSubtotal": "200",
+              "bulkDiscount": "0",
+              "lineTotal": "200"
+            }
+          ],
+          "subtotal": "200",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "10",
+          "loyaltyDiscountTotal": "20",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "20",
+          "total": "180"
+        }
+      }
+    },
+    {
+      "name": "G23 лояльность: 0 заказов, тира нет",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 0,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": null,
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G30 промокод процент",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "SUMMER10",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "10",
+          "promoError": null,
+          "discountAmount": "10",
+          "total": "90"
+        }
+      }
+    },
+    {
+      "name": "G31 промокод в нижнем регистре",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "summer10",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "10",
+          "promoError": null,
+          "discountAmount": "10",
+          "total": "90"
+        }
+      }
+    },
+    {
+      "name": "G32 объём + лояльность + промокод (каскад)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 5,
+        "promoCode": "SUMMER10",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p001",
+            "productType": "KEY",
+            "unitPrice": "10.00",
+            "quantity": 10
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p001",
+              "quantity": 10,
+              "unitPrice": "10",
+              "lineSubtotal": "100",
+              "bulkDiscount": "5",
+              "lineTotal": "95"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "5",
+          "loyaltyDiscountPercent": "5",
+          "loyaltyDiscountTotal": "4.75",
+          "promoDiscountTotal": "9.025",
+          "promoError": null,
+          "discountAmount": "18.775",
+          "total": "81.225"
+        }
+      }
+    },
+    {
+      "name": "G33 промокод фиксированный, порог выполнен",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "FIX50",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "150.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "150",
+              "lineSubtotal": "150",
+              "bulkDiscount": "0",
+              "lineTotal": "150"
+            }
+          ],
+          "subtotal": "150",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "50",
+          "promoError": null,
+          "discountAmount": "50",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G34 промокод ниже минимальной суммы (мягкий режим)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "FIX50",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "80.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "80",
+              "lineSubtotal": "80",
+              "bulkDiscount": "0",
+              "lineTotal": "80"
+            }
+          ],
+          "subtotal": "80",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_MIN_AMOUNT"
+          },
+          "discountAmount": "0",
+          "total": "80"
+        }
+      }
+    },
+    {
+      "name": "G35 промокод ниже минимальной суммы (строгий режим -> 400)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "FIX50",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "80.00",
+            "quantity": 1
+          }
+        ],
+        "softPromo": false
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "PROMO_MIN_AMOUNT"
+        }
+      }
+    },
+    {
+      "name": "G36 промокод KEYONLY: товар не KEY (мягко)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "KEYONLY",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_NOT_APPLICABLE"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G37 промокод KEYONLY: товар KEY",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "KEYONLY",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p021",
+            "productType": "KEY",
+            "unitPrice": "50.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p021",
+              "quantity": 1,
+              "unitPrice": "50",
+              "lineSubtotal": "50",
+              "bulkDiscount": "0",
+              "lineTotal": "50"
+            }
+          ],
+          "subtotal": "50",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "10",
+          "promoError": null,
+          "discountAmount": "10",
+          "total": "40"
+        }
+      }
+    },
+    {
+      "name": "G38 промокод KEYONLY: только набор -> не применим",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "KEYONLY",
+        "items": [
+          {
+            "id": "i1",
+            "productId": null,
+            "productType": null,
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": null,
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_NOT_APPLICABLE"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G39 FIRST15: 0 заказов -> действует",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 0,
+        "promoCode": "FIRST15",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "15",
+          "promoError": null,
+          "discountAmount": "15",
+          "total": "85"
+        }
+      }
+    },
+    {
+      "name": "G40 FIRST15: 2 заказа (мягко)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 2,
+        "promoCode": "FIRST15",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "2.5",
+          "loyaltyDiscountTotal": "2.5",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_FIRST_PURCHASE_ONLY"
+          },
+          "discountAmount": "2.5",
+          "total": "97.5"
+        }
+      }
+    },
+    {
+      "name": "G41 FIRST15: анонимный пользователь -> проверка пропускается",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "FIRST15",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "15",
+          "promoError": null,
+          "discountAmount": "15",
+          "total": "85"
+        }
+      }
+    },
+    {
+      "name": "G42 промокод истёк",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "OLD1",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_EXPIRED"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G43 промокод ещё не начался",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "FUTURE1",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_NOT_STARTED"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G44 промокод исчерпан",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "USED10",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_EXHAUSTED"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G45 промокод выключен",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "OFF1",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "100",
+              "lineSubtotal": "100",
+              "bulkDiscount": "0",
+              "lineTotal": "100"
+            }
+          ],
+          "subtotal": "100",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "0",
+          "promoError": {
+            "code": "PROMO_NOT_FOUND"
+          },
+          "discountAmount": "0",
+          "total": "100"
+        }
+      }
+    },
+    {
+      "name": "G46 промокод не существует (строго -> 400)",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "NOSUCH",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "100.00",
+            "quantity": 1
+          }
+        ],
+        "softPromo": false
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "PROMO_NOT_FOUND"
+        }
+      }
+    },
+    {
+      "name": "G47 промокод BONUS ограничен суммой",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "BONUS5",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "3.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p010",
+              "quantity": 1,
+              "unitPrice": "3",
+              "lineSubtotal": "3",
+              "bulkDiscount": "0",
+              "lineTotal": "3"
+            }
+          ],
+          "subtotal": "3",
+          "bulkDiscountTotal": "0",
+          "loyaltyDiscountPercent": "0",
+          "loyaltyDiscountTotal": "0",
+          "promoDiscountTotal": "3",
+          "promoError": null,
+          "discountAmount": "3",
+          "total": "0"
+        }
+      }
+    },
+    {
+      "name": "G48 промокод считается от суммы после лояльности и объёма",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": 20,
+        "promoCode": "SUMMER10",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p002",
+            "productType": "BADGE",
+            "unitPrice": "25.00",
+            "quantity": 5
+          }
+        ]
+      },
+      "expected": {
+        "status": 200,
+        "body": {
+          "lines": [
+            {
+              "cartItemId": "i1",
+              "productId": "p002",
+              "quantity": 5,
+              "unitPrice": "25",
+              "lineSubtotal": "125",
+              "bulkDiscount": "15",
+              "lineTotal": "110"
+            }
+          ],
+          "subtotal": "125",
+          "bulkDiscountTotal": "15",
+          "loyaltyDiscountPercent": "10",
+          "loyaltyDiscountTotal": "11",
+          "promoDiscountTotal": "9.9",
+          "promoError": null,
+          "discountAmount": "35.9",
+          "total": "89.1"
+        }
+      }
+    },
+    {
+      "name": "G60 валидация: количество 0",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "10.00",
+            "quantity": 0
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G61 валидация: цена с 3 знаками",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "10.001",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G62 валидация: отрицательная цена",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "-1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G63 валидация: неизвестный тип товара",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "FOO",
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G64 валидация: промокод с пробелом",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": "A B",
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G65 валидация: нет now",
+      "request": {
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G66 валидация: items не массив",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": "x"
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G67 позиция: товар без типа",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": null,
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "CART_ITEM_INVALID"
+        }
+      }
+    },
+    {
+      "name": "G68 позиция: набор с типом",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": null,
+            "productType": "KEY",
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "CART_ITEM_INVALID"
+        }
+      }
+    },
+    {
+      "name": "G69 валидация: userCompletedOrders отрицательное",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": -1,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": "1.00",
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    },
+    {
+      "name": "G70 валидация: цена в виде числа, не строки",
+      "request": {
+        "now": "2026-11-23T12:00:00Z",
+        "userCompletedOrders": null,
+        "promoCode": null,
+        "items": [
+          {
+            "id": "i1",
+            "productId": "p010",
+            "productType": "BADGE",
+            "unitPrice": 1.5,
+            "quantity": 1
+          }
+        ]
+      },
+      "expected": {
+        "status": 400,
+        "body": {
+          "code": "VALIDATION"
+        }
+      }
+    }
+  ]
+}

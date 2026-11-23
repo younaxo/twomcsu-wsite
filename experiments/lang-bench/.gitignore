@@ -1,0 +1,5 @@
+# Сгенерированное (детерминированно воспроизводится tools/gen-carts.mjs)
+generated/
+results/
+*.log
+target/
