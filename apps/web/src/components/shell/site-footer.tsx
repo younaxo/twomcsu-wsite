@@ -30,6 +30,7 @@ import { LocalePopover } from './locale-popover';
 import { PaymentMethodLogos } from './payment-method-logos';
 import { ServerStatusButton } from './server-status-button';
 import { SiteLogo } from './site-logo';
+import { SoonItem } from './soon-item';
 
 /// Сайт розыгрыша: страницы, которых там ещё нет, показываются как «Скоро».
 const SHELL_SOON_HREFS = new Set([
@@ -51,20 +52,7 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
   // Q74: «Список наказаний» активен только при включённом разделе.
   const bansOff = link.href === '/bans' && !shell && !bansEnabled;
   if (!link.available || bansOff || (shell && SHELL_SOON_HREFS.has(link.href))) {
-    return (
-      <span
-        {...(shell ? { role: 'link', 'aria-disabled': true, tabIndex: 0 } : {})}
-        className={cn(
-          'inline-flex items-center gap-1 text-muted-foreground/70',
-          shell && 'cursor-not-allowed',
-        )}
-      >
-        {link.label}
-        <span className="rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wide text-subtle-foreground">
-          скоро
-        </span>
-      </span>
-    );
+    return <SoonItem className="inline-flex items-center gap-1">{link.label}</SoonItem>;
   }
   if (link.external) {
     return (

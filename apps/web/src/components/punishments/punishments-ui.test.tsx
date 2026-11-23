@@ -168,7 +168,7 @@ describe('/bans: публичный список', () => {
 
     mocks.get.mockRejectedValueOnce(apiError(404, { code: 'punishments_public_disabled' }));
     render(<PublicBansList />, { wrapper: Providers });
-    expect(await screen.findByText('Раздел недоступен')).toBeInTheDocument();
+    expect(await screen.findByText('Раздел пока недоступен')).toBeInTheDocument();
   });
 
   it('поиск: короткий ник не отправляется, корректный уходит префиксом с фильтрами', async () => {
@@ -470,6 +470,6 @@ describe('Мои наказания на серверах: подача обра
     first.unmount();
     mocks.get.mockRejectedValueOnce(apiError(404, { code: 'punishments_public_disabled' }));
     render(<MyServerPunishments />, { wrapper: Providers });
-    expect(await screen.findByText('Раздел недоступен')).toBeInTheDocument();
+    expect(await screen.findByText('Раздел пока недоступен')).toBeInTheDocument();
   });
 });

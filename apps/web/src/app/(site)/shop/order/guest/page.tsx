@@ -191,6 +191,18 @@ function GuestOrderContent() {
             {state.message}
           </p>
         ) : null}
+        {state.kind === 'error' && lastToken.current !== '' ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-3"
+            onClick={() => void load(lastToken.current)}
+          >
+            <RefreshCw />
+            Повторить
+          </Button>
+        ) : null}
       </div>
 
       {state.kind === 'idle' || state.kind === 'not_found' || state.kind === 'error' ? (

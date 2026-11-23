@@ -36,7 +36,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
               href={section.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-fast',
+                'flex min-h-10 shrink-0 items-center rounded-md px-3 text-sm font-medium transition-colors duration-fast',
                 active
                   ? 'bg-surface text-primary shadow-sm'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',

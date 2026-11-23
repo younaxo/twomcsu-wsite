@@ -463,7 +463,7 @@ export function AdminShell({ children, topbar }: AdminShellProps) {
   const palette = useCommandPalette();
 
   return (
-    <div className="flex min-h-dvh bg-background text-foreground [--card-p:20px] [--control-h-sm:32px] [--control-h:38px] [--control-px:14px] [--gap:16px] [--row-h:44px]">
+    <div className="flex min-h-dvh bg-background text-foreground [--card-p:20px] [--control-h-sm:32px] [--control-h:38px] max-sm:[--control-h-sm:40px] max-sm:[--control-h:40px] [--control-px:14px] [--gap:16px] [--row-h:44px]">
       <DocumentBadge variant="admin" />
       <Sidebar groups={groups} />
       <SidebarSheet groups={groups} open={menuOpen} onOpenChange={setMenuOpen} />
