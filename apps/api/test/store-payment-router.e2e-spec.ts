@@ -20,7 +20,7 @@ describe('Store payment router (e2e)', () => {
   let prisma: PrismaService;
   const unique = randomUUID().slice(0, 8);
   let accessToken: string;
-  let userId: string;
+  let userId = '';
   let variantId: string;
   const createdOrders: string[] = [];
   const api = () => request(app.getHttpServer());
@@ -78,7 +78,8 @@ describe('Store payment router (e2e)', () => {
     prisma = app.get(PrismaService);
 
     const email = `payrouter-${unique}@example.com`;
-    const username = `payrouter${unique}`;
+    // DTO: username 3..16 символов; `pr` + 8 hex = 10.
+    const username = `pr${unique}`;
     const password = 'Sup3rSecretPassw0rd!';
     await api()
       .post('/auth/register')
@@ -126,15 +127,19 @@ describe('Store payment router (e2e)', () => {
       await prisma.order.deleteMany({
         where: { orderNumber: { in: createdOrders } },
       });
-      await prisma.cart.deleteMany({ where: { userId } });
       await prisma.product.deleteMany({
         where: { slug: { startsWith: `e2e-payrouter-${unique}` } },
       });
       await prisma.category.deleteMany({
         where: { slug: { startsWith: `e2e-payrouter-${unique}` } },
       });
-      await prisma.auditLog.deleteMany({ where: { actorId: userId } });
-      await prisma.user.deleteMany({ where: { id: userId } });
+      // userId может быть не задан (сбой beforeAll): undefined в where Prisma
+      // игнорирует, и deleteMany снёс бы ВСЕХ пользователей общей БД.
+      if (userId) {
+        await prisma.cart.deleteMany({ where: { userId } });
+        await prisma.auditLog.deleteMany({ where: { actorId: userId } });
+        await prisma.user.deleteMany({ where: { id: userId } });
+      }
     }
     await app?.close();
   }, 30_000);
