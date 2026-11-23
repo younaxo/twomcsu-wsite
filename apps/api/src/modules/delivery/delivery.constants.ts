@@ -5,6 +5,13 @@ export const DELIVERY_ENABLED_SETTING = 'store.delivery.enabled';
 /// Настройка: исполнитель `command` включён (по умолчанию нет, ADR-0184 п. 9).
 export const DELIVERY_COMMAND_ENABLED_SETTING =
   'store.delivery.executor.command.enabled';
+/// Настройка: исполнитель `bridge` включён (0.13, по умолчанию нет). Помимо
+/// неё нужны env `BRIDGE_ENABLED`, `BRIDGE_DELIVERY_ENABLED` и ключи серверов.
+export const DELIVERY_BRIDGE_ENABLED_SETTING =
+  'store.delivery.executor.bridge.enabled';
+/// Настройка: slug игрового сервера Bridge, на который идут задания (0.13).
+export const DELIVERY_BRIDGE_SERVER_SETTING =
+  'store.delivery.bridge.serverSlug';
 /// Настройка: потолок попыток (по умолчанию 5, ADR-0184 п. 5).
 export const DELIVERY_MAX_ATTEMPTS_SETTING = 'store.delivery.maxAttempts';
 /// Жёсткий запрет через окружение: если явно false, доставка выключена
@@ -41,6 +48,8 @@ export const EXECUTOR_SITE = 'site';
 export const EXECUTOR_COMMAND = 'command';
 /// Зачисление рубинов на кошелёк (0.15, ADR-0191).
 export const EXECUTOR_WALLET = 'wallet';
+/// Выдача через плагин Bridge с подтверждением сервера (0.13, ADR-0194).
+export const EXECUTOR_BRIDGE = 'bridge';
 
 /// Возврат запрещён, если любое задание позиции в этих статусах (ADR-0184 Р4).
 export const REFUND_BLOCKING_STATUSES: readonly DeliveryTaskStatus[] = [

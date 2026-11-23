@@ -17,6 +17,7 @@ import {
 import { BridgeController } from './bridge.controller';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgePunishmentSource } from './bridge-punishment.source';
+import { BridgeDeliveryService } from './bridge-delivery.service';
 import { BridgeRateLimitGuard } from './bridge-rate-limit.guard';
 import { BridgeRedisService } from './bridge-redis.service';
 import { BridgeSignatureGuard } from './bridge-signature.guard';
@@ -32,6 +33,7 @@ function config(over: Partial<BridgeConfig> = {}): BridgeConfig {
     keyOverlapDays: 7,
     applyLatencyLimitMs: 2000,
     bodyReadTimeoutMs: 10000,
+    deliveryEnabled: false,
     ...over,
   };
 }
@@ -64,6 +66,7 @@ async function boot(cfg: BridgeConfig = config()): Promise<Harness> {
       BridgeRedisService,
       BridgePunishmentSource,
       BridgeIngestService,
+      BridgeDeliveryService,
       BridgeSignatureGuard,
       BridgeRateLimitGuard,
     ],
