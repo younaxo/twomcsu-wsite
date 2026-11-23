@@ -104,6 +104,17 @@ describe('ProfilePreviewCard', () => {
     expect(screen.getByText('Игровой статистики пока нет.')).toBeInTheDocument();
   });
 
+  it('монеты показываются при наличии; раздел выключен — «скоро»; «Покупок» нет', () => {
+    const { unmount } = card({
+      summary: { ...summary, statistics: { ...summary.statistics!, coins: 1500 } },
+    });
+    expect(screen.getByText('Монеты')).toBeInTheDocument();
+    expect(screen.queryByText(/Покупки/)).toBeNull();
+    unmount();
+    card({ summary: { ...summary, statistics: null, statisticsEnabled: false } });
+    expect(screen.getByText('Статистика игроков скоро появится.')).toBeInTheDocument();
+  });
+
   it('скрытый профиль, системный аккаунт, загрузка, ошибка', () => {
     const hidden = card({ summary: { username: 'secret', hidden: true } });
     expect(screen.getByTestId('profile-preview-hidden')).toHaveTextContent(
