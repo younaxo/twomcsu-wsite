@@ -163,7 +163,7 @@ export function SidebarRail({ className }: { className?: string }) {
           if (item.available === false) {
             return (
               <Tooltip key={item.href} content="Скоро" side="right">
-                <SoonItem badge={false} className={cn(itemClassName, 'opacity-60')}>
+                <SoonItem badge={false} className={itemClassName}>
                   <span aria-hidden className="contents">
                     <Icon />
                   </span>

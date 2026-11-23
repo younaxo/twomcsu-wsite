@@ -181,7 +181,7 @@ function GuestOrderContent() {
         />
       ) : null}
 
-      <div aria-live="assertive">
+      <div aria-live="polite">
         {state.kind === 'error' ? (
           <p
             role="alert"
