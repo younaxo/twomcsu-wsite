@@ -339,7 +339,8 @@ export function parseHello(data: Record<string, unknown>): Parsed<HelloData> {
     const pluginVersion = nullableStr(data.pluginVersion, 32);
     const platform = nullableStr(data.platform, 48);
     // L4: строгий формат (в БД и админку не попадает произвольный текст).
-    if (pluginVersion !== null && !PLUGIN_VERSION_PATTERN.test(pluginVersion)) fail();
+    if (pluginVersion !== null && !PLUGIN_VERSION_PATTERN.test(pluginVersion))
+      fail();
     if (platform !== null && !PLATFORM_PATTERN.test(platform)) fail();
     if (data.protocol !== undefined && data.protocol !== 1) fail();
     return { ok: true, value: { pluginVersion, platform } };

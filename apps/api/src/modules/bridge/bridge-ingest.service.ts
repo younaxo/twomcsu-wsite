@@ -190,7 +190,9 @@ export class BridgeIngestService {
       // транзакцию.
       const step1 = await this.prisma.$transaction(async (tx) => {
         const inserted = await tx.bridgeEventLog.createMany({
-          data: [{ ...logKey, type: ev.type, status: 'received', payloadHash: hash }],
+          data: [
+            { ...logKey, type: ev.type, status: 'received', payloadHash: hash },
+          ],
           skipDuplicates: true,
         });
         if (inserted.count === 1) return 'new' as const;
@@ -229,7 +231,14 @@ export class BridgeIngestService {
           // Порядок определяет приёмник: событие старше применённого
           // состояния записи по `occurredAt` - stale; при равенстве побеждает
           // принятое позже. Захват маркера - атомарный Lua (M2).
-          if (!(await this.redis.claimMarker(ctx.slug, kind, sourceId, occurredMs))) {
+          if (
+            !(await this.redis.claimMarker(
+              ctx.slug,
+              kind,
+              sourceId,
+              occurredMs,
+            ))
+          ) {
             await this.prisma.bridgeEventLog.deleteMany({
               where: { ...logKey, status: 'received' },
             });
@@ -243,7 +252,14 @@ export class BridgeIngestService {
           });
           if (updated.count === 0) {
             await this.prisma.bridgeEventLog.createMany({
-              data: [{ ...logKey, type: ev.type, status: 'applied', payloadHash: hash }],
+              data: [
+                {
+                  ...logKey,
+                  type: ev.type,
+                  status: 'applied',
+                  payloadHash: hash,
+                },
+              ],
               skipDuplicates: true,
             });
           }
