@@ -160,6 +160,20 @@ describe('каталог /shop', () => {
     expect(await screen.findByRole('button', { name: /Повторить/ })).toBeInTheDocument();
   });
 
+  it('ошибка каталога и товара не раскрывает сообщение API', async () => {
+    const raw = 'QueryFailedError: relation "products" does not exist';
+    route({ '/store/categories': CATEGORIES, '/store/products': new ApiError(500, [raw]) });
+    const first = render(<ShopPage />, { wrapper: Providers });
+    expect(await screen.findByRole('button', { name: /Повторить/ })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('QueryFailedError');
+    first.unmount();
+
+    route({ '/store/products/ares': new ApiError(500, [raw]) });
+    render(<ProductPage />, { wrapper: Providers });
+    expect(await screen.findByRole('button', { name: /Повторить/ })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('QueryFailedError');
+  });
+
   it('API ответил 503 MODULE_DISABLED — понятное состояние, а не «ошибка данных»', async () => {
     route({
       '/store/categories': CATEGORIES,

@@ -4,6 +4,7 @@ import type { RecentPurchaseDto } from '@twomc/shared';
 import { useQuery } from '@tanstack/react-query';
 import { ShoppingBag } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api/client';
@@ -98,6 +99,22 @@ export function HomeRecentPurchases({ className }: { className?: string }) {
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} className="h-9 w-48 shrink-0 rounded-full" />
           ))}
+        </div>
+      ) : purchases.isError && items.length === 0 ? (
+        <div
+          role="alert"
+          data-testid="recent-purchases-error"
+          className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+        >
+          Лента покупок сейчас недоступна.
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => purchases.refetch()}
+            loading={purchases.isFetching}
+          >
+            Повторить
+          </Button>
         </div>
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground" data-testid="recent-purchases-empty">

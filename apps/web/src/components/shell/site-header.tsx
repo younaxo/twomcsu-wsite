@@ -17,6 +17,7 @@ import { OnlineCounter } from './sidebar-rail';
 import { ProfileMenu } from './profile-menu';
 import { SeasonalHeaderDecoration } from './seasonal-header-decoration';
 import { SiteLogo } from './site-logo';
+import { SoonItem } from './soon-item';
 
 const HEADER_ITEMS = SITE_NAVIGATION.filter((item) => item.header);
 
@@ -35,6 +36,15 @@ function HeaderNav({ className, onNavigate }: { className?: string; onNavigate?:
               ? 'bg-primary-soft text-primary-soft-foreground'
               : 'text-muted-foreground hover:bg-muted hover:text-foreground',
           );
+          if (item.available === false) {
+            return (
+              <li key={item.href}>
+                <SoonItem className="flex h-10 items-center px-3 text-sm font-medium">
+                  {item.label}
+                </SoonItem>
+              </li>
+            );
+          }
           return (
             <li key={item.href}>
               {mainSiteUrl !== null ? (

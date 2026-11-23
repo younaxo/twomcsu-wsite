@@ -102,10 +102,10 @@ function ImageField({ kind, profile }: { kind: ProfileImageKind; profile: OwnPro
           <ProfileBanner src={current ?? null} className="h-16 w-40 rounded-lg" />
         </div>
       )}
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground">{hint}</p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <input
             ref={input}
             type="file"
@@ -174,7 +174,7 @@ function SocialLinksEditor() {
       </div>
       <QueryBoundary query={query} skeleton={<SkeletonRows rows={4} />}>
         {() => (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {SOCIAL_PLATFORMS.filter(
               (platform) => !CONNECTED_SOCIAL_PLATFORMS.includes(platform),
             ).map((platform) => (
@@ -245,7 +245,7 @@ function ProfileEditor({ profile }: { profile: OwnProfileDto }) {
             onChange={(event) => set('bio', event.target.value)}
           />
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Страна">
             <Input
               value={form.country ?? ''}

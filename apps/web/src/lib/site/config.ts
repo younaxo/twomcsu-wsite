@@ -62,6 +62,8 @@ export interface SiteNavItem {
   exact?: boolean;
   /// Показывать в центре header.
   header?: boolean;
+  /// false — раздел не готов: рендерится как «Скоро» (без перехода).
+  available?: boolean;
 }
 
 /// Только реально существующие маршруты (PHASE 31 добавит остальные).

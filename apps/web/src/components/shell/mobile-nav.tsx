@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { SoonItem } from './soon-item';
 import { BONUS_LINK, isSiteNavActive, SITE_NAVIGATION, type SiteIconName } from '@/lib/site/config';
 
 const ICONS: Partial<Record<SiteIconName, LucideIcon>> = {
@@ -67,6 +68,19 @@ export function MobileNav() {
         {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = ICONS[item.icon] ?? Home;
           const active = isSiteNavActive(item, pathname);
+          if ('available' in item && item.available === false) {
+            return (
+              <li key={item.href} className="min-w-0 flex-1">
+                <SoonItem
+                  badge={false}
+                  className="flex h-full min-h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[11px] font-medium leading-none"
+                >
+                  <Icon aria-hidden className="size-5 shrink-0" />
+                  <span className="max-w-full truncate px-0.5">{item.label}</span>
+                </SoonItem>
+              </li>
+            );
+          }
           return (
             <li key={item.href} className="min-w-0 flex-1">
               <Link

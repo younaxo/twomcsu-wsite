@@ -25,6 +25,7 @@ export * from './api/system';
 export * from './api/account';
 export * from './api/wallet';
 export * from './api/store-cart';
+export * from './api/store-payment';
 export * from './api/notifications';
 export * from './api/punishments';
 export * from './api/inventory';

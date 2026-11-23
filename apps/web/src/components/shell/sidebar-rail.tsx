@@ -26,6 +26,7 @@ import {
 import { usePublicSiteSettings, useServersOverview } from '@/lib/site/hooks';
 import { BrandIcon } from './brand-icon';
 import { LocalePopover } from './locale-popover';
+import { SoonItem } from './soon-item';
 
 export const RAIL_WIDTH_CLASS = 'w-16';
 /// Отступ контента под фиксированный rail (desktop).
@@ -159,6 +160,18 @@ export function SidebarRail({ className }: { className?: string }) {
       <nav aria-label="Разделы сайта" className="mt-3 flex flex-col items-center gap-1">
         {SITE_NAVIGATION.map((item) => {
           const Icon = ICONS[item.icon as keyof typeof ICONS];
+          if (item.available === false) {
+            return (
+              <Tooltip key={item.href} content="Скоро" side="right">
+                <SoonItem badge={false} className={itemClassName}>
+                  <span aria-hidden className="contents">
+                    <Icon />
+                  </span>
+                  <span className="sr-only">{item.label}</span>
+                </SoonItem>
+              </Tooltip>
+            );
+          }
           return (
             <RailLink
               key={item.href}

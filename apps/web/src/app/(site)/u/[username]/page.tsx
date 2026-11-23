@@ -55,7 +55,7 @@ export default function PublicProfilePage() {
         {missing ? (
           <EmptyState
             icon={<UserX />}
-            title="Профиль не найден"
+            title="Игрок не найден"
             description={`Игрока с ником «${username}» нет на twomc.su. Проверьте адрес.`}
           />
         ) : (
@@ -71,6 +71,7 @@ export default function PublicProfilePage() {
         <EmptyState
           icon={<EyeOff />}
           title={`Профиль ${profile.data.username} скрыт`}
+          className="break-words"
           description="Игрок ограничил доступ к профилю настройками приватности."
         />
       </div>
@@ -110,16 +111,16 @@ export default function PublicProfilePage() {
         showBadges={false}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="flex min-w-0 flex-col gap-5">
           <section
-            className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
+            className="flex min-w-0 flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
             aria-label="О себе"
             data-testid="profile-about"
           >
             <h2 className="text-sm font-semibold">О себе</h2>
             {data.bio?.trim() ? (
-              <SafeMarkdown source={data.bio} className="text-foreground/90" />
+              <SafeMarkdown source={data.bio} className="break-words text-foreground/90" />
             ) : (
               <p className="text-sm text-muted-foreground">
                 Игрок пока ничего о себе не рассказал.
@@ -150,7 +151,7 @@ export default function PublicProfilePage() {
             <ProfileComments username={data.username} signedIn={!!me} />
           )}
         </div>
-        <aside className="flex flex-col gap-5 lg:self-start">
+        <aside className="flex min-w-0 flex-col gap-5 lg:self-start">
           <div className="rounded-xl bg-surface p-5 shadow-sm">
             <SkinViewer username={data.username} />
           </div>

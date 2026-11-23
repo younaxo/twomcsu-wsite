@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { PaymentMethodCode } from './payment-methods';
 
 export interface CreatedPayment {
   paymentId: string;
@@ -50,6 +51,9 @@ export interface PaymentProvider {
   readonly name: string;
   /// Валюта платежей провайдера: в `Order` поля currency нет (ADR-0157).
   readonly currency: string;
+  /// Способы оплаты, которые провайдер умеет принимать (0.8b); не задано —
+  /// провайдер не ограничивает способ (устаревший путь PAYMENT_PROVIDER).
+  readonly supportedMethods?: readonly PaymentMethodCode[];
   /// false — нет ключей/секретов: реестр не отдаёт провайдера как рабочего
   /// (оформление отвечает 503 payment_unavailable, fail closed, ADR-0187).
   isConfigured(): boolean;

@@ -104,7 +104,10 @@ describe('футер: «Список наказаний» (Q74)', () => {
       </ShellModeProvider>,
       { wrapper: Providers },
     );
-    const el = column().getByRole('link', { name: /^Список наказаний/ });
+    expect(column().queryByRole('link', { name: /^Список наказаний/ })).toBeNull();
+    const el = column()
+      .getByText(/^Список наказаний/)
+      .closest('[data-soon]') as HTMLElement;
     expect(el).toHaveAttribute('aria-disabled', 'true');
     expect(el).toHaveTextContent(/скоро/i);
     expect(mocks.get).not.toHaveBeenCalledWith('/site/settings', expect.anything());

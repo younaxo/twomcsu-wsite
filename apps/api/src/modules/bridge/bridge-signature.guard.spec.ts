@@ -27,6 +27,7 @@ function config(over: Partial<BridgeConfig> = {}): BridgeConfig {
     keyOverlapDays: 7,
     applyLatencyLimitMs: 2000,
     bodyReadTimeoutMs: 10000,
+    deliveryEnabled: false,
     ...over,
   };
 }

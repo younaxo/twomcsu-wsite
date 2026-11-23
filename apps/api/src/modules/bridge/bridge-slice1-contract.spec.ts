@@ -63,6 +63,7 @@ const config: BridgeConfig = {
   keyOverlapDays: 7,
   applyLatencyLimitMs: 2000,
   bodyReadTimeoutMs: 10000,
+  deliveryEnabled: false,
 };
 
 function ctx(): BridgeAuthContext {

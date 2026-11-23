@@ -49,7 +49,9 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
       <Card className="flex flex-col gap-3" data-testid="order-status-card">
         <div className="flex flex-wrap items-center gap-2">
           <OrderStatusBadge status={order.status} />
-          <span className="text-sm text-muted-foreground tabular">№ {order.orderNumber}</span>
+          <span className="min-w-0 break-all text-sm text-muted-foreground tabular">
+            № {order.orderNumber}
+          </span>
         </div>
         {/* Единственный polite-регион страницы: смена статуса озвучивается сама. */}
         <p role="status" aria-live="polite" data-testid="order-status-live" className="text-sm">
@@ -107,7 +109,9 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
                   </span>
                 ) : null}
               </span>
-              <span className="tabular">{formatMoney(item.totalPrice)}</span>
+              <span className="shrink-0 whitespace-nowrap tabular">
+                {formatMoney(item.totalPrice)}
+              </span>
             </li>
           ))}
         </ul>
