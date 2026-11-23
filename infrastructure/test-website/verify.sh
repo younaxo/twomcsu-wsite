@@ -30,9 +30,11 @@ done
 echo "DNS (с сервера, 1.1.1.1): $STAND_DOMAIN -> $IP"
 check "http -> https редирект" "301 https://$STAND_DOMAIN/*" "$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "http://$STAND_DOMAIN/")"
 check "без auth" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
-check "неверный пароль" "401" "$(curl -s -o /dev/null -w '%{http_code}' -u 'stand:wrong' "https://$STAND_DOMAIN/")"
+# Заведомо неверные учётные данные собираются во время выполнения (не литерал: gitleaks curl-auth-user).
+WRONG_CRED="stand:$(openssl rand -hex 6)"
+check "неверный пароль" "401" "$(curl -s -o /dev/null -w '%{http_code}' -u "$WRONG_CRED" "https://$STAND_DOMAIN/")"
 check "401 несёт X-Robots-Tag" "*noindex*nofollow*" "$(curl -sI "https://$STAND_DOMAIN/" | tr -d '\r' | grep -i '^x-robots-tag' || echo none)"
-check "401 не выдаёт cookie-пропуск" "0" "$(curl -sI -u 'stand:wrong' "https://$STAND_DOMAIN/" | grep -ci '^set-cookie: __Host-stand_gate')"
+check "401 не выдаёт cookie-пропуск" "0" "$(curl -sI -u "$WRONG_CRED" "https://$STAND_DOMAIN/" | grep -ci '^set-cookie: __Host-stand_gate')"
 check "с auth" "200" "$(authed -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
 check "с auth X-Robots-Tag" "*noindex*nofollow*" "$(authed -sI "https://$STAND_DOMAIN/" | tr -d '\r' | grep -i '^x-robots-tag' || echo none)"
 check "robots.txt без auth" "*Disallow: /*" "$(curl -s "https://$STAND_DOMAIN/robots.txt" | tr '\n' ' ')"
