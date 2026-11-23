@@ -13,6 +13,11 @@ STAND_ROOT="${STAND_ROOT:-/srv/twomc-stand}"
 STAND_ACTIONS="${STAND_ACTIONS:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
+# Общая локальная блокировка SSH к VDS: один процесс за раз (fail2ban). Выкладка долгая, поэтому «просрочка» блокировки увеличена.
+VDS_LOCK_STALE_SEC="${VDS_LOCK_STALE_SEC:-3600}"
+# shellcheck source=../vds-runner/lib/vds-lock.sh
+source "$HERE/../vds-runner/lib/vds-lock.sh"
+trap 'vds_lock_release; rm -rf "${TMP:-}"' EXIT
 
 # Валидация входов: они попадают в удалённую команду.
 [[ "$STAND_ROOT" =~ ^/srv/twomc-stand[A-Za-z0-9._-]*$ ]] || { echo "STAND_ROOT должен быть /srv/twomc-stand*: $STAND_ROOT" >&2; exit 1; }
@@ -20,12 +25,12 @@ REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
 [[ "$STAND_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Недопустимый STAND_HOST" >&2; exit 1; }
 [[ "$STAND_ACTIONS" =~ ^(deploy|seed|verify)?(,(deploy|seed|verify))*$ ]] || { echo "Недопустимый STAND_ACTIONS" >&2; exit 1; }
 
-SSH=(ssh -i "$STAND_SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$STAND_USER@$STAND_HOST")
+SSH=(ssh -i "$STAND_SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=20 "$STAND_USER@$STAND_HOST")
 
 git -C "$REPO" fetch origin
 SHA="$(git -C "$REPO" rev-parse --short=12 "$REF")"
 [[ "$SHA" =~ ^[0-9a-f]{12}$ ]] || { echo "Не удалось получить sha для $REF" >&2; exit 1; }
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+TMP="$(mktemp -d)"
 mkdir -p "$TMP/bundle/ops"
 git -C "$REPO" archive --format=tar.gz -o "$TMP/bundle/release.tar.gz" "$REF"
 # Ops-файлы стенда берутся из рабочей копии (могут быть новее, чем $REF); только известные типы файлов.
@@ -34,4 +39,4 @@ tar -cf "$TMP/bundle.tar" -C "$TMP/bundle" .
 
 echo "Релиз $SHA (ref $REF), шаги на сервере: ${STAND_ACTIONS:-только выгрузка}. Один SSH-сеанс."
 # Удалённая сторона: set -eu, распаковка во временный каталог, дальше remote-install.sh из бандла.
-"${SSH[@]}" "set -eu; t=\$(mktemp -d); trap 'rm -rf \"\$t\"' EXIT; tar -x -C \"\$t\"; STAND_ROOT='$STAND_ROOT' bash \"\$t/ops/remote-install.sh\" \"\$t\" '$SHA' '$STAND_ACTIONS'" < "$TMP/bundle.tar"
+vds_locked "${SSH[@]}" "set -eu; t=\$(mktemp -d); trap 'rm -rf \"\$t\"' EXIT; tar -x -C \"\$t\"; STAND_ROOT='$STAND_ROOT' bash \"\$t/ops/remote-install.sh\" \"\$t\" '$SHA' '$STAND_ACTIONS'" < "$TMP/bundle.tar"

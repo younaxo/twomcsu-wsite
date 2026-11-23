@@ -20,8 +20,8 @@ infrastructure/vds-runner/run-remote.sh --attach <id>            # дождат�
 
 | Задание | Что делает | Лимиты |
 |---|---|---|
-| `unit` | `pnpm install --frozen-lockfile`, `pnpm -r typecheck` (tsc), jest api, vitest web | 4 CPU, 6 ГБ |
-| `api-e2e` | одноразовые postgres 16 + redis 7 (уникальные имена, своя docker-сеть, tmpfs, без публикации портов), prisma validate, `migrate deploy`, seed, `test:e2e` api как в CI | node 4 CPU / 6 ГБ, pg 1 CPU / 1 ГБ, redis 0.5 CPU / 256 МБ |
+| `unit` | `pnpm install --frozen-lockfile`, `pnpm -r typecheck` (tsc), jest api, vitest web | 4 CPU, 7 ГБ |
+| `api-e2e` | одноразовые postgres 16 + redis 7 (уникальные имена, своя docker-сеть, tmpfs, без публикации портов), prisma validate, `migrate deploy`, seed, `test:e2e` api как в CI | node 4 CPU / 7 ГБ, pg 1 CPU / 1 ГБ, redis 0.5 CPU / 256 МБ |
 | `web-build` | `pnpm --filter "@twomc/web..." build` (next build с зависимостями) | 4 CPU, 8 ГБ |
 | `docker-build` | сборка образов api и web по `infrastructure/*.Dockerfile` (образы после сборки удаляются) | 8 ГБ, cpu-shares 256 |
 
@@ -34,10 +34,25 @@ infrastructure/vds-runner/run-remote.sh --attach <id>            # дождат�
 - Глобальная локальная блокировка `%TEMP%/twomc-vds.lock` (каталог-mkdir, файл `owner` с pid и временем): два исполнителя не открывают SSH одновременно.
   Мёртвая (pid не существует) и просроченная (старше 900 с) блокировка снимается автоматически. Блокировка держится только на время одной операции scp/ssh, а не всего ожидания.
 - Сбой входа не повторяется: скрипт завершается (код 255). Остановитесь и разберитесь (fail2ban: игнорируется наш IP, но не ломайте систему повторами).
-- Для сторонних скриптов (`release.sh` стенда и др.): `infrastructure/vds-runner/with-vds-lock.sh infrastructure/test-website/release.sh origin/main`;
-  скриптам, которые сами вызывают ssh, достаточно `source infrastructure/vds-runner/lib/vds-ssh.sh` и вызывать `vds_ssh_script`/`vds_scp_put`.
-  `sync-cdn.sh` и `install-cdn.sh` уже используют этот хелпер. Встроить блокировку внутрь `infrastructure/test-website/push-release.sh` (обернуть его вызов `ssh`
-  в `vds_locked`) - отдельная правка вне области этой задачи: до неё запускайте релиз стенда через `with-vds-lock.sh`.
+- Блокировка встроена во все скрипты, ходящие на VDS: `run-remote.sh`, `cdn/sync-cdn.sh`, `cdn/install-cdn.sh` (через `lib/vds-ssh.sh`) и
+  `test-website/push-release.sh` (его вызывает `release.sh`; на время всей выкладки «просрочка» блокировки увеличена до 3600 с).
+  Для любого другого скрипта или ручной команды: `infrastructure/vds-runner/with-vds-lock.sh <команда...>`; скрипту, который сам зовёт ssh, достаточно
+  `source infrastructure/vds-runner/lib/vds-ssh.sh` и `vds_ssh_script`/`vds_scp_put` (или `vds_locked <команда>`). Вложенный вызов безопасен (`VDS_LOCK_HELD=1`).
+
+## Как другим цепочкам ставить задания
+Каждый исполнитель запускает прогон из СВОЕГО worktree, не трогая чужие (код на сервер уходит снимком, на ПК ничего тяжёлого не выполняется):
+```bash
+infrastructure/vds-runner/run-remote.sh unit      --worktree /c/path/to/my-worktree
+infrastructure/vds-runner/run-remote.sh api-e2e   --worktree /c/path/to/my-worktree
+infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/my-worktree --out /c/path/to/scratch/out   # берутся и неотслеживаемые файлы, git add не нужен
+```
+- Скрипт можно запускать из любого worktree (путь к скрипту берётся из ветки, где он есть; в `main` - после слияния).
+- Параллельный запуск от нескольких исполнителей безопасен: SSH сериализуется локальной блокировкой, задания на сервере идут по очереди (FIFO); ожидание - короткими опросами.
+- Долгое ожидание не держите: `--no-wait` ставит задание и возвращает id, позже `--attach <id>`.
+- Итог читайте из `summary.txt` (числа тестов, длительность) и `job.log` в `--out`; код возврата 0 = зелёный.
+- Сбой SSH (255) - не повторять в цикле, доложить chief.
+- Падение `jest` с `signal=SIGKILL` означает OOM воркеров, а не ошибку теста: раннер уже ограничивает `--maxWorkers=3`; при локальных изменениях скриптов раннера
+  не убирайте ограничение.
 
 ## Как устроен сервер
 ```
