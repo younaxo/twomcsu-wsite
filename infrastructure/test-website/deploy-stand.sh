@@ -17,6 +17,12 @@ export STAND_ENV_FILE="$ENV_FILE"
 [[ -d "$REL_DIR/infrastructure" ]] || { echo "Нет релиза $REL_DIR" >&2; exit 1; }
 [[ -f "$ENV_FILE" ]] || { echo "Нет $ENV_FILE: сначала gen-env.sh" >&2; exit 1; }
 [[ "$(stat -c %a "$ENV_FILE")" == "600" ]] || { echo "Права $ENV_FILE должны быть 600" >&2; exit 1; }
+if grep -Eiq '^AUTH_TEST_OTP_ENABLED=("?)true' "$ENV_FILE"; then
+  echo "В $ENV_FILE включён AUTH_TEST_OTP_ENABLED=true: тестовый OTP на стенде запрещён" >&2; exit 1
+fi
+# Один деплой одновременно (повторный запуск ждать не будет).
+exec 9>"$STAND_ROOT/.deploy.lock"
+flock -n 9 || { echo "Другой деплой уже выполняется (flock $STAND_ROOT/.deploy.lock)" >&2; exit 1; }
 
 avail_mb="$(free -m | awk '/^Mem:/ {print $7}')"
 disk_gb="$(df -BG --output=avail "$STAND_ROOT" | tail -1 | tr -dc '0-9')"

@@ -10,15 +10,19 @@ ENV_FILE="$STAND_ROOT/stand.env"
 SHA="${1:-$(cat "$STAND_ROOT/.release")}"
 IMAGE="twomc-stand-tools:${SHA:0:12}"
 
-# DATABASE_URL для хоста собирается из значений env-файла (без печати).
+# DATABASE_URL для хоста собирается из значений env-файла и кладётся во временный env-файл 600 (не в argv: пароль не виден
+# в ps/истории процессов). Файл удаляется trap-ом.
 envval() { grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-; }  # env-файл не source-им: в DATABASE_URL есть '&'
-LOCAL_DB_URL="postgresql://$(envval POSTGRES_USER):$(envval POSTGRES_PASSWORD)@127.0.0.1:$(envval STAND_PG_PORT)/$(envval POSTGRES_DB)"
+umask 077
+TMP_ENV="$(mktemp "$STAND_ROOT/.seed-env.XXXXXX")"
+trap 'rm -f "$TMP_ENV"' EXIT
+printf 'DATABASE_URL=postgresql://%s:%s@127.0.0.1:%s/%s
+'   "$(envval POSTGRES_USER)" "$(envval POSTGRES_PASSWORD)" "$(envval STAND_PG_PORT)" "$(envval POSTGRES_DB)" > "$TMP_ENV"
 
-run() {
-  docker run --rm --network host --env-file "$ENV_FILE" \
-    -e DATABASE_URL="$LOCAL_DB_URL" -e NODE_ENV=development "$@" \
-    -w /app/apps/api "$IMAGE" pnpm exec ts-node "$SCRIPT"
+run() {  # run <script> [доп. аргументы docker]
+  local script="$1"; shift
+  docker run --rm --network host --env-file "$ENV_FILE" --env-file "$TMP_ENV"     -e NODE_ENV=development "$@"     -w /app/apps/api "$IMAGE" pnpm exec ts-node "$script"
 }
-SCRIPT=prisma/seed/index.ts run
-SCRIPT=prisma/seed/demo/index.ts run -e SEED_DEMO=1
+run prisma/seed/index.ts
+run prisma/seed/demo/index.ts -e SEED_DEMO=1
 echo "Сид выполнен (роли, bootstrap, демо-данные)."

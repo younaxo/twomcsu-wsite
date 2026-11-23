@@ -14,6 +14,7 @@ WEB_PORT="${WEB_PORT:-3000}"
 API_PORT="${API_PORT:-4000}"
 BASIC_USER="${BASIC_USER:-stand}"
 BASIC_FILE="${BASIC_FILE:-$HOME/test-website-basic-auth.txt}"
+[[ "$STAND_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "Недопустимый STAND_DOMAIN: $STAND_DOMAIN" >&2; exit 1; }
 CONF=/etc/nginx/conf.d/stand.conf
 
 command -v envsubst >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gettext-base >/dev/null
@@ -61,6 +62,6 @@ sudo systemctl reload nginx
 sudo install -d /etc/letsencrypt/renewal-hooks/deploy
 printf '#!/bin/sh\nsystemctl reload nginx\n' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh >/dev/null
 sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
-printf '[nginx-http-auth]\nenabled = true\n' | sudo tee /etc/fail2ban/jail.d/nginx-http-auth.local >/dev/null
+printf '[nginx-http-auth]\nenabled = true\nmaxretry = 8\nfindtime = 10m\nbantime = 10m\n' | sudo tee /etc/fail2ban/jail.d/nginx-http-auth.local >/dev/null
 sudo systemctl restart fail2ban
 echo "nginx настроен для ${STAND_DOMAIN}. Учётные данные basic auth: ${BASIC_FILE} (не печатаются)."

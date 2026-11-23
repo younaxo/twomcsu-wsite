@@ -5,7 +5,7 @@
 # Схема: один origin. /      -> web (Next.js, 127.0.0.1:${WEB_PORT})
 #                  /api/   -> api (NestJS, 127.0.0.1:${API_PORT}), префикс /api срезается
 # Защита: basic auth на всём, кроме /robots.txt и ACME. Приложение шлёт Authorization: Bearer и тем
-# затирает кэшированный basic, поэтому после успешного basic auth выдаётся cookie-пропуск stand_gate
+# затирает кэшированный basic, поэтому после успешного basic auth выдаётся cookie-пропуск __Host-stand_gate (префикс __Host-: только Secure, Path=/, без Domain)
 # (HttpOnly, Secure); с ним basic не запрашивается повторно. Запросы изнутри docker-сети (SSR web ->
 # публичный API-URL) пропускаются по адресу источника. Заголовок Basic к приложению не пробрасывается.
 
@@ -15,17 +15,23 @@ geo $stand_internal {
     172.16.0.0/12    1;
 }
 
-map "$stand_internal:$cookie_stand_gate" $stand_auth_realm {
+map "$stand_internal:$http_cookie" $stand_auth_realm {
     default                         "TwoMC test stand";
     "~^1:"                          off;
-    "~^0:${STAND_GATE_TOKEN}$"      off;
+    "~^0:(?:.*;[ ]*)?__Host-stand_gate=${STAND_GATE_TOKEN}(?:;.*)?$"   off;
+}
+
+# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass: приложение его не видит и не может утечь/залогировать.
+map $http_cookie $stand_fwd_cookie {
+    default $http_cookie;
+    "~^(?<ck_pre>.*?);?[ ]*__Host-stand_gate=[0-9a-f]+(?<ck_post>.*)$"   "$ck_pre$ck_post";
 }
 
 # Cookie выдаётся только если пришли basic-учётные данные; add_header без always не добавляет его
 # к ответам 401 (иначе неверный пароль тоже получал бы пропуск).
 map $remote_user $stand_set_cookie {
     ""      "";
-    default "stand_gate=${STAND_GATE_TOKEN}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200";
+    default "__Host-stand_gate=${STAND_GATE_TOKEN}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200";
 }
 
 map $http_authorization $stand_fwd_authz {
@@ -88,6 +94,7 @@ server {
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header Cookie $stand_fwd_cookie;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $stand_connection_upgrade;
         proxy_read_timeout 120s;
@@ -101,6 +108,7 @@ server {
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header Cookie $stand_fwd_cookie;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $stand_connection_upgrade;
     }

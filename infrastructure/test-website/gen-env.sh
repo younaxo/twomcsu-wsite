@@ -21,7 +21,10 @@ if [[ -e "$ENV_FILE" ]]; then
 fi
 
 command -v openssl >/dev/null || { echo "Нужен openssl" >&2; exit 1; }
+[[ "$STAND_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "Недопустимый STAND_DOMAIN: $STAND_DOMAIN" >&2; exit 1; }
 mkdir -p "$STAND_ROOT"
+TMP_FILE="$(mktemp "$STAND_ROOT/.stand.env.XXXXXX")"
+trap 'rm -f "$TMP_FILE"' EXIT
 hex() { openssl rand -hex "$1"; }
 pw() { openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-24; }
 
@@ -84,6 +87,7 @@ REDIS_PASS="$(hex 24)"
   echo "GIVEAWAY_ENABLED=false"
   echo "LITEBANS_ENABLED=false"
   echo "QUICK_BUY_ENABLED=false"
+  echo "AUTH_TEST_OTP_ENABLED=false"
   echo
   echo "# Bootstrap-аккаунты тестовой БД (только для этого стенда). Личные данные не используются."
   echo "BOOTSTRAP_SYSTEM_PASSWORD=$(pw)"
@@ -94,6 +98,7 @@ REDIS_PASS="$(hex 24)"
   echo "BOOTSTRAP_CHIEF_CURATOR_LOGIN_ALIAS=standcurator"
   echo "BOOTSTRAP_CHIEF_CURATOR_EMAIL=curator@stand.example.test"
   echo "BOOTSTRAP_CHIEF_CURATOR_PASSWORD=$(pw)"
-} > "$ENV_FILE"
-chmod 600 "$ENV_FILE"
+} > "$TMP_FILE"
+chmod 600 "$TMP_FILE"
+mv "$TMP_FILE" "$ENV_FILE"   # атомарно (mktemp рядом, тот же ФС)
 echo "Создан $ENV_FILE (600). Значения секретов не выводятся."
