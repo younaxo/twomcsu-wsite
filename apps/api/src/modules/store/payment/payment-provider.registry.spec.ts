@@ -110,3 +110,33 @@ describe('PaymentProviderRegistry (ADR-0157, ADR-0187)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('PaymentProviderRegistry: мок-провайдеры маршрутизатора (0.8b)', () => {
+  const names = ['mock-ru', 'mock-crypto', 'mock-foreign'];
+
+  it.each(['development', 'test'])(
+    'NODE_ENV=%s: моки зарегистрированы',
+    (env) => {
+      const r = registry(env, { PAYMENT_WEBHOOK_SECRET: SECRET });
+      for (const name of names) {
+        expect(r.get(name)?.name).toBe(name);
+        expect(r.get(name)?.isConfigured()).toBe(true);
+      }
+    },
+  );
+
+  it.each(['', 'staging', 'production', 'Test', undefined])(
+    'NODE_ENV=%s: моков нет (fail closed)',
+    (env) => {
+      const r = registry(env, { PAYMENT_WEBHOOK_SECRET: SECRET });
+      for (const name of names) {
+        expect(r.get(name)).toBeUndefined();
+      }
+    },
+  );
+
+  it('PAYMENT_PROVIDER не выбирает мок маршрутизатора как «единый» провайдер без секрета', () => {
+    const r = registry('test', { PAYMENT_PROVIDER: 'mock-ru' });
+    expect(r.getConfigured()).toBeUndefined();
+  });
+});

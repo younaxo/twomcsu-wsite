@@ -38,6 +38,8 @@ import {
   PaymentWebhookEvent,
 } from './payment/payment-provider.interface';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
+import { PaymentRouter } from './payment/payment-router.service';
+import type { PaymentMethodCode } from './payment/payment-methods';
 import { assertCartLimits, CartLimitLine } from './cart-limits';
 import { CART_ITEM_INCLUDE } from './cart.service';
 import { PricedLine, PricingService } from './pricing.service';
@@ -209,6 +211,9 @@ export class OrdersService {
     private readonly checkout: CheckoutPolicyService,
     private readonly delivery: DeliveryService,
     private readonly paidRemoval: PaidRemovalService,
+    /// Маршрутизатор способов оплаты (0.8b). Не задан (юнит-тесты прежнего
+    /// вида) — устаревший путь через PaymentProviderRegistry.
+    private readonly router?: PaymentRouter,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -253,6 +258,20 @@ export class OrdersService {
     }
   }
 
+  private resolvePayment(paymentMethod: string | undefined): {
+    provider: PaymentProvider;
+    method: PaymentMethodCode | null;
+  } {
+    if (this.router) {
+      return this.router.resolve(paymentMethod);
+    }
+    const provider = this.payments.getConfigured();
+    if (!provider) {
+      throw paymentUnavailable();
+    }
+    return { provider, method: null };
+  }
+
   private async createOrderFromLines(
     userId: string | null,
     guestMinecraftNick: string | null,
@@ -264,13 +283,12 @@ export class OrdersService {
     },
     promoCodeId: string | null,
     acceptedOfferVersion: string | undefined,
+    paymentMethod?: string,
   ) {
-    // Провайдера нет (production без PAYMENT_PROVIDER) — честный 503 ДО любой
-    // записи: «висячих» PENDING-заказов без платежа не появляется.
-    const provider = this.payments.getConfigured();
-    if (!provider) {
-      throw paymentUnavailable();
-    }
+    // Способ оплаты и провайдер выбираются ДО любой записи (0.8b, ADR-0193):
+    // неизвестный/выключенный способ — 400, провайдера нет — честный 503;
+    // «висячих» PENDING-заказов без платежа не появляется.
+    const { provider, method } = this.resolvePayment(paymentMethod);
     const offer = await this.checkout.assertOfferAccepted(acceptedOfferVersion);
     const recipientNick = await this.checkout.resolveRecipientNick(
       userId,
@@ -297,6 +315,7 @@ export class OrdersService {
             }
           : {}),
         guestMinecraftNick: recipientNick,
+        paymentMethod: method ?? undefined,
         offerVersion: offer.offerVersion,
         offerAcceptedAt: offer.offerAcceptedAt,
         subtotal: totals.subtotal,
@@ -382,6 +401,7 @@ export class OrdersService {
       totals,
       cart.promoCode?.id ?? null,
       dto.offerVersion,
+      dto.paymentMethod,
     );
 
     await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
@@ -450,6 +470,7 @@ export class OrdersService {
       totals,
       null,
       dto.offerVersion,
+      dto.paymentMethod,
     );
   }
 
@@ -459,7 +480,9 @@ export class OrdersService {
   async checkoutConfig() {
     return {
       offerVersion: await this.checkout.currentOfferVersion(),
-      paymentAvailable: this.payments.getConfigured() !== undefined,
+      paymentAvailable: this.router
+        ? this.router.isPaymentAvailable()
+        : this.payments.getConfigured() !== undefined,
       quickBuyEnabled: this.checkout.isQuickBuyEnabled(),
     };
   }
@@ -834,6 +857,7 @@ export class OrdersService {
     return {
       ...order,
       payment: {
+        method: order.paymentMethod,
         provider: order.paymentProvider,
         paymentId: order.paymentId,
         isPaid: order.status === OrderStatus.COMPLETED && !!order.paidAt,
