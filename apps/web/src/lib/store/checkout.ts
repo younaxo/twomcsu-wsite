@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/errors';
 import { siteKeys } from '@/lib/site/hooks';
 import { useAuthStore } from '@/lib/auth/store';
 import { cartErrorMessage } from './cart';
+import { describePaymentMethodError } from './payment-methods';
 
 /// Оформление и оплата (слой 0, подэтап 0.5). Формы ответов — как отдаёт API
 /// (`GET /store/checkout-config`, `POST /store/orders`, `GET /store/orders/:orderNumber`).
@@ -75,6 +76,8 @@ export interface OrderView {
   total: DecimalString;
   createdAt?: string;
   paidAt?: string | null;
+  /// Способ оплаты (0.8b): код; у старых заказов поля нет.
+  payment?: { method?: string | null } | null;
   items: OrderItemView[];
 }
 
@@ -132,8 +135,12 @@ export function useCheckoutConfig(enabled = true) {
 export function useCreateOrder() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { offerVersion: string; targetMinecraftNick?: string }) =>
-      api.post<CreateOrderResult>('/store/orders', input),
+    mutationFn: (input: {
+      offerVersion: string;
+      targetMinecraftNick?: string;
+      /// Код способа оплаты; не передаётся, пока список способов пуст.
+      paymentMethod?: string;
+    }) => api.post<CreateOrderResult>('/store/orders', input),
     onSuccess: (result) => {
       client.setQueryData(checkoutKeys.order(result.order.orderNumber), result.order);
       // Список «Мои заказы» устарел: новый заказ должен появиться без ожидания staleTime.
@@ -253,7 +260,7 @@ export function orderStatusText(status: string): { label: string; description: s
     : UNKNOWN_ORDER_STATUS_TEXT;
 }
 
-export type CheckoutField = 'nick' | 'offer' | null;
+export type CheckoutField = 'nick' | 'offer' | 'payment' | null;
 
 export interface CheckoutErrorInfo {
   message: string;
@@ -261,6 +268,8 @@ export interface CheckoutErrorInfo {
   field: CheckoutField;
   /// Оплата недоступна на стороне сервера (503): блокирует кнопку.
   paymentUnavailable: boolean;
+  /// Способ оплаты не принят сервером (400 payment_method_*): список нужно перечитать.
+  paymentMethodRejected: boolean;
   /// Версия оферты устарела: нужно перечитать конфигурацию и принять заново.
   offerOutdated: boolean;
 }
@@ -272,8 +281,13 @@ export function describeCheckoutError(error: unknown): CheckoutErrorInfo {
     field: null,
     paymentUnavailable: false,
     offerOutdated: false,
+    paymentMethodRejected: false,
   };
   if (error instanceof ApiError) {
+    const paymentText = describePaymentMethodError(error);
+    if (paymentText) {
+      return { ...base, field: 'payment', paymentMethodRejected: true, message: paymentText };
+    }
     switch (error.code) {
       case 'offer_not_accepted':
         return { ...base, field: 'offer', message: 'Подтвердите согласие с офертой.' };
