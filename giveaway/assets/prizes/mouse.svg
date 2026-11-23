@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="VXE Dragonfly R1 SE+">
+<rect width="160" height="160" rx="16" fill="#2a241f"/>
+<g fill="none" stroke="#F26A1B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,-8)"><rect x="58" y="34" width="44" height="68" rx="22"/><path d="M80 34v26M58 60h44"/></g>
+<text x="80" y="128" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="13" font-weight="700" fill="#f5efe8">VXE Dragonfly R1 SE+</text>
+<text x="80" y="146" text-anchor="middle" font-family="system-ui,Segoe UI,Arial,sans-serif" font-size="11" fill="#c9bfb3">мышь</text>
+</svg>

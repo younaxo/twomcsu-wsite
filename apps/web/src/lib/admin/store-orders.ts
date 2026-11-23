@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api/errors';
 
 /// Возврат средств скрыт флагом до подэтапа 0.9: деньги — зона владельца.
 /// Пока false, кнопка «Вернуть» нигде не рендерится (ни в списке, ни в карточке).
+/// Не используется с 0.9 (возвраты управляются правом и флагом API); оставлено по правилу «ничего не удалять».
 export const ORDER_REFUND_UI_ENABLED = false as boolean;
 
 export const ADMIN_ORDERS_PAGE_SIZE = 25;
@@ -29,6 +30,8 @@ export const ORDER_STATUS_META: Record<
   FAILED: { label: 'Ошибка', tone: 'destructive' },
   CANCELLED: { label: 'Отменён', tone: 'neutral' },
   REFUNDED: { label: 'Возврат', tone: 'info' },
+  REFUND_PENDING: { label: 'Возврат обрабатывается', tone: 'warning' },
+  REFUND_FAILED: { label: 'Возврат не удался', tone: 'destructive' },
 };
 
 export interface AdminOrderUser {

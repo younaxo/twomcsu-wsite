@@ -15,6 +15,7 @@ const SECTIONS = [
   { href: '/settings/media', label: 'Медиа' },
   { href: '/settings/showcase', label: 'Витрина' },
   { href: '/settings/linked-accounts', label: 'Привязки' },
+  { href: '/settings/wallet', label: 'Кошелёк' },
   { href: '/settings/purchases', label: 'История покупок', module: 'store' },
 ] as const;
 

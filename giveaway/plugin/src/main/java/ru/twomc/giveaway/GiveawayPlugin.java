@@ -5,9 +5,11 @@ import java.nio.file.Files;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import org.bukkit.Bukkit;
+import org.bukkit.Sound;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -46,6 +48,15 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
     private volatile long skippedInvalidName;
     private String configProblem = "";
     private boolean onlineMode;
+
+    // фаза 2
+    private GiveawayApi api;
+    private ProgressService progress;
+    private Cooldown cooldown;
+    private BukkitTask progressTask;
+    private final java.util.concurrent.atomic.AtomicBoolean polling = new java.util.concurrent.atomic.AtomicBoolean();
+    private boolean notifyEnabled = true;
+    private boolean progressEnabled = true;
 
     @Override
     public void onEnable() {
@@ -98,12 +109,14 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
         minuteBucket.advance(System.currentTimeMillis()); // первый heartbeat - со следующей минуты
         heartbeatTask = getServer().getScheduler().runTaskTimer(this, this::heartbeatTick, HEARTBEAT_CHECK_TICKS, HEARTBEAT_CHECK_TICKS);
         sendTask = getServer().getScheduler().runTaskTimerAsynchronously(this, this::sendTick, SEND_TICKS, SEND_TICKS);
+        initPhase2(cfg, res);
     }
 
     @Override
     public void onDisable() {
         if (heartbeatTask != null) heartbeatTask.cancel();
         if (sendTask != null) sendTask.cancel();
+        if (progressTask != null) progressTask.cancel();
         if (queue != null) queue.flush();
     }
 
@@ -147,6 +160,8 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
         Player p = e.getPlayer();
         long now = System.currentTimeMillis();
         afk.remove(p.getUniqueId());
+        if (progress != null) progress.forget(p.getUniqueId());
+        if (cooldown != null) cooldown.forget(p.getUniqueId());
         enqueue(GiveawayEvent.isValidName(p.getName()) ? GiveawayEvent.quit(p.getUniqueId(), p.getName(), now) : null,
                 p.getUniqueId(), p.getName());
     }
@@ -200,10 +215,117 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // ---- фаза 2: билеты, прогресс, PlaceholderAPI ----
+
+    private static final long PROGRESS_TICKS = 20L * 60L;
+
+    private void initPhase2(FileConfiguration cfg, SenderConfig.Result res) {
+        api = new GiveawayApi(res.ok() ? res.config() : null, new JdkTransport(), System::currentTimeMillis);
+        progress = new ProgressService(api, new QualifyNotifier(getDataFolder().toPath().resolve("notified.txt")));
+        ServiceSettings st = ServiceSettings.resolve(System.getenv());
+        cooldown = new Cooldown(st.cooldownSeconds() * 1000L);
+        java.util.List<String> legacy = ServiceSettings.legacyKeysPresent(cfg.getKeys(false));
+        if (!legacy.isEmpty()) {
+            getLogger().warning("В config.yml найдены устаревшие ключи " + legacy + ": они игнорируются. Дата старта, окончания и порог берутся с сайта; служебные настройки заданы в коде. Удалите эти ключи.");
+        }
+        progressEnabled = st.progressEnabled();
+        notifyEnabled = st.notifyEnabled();
+        if (progressEnabled && api.configured()) {
+            progressTask = getServer().getScheduler().runTaskTimer(this, this::progressTick, PROGRESS_TICKS, PROGRESS_TICKS);
+        }
+        if (getServer().getPluginManager().getPlugin("PlaceholderAPI") != null) {
+            try {
+                if (new GiveawayExpansion(progress, getDescription().getVersion()).register()) {
+                    getLogger().info("PlaceholderAPI: зарегистрировано расширение twomcgiveaway.");
+                }
+            } catch (LinkageError | RuntimeException e) {
+                getLogger().warning("PlaceholderAPI найден, но расширение не зарегистрировано: " + e.getClass().getSimpleName());
+            }
+        }
+    }
+
+    /** Главный поток: собрать онлайн-игроков, дальше сеть в асинхронной задаче. */
+    private void progressTick() {
+        if (progress.shouldSkipCycle()) return;
+        if (!polling.compareAndSet(false, true)) return;
+        List<UUID> online = new java.util.ArrayList<>();
+        for (Player p : Bukkit.getOnlinePlayers()) online.add(p.getUniqueId());
+        if (online.isEmpty()) {
+            polling.set(false);
+            return;
+        }
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            try {
+                List<PlayerProgress> toNotify = progress.poll(online, System.currentTimeMillis());
+                if (notifyEnabled && !toNotify.isEmpty()) {
+                    getServer().getScheduler().runTask(this, () -> {
+                        for (PlayerProgress pp : toNotify) {
+                            Player pl = Bukkit.getPlayer(pp.uuid());
+                            if (pl != null) show(pl, Messages.qualified(pp.thresholdMinutes()), true);
+                        }
+                    });
+                }
+            } catch (RuntimeException ex) {
+                getLogger().warning("Ошибка опроса прогресса: " + ex.getClass().getSimpleName());
+            } finally {
+                polling.set(false);
+            }
+        });
+    }
+
+    /** Только главный поток. Sound.ENTITY_PLAYER_LEVELUP: статическое поле, работает и как enum (до 1.21.2), и как интерфейс. */
+    private void show(Player pl, Messages.Reply r, boolean sound) {
+        for (String line : r.chat()) pl.sendMessage(line);
+        if (r.title() != null) pl.sendTitle(r.title(), r.subtitle() == null ? "" : r.subtitle(), 10, 80, 20);
+        if (sound) pl.playSound(pl.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+    }
+
+    private boolean redeemCommand(CommandSender who, String[] args) {
+        if (!(who instanceof Player pl)) {
+            who.sendMessage(Messages.PLAYERS_ONLY);
+            return true;
+        }
+        if (args.length == 0) {
+            pl.sendMessage(Messages.USAGE);
+            return true;
+        }
+        if (!api.configured()) {
+            pl.sendMessage(Messages.LATER);
+            return true;
+        }
+        // код может быть записан с пробелами («ABCD EFGH ...»): склеиваем аргументы
+        String code = CodeNormalizer.normalize(String.join("", args));
+        long now = System.currentTimeMillis();
+        if (!cooldown.tryAcquire(pl.getUniqueId(), now)) {
+            pl.sendMessage(Messages.cooldown(cooldown.remainingSeconds(pl.getUniqueId(), now)));
+            return true;
+        }
+        UUID id = pl.getUniqueId();
+        String name = pl.getName();
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            // неверный формат уходит с фиксированным нулевым кодом: сервер отвечает по порядку ADR (билет уже есть, мало времени, иначе invalid_code)
+            RedeemResult rr = api.redeem(code != null ? code : "0000000000000000", id, name);
+            getServer().getScheduler().runTask(this, () -> {
+                Player p2 = Bukkit.getPlayer(id);
+                if (p2 == null) return;
+                if (rr.kind() == RedeemResult.Kind.ISSUED) {
+                    progress.markTicket(id, rr.ticket());
+                    show(p2, Messages.forRedeem(rr), true);
+                } else {
+                    if (rr.kind() == RedeemResult.Kind.REPEAT) progress.markTicket(id, rr.ticket());
+                    show(p2, Messages.forRedeem(rr), false);
+                }
+            });
+        });
+        return true;
+    }
+
     // ---- команда ----
 
     @Override
     public boolean onCommand(CommandSender who, Command cmd, String label, String[] args) {
+        String name = cmd.getName().toLowerCase(java.util.Locale.ROOT);
+        if (name.equals("giveaway") || name.equals("ticket")) return redeemCommand(who, args);
         if (!who.hasPermission("giveaway.admin")) {
             who.sendMessage("Недостаточно прав.");
             return true;
@@ -223,6 +345,18 @@ public final class GiveawayPlugin extends JavaPlugin implements Listener {
                 + ", в dead-letter " + queue.deadLettered() + ", отклонено сайтом (rejected) " + sender.rejectedTotal() + ", повреждённых строк " + queue.corruptLines()
                 + ", неверный ник " + skippedInvalidName);
         who.sendMessage("Игроков под учётом AFK: " + afk.tracked());
+        if (!progressEnabled) {
+            who.sendMessage("Опрос прогресса: выключен (GIVEAWAY_PROGRESS_ENABLED=false)");
+        } else if (!api.configured()) {
+            who.sendMessage("Опрос прогресса: не работает, отправка не настроена");
+        } else {
+            long ls = progress.lastSuccessAt();
+            who.sendMessage("Опрос прогресса: раз в минуту, успешных " + progress.pollsOk() + ", неудачных " + progress.pollsFailed()
+                    + ", последний успех: " + (ls < 0 ? "нет" : Instant.ofEpochMilli(ls)) + ", игроков в последнем пакете " + progress.lastBatchSize()
+                    + ", в кэше " + progress.cached());
+            String pe = progress.lastError();
+            who.sendMessage("Опрос связь: " + (pe.isEmpty() ? "ок" : "ошибка " + pe + ", подряд неудач " + progress.consecutiveFailures()));
+        }
         return true;
     }
 }

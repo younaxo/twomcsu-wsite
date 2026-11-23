@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 
 function setup() {
@@ -45,6 +45,40 @@ describe('DashboardService.upsertSettings: store.offerVersion', () => {
   it('другие ключи не затрагиваются проверкой', async () => {
     const { service, upsert } = setup();
     await service.upsertSettings({ settings: { other: '' } }, 'admin');
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DashboardService.upsertSettings: защищённые ключи', () => {
+  it.each(['store.delivery.extra_command_roots', 'store.text.x'])(
+    'ключ %p отклоняется кодом settings_key_protected, запись не выполняется',
+    async (key) => {
+      const { service, upsert } = setup();
+      const err = await service
+        .upsertSettings({ settings: { ok: '1', [key]: 'x' } }, 'admin')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(HttpException);
+      const http = err as HttpException;
+      expect(http.getStatus()).toBe(403);
+      expect(http.getResponse()).toMatchObject({
+        code: 'settings_key_protected',
+      });
+      expect(upsert).not.toHaveBeenCalled();
+    },
+  );
+
+  it('store.delivery.enabled проходит как до 0.11', async () => {
+    const { service, upsert } = setup();
+    await service.upsertSettings(
+      { settings: { 'store.delivery.enabled': 'true' } },
+      'admin',
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('обычный ключ проходит как прежде', async () => {
+    const { service, upsert } = setup();
+    await service.upsertSettings({ settings: { 'site.title': 'x' } }, 'admin');
     expect(upsert).toHaveBeenCalledTimes(1);
   });
 });

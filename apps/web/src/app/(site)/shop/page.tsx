@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
+import { StoreIntroText, StoreTextsSection } from '@/components/store/store-texts';
 import { cn } from '@/lib/cn';
 import { formatNumber, plural } from '@/lib/format';
 import { CATALOG_PAGE_SIZE, useStoreCategories, useStoreProducts } from '@/lib/store/catalog';
@@ -68,6 +69,8 @@ function ShopPageContent() {
         title="Магазин"
         description="Привилегии, кейсы и косметика для серверов twomc.su."
       />
+
+      <StoreIntroText />
 
       <Card variant="sunken" className="flex flex-col gap-3">
         <div role="search" className="max-w-md">
@@ -135,11 +138,11 @@ function ShopPageContent() {
             data.items.length === 0 ? (
               <EmptyState
                 icon={<ShoppingBag />}
-                title={filtered ? 'Ничего не найдено' : 'Товаров пока нет'}
+                title={filtered ? 'Ничего не найдено' : 'Пока нет данных'}
                 description={
                   filtered
                     ? 'Попробуйте другое название или сбросьте фильтры.'
-                    : 'Каталог наполняется администрацией.'
+                    : 'Товаров и наборов пока нет: каталог наполняется администрацией.'
                 }
                 action={
                   filtered ? (
@@ -174,6 +177,8 @@ function ShopPageContent() {
           }
         </QueryBoundary>
       </div>
+
+      <StoreTextsSection />
 
       <section id="bonus" aria-labelledby="bonus-title" className="scroll-mt-24">
         <Card variant="sunken" className="flex items-center gap-3">

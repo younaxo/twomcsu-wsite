@@ -27,8 +27,7 @@ import {
   isGiveawayOperational,
 } from './giveaway.config';
 import {
-  GIVEAWAY_ROUTES,
-  GIVEAWAY_SIGN_PATH,
+  GIVEAWAY_SIGNED_PATHS,
   HEADER_KEY_ID,
   HEADER_NONCE,
   HEADER_SIGNATURE,
@@ -116,7 +115,7 @@ export class GiveawaySignatureGuard implements CanActivate {
           nonce,
           method: req.method,
           // Подписывается публичный путь независимо от срезания `/api`.
-          path: GIVEAWAY_SIGN_PATH,
+          path: GIVEAWAY_SIGNED_PATHS[req.originalUrl] as string,
           body,
         },
         signature,
@@ -164,7 +163,8 @@ export class GiveawaySignatureGuard implements CanActivate {
   private checkFormat(req: GiveawayRequest): string | null {
     const url = req.originalUrl;
     if (url.includes('?')) return 'query';
-    if (!GIVEAWAY_ROUTES.includes(url) || req.method !== 'POST') return 'route';
+    if (GIVEAWAY_SIGNED_PATHS[url] === undefined || req.method !== 'POST')
+      return 'route';
     if (req.headers['content-encoding'] !== undefined)
       return 'content_encoding';
     const keyId = header(req, HEADER_KEY_ID);

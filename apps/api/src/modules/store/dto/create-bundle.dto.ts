@@ -13,6 +13,10 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import {
+  IsProductImageUrl,
+  NormalizeProductImageUrl,
+} from '../product-image-url';
 import { BundleItemDto } from './bundle-item.dto';
 
 export class CreateBundleDto {
@@ -34,7 +38,8 @@ export class CreateBundleDto {
   description?: string;
 
   @IsOptional()
-  @IsString()
+  @NormalizeProductImageUrl()
+  @IsProductImageUrl()
   image?: string;
 
   @IsNumber()

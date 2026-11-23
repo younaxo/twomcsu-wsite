@@ -5,7 +5,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
+import {
+  DeliveryTaskStatus,
+  OrderStatus,
+  Prisma,
+  ProductType,
+} from '@prisma/client';
 import { randomBytes } from 'crypto';
 import {
   isDateRangeInverted,
@@ -41,7 +46,20 @@ import {
   PUBLIC_VARIANT_SELECT,
 } from './public-product';
 import { CheckoutPolicyService } from './checkout-policy.service';
-import { badRequest, paymentUnavailable, StoreCartError } from './store-errors';
+import { PaidRemovalService } from './paid-removal.service';
+import {
+  GUEST_TOKEN_PATTERN,
+  generateGuestToken,
+  guestTokenExpiry,
+  hashGuestToken,
+} from './guest-access-token';
+import { toGuestOrderView } from './guest-order-view';
+import {
+  badRequest,
+  loginRequired,
+  paymentUnavailable,
+  StoreCartError,
+} from './store-errors';
 
 function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
   return lines.map((l) => ({
@@ -77,6 +95,9 @@ const BUYER_HIDDEN_ORDER_FIELDS = [
   'paymentProvider',
   'paymentWebhookVerifiedAt',
   'promoCodeId',
+  // Хеш токена гостевого заказа и срок (0.12a): наружу не отдаются.
+  'guestAccessTokenHash',
+  'guestAccessExpiresAt',
 ] as const;
 
 type BuyerItems<T> = T extends { items: readonly (infer I)[] }
@@ -187,6 +208,7 @@ export class OrdersService {
     private readonly notifications: NotificationsService,
     private readonly checkout: CheckoutPolicyService,
     private readonly delivery: DeliveryService,
+    private readonly paidRemoval: PaidRemovalService,
   ) {}
 
   private async generateOrderNumber(): Promise<string> {
@@ -254,13 +276,26 @@ export class OrdersService {
       userId,
       guestMinecraftNick ?? undefined,
     );
+    await this.paidRemoval.assertPurchasable(
+      lines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+      recipientNick,
+    );
     await this.assertNotAlreadyOwned(userId, lines);
 
     const orderNumber = await this.generateOrderNumber();
+    // Гостевой заказ (0.12a, ADR-0190): секретный токен возвращается один раз,
+    // в БД только хеш.
+    const guestToken = userId ? null : generateGuestToken();
     const order = await this.prisma.order.create({
       data: {
         orderNumber,
         userId: userId ?? undefined,
+        ...(guestToken
+          ? {
+              guestAccessTokenHash: hashGuestToken(guestToken),
+              guestAccessExpiresAt: guestTokenExpiry(),
+            }
+          : {}),
         guestMinecraftNick: recipientNick,
         offerVersion: offer.offerVersion,
         offerAcceptedAt: offer.offerAcceptedAt,
@@ -308,7 +343,11 @@ export class OrdersService {
       include: ORDER_INCLUDE,
     });
 
-    return { order: toBuyerOrder(completed), paymentUrl: payment.paymentUrl };
+    return {
+      order: toBuyerOrder(completed),
+      paymentUrl: payment.paymentUrl,
+      ...(guestToken ? { guestAccessToken: guestToken } : {}),
+    };
   }
 
   async createFromCart(userId: string, dto: CreateOrderDto) {
@@ -394,6 +433,16 @@ export class OrdersService {
       lines: priced.lines.map((l) => ({ ...l, cartItemId: null })),
     };
     assertCartLimits(limitLinesOf(totals.lines));
+    // ADR-0186 Р6: личные, уникальные товары и игровая валюта гостю не продаются
+    // (проверка «уже куплено» по нику была бы оракулом; кошельку нужен аккаунт).
+    // После assertCartLimits, чтобы сохранить коды лимитов.
+    if (
+      variant.product.isSelfOnly ||
+      variant.product.isUnique ||
+      variant.product.type === ProductType.CURRENCY
+    ) {
+      throw loginRequired();
+    }
     return this.createOrderFromLines(
       null,
       dto.guestMinecraftNick,
@@ -448,6 +497,28 @@ export class OrdersService {
       throw new NotFoundException('Заказ не найден');
     }
     return toBuyerOrder(order);
+  }
+
+  /// Заказ без входа по секретному токену (0.12a, ADR-0186 п. 4, ADR-0190).
+  /// Поиск по SHA-256 хешу; неизвестный, просроченный и «чужой» токен неотличимы
+  /// (один 404). Только гостевые заказы: у заказа пользователя токена нет.
+  async getByGuestToken(token: string, now: Date = new Date()) {
+    if (!GUEST_TOKEN_PATTERN.test(token)) {
+      throw new NotFoundException('Заказ не найден');
+    }
+    const order = await this.prisma.order.findUnique({
+      where: { guestAccessTokenHash: hashGuestToken(token) },
+      include: ORDER_INCLUDE,
+    });
+    if (
+      !order ||
+      order.userId !== null ||
+      !order.guestAccessExpiresAt ||
+      order.guestAccessExpiresAt.getTime() <= now.getTime()
+    ) {
+      throw new NotFoundException('Заказ не найден');
+    }
+    return toGuestOrderView(order);
   }
 
   async recentPurchases(): Promise<unknown[]> {

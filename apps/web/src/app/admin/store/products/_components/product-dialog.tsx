@@ -3,6 +3,7 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ProductCard } from '@/app/(site)/shop/_components/product-card';
+import { PermissionGate } from '@/components/admin/permission-gate';
 import { Button } from '@/components/ui/button';
 import { CheckboxField } from '@/components/ui/checkbox';
 import {
@@ -47,6 +48,7 @@ import {
   type ProductFormState,
   type VariantDraft,
 } from './product-form-state';
+import { DeliveryTemplateBlock } from './delivery-template-block';
 import { VariantDraftsEditor, VariantsManager } from './variants-editor';
 
 export interface CategoryOption {
@@ -221,6 +223,14 @@ export function ProductDialog({
     }
   };
 
+  const deliveryNote = (
+    <p
+      className="rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground"
+      data-testid="delivery-note"
+    >
+      Команда выдачи задаётся владельцем после создания товара, в правке товара.
+    </p>
+  );
   const sellable = SELLABLE_PRODUCT_TYPES.includes(form.type);
   const types: AdminProductType[] =
     product && !CREATABLE_PRODUCT_TYPES.includes(product.type)
@@ -480,10 +490,18 @@ export function ProductDialog({
               )}
             </div>
 
-            <p className="rounded-lg bg-surface-sunken p-3 text-xs text-muted-foreground sm:col-span-2">
-              Выдача товара (команды и исполнитель) здесь не настраивается — настраивается
-              владельцем в подэтапе 0.11.
-            </p>
+            <div className="sm:col-span-2">
+              {product ? (
+                <PermissionGate
+                  requirement="store.delivery.templates.manage"
+                  fallback={deliveryNote}
+                >
+                  <DeliveryTemplateBlock key={product.id} product={product} />
+                </PermissionGate>
+              ) : (
+                deliveryNote
+              )}
+            </div>
 
             <div className="sm:col-span-2">
               <ProductPreview form={form} variants={previewVariants} category={category} />

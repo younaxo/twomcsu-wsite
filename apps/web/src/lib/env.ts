@@ -11,6 +11,10 @@ export const API_URL = stripTrailingSlash(
 /// Публичный адрес сайта (ADR-0126): канонические ссылки, OG, sitemap, robots.
 export const SITE_URL = stripTrailingSlash(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://twomc.su');
 
+/// Адрес основного сайта для сайта розыгрыша (GIVEAWAY_ONLY, только сервер): шапка и футер
+/// ведут на него абсолютными ссылками.
+export const MAIN_SITE_URL = stripTrailingSlash(process.env.MAIN_SITE_URL || 'https://twomc.su');
+
 /// Публичный CDN статики (`cdn-files.twomc.su`). Единственное место, где
 /// известен хост CDN: компоненты собирают URL через `cdnUrl()`.
 export const CDN_BASE_URL = stripTrailingSlash(

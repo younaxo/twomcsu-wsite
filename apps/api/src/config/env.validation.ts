@@ -385,6 +385,8 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   GIVEAWAY_CUTOFF_AT: Joi.string().isoDate().allow(''),
   /// Через запятую, формат id сервера: [a-z0-9-]{2,32}.
   GIVEAWAY_ALLOWED_SERVERS: Joi.string().allow(''),
+  /// Капча на выдаче кода (ADR-G002 п. 2.6); по умолчанию выключена.
+  GIVEAWAY_CAPTCHA_ENABLED: Joi.boolean().default(false),
 
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по
@@ -407,6 +409,15 @@ const envBaseKeys: Joi.PartialSchemaMap = {
     then: Joi.boolean().default(true),
     otherwise: Joi.boolean().default(false),
   }),
+  /// Платное снятие бана и мута (0.12b, ADR-0190): аварийный выключатель. В dev/test
+  /// по умолчанию включён, в production (и при пустом/неизвестном NODE_ENV)
+  /// выключен, пока владелец не включит явно. Работает вместе с настройкой
+  /// `punishments.paidRemoval` (пустые правила = товар не оформляется).
+  UNPUNISH_ENABLED: Joi.boolean().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.boolean().default(true),
+    otherwise: Joi.boolean().default(false),
+  }),
   /// Жёсткий аварийный запрет выдачи купленного (0.7, ADR-0184 Р10, Q80): явный
   /// false выключает доставку независимо от настройки сайта
   /// `store.delivery.enabled`. Без значения решает настройка (по умолчанию выкл.).
@@ -417,6 +428,50 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// недостающие задания для COMPLETED-заказов. Явный false выключает сверку
   /// (по умолчанию включена: создание заданий инертно, пока доставка выключена).
   DELIVERY_RECONCILE_ENABLED: Joi.boolean().optional(),
+  /// Журнал кошелька рубинов (0.15, ADR-0191). По умолчанию выкл.: API
+  /// кошелька (история, админ) отвечает 503 `wallet_disabled`, исполнитель
+  /// wallet не зачисляет, возврат рубинов — как до 0.15.
+  WALLET_LEDGER_ENABLED: Joi.boolean().default(false),
+  /// Потолок одной ручной корректировки, рубины (по модулю).
+  WALLET_ADJUST_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(10000000)
+    .default(100000),
+  /// Суточный лимит суммы корректировок одного администратора (сумма модулей
+  /// за скользящие 24 часа), рубины.
+  WALLET_ADJUST_DAILY_MAX: Joi.number()
+    .integer()
+    .min(1)
+    .max(1000000000)
+    .default(500000),
+  /// Возвраты и сверка платежей (0.9, ADR-0188). По умолчанию выкл.: эндпоинты
+  /// возвратов отвечают 503 `refunds_disabled`, фоновая сверка не работает.
+  STORE_REFUNDS_ENABLED: Joi.boolean().default(false),
+  /// Сверять заказы старше N минут (после последней сверки — тоже не чаще).
+  STORE_REFUNDS_RECONCILE_MIN_AGE_MINUTES: Joi.number()
+    .integer()
+    .min(1)
+    .max(1440)
+    .default(15),
+  /// Окно сверки: заказы старше N часов не опрашиваются (по умолчанию 72).
+  STORE_REFUNDS_RECONCILE_WINDOW_HOURS: Joi.number()
+    .integer()
+    .min(1)
+    .max(720)
+    .default(72),
+  /// Срок REFUND_PENDING без ответа провайдера (часы), затем FAILED (0.9/0.11).
+  STORE_REFUNDS_PENDING_TIMEOUT_HOURS: Joi.number()
+    .integer()
+    .min(1)
+    .max(720)
+    .default(72),
+  /// Размер пачки одного прохода сверки.
+  STORE_REFUNDS_RECONCILE_BATCH: Joi.number()
+    .integer()
+    .min(1)
+    .max(500)
+    .default(50),
 };
 
 const strongGiveawaySecret = Joi.string()

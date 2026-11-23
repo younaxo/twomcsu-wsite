@@ -1,0 +1,37 @@
+# Override тестового стенда основного сайта (test-website.twomc.su). Подключается ПОСЛЕ docker-compose.prod.yml:
+#   docker compose -p twomc-stand --env-file /srv/twomc-stand/stand.env \
+#     -f <релиз>/infrastructure/docker-compose.prod.yml -f <ops>/docker-compose.stand.yml ...
+# Имя проекта задаётся ключом -p (twomc-stand), поэтому тома, сеть и контейнеры не пересекаются с production-именами.
+# Что меняется относительно production-compose:
+#   - api работает с NODE_ENV=development: только так валидация env допускает PAYMENT_PROVIDER=test (мок) и только так
+#     проходит guard демо-сида. Fail-closed в коде не обходится; production-режим мок-провайдер запрещает (ADR-0187);
+#   - env api берётся из файла стенда (абсолютный путь), а не из ../.env;
+#   - Postgres публикуется ТОЛЬКО на 127.0.0.1 (нужно для честного guard демо-сида: DATABASE_URL на 127.0.0.1);
+#   - имена образов и контейнеров отличаются от production.
+# Все публикуемые порты — только 127.0.0.1; наружу выходит один nginx на хосте.
+
+services:
+  postgres:
+    container_name: twomc-stand-postgres
+    ports:
+      - "127.0.0.1:${STAND_PG_PORT:-55432}:5432"
+
+  redis:
+    container_name: twomc-stand-redis
+
+  api:
+    image: twomc-stand-api:${RELEASE:-latest}
+    container_name: twomc-stand-api
+    env_file: !override
+      - ${STAND_ENV_FILE:?Укажите STAND_ENV_FILE (абсолютный путь к env-файлу стенда)}
+    environment:
+      NODE_ENV: development
+      # Обход дефекта production-образа api (без правки продуктового кода): files.controller.ts импортирует
+      # `multer`, но пакет не объявлен в apps/api/package.json (есть только @types/multer), pnpm его не
+      # линкует в apps/api/node_modules, и api падает: "Cannot find module 'multer'". Пакет лежит в
+      # виртуальном хранилище pnpm; NODE_PATH делает его резолвимым. Убрать, когда multer добавят в зависимости.
+      NODE_PATH: /app/node_modules/.pnpm/node_modules
+
+  web:
+    image: twomc-stand-web:${RELEASE:-latest}
+    container_name: twomc-stand-web

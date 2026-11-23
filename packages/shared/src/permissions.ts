@@ -403,6 +403,11 @@ export const PERMISSIONS = [
     module: 'store',
     description: 'Управление вариантами (ценами) товара',
   },
+  {
+    key: 'store.bundles.view',
+    module: 'store',
+    description: 'Просмотр наборов товаров в админке (включая выключенные)',
+  },
   { key: 'store.bundles.create', module: 'store', description: 'Создание набора товаров' },
   { key: 'store.bundles.edit', module: 'store', description: 'Редактирование набора товаров' },
   { key: 'store.bundles.delete', module: 'store', description: 'Удаление набора товаров' },
@@ -453,6 +458,11 @@ export const PERMISSIONS = [
   { key: 'orders.cancel', module: 'orders', description: 'Отмена заказа' },
   { key: 'orders.refund', module: 'orders', description: 'Возврат средств по заказу' },
   {
+    key: 'store.refund.override',
+    module: 'store',
+    description: 'Возврат по ошибке после выдачи товара (только владелец, свежий код 2FA)',
+  },
+  {
     key: 'store.delivery.view',
     module: 'store',
     description: 'Просмотр заданий выдачи купленного в админке',
@@ -461,6 +471,28 @@ export const PERMISSIONS = [
     key: 'store.delivery.manage',
     module: 'store',
     description: 'Ручная отметка выдачи и повтор выдачи купленного',
+  },
+  {
+    key: 'store.delivery.templates.manage',
+    module: 'store',
+    description:
+      'Шаблоны игровых команд выдачи товаров (только владелец, свежий код 2FA, всё в аудите)',
+  },
+  {
+    key: 'wallet.view',
+    module: 'wallet',
+    description: 'Просмотр баланса и истории кошелька рубинов пользователя',
+  },
+  {
+    key: 'wallet.adjust',
+    module: 'wallet',
+    description:
+      'Ручная корректировка баланса рубинов (свежий код 2FA, причина, аудит; по умолчанию ни у одной роли)',
+  },
+  {
+    key: 'store.settings.manage',
+    module: 'store',
+    description: 'Тексты и правила магазина: снятие банов и мутов, возвраты, описания перков',
   },
   { key: 'store.stats', module: 'store', description: 'Просмотр общей статистики магазина' },
   {

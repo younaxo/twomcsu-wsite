@@ -16,11 +16,16 @@ import { CancelOrderDto } from './dto/cancel-order.dto';
 import { ListAdminOrdersQueryDto } from './dto/list-admin-orders-query.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import { OrdersService } from './orders.service';
+import { RefundError, refundConflict } from './refund-errors';
+import { RefundsService } from './refunds.service';
 
 @Controller('admin/orders')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OrdersAdminController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly refunds: RefundsService,
+  ) {}
 
   @Get()
   @RequirePermissions('orders.view')
@@ -59,6 +64,14 @@ export class OrdersAdminController {
     @Body() dto: RefundOrderDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
+    // 0.9 (ADR-0188): при включённых возвратах деньги возвращает только
+    // `admin/store/refunds`; этот путь остаётся учётной отметкой при флаге off.
+    if (this.refunds.isEnabled()) {
+      throw refundConflict(
+        RefundError.USE_REFUNDS_API,
+        'Возвраты включены: используйте /admin/store/refunds',
+      );
+    }
     return this.orders.refund(id, dto, user.id);
   }
 }

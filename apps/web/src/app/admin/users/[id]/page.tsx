@@ -72,6 +72,7 @@ import { pickPrimaryRole } from '@/lib/roles/primary-role';
 import { AssignRoleDialog } from '../_components/assign-role-dialog';
 import { BanDialog } from '../_components/ban-dialog';
 import { TEAM_TAB_REQUIREMENT, TeamTab } from '../_components/team-tab';
+import { WALLET_TAB_REQUIREMENT, WalletTab } from '../_components/wallet-tab';
 
 const BADGE_LABEL: Record<UserBadgeType, string> = {
   LEADERSHIP: 'Руководство',
@@ -694,6 +695,7 @@ function UserDetails({ user }: { user: AdminUserFull }) {
           {can('security.sessions.view') ? (
             <TabsTrigger value="sessions">Сессии</TabsTrigger>
           ) : null}
+          {can(WALLET_TAB_REQUIREMENT) ? <TabsTrigger value="wallet">Кошелёк</TabsTrigger> : null}
         </TabsList>
         <TabsContent value="overview">
           <OverviewTab user={user} />
@@ -712,6 +714,9 @@ function UserDetails({ user }: { user: AdminUserFull }) {
         </TabsContent>
         <TabsContent value="sessions">
           <SessionsTab user={user} />
+        </TabsContent>
+        <TabsContent value="wallet">
+          <WalletTab user={user} />
         </TabsContent>
       </Tabs>
 

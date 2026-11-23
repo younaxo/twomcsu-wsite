@@ -18,6 +18,7 @@ export default function robots(): MetadataRoute.Robots {
           '/feed',
           '/support',
           '/auth',
+          '/bans',
           '/site-connect',
           '/forms/invite',
         ],

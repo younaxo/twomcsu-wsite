@@ -163,7 +163,7 @@ describe('/bans: публичный список', () => {
 
     mocks.get.mockRejectedValueOnce(apiError(503, { code: 'punishments_unavailable' }));
     const second = render(<PublicBansList />, { wrapper: Providers });
-    expect(await screen.findByText('Данные временно недоступны')).toBeInTheDocument();
+    expect(await screen.findByText('Список наказаний временно недоступен')).toBeInTheDocument();
     second.unmount();
 
     mocks.get.mockRejectedValueOnce(apiError(404, { code: 'punishments_public_disabled' }));
@@ -197,6 +197,16 @@ describe('/bans: публичный список', () => {
     });
   });
 
+  it('мобильный переключатель сортировки по дате меняет order запроса', async () => {
+    const user = userEvent.setup();
+    mocks.get.mockResolvedValue({ items: [pub()], nextCursor: null, meta: META });
+    render(<PublicBansList />, { wrapper: Providers });
+    await screen.findAllByText('Steve_01');
+    await user.click(screen.getByTestId('ban-cards-sort'));
+    await screen.findByText('Сначала старые');
+    expect(mocks.get.mock.calls.at(-1)?.[1]).toMatchObject({ query: { order: 'asc' } });
+  });
+
   it('пагинация по курсору: «Показать ещё» запрашивает следующую страницу', async () => {
     const user = userEvent.setup();
     mocks.get
@@ -207,9 +217,9 @@ describe('/bans: публичный список', () => {
         meta: META,
       });
     render(<PublicBansList />, { wrapper: Providers });
-    await screen.findByText('Steve_01');
+    await screen.findAllByText('Steve_01');
     await user.click(screen.getByRole('button', { name: 'Показать ещё' }));
-    expect(await screen.findByText('Alex_2')).toBeInTheDocument();
+    expect((await screen.findAllByText('Alex_2')).length).toBeGreaterThan(0);
     expect(mocks.get.mock.calls[1][1]).toMatchObject({ query: { cursor: 'cur-1' } });
     expect(screen.queryByRole('button', { name: 'Показать ещё' })).toBeNull();
   });
@@ -374,5 +384,92 @@ describe('Мои наказания на серверах', () => {
       screen.getByRole('radiogroup', { name: 'Статус наказаний на серверах' }),
     ).toBeInTheDocument();
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(1);
+  });
+});
+
+describe('/bans: карточки на узких экранах (Q75)', () => {
+  it('рендерит и таблицу (md+), и карточки (<md) с одинаковыми полями', async () => {
+    mocks.get.mockResolvedValue({
+      items: [pub(), pub({ ref: 'mute-3', kind: 'MUTE', status: 'EXPIRED' })],
+      nextCursor: null,
+      meta: META,
+    });
+    render(<PublicBansList />, { wrapper: Providers });
+    const rows = await screen.findAllByTestId('ban-row');
+    const cards = screen.getAllByTestId('ban-card');
+    expect(rows).toHaveLength(2);
+    expect(cards).toHaveLength(2);
+    const wrapper = screen.getByTestId('bans-table-wrapper');
+    expect(wrapper.className).toContain('hidden');
+    expect(wrapper.className).toContain('md:block');
+    expect(wrapper).toContainElement(screen.getByRole('table'));
+    for (const card of cards) {
+      expect(card.className).toContain('md:hidden');
+      expect(card.className).toContain('min-w-0');
+      expect(card.querySelector('.break-words')).not.toBeNull();
+    }
+    expect(cards[0]).toHaveTextContent('Steve_01');
+    expect(cards[0]).toHaveTextContent('Бан');
+    expect(cards[0]).toHaveTextContent('Действует');
+    expect(cards[0]).toHaveTextContent('Читы <b>и</b> &amp; «моды»');
+    expect(cards[0]).toHaveTextContent('Бессрочно');
+    expect(cards[0]).toHaveTextContent('ModAlex');
+    expect(cards[0]).toHaveTextContent('survival');
+    expect(within(cards[0]).getByRole('link', { name: 'Steve_01' })).toHaveAttribute(
+      'href',
+      '/bans/ban-12',
+    );
+    expect(cards[1]).toHaveTextContent('Мут');
+    expect(cards[1]).toHaveTextContent('Истёк');
+  });
+});
+
+describe('Мои наказания на серверах: подача обращения (1.2)', () => {
+  it('для активных BAN и MUTE есть «Подать обращение» с номером наказания', async () => {
+    mocks.get.mockResolvedValue({
+      linked: true,
+      items: [mine(), mine({ ref: 'mute-9', kind: 'MUTE' })],
+      nextCursor: null,
+      meta: META,
+    });
+    render(<MyServerPunishments />, { wrapper: Providers });
+    const items = await screen.findAllByTestId('server-punishment');
+    expect(items).toHaveLength(2);
+    const ban = within(items[0]).getByRole('link', { name: /Подать обращение/ });
+    expect(ban).toHaveAttribute('href', '/support/new/other');
+    expect(ban).toHaveAccessibleName(/ban-5/);
+    expect(items[0]).toHaveTextContent('Укажите номер наказания: ban-5');
+    expect(within(items[1]).getByRole('link', { name: /Подать обращение/ })).toHaveAccessibleName(
+      /mute-9/,
+    );
+    expect(items[1]).toHaveTextContent('Укажите номер наказания: mute-9');
+  });
+
+  it('нет для EXPIRED/REMOVED и для KICK/WARN', async () => {
+    mocks.get.mockResolvedValue({
+      linked: true,
+      items: [
+        mine({ ref: 'ban-1', status: 'EXPIRED' }),
+        mine({ ref: 'ban-2', status: 'REMOVED' }),
+        mine({ ref: 'kick-3', kind: 'KICK' }),
+        mine({ ref: 'warn-4', kind: 'WARN' }),
+      ],
+      nextCursor: null,
+      meta: META,
+    });
+    render(<MyServerPunishments />, { wrapper: Providers });
+    expect(await screen.findAllByTestId('server-punishment')).toHaveLength(4);
+    expect(screen.queryByRole('link', { name: /Подать обращение/ })).toBeNull();
+    expect(screen.queryByText(/Укажите номер наказания/)).toBeNull();
+  });
+
+  it('503 и 404 punishments_public_disabled: понятные состояния', async () => {
+    mocks.get.mockRejectedValueOnce(apiError(503, { code: 'punishments_unavailable' }));
+    const first = render(<MyServerPunishments />, { wrapper: Providers });
+    expect(await screen.findByText('Данные временно недоступны')).toBeInTheDocument();
+    first.unmount();
+    mocks.get.mockRejectedValueOnce(apiError(404, { code: 'punishments_public_disabled' }));
+    render(<MyServerPunishments />, { wrapper: Providers });
+    expect(await screen.findByText('Раздел недоступен')).toBeInTheDocument();
   });
 });

@@ -90,8 +90,8 @@ export function HomeShop() {
         <div data-testid="home-shop-grid">
           <EmptyState
             icon={<ShoppingBag />}
-            title="Каталог наполняется"
-            description="Товары появятся, как только администрация опубликует их в магазине."
+            title="Пока нет данных"
+            description="Каталог наполняется: товары и наборы появятся, как только администрация опубликует их."
           />
         </div>
       ) : (

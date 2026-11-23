@@ -43,8 +43,8 @@
 
 1. Остановить приложения: `docker compose --env-file .env -f infrastructure/docker-compose.prod.yml stop api web`.
 2. Выбрать снимок: `ls -lt "$PREDEPLOY_BACKUP_DIR"`; имя содержит sha релиза и время.
-3. Сохранить текущее состояние перед восстановлением (ещё один `pg_dump -Fc` тем же способом).
-4. Восстановить в чистую БД: `pg_restore --clean --if-exists --no-owner -d "$POSTGRES_DB"` внутри контейнера postgres, подав файл на stdin (`exec -T postgres ... < снимок`), либо в пересозданную пустую БД.
+3. ОБЯЗАТЕЛЬНО сохранить текущее состояние перед восстановлением (ещё один `pg_dump -Fc` тем же способом) и убедиться, что файл не пустой. Без этого шага не продолжать: следующий шаг необратим, а restore-drill (P3-03b) ещё не выполнен.
+4. НЕОБРАТИМО. Восстановить в чистую БД: `pg_restore --clean --if-exists --no-owner -d "$POSTGRES_DB"` внутри контейнера postgres, подав файл на stdin (`exec -T postgres ... < снимок`), либо в пересозданную пустую БД.
 5. Запустить предыдущий релиз: `infrastructure/deploy.sh rollback` (образы) и проверить health.
 6. Репетиция restore-drill на синтетических данных и бэкапы по расписанию — задача P3-03b; до её завершения восстановление не отрепетировано (риск R3/R8).
 
@@ -58,6 +58,26 @@
 - Необратимая миграция (drop, rename, смена типа, truncate, `NOT NULL` без default) в одном релизе с кодом, который её требует, запрещена без явного одобрения владельца и проверенного снимка. Скрипт останавливает деплой при drop (table/column/constraint/index), rename, смене типа, `SET NOT NULL`, truncate; `NOT NULL` в составе `ADD COLUMN` без default не обнаруживается автоматически.
 - Откат такого релиза возможен только из снимка (см. выше).
 
+## Бэкап перед деплоем
+
+Встроенный снимок `deploy.sh` (`pg_dump -Fc`, шаг 7, до миграций) делается всегда и останавливает деплой при ошибке. Для деплоя с миграциями или с включением оплаты дополнительно сделать полный бэкап с шифрованием и uploads: `BACKUP_TAG=predeploy infrastructure/backup/backup.sh` (`docs/runbooks/backup-restore.md`), убедиться в нулевом коде выхода и вывезти копию с сервера. `deploy.sh` `backup.sh` сам не вызывает (расхождение допущено: подключение - отдельный шаг после появления сервера). До первого боевого деплоя обязателен restore-drill (`acceptance-checklist.md`).
+
+## Откат: краткая шпаргалка
+
+| Ситуация                                | Действие                                                                                                           |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Health не прошёл после деплоя           | Автооткат образов в `deploy.sh`; убедиться, что есть «Откат образов выполнен»; разобрать логи api/web              |
+| Плохой релиз выявлен позже              | `infrastructure/deploy.sh rollback` (образы на `.release.prev`); схема остаётся новой (expand-only)                |
+| Миграция повредила данные               | Раздел «Откат схемы из снимка»; потеря записей после снимка оценить с владельцем                                   |
+| Проблема только в оплате                | Не откатывать релиз: очистить `PAYMENT_PROVIDER`, `STORE_REFUNDS_ENABLED=false`, `QUICK_BUY_ENABLED=false`, перезапустить api (`docs/runbooks/payments.md`) |
+
 ## Проверки скрипта без деплоя
 
-`bash -n infrastructure/deploy.sh`; shellcheck (временное окружение `pip install shellcheck-py` в venv); `git check-ignore .release .release.prev`; `PREDEPLOY_BACKUP_KEEP=0 infrastructure/deploy.sh` (до снимка выходит с кодом 1); `docker compose --env-file <dummy.env> -f infrastructure/docker-compose.prod.yml config -q` с dummy-значениями; стаб-тесты со стабами docker/curl/git (сценарии из отчёта `docs/reports/2026-11-16-00-p3-03a.md`).
+Выполняются на любой машине без Docker и без доступа к серверу; ничего не запускают на production.
+
+1. Синтаксис: `bash -n infrastructure/deploy.sh` и `for f in infrastructure/backup/*.sh; do bash -n "$f"; done` - ожидается код 0 у каждого (на 2026-11-23: deploy.sh, backup.sh, restore.sh, restore-drill.sh - 0).
+2. shellcheck (если установлен; пакет ОС (например, `apt install shellcheck`) либо закреплённая версия с проверкой хеша; без незакреплённых установок): `shellcheck infrastructure/deploy.sh infrastructure/backup/*.sh`. На 2026-11-23 в окружении агента shellcheck не установлен - не выполнялась.
+3. Маркеры релиза не попадают в git: `git check-ignore .release .release.prev` - обе строки выводятся.
+4. Ранний выход по `PREDEPLOY_BACKUP_KEEP=0`: `PREDEPLOY_BACKUP_KEEP=0 infrastructure/deploy.sh` выходит с кодом 1 до снимка, НО только в checkout на сервере, где есть `.env`, чистая ветка `main` и сеть: скрипт сначала проверяет `.env` (иначе код 1 по другой причине), чистоту дерева и ветку, затем выполняет `git pull --ff-only`. На рабочей машине не запускать: результат кода 1 не доказывает проверку именно `KEEP`; смотреть текст сообщения «PREDEPLOY_BACKUP_KEEP='0' некорректно».
+5. Compose без `.env`: dummy-файл вне репозитория с `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `TRUST_PROXY=1`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, затем `docker compose --env-file <dummy.env> -f infrastructure/docker-compose.prod.yml config -q`. Нужен Docker; без любой из обязательных переменных команда падает (fail-fast). Примечание: сервис `api` читает `env_file: ../.env`, поэтому для `config` нужен и файл `.env` рядом с репозиторием (можно пустой временный, удалить после).
+6. Стаб-тесты со стабами docker/curl/git (сценарии из отчёта `docs/reports/2026-11-16-00-p3-03a.md`).

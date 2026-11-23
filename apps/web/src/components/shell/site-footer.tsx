@@ -19,18 +19,46 @@ import {
   SITE_NAME,
   SUPPORT,
   type FooterLink,
+  type SocialSlot,
 } from '@/lib/site/config';
+import { usePublicPunishmentsEnabled } from '@/lib/punishments/use-public-enabled';
 import { usePublicSiteSettings } from '@/lib/site/hooks';
+import { getGiveawaySocialLinks } from '@/features/giveaway/social-links';
+import { resolveShellHref, useShellMode } from '@/lib/site/shell-mode';
 import { BrandIcon } from './brand-icon';
 import { LocalePopover } from './locale-popover';
 import { PaymentMethodLogos } from './payment-method-logos';
 import { ServerStatusButton } from './server-status-button';
 import { SiteLogo } from './site-logo';
 
+/// Сайт розыгрыша: страницы, которых там ещё нет, показываются как «Скоро».
+const SHELL_SOON_HREFS = new Set([
+  '/wiki',
+  '/news',
+  '/vote',
+  '/leaderboards',
+  '/bans',
+  '/achievements',
+  '/forms',
+]);
+/// Сайт розыгрыша: эти ссылки ведут на главную основного сайта.
+const SHELL_ROOT_HREFS = new Set(['/#quick-start', '/shop', '/servers']);
+
 function FooterLinkItem({ link }: { link: FooterLink }) {
-  if (!link.available) {
+  const { mainSiteUrl } = useShellMode();
+  const shell = mainSiteUrl !== null;
+  const bansEnabled = usePublicPunishmentsEnabled();
+  // Q74: «Список наказаний» активен только при включённом разделе.
+  const bansOff = link.href === '/bans' && !shell && !bansEnabled;
+  if (!link.available || bansOff || (shell && SHELL_SOON_HREFS.has(link.href))) {
     return (
-      <span className="inline-flex items-center gap-1 text-muted-foreground/70">
+      <span
+        {...(shell ? { role: 'link', 'aria-disabled': true, tabIndex: 0 } : {})}
+        className={cn(
+          'inline-flex items-center gap-1 text-muted-foreground/70',
+          shell && 'cursor-not-allowed',
+        )}
+      >
         {link.label}
         <span className="rounded-sm bg-muted px-1 text-[10px] uppercase tracking-wide text-subtle-foreground">
           скоро
@@ -48,6 +76,18 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
       >
         {link.label}
         <ExternalLink aria-hidden className="size-3.5" />
+      </a>
+    );
+  }
+  if (mainSiteUrl !== null) {
+    return (
+      <a
+        href={
+          SHELL_ROOT_HREFS.has(link.href) ? mainSiteUrl : resolveShellHref(mainSiteUrl, link.href)
+        }
+        className="text-muted-foreground hover:text-foreground"
+      >
+        {link.label}
       </a>
     );
   }
@@ -101,7 +141,17 @@ const socialButtonClassName =
 /// Без ссылки (ещё не задана в настройках сайта/env) — честно недоступна.
 export function SocialIcons({ className }: { className?: string }) {
   const settings = usePublicSiteSettings();
-  const slots = resolveSocialSlots(settings.data);
+  const { mainSiteUrl } = useShellMode();
+  const shell = mainSiteUrl !== null;
+  // Сайт розыгрыша: адреса только из features/giveaway/social-links.ts.
+  const slots: SocialSlot[] = shell
+    ? getGiveawaySocialLinks().map((link) => ({
+        key: `giveaway-${link.platform}`,
+        platform: link.platform,
+        label: link.label,
+        url: link.url,
+      }))
+    : resolveSocialSlots(settings.data);
   return (
     <ul aria-label="Соцсети" className={cn('flex flex-wrap items-center gap-1.5', className)}>
       {slots.map((social) => (
@@ -120,13 +170,16 @@ export function SocialIcons({ className }: { className?: string }) {
               </a>
             </Tooltip>
           ) : (
-            <Tooltip content={`${social.label} — ссылка появится скоро`}>
+            <Tooltip content={shell ? 'Скоро' : `${social.label} — ссылка появится скоро`}>
               <button
                 type="button"
                 aria-label={`${social.label} (скоро)`}
                 aria-disabled="true"
                 data-social={social.platform}
-                className={cn(socialButtonClassName, 'cursor-default opacity-50')}
+                className={cn(
+                  socialButtonClassName,
+                  shell ? 'cursor-not-allowed opacity-50' : 'cursor-default opacity-50',
+                )}
               >
                 <BrandIcon id={social.platform} />
               </button>

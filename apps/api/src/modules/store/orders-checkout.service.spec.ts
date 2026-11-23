@@ -34,6 +34,7 @@ describe('OrdersService: оформление без провайдера и с�
       {} as never,
       checkout as never,
       {} as never,
+      { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, prisma, checkout };
   }

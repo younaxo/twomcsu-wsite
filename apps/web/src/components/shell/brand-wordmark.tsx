@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/cn';
 import { SITE_NAME } from '@/lib/site/config';
+import { useShellMode } from '@/lib/site/shell-mode';
 import { useSeasonal } from '@/lib/site/use-seasonal';
 
 /// Визуальный wordmark «twomc.su» с фирменной буквой «o».
@@ -61,14 +62,14 @@ const SIZE_CLASS = {
 
 export type BrandWordmarkSize = keyof typeof SIZE_CLASS;
 
-function DefaultO() {
+function DefaultO({ monochrome = false }: { monochrome?: boolean }) {
   return (
     <svg
       data-wordmark-o="default"
       viewBox="35 -536 529 543"
       aria-hidden
       focusable="false"
-      className="inline-block fill-current text-primary"
+      className={cn('inline-block fill-current', !monochrome && 'text-primary')}
       style={{
         width: '0.529em',
         height: '0.543em',
@@ -96,16 +97,21 @@ export function BrandWordmark({
   size = 'md',
   className,
   seasonalO,
+  monochrome,
 }: {
   size?: BrandWordmarkSize;
   className?: string;
   /// Явная «o» (preview в админке); по умолчанию — из активной кампании.
   seasonalO?: { id: string; src: string } | null;
+  /// Без оранжевой «o» (сайт розыгрыша); по умолчанию — из режима каркаса.
+  monochrome?: boolean;
 }) {
   const active = useSeasonalWordmarkO();
   const o = seasonalO === undefined ? active : seasonalO;
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const showSeasonal = o !== null && failedSrc !== o.src;
+  const shellMono = useShellMode().monochromeLogo;
+  const mono = monochrome ?? shellMono;
+  const showSeasonal = !mono && o !== null && failedSrc !== o.src;
 
   return (
     <span
@@ -132,7 +138,7 @@ export function BrandWordmark({
             style={seasonalOStyle(SEASONAL_O_BOOST[size])}
           />
         ) : (
-          <DefaultO />
+          <DefaultO monochrome={mono} />
         )}
         mc.su
       </span>

@@ -35,6 +35,11 @@ public final class SenderConfig {
         return key;
     }
 
+    /** Адрес другого подписываемого пути того же сайта (redeem, progress). */
+    public URI endpointFor(String path) {
+        return URI.create(endpoint.getScheme() + "://" + endpoint.getRawAuthority() + path);
+    }
+
     /** Для тестов и подписи. */
     public static SenderConfig of(URI endpoint, String serverId, int keyVersion, byte[] key) {
         return new SenderConfig(endpoint, serverId, keyVersion, key);

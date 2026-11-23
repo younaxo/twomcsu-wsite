@@ -58,6 +58,7 @@ function setup(order: unknown, movedCount = 1) {
     {} as never,
     {} as never,
     delivery as never,
+    { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, prisma, tx, delivery };
 }
@@ -83,6 +84,7 @@ function setupCancel(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
     {} as never,
     {} as never,
     {} as never,
+    { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, tx, audit };
 }
@@ -441,6 +443,7 @@ describe('OrdersService.handleWebhook: поздняя оплата (0.4, M1)', (
       notifications as never,
       {} as never,
       {} as never,
+      { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
     );
     return { service, prisma: base.prisma, audit, notifications };
   }
@@ -535,6 +538,7 @@ function setupRefund(order: unknown, rows: { id: string }[] = [{ id: 'o1' }]) {
     {} as never,
     {} as never,
     delivery as never,
+    { assertPurchasable: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, tx, delivery };
 }

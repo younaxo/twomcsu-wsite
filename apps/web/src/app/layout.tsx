@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { isGiveawayOnly } from '@/features/giveaway/giveaway-only';
 import { SITE_URL } from '@/lib/env';
 import { DEFAULT_DESCRIPTION, fetchPublic, type PublicSiteMeta } from '@/lib/seo';
 import { SSR_THEME, THEME_INIT_SCRIPT } from '@/lib/theme/theme';
@@ -8,16 +9,22 @@ import { Providers } from './providers';
 
 /// Метаданные (срез 8.4, ADR-0126): описание, ключевые слова и заголовок для
 /// соцсетей — из настроек сайта (`/site/settings`, кэш 5 минут), без API — по
-/// умолчанию. Во вкладке всегда только «twomc.su» (с unread — «(N) twomc.su»,
-/// см. useDocumentBadge); заголовки страниц в title вкладки не попадают.
+/// умолчанию. Title вкладки — «Раздел — twomc.su» (шаблон ниже; с unread —
+/// «(N) Раздел — twomc.su», см. useDocumentBadge); на главной — «twomc.su».
 export async function generateMetadata(): Promise<Metadata> {
-  const site = await fetchPublic<PublicSiteMeta>('/site/settings', 300);
+  // GIVEAWAY_ONLY: мини-выкладка без API сайта - серверный запрос настроек не делаем.
+  const site = isGiveawayOnly() ? null : await fetchPublic<PublicSiteMeta>('/site/settings', 300);
   const shareTitle = site?.meta?.title?.trim() || 'twomc.su';
   const description = site?.meta?.description?.trim() || DEFAULT_DESCRIPTION;
   const keywords = (site?.meta?.keywords ?? []).filter(Boolean);
   return {
     metadataBase: new URL(SITE_URL),
-    title: { default: 'twomc.su', template: 'twomc.su' },
+    // Публичные страницы: «Раздел — twomc.su» (title из metadata сегмента или
+    // PageTitle). GIVEAWAY_ONLY: всегда «twomc.su».
+    title: {
+      default: 'twomc.su',
+      template: isGiveawayOnly() ? 'twomc.su' : '%s — twomc.su',
+    },
     description,
     ...(keywords.length > 0 ? { keywords } : {}),
     applicationName: 'twomc.su',

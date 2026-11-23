@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { ResetPasswordForm } from './reset-form';
 
 export const metadata: Metadata = {
-  title: { absolute: 'twomc.su' },
+  title: 'Новый пароль',
   robots: { index: false, follow: false },
 };
 

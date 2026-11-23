@@ -17,7 +17,6 @@ import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
 import { ErrorState } from '@/components/ui/error-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import {
-  ORDER_REFUND_UI_ENABLED,
   ORDER_STATUS_META,
   orderLineName,
   useAdminOrderCard,
@@ -29,6 +28,7 @@ import { formatDateTime, formatMoney } from '@/lib/format';
 import { durationLabel } from '@/lib/store/catalog';
 import { CancelOrderDialog } from '../_components/cancel-order-dialog';
 import { OrderDeliveryPanel } from '../_components/order-delivery-panel';
+import { OrderRefundPanel } from '../_components/order-refund-panel';
 
 /// Карточка заказа (слой 0, 0.4): позиции, суммы, сводка оплаты, отмена
 /// PENDING. Журнала событий вебхука в БД нет — показывается итог проверки
@@ -105,12 +105,6 @@ function OrderCard({ order }: { order: AdminOrderCard }) {
               <Button variant="destructive" onClick={() => setCancelOpen(true)}>
                 <Ban />
                 Отменить заказ
-              </Button>
-            ) : null}
-            {/* Возврат скрыт флагом до 0.9 (деньги — зона владельца). */}
-            {ORDER_REFUND_UI_ENABLED && order.status === 'COMPLETED' && can('orders.refund') ? (
-              <Button variant="secondary" disabled>
-                Вернуть средства
               </Button>
             ) : null}
           </>
@@ -198,6 +192,8 @@ function OrderCard({ order }: { order: AdminOrderCard }) {
           caption="Позиции заказа: товар или набор, количество, цена, сумма, выдача"
         />
       </PageSection>
+
+      <OrderRefundPanel order={order} />
 
       {can('store.delivery.view') ? <OrderDeliveryPanel orderNumber={order.orderNumber} /> : null}
 

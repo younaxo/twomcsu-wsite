@@ -506,6 +506,43 @@ model Wallet {
   @@map("wallets")
 }
 
+/// Вид проводки журнала кошелька (0.15, ADR-0191).
+enum WalletEntryKind {
+  PURCHASE
+  ADMIN_ADJUST
+  REFUND_REVERSAL
+  REFUND_RESTORE
+  /// Начальный остаток (сведение прежних wallets.balance с журналом, runbook wallet-ledger).
+  OPENING_BALANCE
+}
+
+/// Журнал кошелька (0.15, ADR-0191): append-only, баланс = сумма проводок.
+/// Без внешних ключей намеренно (журнал переживает пользователя и заказ);
+/// UPDATE/DELETE запрещены триггером БД и кодом. `idempotencyKey` UNIQUE:
+/// покупка — `purchase:<orderItemId>:<step>`, возврат — по id возврата.
+model WalletLedgerEntry {
+  id             String          @id @default(cuid())
+  userId         String
+  currency       WalletCurrency  @default(RUBY)
+  /// Целое со знаком (+ зачисление, - списание), ненулевое.
+  amount         BigInt
+  /// Баланс сразу после проводки (>= 0).
+  balanceAfter   BigInt
+  kind           WalletEntryKind
+  idempotencyKey String          @unique @db.VarChar(160)
+  reason         String?         @db.VarChar(500)
+  actorId        String?
+  orderId        String?
+  orderItemId    String?
+  refundId       String?
+  createdAt      DateTime        @default(now())
+
+  @@index([userId, createdAt(sort: Desc), id])
+  @@index([orderId])
+  @@index([refundId])
+  @@map("wallet_ledger_entries")
+}
+
 /// Регистрация с подтверждением почты (ADR-0070). Пароль здесь НЕ хранится:
 /// он передаётся только на финальном шаге и сразу хешируется в User.
 /// Код — только HMAC-хеш; одноразовый токен завершения — тоже хеш.
@@ -1133,6 +1170,16 @@ enum OrderStatus {
   FAILED
   CANCELLED
   REFUNDED
+  /// 0.9 (ADR-0188): возврат отправлен провайдеру, итог ещё не известен.
+  REFUND_PENDING
+  /// 0.9: провайдер отказал в возврате; повтор возможен тем же ключом.
+  REFUND_FAILED
+}
+
+enum OrderRefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
 }
 
 model Category {
@@ -1360,21 +1407,77 @@ model Order {
   /// Версия оферты, принятая при оформлении, и время акцепта (0.5). Для старых заказов null.
   offerVersion             String?     @db.VarChar(32)
   offerAcceptedAt          DateTime?
+  /// SHA-256 (hex) секретного токена гостевого заказа (0.12a, ADR-0190): токен >= 128 бит, в БД только хеш.
+  guestAccessTokenHash     String?     @unique @db.VarChar(64)
+  guestAccessExpiresAt     DateTime?
   paidAt                   DateTime?
   cancelledAt              DateTime?
   refundedAt               DateTime?
   cancelReason             String?
+  /// Последняя сверка статуса платежа у провайдера (0.9), чтобы не опрашивать заказ каждый проход.
+  paymentReconciledAt      DateTime?
   createdAt                DateTime    @default(now())
   updatedAt                DateTime    @updatedAt
 
-  user      User?       @relation(fields: [userId], references: [id])
-  promoCode PromoCode?  @relation(fields: [promoCodeId], references: [id])
+  user      User?         @relation(fields: [userId], references: [id])
+  promoCode PromoCode?    @relation(fields: [promoCodeId], references: [id])
   items     OrderItem[]
+  refunds   OrderRefund[]
 
   @@index([userId])
   @@index([status])
+  @@index([status, createdAt])
   @@index([orderNumber])
   @@map("orders")
+}
+
+/// Журнал платных снятий наказаний (0.12b, ADR-0190). Одна запись на позицию
+/// заказа (UNIQUE orderItemId): повторная выдача и повторный вебхук не снимают
+/// наказание дважды. Запись всегда содержит номер заказа; не удаляется.
+/// Без IP и контактов (Q31). Снятие выполняет система от имени владельца.
+model PaidRemovalRecord {
+  id           String                  @id @default(cuid())
+  orderItemId  String                  @unique
+  orderId      String
+  orderNumber  String                  @db.VarChar(64)
+  kind         MinecraftPunishmentKind
+  subjectName  String                  @db.VarChar(64)
+  /// Снимаемое наказание зеркала (MinecraftPunishment.id), если известно на момент записи.
+  punishmentId String?
+  /// Версия правил платного снятия, по которым разрешено.
+  ruleVersion  String                  @db.VarChar(32)
+  createdAt    DateTime                @default(now())
+
+  @@index([subjectName, createdAt])
+  @@index([orderId])
+  @@map("paid_removal_records")
+}
+
+/// Возвраты по заказу (0.9, ADR-0188). Ключ идемпотентности уникален и
+/// передаётся провайдеру; записи не удаляются (журнал денег).
+model OrderRefund {
+  id                   String            @id @default(cuid())
+  orderId              String
+  amount               Decimal           @db.Decimal(10, 2)
+  reason               String            @db.VarChar(1000)
+  /// NORMAL — до выдачи; OVERRIDE — возврат по ошибке после выдачи (Q85).
+  kind                 String            @default("NORMAL") @db.VarChar(16)
+  status               OrderRefundStatus @default(PENDING)
+  idempotencyKey       String            @unique @db.VarChar(128)
+  providerRefundId     String?           @db.VarChar(128)
+  errorCode            String?           @db.VarChar(64)
+  /// Выданное нельзя отозвать автоматически (игровые выдачи): нужен ручной отзыв.
+  requiresManualRevoke Boolean           @default(false)
+  actorId              String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  completedAt          DateTime?
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("order_refunds")
 }
 
 model OrderItem {
@@ -1401,6 +1504,26 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+/// Шаблон игровой команды выдачи товара или варианта (0.11, ADR-0189).
+/// Без внешних ключей (как recipientUserId): существование товара и варианта
+/// проверяет сервис; записи не удаляются вместе с товаром. `scopeKey` =
+/// `productId:variantId` либо `productId:*` (шаблон всего товара).
+model DeliveryCommandTemplate {
+  id        String   @id @default(cuid())
+  productId String
+  variantId String?
+  scopeKey  String   @unique @db.VarChar(64)
+  template  String   @db.VarChar(200)
+  /// Растёт при каждом изменении; замораживается в DeliveryTask.templateVersion.
+  version   Int      @default(1)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@map("delivery_command_templates")
 }
 
 /// Статусы задания выдачи (0.7, ADR-0184 п. 4).
@@ -3624,4 +3747,43 @@ model GiveawaySessionEvent {
   @@unique([serverSlug, eventId])
   @@index([playerUuid, occurredAt])
   @@map("giveaway_session_events")
+}
+
+/// Билет розыгрыша (ADR-G002): буква без I и O + 3 цифры. UNIQUE на ticket и на
+/// игрока (один билет на UUID). Время UTC.
+model GiveawayTicket {
+  id         String         @id @default(cuid())
+  ticket     String         @unique @db.VarChar(4)
+  playerUuid String         @unique @db.VarChar(36)
+  playerName String         @db.VarChar(16)
+  issuedAt   DateTime       @default(now())
+  codes      GiveawayCode[]
+
+  @@map("giveaway_tickets")
+}
+
+/// Код привязки (ADR-G002): хранится только HMAC-хэш кода и хэш анонимной
+/// cookie-сессии браузера. Одноразовый, TTL 10 минут, один активный на сессию.
+model GiveawayCode {
+  id                   String          @id @default(cuid())
+  codeHash             String          @unique @db.VarChar(64)
+  sessionHash          String          @db.VarChar(64)
+  createdAt            DateTime        @default(now())
+  expiresAt            DateTime
+  redeemedAt           DateTime?
+  revokedAt            DateTime?
+  ticketId             String?
+  ticket               GiveawayTicket? @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  /// Последняя попытка погашения при нехватке времени (код не гасится).
+  lastAttemptAt        DateTime?
+  lastAttemptMinutes   Int?
+  lastAttemptThreshold Int?
+
+  /// Частичный уникальный индекс giveaway_codes_one_active_per_session
+  /// (sessionHash) WHERE redeemedAt IS NULL AND revokedAt IS NULL существует
+  /// только в миграции 20261119150000_giveaway_phase2b: Prisma не выражает
+  /// частичные индексы. Не удалять при будущих migrate diff.
+  @@index([sessionHash, createdAt])
+  @@index([expiresAt])
+  @@map("giveaway_codes")
 }

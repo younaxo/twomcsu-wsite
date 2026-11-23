@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { SocialResultView } from './result-view';
 
 export const metadata: Metadata = {
-  title: { absolute: 'twomc.su' },
+  title: 'Вход через сервис',
   robots: { index: false, follow: false },
 };
 

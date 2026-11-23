@@ -7,10 +7,12 @@ import type {
   WalletSummaryDto,
 } from '@twomc/shared';
 import {
+  Heart,
   LifeBuoy,
   MessageSquare,
   Package,
   Settings,
+  KeyRound,
   ShieldCheck,
   UserRound,
   Users,
@@ -44,11 +46,10 @@ export interface MiniProfileEntry {
 export function miniProfileEntries(
   username: string,
   counts: { friendRequests?: number } = {},
-  /// Модуль магазина включён: пункт «Заказы» активен; выключен — скрыт (Q67).
-  options: { storeEnabled?: boolean } = {},
 ): MiniProfileEntry[] {
-  const { storeEnabled = true } = options;
-  const entries: MiniProfileEntry[] = [
+  // «Избранное» и «Заказы» не скрываются (план 1.4): при выключенном модуле
+  // магазина страницы сами покажут состояние «раздел недоступен».
+  return [
     {
       key: 'profile',
       label: 'Мой профиль',
@@ -56,6 +57,12 @@ export function miniProfileEntries(
       href: `/u/${encodeURIComponent(username)}`,
     },
     { key: 'settings', label: 'Настройки', icon: Settings, href: '/settings' },
+    {
+      key: 'security',
+      label: 'Безопасность и сессии',
+      icon: KeyRound,
+      href: '/settings/security',
+    },
     {
       key: 'friends',
       label: 'Друзья',
@@ -65,12 +72,9 @@ export function miniProfileEntries(
     },
     { key: 'messages', label: 'Сообщения', icon: MessageSquare, href: '/messages' },
     { key: 'support', label: 'Обращения', icon: LifeBuoy, href: '/support' },
+    { key: 'wishlist', label: 'Избранное', icon: Heart, href: '/shop/wishlist' },
+    { key: 'orders', label: 'Заказы', icon: Package, href: '/shop/orders' },
   ];
-  // «Избранное» скрыто до появления раздела (Q67): пункт без href не показываем.
-  if (storeEnabled) {
-    entries.push({ key: 'orders', label: 'Заказы', icon: Package, href: '/shop/orders' });
-  }
-  return entries;
 }
 
 /// Вход в админку — отдельный административный блок (не пункт общего меню).

@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { TwoFactorService } from '../auth/two-factor/two-factor.service';
 import { DeliveryModule } from '../delivery/delivery.module';
+import { WalletModule } from '../wallet/wallet.module';
 import { BundlesAdminController } from './bundles-admin.controller';
 import { BundlesController } from './bundles.controller';
 import { BundlesService } from './bundles.service';
@@ -18,11 +20,23 @@ import { OrdersAdminController } from './orders-admin.controller';
 import { OrdersController, StoreExtrasController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { CheckoutPolicyService } from './checkout-policy.service';
+import { PaidRemovalService } from './paid-removal.service';
 import { NickResolver } from './nick-resolver.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
 import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
 import { PaymentsWebhookController } from './payments-webhook.controller';
+import { RefundsAdminController } from './refunds-admin.controller';
+import { RefundsService } from './refunds.service';
+import { DeliveryTemplatesAdminController } from './delivery-templates-admin.controller';
+import { DeliveryTemplatesService } from './delivery-templates.service';
+import {
+  StoreSettingsAdminController,
+  StoreTextsController,
+} from './store-settings.controller';
+import { StoreSettingsService } from './store-settings.service';
+import { StoreReconcileScheduler } from './store-reconcile.scheduler';
+import { StoreReconcileService } from './store-reconcile.service';
 import { PricingService } from './pricing.service';
 import { PromocodesAdminController } from './promocodes-admin.controller';
 import { PromocodesController } from './promocodes.controller';
@@ -36,7 +50,7 @@ import { WishlistController } from './wishlist.controller';
 import { WishlistService } from './wishlist.service';
 
 @Module({
-  imports: [DeliveryModule],
+  imports: [DeliveryModule, WalletModule],
   controllers: [
     CategoriesController,
     CategoriesAdminController,
@@ -55,6 +69,10 @@ import { WishlistService } from './wishlist.service';
     OrdersController,
     StoreExtrasController,
     OrdersAdminController,
+    RefundsAdminController,
+    DeliveryTemplatesAdminController,
+    StoreSettingsAdminController,
+    StoreTextsController,
     PaymentsWebhookController,
     StoreStatsAdminController,
   ],
@@ -71,11 +89,19 @@ import { WishlistService } from './wishlist.service';
     OrdersService,
     NickResolver,
     CheckoutPolicyService,
+    PaidRemovalService,
     StoreStatsService,
     PaymentProviderRegistry,
     TestPaymentProvider,
     MockHttpPaymentProvider,
+    // Свой экземпляр: AuthModule не экспортирует TwoFactorService (ADR-0188).
+    TwoFactorService,
+    RefundsService,
+    DeliveryTemplatesService,
+    StoreSettingsService,
+    StoreReconcileService,
+    StoreReconcileScheduler,
   ],
-  exports: [OrdersService, StoreStatsService],
+  exports: [OrdersService, StoreStatsService, PaidRemovalService],
 })
 export class StoreModule {}

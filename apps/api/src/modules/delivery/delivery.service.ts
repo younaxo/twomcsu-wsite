@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeliveryTaskStatus, OrderStatus, Prisma } from '@prisma/client';
+import {
+  DeliveryTaskStatus,
+  OrderStatus,
+  Prisma,
+  ProductType,
+} from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListDeliveryTasksQueryDto } from './dto/list-delivery-tasks-query.dto';
@@ -15,6 +20,21 @@ import {
   DeliveryResult,
   DeliveryTaskSnapshot,
 } from './delivery-executor.interface';
+import {
+  renderCommand,
+  CommandTemplateError,
+  EXTRA_ROOTS_SETTING,
+  normalizeRoots,
+} from './command-template';
+
+/// Битая настройка не должна ронять выдачу: при ошибке расширения нет.
+function safeRoots(raw: string | undefined): string[] {
+  try {
+    return normalizeRoots(raw ?? '');
+  } catch {
+    return [];
+  }
+}
 import { deliverableNickOrNull } from './delivery-nick';
 import { sanitizeDeliveryError } from './delivery-status';
 import {
@@ -36,6 +56,7 @@ import {
   EXECUTOR_COMMAND,
   EXECUTOR_MANUAL,
   EXECUTOR_SITE,
+  EXECUTOR_WALLET,
   MANUAL_DONE_FROM,
   REFUND_BLOCKING_STATUSES,
   RETRY_FROM,
@@ -43,11 +64,15 @@ import {
 import { CommandExecutor } from './executors/command.executor';
 import { ManualExecutor } from './executors/manual.executor';
 import { SiteExecutor } from './executors/site.executor';
+import { WalletExecutor } from './executors/wallet.executor';
+import { walletLedgerEnabled } from '../wallet/wallet-config';
 
 export interface DeliverySettings {
   enabled: boolean;
   commandEnabled: boolean;
   maxAttempts: number;
+  /// Расширение белого списка корней команд (ADR-0189).
+  extraCommandRoots: string[];
 }
 
 interface ClaimedTask {
@@ -89,9 +114,10 @@ export class DeliveryService {
     manual: ManualExecutor,
     site: SiteExecutor,
     command: CommandExecutor,
+    wallet?: WalletExecutor,
   ) {
-    for (const executor of [manual, site, command]) {
-      this.executors.set(executor.kind, executor);
+    for (const executor of [manual, site, command, wallet]) {
+      if (executor) this.executors.set(executor.kind, executor);
     }
   }
 
@@ -129,6 +155,7 @@ export class DeliveryService {
             DELIVERY_ENABLED_SETTING,
             DELIVERY_COMMAND_ENABLED_SETTING,
             DELIVERY_MAX_ATTEMPTS_SETTING,
+            EXTRA_ROOTS_SETTING,
           ],
         },
       },
@@ -145,6 +172,7 @@ export class DeliveryService {
         Number.isInteger(parsedMax) && parsedMax >= 1 && parsedMax <= 20
           ? parsedMax
           : DELIVERY_DEFAULT_MAX_ATTEMPTS,
+      extraCommandRoots: safeRoots(get(EXTRA_ROOTS_SETTING)),
     };
     this.settingsCache = { at: now, value };
     return value;
@@ -156,8 +184,24 @@ export class DeliveryService {
   /// (PRIVILEGE, KEY, UNBAN, UNMUTE, CURRENCY, BATTLE_PASS) и наборы идут на
   /// `manual`; сайтовое украшение (`Product.decorationId`) — на `site`.
   /// `Product.gameCommands` не читается.
-  selectExecutor(decorationId: string | null | undefined): string {
-    return decorationId ? EXECUTOR_SITE : EXECUTOR_MANUAL;
+  ///
+  /// 0.15: товар CURRENCY с получателем-пользователем идёт на `wallet`
+  /// (зачисление рубинов), только если включён WALLET_LEDGER_ENABLED.
+  selectExecutor(
+    decorationId: string | null | undefined,
+    productType?: ProductType | null,
+    hasRecipientUser = false,
+  ): string {
+    if (decorationId) return EXECUTOR_SITE;
+    if (
+      productType === ProductType.CURRENCY &&
+      hasRecipientUser &&
+      walletLedgerEnabled(this.config) &&
+      this.executors.has(EXECUTOR_WALLET)
+    ) {
+      return EXECUTOR_WALLET;
+    }
+    return EXECUTOR_MANUAL;
   }
 
   /// Создаёт задания заказа (минимум: чтение заказа и ников получателей
@@ -196,12 +240,22 @@ export class DeliveryService {
           select: {
             id: true,
             giftToUserId: true,
-            product: { select: { decorationId: true } },
+            productId: true,
+            variantId: true,
+            variant: { select: { duration: true } },
+            product: { select: { decorationId: true, type: true } },
           },
         },
       },
     });
     if (!order || order.items.length === 0) return 0;
+
+    // 0.11: шаблоны команд читаются, только если включены и доставка, и
+    // исполнитель «команда»; иначе поведение 0.7 (manual) не меняется.
+    const templates = await this.loadTemplates(tx, order.items);
+    const extraRoots = templates
+      ? (await this.settings()).extraCommandRoots
+      : [];
 
     const giftIds = [
       ...new Set(
@@ -218,12 +272,43 @@ export class DeliveryService {
     }
 
     const data = order.items.map((item) => {
-      const executorKind = this.selectExecutor(item.product?.decorationId);
-      const executor = this.executors.get(executorKind);
       const isGift = Boolean(item.giftToUserId);
       const rawNick = isGift
         ? (giftNicks.get(item.giftToUserId!) ?? null)
         : order.guestMinecraftNick;
+      const recipientUserId = isGift ? item.giftToUserId : order.userId;
+      let executorKind = this.selectExecutor(
+        item.product?.decorationId,
+        item.product?.type,
+        Boolean(recipientUserId),
+      );
+      let renderedCommand: string | null = null;
+      let templateVersion: number | null = null;
+      if (executorKind === EXECUTOR_MANUAL && templates) {
+        const tpl = this.pickTemplate(templates, item);
+        const nick = deliverableNickOrNull(rawNick);
+        if (tpl && nick) {
+          try {
+            // Подстановка только через общий валидатор; сбой -> manual.
+            renderedCommand = renderCommand(
+              tpl.template,
+              {
+                username: nick,
+                duration: item.variant?.duration,
+              },
+              extraRoots,
+            );
+            templateVersion = tpl.version;
+            executorKind = EXECUTOR_COMMAND;
+          } catch (error) {
+            if (!(error instanceof CommandTemplateError)) throw error;
+            this.logger.warn(
+              `Шаблон команды не применён: item=${item.id} (${error.code}); выдача вручную`,
+            );
+          }
+        }
+      }
+      const executor = this.executors.get(executorKind);
       return {
         orderItemId: item.id,
         step: 1,
@@ -233,7 +318,15 @@ export class DeliveryService {
           : DeliveryTaskStatus.AWAITING_MANUAL,
         // Р9: ник проверяется и при создании задания; негодный не сохраняется.
         nick: deliverableNickOrNull(rawNick),
-        recipientUserId: isGift ? item.giftToUserId : order.userId,
+        recipientUserId,
+        // Рубины при выключенном кошельке: ручная выдача с причиной (0.15).
+        ...(item.product?.type === ProductType.CURRENCY &&
+        executorKind === EXECUTOR_MANUAL &&
+        !walletLedgerEnabled(this.config)
+          ? { lastError: 'wallet_disabled' }
+          : {}),
+        // Без шаблона поля не задаются: поведение 0.7 (null в БД) не меняется.
+        ...(renderedCommand ? { renderedCommand, templateVersion } : {}),
       };
     });
     const created = await tx.deliveryTask.createMany({
@@ -241,6 +334,59 @@ export class DeliveryService {
       skipDuplicates: true,
     });
     return created.count;
+  }
+
+  /// Шаблоны команд позиций заказа или null, если команды выключены.
+  private async loadTemplates(
+    tx: Prisma.TransactionClient,
+    items: { productId: string | null }[],
+  ): Promise<
+    | {
+        productId: string;
+        variantId: string | null;
+        template: string;
+        version: number;
+      }[]
+    | null
+  > {
+    const productIds = [
+      ...new Set(items.flatMap((i) => (i.productId ? [i.productId] : []))),
+    ];
+    if (productIds.length === 0) return null;
+    if (!(await this.isEnabled())) return null;
+    if (!(await this.settings()).commandEnabled) return null;
+    return tx.deliveryCommandTemplate.findMany({
+      where: { productId: { in: productIds } },
+      select: {
+        productId: true,
+        variantId: true,
+        template: true,
+        version: true,
+      },
+    });
+  }
+
+  /// Шаблон варианта приоритетнее шаблона товара.
+  private pickTemplate(
+    templates: {
+      productId: string;
+      variantId: string | null;
+      template: string;
+      version: number;
+    }[],
+    item: { productId: string | null; variantId: string | null },
+  ) {
+    if (!item.productId) return null;
+    return (
+      templates.find(
+        (t) =>
+          t.productId === item.productId &&
+          t.variantId === item.variantId &&
+          t.variantId,
+      ) ??
+      templates.find((t) => t.productId === item.productId && !t.variantId) ??
+      null
+    );
   }
 
   /// Шаг ПОСЛЕ коммита вебхука оплаты: заказ уже COMPLETED и деньги

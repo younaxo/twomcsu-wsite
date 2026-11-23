@@ -153,7 +153,7 @@ describe('навигация админки', () => {
       'Инструменты',
     ]);
     const items = ADMIN_NAV.flatMap((group) => group.items);
-    expect(items.length).toBeLessThanOrEqual(21);
+    expect(items.length).toBeLessThanOrEqual(22);
     expect(new Set(items.map((item) => item.href)).size).toBe(items.length);
   });
 });
