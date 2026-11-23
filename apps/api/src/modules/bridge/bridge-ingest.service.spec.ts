@@ -31,6 +31,7 @@ function config(over: Partial<BridgeConfig> = {}): BridgeConfig {
     keyOverlapDays: 7,
     applyLatencyLimitMs: 2000,
     bodyReadTimeoutMs: 10000,
+    deliveryEnabled: false,
     ...over,
   };
 }
@@ -594,7 +595,8 @@ describe('BridgeIngestService: сбой между шагами (R121, M2)', () 
     const { service, prisma, received } = setup();
     const ev = created();
     const original = prisma.bridgeEventLog.updateMany;
-    prisma.bridgeEventLog.updateMany = () => Promise.reject(new Error('db down'));
+    prisma.bridgeEventLog.updateMany = () =>
+      Promise.reject(new Error('db down'));
     await expect(service.ingest(ctx(), batch([ev]))).rejects.toThrow('db down');
     expect([...prisma.log.values()].map((r) => r.status)).toEqual(['received']);
     prisma.bridgeEventLog.updateMany = original;
@@ -639,7 +641,10 @@ describe('BridgeIngestService: сбой между шагами (R121, M2)', () 
     const { service, received } = setup();
     const t = Date.now();
     const evs = [1, 2, 3, 4, 5, 6].map((i) =>
-      created({}, { occurredAt: new Date(t - 10_000 + i * 1000).toISOString() }),
+      created(
+        {},
+        { occurredAt: new Date(t - 10_000 + i * 1000).toISOString() },
+      ),
     );
     const results = await Promise.all(
       [...evs].reverse().map((e) => service.ingest(ctx(), batch([e]))),
@@ -649,6 +654,8 @@ describe('BridgeIngestService: сбой между шагами (R121, M2)', () 
     for (const s of statuses) {
       expect(['accepted', 'stale']).toContain(s);
     }
-    expect(received.length).toBe(statuses.filter((s) => s === 'accepted').length);
+    expect(received.length).toBe(
+      statuses.filter((s) => s === 'accepted').length,
+    );
   });
 });

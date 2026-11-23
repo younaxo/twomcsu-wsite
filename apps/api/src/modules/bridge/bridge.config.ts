@@ -21,6 +21,9 @@ export interface BridgeConfig {
   applyLatencyLimitMs: number;
   /// Дедлайн чтения тела запроса парсером, мс.
   bodyReadTimeoutMs: number;
+  /// `BRIDGE_DELIVERY_ENABLED=true`: выдача заказов через Bridge (0.13).
+  /// По умолчанию выключена; без неё claim/ack отвечают 503.
+  deliveryEnabled: boolean;
 }
 
 export interface EnvReader {
@@ -64,6 +67,7 @@ export function readBridgeConfig(env: EnvReader): BridgeConfig {
       env.get('BRIDGE_BODY_READ_TIMEOUT_MS'),
       DEFAULT_BODY_READ_TIMEOUT_MS,
     ),
+    deliveryEnabled: toBoolean(env.get('BRIDGE_DELIVERY_ENABLED')),
   };
 }
 

@@ -243,3 +243,49 @@ export function renderCommand(
   }
   return rendered;
 }
+
+/// Проверка УЖЕ готовой команды (без переменных) перед отправкой на сервер
+/// (0.13): тот же белый список корней и символов, что у шаблона. Страховка на
+/// случай подмены строки в БД: исполнитель и выдача плагину принимают только
+/// команду, прошедшую эту проверку. Бросает `CommandTemplateError`.
+export function validateRenderedCommand(
+  raw: unknown,
+  extraRoots: readonly string[] = [],
+): string {
+  if (typeof raw !== 'string') {
+    throw err('template_empty', 'Команда должна быть строкой');
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(raw)) {
+    throw err('template_control_chars', 'Управляющие символы запрещены');
+  }
+  const command = raw.trim();
+  if (command.length === 0) {
+    throw err('template_empty', 'Команда пуста');
+  }
+  if (command !== raw) {
+    throw err('template_forbidden_chars', 'Внешние пробелы запрещены');
+  }
+  if (command.length > RENDERED_COMMAND_MAX_LENGTH) {
+    throw err('rendered_too_long', 'Команда слишком длинная');
+  }
+  if (command.startsWith('/')) {
+    throw err('template_leading_slash', 'Команда не должна начинаться с «/»');
+  }
+  const root = command.split(' ')[0].toLowerCase();
+  if (FORBIDDEN_COMMAND_ROOTS.includes(root)) {
+    throw err('root_forbidden', `Команда «${root}» запрещена`);
+  }
+  if (!DEFAULT_COMMAND_ROOTS.includes(root) && !extraRoots.includes(root)) {
+    throw err('root_not_allowed', `Команда «${root}» не в белом списке`);
+  }
+  // Фигурные скобки не входят в LITERAL_RE: неподставленная переменная
+  // и любая «лишняя» конструкция отклоняются.
+  if (!LITERAL_RE.test(command)) {
+    throw err(
+      'template_forbidden_chars',
+      'Команда не прошла проверку символов',
+    );
+  }
+  return command;
+}
