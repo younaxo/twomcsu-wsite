@@ -52,7 +52,7 @@
           {
             "id": "i1",
             "productId": "p001",
-            "productType": "KEY",
+            "productType": "BADGE",
             "unitPrice": "10.00",
             "quantity": 10
           }
@@ -93,7 +93,7 @@
           {
             "id": "i1",
             "productId": "p001",
-            "productType": "KEY",
+            "productType": "BADGE",
             "unitPrice": "2.00",
             "quantity": 50
           }
@@ -462,14 +462,14 @@
           {
             "id": "i1",
             "productId": "p001",
-            "productType": "KEY",
+            "productType": "BADGE",
             "unitPrice": "10.00",
             "quantity": 5
           },
           {
             "id": "i2",
             "productId": "p001",
-            "productType": "KEY",
+            "productType": "BADGE",
             "unitPrice": "10.00",
             "quantity": 5
           }
@@ -829,7 +829,7 @@
           {
             "id": "i1",
             "productId": "p001",
-            "productType": "KEY",
+            "productType": "BADGE",
             "unitPrice": "10.00",
             "quantity": 10
           }
