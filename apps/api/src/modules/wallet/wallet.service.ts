@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { WalletCurrency } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletLedgerService } from './wallet-ledger.service';
+import { serializePage } from './wallet-serialize';
 
-/// Кошелёк пользователя (ADR-0094) — пока только чтение баланса.
+/// Кошелёк пользователя (ADR-0094, дополнен ADR-0191) — только чтение.
+/// С 0.15 баланс RUBY ведёт журнал проводок (`WalletLedgerService`): строка
+/// `Wallet` — его материализация в той же транзакции; ответ `balances` прежний.
 ///
 /// Контракт для UI стабилен и не зависит от хранения: сейчас баланс — агрегат
 /// `Wallet` (строки нет → 0), позже его будет вести журнал проводок
@@ -22,7 +26,16 @@ export interface WalletBalance {
 
 @Injectable()
 export class WalletService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: WalletLedgerService,
+  ) {}
+
+  /// История рубинов (0.15, ADR-0191): только своя, выкл. флаг -> 503.
+  async history(userId: string, page: number, limit: number) {
+    this.ledger.assertEnabled();
+    return serializePage(await this.ledger.history(userId, page, limit));
+  }
 
   async balances(userId: string): Promise<{ balances: WalletBalance[] }> {
     const rows = await this.prisma.wallet.findMany({

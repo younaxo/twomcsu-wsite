@@ -6,6 +6,8 @@ import { PaymentProviderError } from './payment/payment-provider.errors';
 import { PaymentProvider } from './payment/payment-provider.interface';
 import { RefundsAdminController } from './refunds-admin.controller';
 import { RefundsService } from './refunds.service';
+import { createFakeDb } from '../../../test/helpers/wallet-fake-db';
+import { WalletLedgerService } from '../wallet/wallet-ledger.service';
 
 const D = (v: string | number) => new Prisma.Decimal(v);
 
@@ -37,6 +39,9 @@ function setup(
     timeoutHours?: number;
     refundFn?: PaymentProvider['refund'];
     revokeLeft?: number;
+    /// 0.15: журнал кошелька (фейковая БД) и флаг WALLET_LEDGER_ENABLED.
+    walletDb?: ReturnType<typeof createFakeDb>;
+    walletEnabled?: boolean;
   } = {},
 ) {
   const order = {
@@ -71,8 +76,19 @@ function setup(
     refund: opts.refundFn ?? refundSpy,
   } as unknown as PaymentProvider;
 
+  const walletTx = opts.walletDb?.tx;
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: 'o1' }]),
+    ...(walletTx
+      ? {
+          walletLedgerEntry: walletTx.walletLedgerEntry,
+          $executeRaw: walletTx.$executeRaw,
+        }
+      : {}),
+    $queryRaw: jest.fn((strings: TemplateStringsArray, ...v: unknown[]) =>
+      walletTx && strings.join('?').includes('FROM wallets')
+        ? walletTx.$queryRaw(strings, ...v)
+        : Promise.resolve([{ id: 'o1' }]),
+    ),
     order: {
       findUniqueOrThrow: jest.fn(() =>
         Promise.resolve({ ...order, refunds: [...refunds] }),
@@ -212,7 +228,9 @@ function setup(
         ? (opts.enabled ?? true)
         : k === 'STORE_REFUNDS_PENDING_TIMEOUT_HOURS'
           ? opts.timeoutHours
-          : undefined,
+          : k === 'WALLET_LEDGER_ENABLED'
+            ? (opts.walletEnabled ?? true)
+            : undefined,
     ),
   };
   const service = new RefundsService(
@@ -223,9 +241,13 @@ function setup(
     audit as never,
     twoFactor as never,
     redis as never,
+    opts.walletDb
+      ? new WalletLedgerService(opts.walletDb.prisma as never, config as never)
+      : undefined,
   );
   return {
     service,
+    tx,
     order,
     refunds,
     refundSpy,
@@ -610,5 +632,130 @@ describe('RefundsAdminController: права (0.9)', () => {
       'orders.refund',
       'store.refund.override',
     ]);
+  });
+});
+
+describe('RefundsService: рубины кошелька (0.15)', () => {
+  async function seeded(
+    credited = 100n,
+    over: Parameters<typeof setup>[0] = {},
+  ) {
+    const walletDb = createFakeDb();
+    const s = setup({ deliveredTasks: 1, walletDb, ...over });
+    const seeder = new WalletLedgerService(
+      walletDb.prisma as never,
+      {
+        get: () => true,
+      } as never,
+    );
+    await walletDb.prisma.$transaction((tx) =>
+      seeder.post(tx as never, {
+        userId: 'u1',
+        amount: credited,
+        kind: 'PURCHASE',
+        idempotencyKey: 'purchase:i1:1',
+        orderId: 'o1',
+        orderItemId: 'i1',
+      }),
+    );
+    return { s, walletDb };
+  }
+
+  it('полный возврат: списывается весь непотраченный остаток (REFUND_REVERSAL)', async () => {
+    const { s, walletDb } = await seeded();
+    const res = await s.service.override('o1', dto(), 'a1');
+    expect(res.refund.status).toBe('SUCCEEDED');
+    expect(walletDb.balances.get('u1')).toBe(0n);
+    const reversal = walletDb.entries.find(
+      (e) => e.kind === 'REFUND_REVERSAL',
+    )!;
+    expect(reversal.amount).toBe(-100n);
+    expect(reversal.refundId).toBe(res.refund.id);
+    const requested = s.audit.logInTx.mock.calls.find(
+      (c) =>
+        (c[1] as { action: string }).action ===
+        'orders.refund.override_requested',
+    )![1] as { changes: { rubiesReversed: string } };
+    expect(requested.changes.rubiesReversed).toBe('100');
+  });
+
+  it('порядок блокировок: заказ (в т.ч. повторно в списании рубинов) раньше кошелька', async () => {
+    const { s } = await seeded();
+    await s.service.override('o1', dto(), 'a1');
+    const texts = (
+      s.tx.$queryRaw.mock.calls as unknown as [TemplateStringsArray][]
+    ).map(([strings]) => strings.join('?'));
+    const firstWallet = texts.findIndex((t) => t.includes('FROM wallets'));
+    expect(firstWallet).toBeGreaterThan(0);
+    const before = texts.slice(0, firstWallet);
+    expect(
+      before.filter((t) => t.includes('FROM orders')).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('частичный возврат 25 из 100 ₽ списывает пропорционально 25 рубинов', async () => {
+    const { s, walletDb } = await seeded();
+    await s.service.override('o1', dto({ amount: '25.00' }), 'a1');
+    expect(walletDb.balances.get('u1')).toBe(75n);
+  });
+
+  it('рубины потрачены/списаны: отказ refund_rubies_spent, провайдер не вызван', async () => {
+    const { s, walletDb } = await seeded();
+    // Остаток 40 при зачисленных 100: вернуть 100 ₽ нельзя.
+    walletDb.entries.push({
+      id: 'adj',
+      userId: 'u1',
+      currency: 'RUBY',
+      amount: -60n,
+      balanceAfter: 40n,
+      kind: 'ADMIN_ADJUST',
+      idempotencyKey: 'adj',
+      reason: null,
+      actorId: null,
+      orderId: null,
+      orderItemId: null,
+      refundId: null,
+      createdAt: new Date(),
+    });
+    walletDb.balances.set('u1', 40n);
+    expect(await code(s.service.override('o1', dto(), 'a1'))).toBe(
+      'refund_rubies_spent',
+    );
+    expect(s.refundSpy).not.toHaveBeenCalled();
+    expect(walletDb.balances.get('u1')).toBe(40n);
+  });
+
+  it('отказ провайдера: списанные рубины возвращаются (REFUND_RESTORE)', async () => {
+    const { s, walletDb } = await seeded(100n, {
+      refundFn: jest.fn(() =>
+        Promise.reject(new PaymentProviderError('rejected')),
+      ) as unknown as PaymentProvider['refund'],
+    });
+    const res = await s.service.override('o1', dto(), 'a1');
+    expect(res.refund.status).toBe('FAILED');
+    expect(walletDb.balances.get('u1')).toBe(100n);
+    expect(walletDb.entries.map((e) => e.kind)).toEqual([
+      'PURCHASE',
+      'REFUND_REVERSAL',
+      'REFUND_RESTORE',
+    ]);
+    const sum = walletDb.entries.reduce((a, e) => a + e.amount, 0n);
+    expect(sum).toBe(walletDb.balances.get('u1'));
+  });
+
+  it('кошелёк выключен, а рубины по заказу есть: 503 wallet_disabled, деньги не уходят', async () => {
+    const { s } = await seeded(100n, { walletEnabled: false });
+    expect(await code(s.service.override('o1', dto(), 'a1'))).toBe(
+      'wallet_disabled',
+    );
+    expect(s.refundSpy).not.toHaveBeenCalled();
+  });
+
+  it('заказ без рубинов: журнал не затрагивается', async () => {
+    const walletDb = createFakeDb();
+    const s = setup({ deliveredTasks: 1, walletDb });
+    const res = await s.service.override('o1', dto(), 'a1');
+    expect(res.refund.status).toBe('SUCCEEDED');
+    expect(walletDb.entries).toHaveLength(0);
   });
 });
