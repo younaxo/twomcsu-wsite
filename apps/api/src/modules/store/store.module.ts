@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TwoFactorService } from '../auth/two-factor/two-factor.service';
 import { DeliveryModule } from '../delivery/delivery.module';
+import { WalletModule } from '../wallet/wallet.module';
 import { BundlesAdminController } from './bundles-admin.controller';
 import { BundlesController } from './bundles.controller';
 import { BundlesService } from './bundles.service';
@@ -49,7 +50,7 @@ import { WishlistController } from './wishlist.controller';
 import { WishlistService } from './wishlist.service';
 
 @Module({
-  imports: [DeliveryModule],
+  imports: [DeliveryModule, WalletModule],
   controllers: [
     CategoriesController,
     CategoriesAdminController,

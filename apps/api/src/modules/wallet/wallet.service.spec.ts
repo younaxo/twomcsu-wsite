@@ -3,7 +3,10 @@ import { WalletService } from './wallet.service';
 describe('WalletService.balances', () => {
   const make = (rows: Array<{ currency: 'RUB' | 'RUBY'; balance: bigint }>) => {
     const findMany = jest.fn().mockResolvedValue(rows);
-    const service = new WalletService({ wallet: { findMany } } as never);
+    const service = new WalletService(
+      { wallet: { findMany } } as never,
+      {} as never,
+    );
     return { service, findMany };
   };
 
