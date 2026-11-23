@@ -27,7 +27,10 @@ function isJsonContentType(value: string | undefined): boolean {
 export function createBridgeBodyParser(config: BridgeConfig): RequestHandler {
   return (req: Request, res: Response, next: NextFunction): void => {
     const path = req.originalUrl.split('?', 1)[0].toLowerCase();
-    if (path !== BRIDGE_PATH_PREFIX && !path.startsWith(`${BRIDGE_PATH_PREFIX}/`)) {
+    if (
+      path !== BRIDGE_PATH_PREFIX &&
+      !path.startsWith(`${BRIDGE_PATH_PREFIX}/`)
+    ) {
       next();
       return;
     }
