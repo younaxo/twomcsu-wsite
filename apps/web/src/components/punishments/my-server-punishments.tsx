@@ -78,6 +78,19 @@ function MyPunishmentItem({ item }: { item: MyPunishmentView }) {
           </dd>
         </div>
       </dl>
+      {item.status === 'ACTIVE' && (item.kind === 'BAN' || item.kind === 'MUTE') ? (
+        <div className="flex flex-col items-start gap-1" data-testid="server-punishment-appeal">
+          <Button asChild variant="secondary" size="sm">
+            <Link
+              href="/support/new/other"
+              aria-label={`Подать обращение по наказанию: ${KIND_LABELS[item.kind]}, номер ${item.ref}`}
+            >
+              Подать обращение
+            </Link>
+          </Button>
+          <p className="text-xs text-muted-foreground">Укажите номер наказания: {item.ref}</p>
+        </div>
+      ) : null}
     </li>
   );
 }

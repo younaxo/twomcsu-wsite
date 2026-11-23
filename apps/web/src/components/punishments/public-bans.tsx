@@ -66,6 +66,52 @@ function RefLink({ item }: { item: PublicPunishmentView }) {
   );
 }
 
+/// Карточка строки списка на узких экранах (<md): те же поля, что в таблице.
+function BanListCard({ item }: { item: PublicPunishmentView }) {
+  return (
+    <li
+      data-testid="ban-card"
+      data-status={item.status}
+      className="flex min-w-0 flex-col gap-2 rounded-xl bg-surface p-4 shadow-sm md:hidden"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="min-w-0 break-words text-base">
+          <RefLink item={item} />
+        </span>
+        <StatusBadge status={item.status} />
+        <span className="text-xs text-muted-foreground">{KIND_LABELS[item.kind]}</span>
+      </div>
+      <p className="min-w-0 break-words text-sm">{item.reasonLabel}</p>
+      <dl className="grid min-w-0 gap-1 text-xs text-muted-foreground">
+        <div className="min-w-0 break-words">
+          <dt className="inline">Срок: </dt>
+          <dd className="inline">
+            <TermText item={item} />
+          </dd>
+        </div>
+        <div className="min-w-0 break-words">
+          <dt className="inline">Выдавший: </dt>
+          <dd className="inline">
+            <ExecutorText executor={item.executor} />
+          </dd>
+        </div>
+        <div className="min-w-0 break-words">
+          <dt className="inline">Область: </dt>
+          <dd className="inline">
+            <ScopeText scope={item.scope} />
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="inline">Выдано: </dt>
+          <dd className="inline">
+            <time dateTime={item.startedAt}>{formatDateTime(item.startedAt)}</time>
+          </dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
 /// Публичный банлист `/bans` (без входа): баны и муты, поиск по префиксу ника,
 /// фильтры, курсорная пагинация. Ник ищется по кнопке «Найти», а не на каждый
 /// символ: у публичного API лимит 60 запросов в минуту.
@@ -205,62 +251,69 @@ export function PublicBansList() {
           <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
             Показано записей: {items.length}
           </p>
-          <Table data-testid="bans-table">
-            <TableCaption className="sr-only">
-              Наказания: игрок, тип, статус, причина, срок, выдавший, область и дата выдачи
-            </TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Игрок</TableHead>
-                <TableHead>Тип</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead>Причина</TableHead>
-                <TableHead>Срок</TableHead>
-                <TableHead>Выдавший</TableHead>
-                <TableHead>Область</TableHead>
-                <TableHead
-                  sortable
-                  sortDirection={filters.order}
-                  onSort={() =>
-                    setFilters((current) => ({
-                      ...current,
-                      order: current.order === 'desc' ? 'asc' : 'desc',
-                    }))
-                  }
-                >
-                  Выдано
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.ref} data-testid="ban-row">
-                  <TableHead scope="row" className="text-sm text-foreground">
-                    <RefLink item={item} />
+          <div data-testid="bans-table-wrapper" className="hidden md:block">
+            <Table data-testid="bans-table">
+              <TableCaption className="sr-only">
+                Наказания: игрок, тип, статус, причина, срок, выдавший, область и дата выдачи
+              </TableCaption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Игрок</TableHead>
+                  <TableHead>Тип</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead>Причина</TableHead>
+                  <TableHead>Срок</TableHead>
+                  <TableHead>Выдавший</TableHead>
+                  <TableHead>Область</TableHead>
+                  <TableHead
+                    sortable
+                    sortDirection={filters.order}
+                    onSort={() =>
+                      setFilters((current) => ({
+                        ...current,
+                        order: current.order === 'desc' ? 'asc' : 'desc',
+                      }))
+                    }
+                  >
+                    Выдано
                   </TableHead>
-                  <TableCell>{KIND_LABELS[item.kind]}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={item.status} />
-                  </TableCell>
-                  <TableCell className="min-w-40 max-w-xs break-words">
-                    {item.reasonLabel}
-                  </TableCell>
-                  <TableCell>
-                    <TermText item={item} />
-                  </TableCell>
-                  <TableCell>
-                    <ExecutorText executor={item.executor} />
-                  </TableCell>
-                  <TableCell>
-                    <ScopeText scope={item.scope} />
-                  </TableCell>
-                  <TableCell>
-                    <time dateTime={item.startedAt}>{formatDateTime(item.startedAt)}</time>
-                  </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow key={item.ref} data-testid="ban-row">
+                    <TableHead scope="row" className="text-sm text-foreground">
+                      <RefLink item={item} />
+                    </TableHead>
+                    <TableCell>{KIND_LABELS[item.kind]}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={item.status} />
+                    </TableCell>
+                    <TableCell className="min-w-40 max-w-xs break-words">
+                      {item.reasonLabel}
+                    </TableCell>
+                    <TableCell>
+                      <TermText item={item} />
+                    </TableCell>
+                    <TableCell>
+                      <ExecutorText executor={item.executor} />
+                    </TableCell>
+                    <TableCell>
+                      <ScopeText scope={item.scope} />
+                    </TableCell>
+                    <TableCell>
+                      <time dateTime={item.startedAt}>{formatDateTime(item.startedAt)}</time>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <ul data-testid="ban-cards" className="flex flex-col gap-3 md:hidden">
+            {items.map((item) => (
+              <BanListCard key={item.ref} item={item} />
+            ))}
+          </ul>
           {query.isFetchNextPageError ? (
             <PunishmentsErrorState
               size="sm"
