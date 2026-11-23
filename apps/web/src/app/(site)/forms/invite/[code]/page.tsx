@@ -8,7 +8,7 @@ import { ModuleGate } from '@/components/system/site-availability';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
-import { ApiError, getErrorMessage } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
 import { useInviteForm } from '@/lib/forms/hooks';
 
 /// Форма по приглашению (срез 3.6, ADR-0122): код передаётся при отправке и
@@ -25,7 +25,11 @@ function InviteContent() {
           <EmptyState
             icon={<ClipboardList />}
             title="Приглашение недействительно"
-            description={getErrorMessage(form.error)}
+            description={
+              form.error.status === 403
+                ? 'Приглашение недоступно для вашего аккаунта. Войдите под тем аккаунтом, которому оно выдано.'
+                : 'Ссылка устарела, отозвана или введена с ошибкой. Запросите новое приглашение.'
+            }
           />
         ) : (
           <ErrorState error={form.error} onRetry={() => form.refetch()} />
