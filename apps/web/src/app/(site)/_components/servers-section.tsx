@@ -47,7 +47,7 @@ function ServerCard({ server, featured }: { server: ServerOverviewItem; featured
           <Server aria-hidden className="size-14 text-subtle-foreground" strokeWidth={1.5} />
         )}
       </div>
-      <div className="flex flex-col gap-4 p-5 md:p-6">
+      <div className="flex min-w-0 flex-col gap-4 p-5 md:p-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             {server.type ? (
@@ -71,7 +71,7 @@ function ServerCard({ server, featured }: { server: ServerOverviewItem; featured
             {server.description || server.motd}
           </p>
         ) : null}
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
           <p className="font-display text-2xl font-bold tabular">
             {formatNumber(server.playerCount)}
             <span className="text-sm font-normal text-muted-foreground">
@@ -89,8 +89,13 @@ function ServerCard({ server, featured }: { server: ServerOverviewItem; featured
           size="sm"
         />
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-          <CopyAddressButton address={address} size="sm" label={`Скопировать ${address}`}>
-            {address}
+          <CopyAddressButton
+            address={address}
+            size="sm"
+            className="min-w-0 max-w-full max-sm:min-h-10"
+            label={`Скопировать ${address}`}
+          >
+            <span className="truncate">{address}</span>
           </CopyAddressButton>
           <Button asChild variant="ghost" size="sm">
             <Link href="/servers">
@@ -146,7 +151,7 @@ export function HomeServers() {
       ) : servers.length === 1 ? (
         <ServerCard server={servers[0]} featured />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {servers.map((server) => (
             <ServerCard key={server.id} server={server} featured={false} />
           ))}

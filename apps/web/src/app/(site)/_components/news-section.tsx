@@ -42,7 +42,7 @@ export function NewsCard({ item, large }: { item: NewsListItem; large: boolean }
   return (
     <Link
       href={`/news/${encodeURIComponent(item.slug)}`}
-      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="block min-w-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <article
         data-testid={large ? 'news-featured' : 'news-compact'}
@@ -72,14 +72,17 @@ export function NewsCard({ item, large }: { item: NewsListItem; large: boolean }
           )}
         </div>
         <div className={cn('flex min-w-0 flex-1 flex-col gap-1', large ? 'p-5' : 'p-3')}>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Badge tone="neutral">{CATEGORY_LABEL[item.category]}</Badge>
             {item.publishedAt ? (
               <time dateTime={item.publishedAt}>{formatDate(item.publishedAt)}</time>
             ) : null}
           </div>
           <h3
-            className={cn('font-display font-semibold', large ? 'text-xl' : 'line-clamp-2 text-sm')}
+            className={cn(
+              'break-words font-display font-semibold',
+              large ? 'text-xl' : 'line-clamp-2 text-sm',
+            )}
           >
             {item.title}
           </h3>
@@ -112,10 +115,10 @@ function NewsGrid({ items }: { items: NewsListItem[] }) {
   }
   const [first, ...rest] = items;
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
       <NewsCard item={first} large />
       {rest.length > 0 ? (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           {rest.slice(0, 4).map((item) => (
             <NewsCard key={item.id} item={item} large={false} />
           ))}
@@ -133,7 +136,7 @@ export function HomeNews() {
   return (
     <HomeSection id="news" eyebrow="Новости" title="Последнее на twomc.su">
       {news.isPending ? (
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
           <Skeleton className="h-72 rounded-xl" />
           <Skeleton className="h-72 rounded-xl" />
         </div>
@@ -148,7 +151,7 @@ export function HomeNews() {
         <Tabs value={tab} onValueChange={(value) => setTab(value as NewsTab)}>
           <TabsList aria-label="Тип публикаций">
             {TABS.map((item) => (
-              <TabsTrigger key={item.value} value={item.value}>
+              <TabsTrigger key={item.value} value={item.value} className="max-sm:min-h-10">
                 {item.label}
               </TabsTrigger>
             ))}

@@ -97,7 +97,7 @@ export default function PunishmentsPage() {
                         {item.isAppealable !== false ? (
                           <Link
                             href={`/support/new/punishment_appeal?punishment=${encodeURIComponent(item.id)}`}
-                            className="self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
+                            className="inline-flex min-h-10 items-center self-start text-xs font-medium text-primary underline-offset-2 hover:underline"
                           >
                             Обжаловать
                           </Link>

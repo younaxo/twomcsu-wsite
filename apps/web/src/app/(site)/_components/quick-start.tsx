@@ -41,7 +41,7 @@ export function PromoStart() {
   return (
     <div
       data-testid="promo-start"
-      className="flex flex-col gap-3 rounded-xl border bg-surface p-5 shadow sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-3 rounded-xl border bg-surface p-5 shadow sm:flex-row sm:items-center sm:justify-between [&>button]:max-sm:min-h-10"
     >
       <div className="flex items-center gap-4">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-foreground">
@@ -51,7 +51,7 @@ export function PromoStart() {
           <p className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">
             {PROMO_START.title}
           </p>
-          <p className="mt-0.5 flex items-center gap-2">
+          <p className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2">
             <code
               data-testid="promo-code"
               className="rounded-sm border border-dashed border-border-strong bg-surface-sunken px-2 py-0.5 font-mono text-lg font-bold tracking-widest"
@@ -81,7 +81,7 @@ export function PromoStart() {
 export function HomeQuickStart() {
   return (
     <HomeSection id="quick-start" eyebrow="Как играть" title="Как зайти на twomc.su">
-      <ol className="grid gap-4 md:grid-cols-3">
+      <ol className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {STEPS.map((step, index) => (
           <li key={step.title} className="flex gap-4 rounded-xl border bg-surface p-5 shadow">
             <span
@@ -99,10 +99,11 @@ export function HomeQuickStart() {
       </ol>
       <PromoStart />
       <div className="flex flex-wrap items-center gap-3">
-        <CopyAddressButton />
+        <CopyAddressButton className="max-sm:min-h-10" />
         <Tooltip content="Подробная инструкция появится вместе с Wiki">
           <Button
             variant="secondary"
+            className="max-w-full whitespace-normal max-sm:min-h-10"
             aria-disabled="true"
             onClick={(event) => event.preventDefault()}
           >
