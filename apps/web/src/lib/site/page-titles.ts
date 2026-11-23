@@ -24,6 +24,7 @@ export const PAGE_TITLES: Record<string, string> = {
   '/settings/media': 'Медиа',
   '/settings/showcase': 'Витрина',
   '/settings/linked-accounts': 'Привязки аккаунта',
+  '/settings/inventory': 'Мой инвентарь',
   '/settings/purchases': 'История покупок',
   '/shop': 'Магазин',
   '/shop/cart': 'Корзина',
