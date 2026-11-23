@@ -5,6 +5,7 @@
 #
 #   STAND_DOMAIN=test-website.twomc.su ./gen-env.sh
 # Перенос на другой домен: STAND_DOMAIN=twomc.su (+ выбор режима, см. docs/runbooks/test-website-stand.md).
+# Окончательный файл учётных данных /home/twomc/test-website-credentials.txt этот скрипт НЕ пишет и не изменяет (правило стенда).
 set -euo pipefail
 umask 077
 
@@ -15,6 +16,7 @@ WEB_PORT="${WEB_PORT:-3000}"
 API_PORT="${API_PORT:-4000}"
 STAND_PG_PORT="${STAND_PG_PORT:-55432}"
 
+# ЗАЩИТА ОТ ПЕРЕЗАПИСИ: существующий stand.env не трогается (флага ротации нет намеренно: пароль БД живёт в томе).
 if [[ -e "$ENV_FILE" ]]; then
   echo "Файл $ENV_FILE уже существует: не перезаписываю (секреты и пароль БД сохраняются)." >&2
   exit 0

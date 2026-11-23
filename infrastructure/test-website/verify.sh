@@ -16,6 +16,7 @@ envval() { grep -E "^$1=" "$STAND_ROOT/stand.env" 2>/dev/null | head -1 | cut -d
 check "stand.env права 600" "600" "$(stat -c %a "$STAND_ROOT/stand.env" 2>/dev/null || echo none)"
 check "gate.token права 600" "600" "$(stat -c %a "$STAND_ROOT/gate.token" 2>/dev/null || echo none)"
 check "basic-auth файл права 600" "600" "$(stat -c %a "$BASIC_FILE" 2>/dev/null || echo none)"
+check "окончательный файл учётных данных права 600 (только чтение)" "600" "$(stat -c %a /home/twomc/test-website-credentials.txt 2>/dev/null || echo none)"
 check "AUTH_TEST_OTP_ENABLED не true" "0" "$(grep -Eic '^AUTH_TEST_OTP_ENABLED=("?)true' "$STAND_ROOT/stand.env" 2>/dev/null || true)"
 COOKIE_HDR="$(authed -sI "https://$STAND_DOMAIN/" | tr -d '\r' | grep -i '^set-cookie: __Host-stand_gate' || echo none)"
 cookie_ok=1

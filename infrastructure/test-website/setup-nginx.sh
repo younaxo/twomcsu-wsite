@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Настройка nginx + TLS + basic auth стенда НА СЕРВЕРЕ (запускать от пользователя с sudo).
-#   STAND_DOMAIN=test-website.twomc.su ./setup-nginx.sh
-# Идемпотентен. Пароль basic auth и токен пропуска генерируются здесь и не печатаются:
+#   STAND_DOMAIN=test-website.twomc.su ./setup-nginx.sh [--rotate]
+# Идемпотентен: существующие файлы учётных данных и htpasswd не перезаписываются (только --rotate, с резервной копией).
 #   $HOME/test-website-basic-auth.txt  (user:password, 600)     /etc/nginx/stand.htpasswd
 #   $STAND_ROOT/gate.token (600)
 set -euo pipefail
@@ -14,6 +14,9 @@ WEB_PORT="${WEB_PORT:-3000}"
 API_PORT="${API_PORT:-4000}"
 BASIC_USER="${BASIC_USER:-stand}"
 BASIC_FILE="${BASIC_FILE:-$HOME/test-website-basic-auth.txt}"
+CREDENTIALS_FILE="/home/twomc/test-website-credentials.txt"   # окончательный файл: скрипты его не пишут
+ROTATE=0
+for a in "$@"; do case "$a" in --rotate) ROTATE=1 ;; *) echo "Неизвестный аргумент: $a" >&2; exit 2 ;; esac; done
 [[ "$STAND_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "Недопустимый STAND_DOMAIN: $STAND_DOMAIN" >&2; exit 1; }
 CONF=/etc/nginx/conf.d/stand.conf
 
@@ -22,16 +25,29 @@ sudo mkdir -p "$STAND_ROOT" /var/www/certbot
 sudo chown "$(id -un):$(id -gn)" "$STAND_ROOT"
 
 # 1. basic auth: пароль только в файле владельца и в htpasswd (bcrypt).
-if [[ ! -f "$BASIC_FILE" ]]; then
-  PASS="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-24)"
-  printf '%s:%s\n' "$BASIC_USER" "$PASS" > "$BASIC_FILE"
-  chmod 600 "$BASIC_FILE"
-  printf '%s\n' "$PASS" | sudo htpasswd -B -c -i /etc/nginx/stand.htpasswd "$BASIC_USER" >/dev/null
-  unset PASS
-  sudo chown root:www-data /etc/nginx/stand.htpasswd
-  sudo chmod 640 /etc/nginx/stand.htpasswd
+# ЗАЩИТА ОТ ПЕРЕЗАПИСИ: генерация только при первом запуске (нет ни $BASIC_FILE, ни htpasswd).
+# Если существует хотя бы один из них, ничего не пишется. Смена пароля только явным флагом --rotate:
+# старые файлы переименовываются в *.bak.<время> (не удаляются), затем создаются новые.
+# Окончательный файл учётных данных $CREDENTIALS_FILE скрипты НЕ пишут никогда.
+HTPASSWD=/etc/nginx/stand.htpasswd
+case "$(readlink -m "$BASIC_FILE")" in
+  "$(readlink -m "$CREDENTIALS_FILE")") echo "BASIC_FILE не может указывать на $CREDENTIALS_FILE: окончательный файл скрипты не пишут" >&2; exit 1 ;;
+esac
+if [[ "$ROTATE" == 1 ]]; then
+  TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "$BASIC_FILE" ]] || mv "$BASIC_FILE" "$BASIC_FILE.bak.$TS"
+  ! sudo test -e "$HTPASSWD" || sudo mv "$HTPASSWD" "$HTPASSWD.bak.$TS"
+  echo "Ротация basic auth: прежние файлы сохранены как *.bak.$TS; обновите $CREDENTIALS_FILE вручную."
 fi
-[[ -f /etc/nginx/stand.htpasswd ]] || { echo "Нет /etc/nginx/stand.htpasswd при существующем $BASIC_FILE" >&2; exit 1; }
+if [[ ! -e "$BASIC_FILE" ]] && ! sudo test -e "$HTPASSWD"; then
+  PASS="$(openssl rand -base64 24 | tr -d '/+=\n' | cut -c1-24)"
+  ( umask 077; set -C; printf '%s:%s\n' "$BASIC_USER" "$PASS" > "$BASIC_FILE" )   # set -C: не перезаписывать существующий
+  printf '%s\n' "$PASS" | sudo htpasswd -B -c -i "$HTPASSWD" "$BASIC_USER" >/dev/null
+  unset PASS
+  sudo chown root:www-data "$HTPASSWD"
+  sudo chmod 640 "$HTPASSWD"
+fi
+sudo test -f "$HTPASSWD" || { echo "Нет $HTPASSWD (файл $BASIC_FILE существует): восстановите htpasswd или запустите с --rotate" >&2; exit 1; }
 
 # 2. Токен cookie-пропуска.
 [[ -s "$STAND_ROOT/gate.token" ]] || { openssl rand -hex 24 > "$STAND_ROOT/gate.token"; chmod 600 "$STAND_ROOT/gate.token"; }

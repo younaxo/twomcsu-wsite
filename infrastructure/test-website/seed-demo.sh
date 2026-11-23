@@ -4,6 +4,7 @@
 # поэтому условия guard (NODE_ENV=development, SEED_DEMO=1, DATABASE_URL на 127.0.0.1) выполняются честно.
 #   /srv/twomc-stand/ops/seed-demo.sh [sha12]     (по умолчанию содержимое .release)
 # Идемпотентно. Секреты не печатаются.
+# Окончательный файл учётных данных /home/twomc/test-website-credentials.txt этот скрипт НЕ пишет и не изменяет (правило стенда).
 set -euo pipefail
 STAND_ROOT="${STAND_ROOT:-/srv/twomc-stand}"
 ENV_FILE="$STAND_ROOT/stand.env"

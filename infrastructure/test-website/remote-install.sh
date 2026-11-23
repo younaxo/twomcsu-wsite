@@ -2,6 +2,7 @@
 # НА СЕРВЕРЕ, вызывается push-release.sh из распакованного бандла: remote-install.sh <bundle_dir> <sha12> [deploy,seed,verify]
 # Распаковывает релиз и ops-файлы в $STAND_ROOT, затем (если заданы шаги) выполняет их в фоне с логом, так что обрыв SSH
 # не прерывает сборку: повторный запуск release.sh подхватит (deploy-stand.sh держит flock).
+# Окончательный файл учётных данных /home/twomc/test-website-credentials.txt этот скрипт НЕ пишет и не изменяет (правило стенда).
 set -eu
 BUNDLE="${1:?bundle}"; SHA="${2:?sha}"; ACTIONS="${3:-}"
 STAND_ROOT="${STAND_ROOT:-/srv/twomc-stand}"

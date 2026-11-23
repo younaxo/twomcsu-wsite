@@ -88,6 +88,10 @@ server {
 
     location /api/ {
         proxy_pass http://127.0.0.1:${API_PORT}/;
+        # API под префиксом /api (префикс срезается): cookie API с Path=/auth (two_factor_challenge, social_nonce,
+        # social_pkce; Set-Cookie и clearCookie с тем же Path) иначе не уходят браузером на /api/auth/*.
+        # Path=/ (refresh-cookie) правилом не затрагивается.
+        proxy_cookie_path /auth /api/auth;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
