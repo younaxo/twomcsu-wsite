@@ -1444,6 +1444,26 @@ model OrderItem {
   @@map("order_items")
 }
 
+/// Шаблон игровой команды выдачи товара или варианта (0.11, ADR-0189).
+/// Без внешних ключей (как recipientUserId): существование товара и варианта
+/// проверяет сервис; записи не удаляются вместе с товаром. `scopeKey` =
+/// `productId:variantId` либо `productId:*` (шаблон всего товара).
+model DeliveryCommandTemplate {
+  id        String   @id @default(cuid())
+  productId String
+  variantId String?
+  scopeKey  String   @unique @db.VarChar(64)
+  template  String   @db.VarChar(200)
+  /// Растёт при каждом изменении; замораживается в DeliveryTask.templateVersion.
+  version   Int      @default(1)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+  @@map("delivery_command_templates")
+}
+
 /// Статусы задания выдачи (0.7, ADR-0184 п. 4).
 enum DeliveryTaskStatus {
   PENDING

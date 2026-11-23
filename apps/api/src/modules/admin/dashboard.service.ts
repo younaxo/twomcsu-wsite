@@ -1,9 +1,15 @@
 import { Prisma } from '@prisma/client';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+} from '@nestjs/common';
 import {
   STORE_OFFER_VERSION_MAX_LENGTH,
   STORE_OFFER_VERSION_SETTING,
 } from '../store/checkout-policy.service';
+import { EXTRA_ROOTS_SETTING } from '../delivery/command-template';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +18,12 @@ import { BroadcastDto } from './dto/broadcast.dto';
 import { UpsertSettingsDto } from './dto/upsert-settings.dto';
 
 const ONLINE_WINDOW_MINUTES = 5;
+
+/// Ключи SiteSetting, которые пишут только специальные эндпоинты:
+/// store.text.* (store-settings) и точный ключ корней команд (2FA и аудит).
+/// Остальные store.delivery.* (enabled, maxAttempts, ...) пишутся общим PUT.
+const PROTECTED_SETTING_PREFIXES = ['store.text.'] as const;
+const PROTECTED_SETTING_KEYS: readonly string[] = [EXTRA_ROOTS_SETTING];
 
 @Injectable()
 export class DashboardService {
@@ -123,6 +135,21 @@ export class DashboardService {
   }
 
   async upsertSettings(dto: UpsertSettingsDto, actorId: string) {
+    // Ключи со своими защищёнными эндпоинтами (2FA, аудит «было/стало»,
+    // отдельные права) через общий settings.edit писать нельзя (ADR-0189).
+    const protectedKey = Object.keys(dto.settings).find((key) =>
+      PROTECTED_SETTING_KEYS.includes(key) ||
+      PROTECTED_SETTING_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    );
+    if (protectedKey !== undefined) {
+      throw new HttpException(
+        {
+          code: 'settings_key_protected',
+          message: `Ключ ${protectedKey} меняется только через специальный раздел`,
+        },
+        HttpStatus.FORBIDDEN,
+      );
+    }
     const offerVersion = dto.settings[STORE_OFFER_VERSION_SETTING];
     if (
       offerVersion !== undefined &&
