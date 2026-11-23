@@ -17,17 +17,29 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { GuestOrderLookupDto } from './dto/guest-order-lookup.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
+import { PaymentRouter } from './payment/payment-router.service';
 import { Throttle } from '@nestjs/throttler';
 import { SiteModule } from '../system/site-module.decorator';
 
 @SiteModule('store')
 @Controller('store')
 export class StoreExtrasController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly paymentRouter: PaymentRouter,
+  ) {}
 
   @Get('recent-purchases')
   async recentPurchases() {
     return this.orders.recentPurchases();
+  }
+
+  /// Включённые способы оплаты (0.8b, ADR-0193): только публичные поля
+  /// (код, название, валюта), без провайдера и конфигурации. Пусто — способы
+  /// не настроены (работает устаревший путь без выбора).
+  @Get('payment-methods')
+  paymentMethods() {
+    return { methods: this.paymentRouter.listEnabled() };
   }
 
   @Get('checkout-config')

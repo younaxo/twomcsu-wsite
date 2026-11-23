@@ -1,5 +1,6 @@
 import * as Joi from 'joi';
 import { isStrongMasterSecret } from '../modules/bridge/bridge.constants';
+import { PAYMENT_METHODS_PATTERN } from '../modules/store/payment/payment-methods';
 import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
 
@@ -257,6 +258,17 @@ const envBaseKeys: Joi.PartialSchemaMap = {
     otherwise: Joi.string().valid('').default('').messages({
       'any.only':
         'PAYMENT_PROVIDER в production пока допускает только пустое значение (0.8b)',
+    }),
+  }),
+  /// Маршрутизатор способов оплаты (0.8b, ADR-0193): `SBP:mock-ru,CRYPTO:mock-crypto`.
+  /// Пусто — способов нет (устаревший путь PAYMENT_PROVIDER). В production —
+  /// только пусто, пока нет реальных адаптеров (fail closed).
+  PAYMENT_METHODS: Joi.when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.string().pattern(PAYMENT_METHODS_PATTERN).allow('').default(''),
+    otherwise: Joi.string().valid('').default('').messages({
+      'any.only':
+        'PAYMENT_METHODS в production пока допускает только пустое значение (0.8b)',
     }),
   }),
   PAYMENT_API_KEY: Joi.string().allow('').default(''),
