@@ -221,6 +221,8 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'store.discounts.view',
           'store.delivery.view',
           'orders.refund',
+          'store.delivery.templates.manage',
+          'store.settings.manage',
         ],
         keywords: [
           'возвраты',
@@ -250,6 +252,16 @@ export const ADMIN_NAV: AdminNavGroup[] = [
             requirement: 'store.delivery.view',
           },
           { href: '/admin/store/refunds', label: 'Возвраты', requirement: 'orders.refund' },
+          {
+            href: '/admin/store/command-roots',
+            label: 'Корни команд',
+            requirement: 'store.delivery.templates.manage',
+          },
+          {
+            href: '/admin/store/texts',
+            label: 'Тексты магазина',
+            requirement: 'store.settings.manage',
+          },
           { href: '/admin/store/promocodes', label: 'Промокоды', requirement: 'promocodes.view' },
           { href: '/admin/store/discounts', label: 'Скидки', requirement: 'store.discounts.view' },
         ],
