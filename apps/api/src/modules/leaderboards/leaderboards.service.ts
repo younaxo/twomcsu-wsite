@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { StorageService } from '../files/storage.service';
+import { TtlCache } from './ttl-cache';
+import { StatsSettingsService } from './stats-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface LeaderboardEntry {
@@ -12,6 +14,24 @@ export interface LeaderboardEntry {
 }
 
 const LIMIT = 10;
+
+/// Время жизни кэша рейтингов. Дольше устаревшим кэш быть не может; приватность
+/// профиля сбрасывает его сразу (invalidate).
+export const LEADERBOARDS_CACHE_TTL_MS = 30_000;
+
+export type BoardKey =
+  'playtime' | 'kills' | 'coins' | 'achievements' | 'purchases';
+
+/// Рейтинги, которые наружу НЕ отдаются (решение владельца Q66: «Покупки»
+/// скрыты до запуска оплаты). Загрузчик остаётся в коде, но не вызывается ни
+/// из API, ни из кэша.
+export const HIDDEN_BOARDS: readonly BoardKey[] = ['purchases'];
+
+export type PublicBoardKey = Exclude<BoardKey, 'purchases'>;
+
+export type PublicLeaderboards = Record<PublicBoardKey, LeaderboardEntry[]> & {
+  enabled: boolean;
+};
 
 /// Кто может быть в публичном рейтинге (ADR-0127): профиль открыт всем,
 /// статистика не скрыта владельцем (`hideStatistics`), не забанен, не
@@ -28,10 +48,20 @@ const RANKED_USER: Prisma.UserWhereInput = {
 /// Achievement/Order — считаются по БД).
 @Injectable()
 export class LeaderboardsService {
+  private readonly cache = new TtlCache<
+    Record<PublicBoardKey, LeaderboardEntry[]>
+  >(LEADERBOARDS_CACHE_TTL_MS);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly settings: StatsSettingsService,
   ) {}
+
+  /// Сброс кэша: при смене приватности профиля и в тестах.
+  invalidate(): void {
+    this.cache.clear();
+  }
 
   private async topByPlayerStatistics(
     field: 'playTime' | 'kills' | 'coins',
@@ -115,16 +145,40 @@ export class LeaderboardsService {
     return entries;
   }
 
-  async list() {
-    const [playtime, kills, coins, achievements, purchases] = await Promise.all(
-      [
-        this.topByPlayerStatistics('playTime'),
-        this.topByPlayerStatistics('kills'),
-        this.topByPlayerStatistics('coins'),
-        this.topByAchievements(),
-        this.topByPurchases(),
-      ],
+  private loaders(): Record<BoardKey, () => Promise<LeaderboardEntry[]>> {
+    return {
+      playtime: () => this.topByPlayerStatistics('playTime'),
+      kills: () => this.topByPlayerStatistics('kills'),
+      coins: () => this.topByPlayerStatistics('coins'),
+      achievements: () => this.topByAchievements(),
+      purchases: () => this.topByPurchases(),
+    };
+  }
+
+  private async loadAll(): Promise<Record<PublicBoardKey, LeaderboardEntry[]>> {
+    const loaders = this.loaders();
+    const keys = (Object.keys(loaders) as BoardKey[]).filter(
+      (key): key is PublicBoardKey => !HIDDEN_BOARDS.includes(key),
     );
-    return { playtime, kills, coins, achievements, purchases };
+    const results = await Promise.all(keys.map((key) => loaders[key]()));
+    return Object.fromEntries(
+      keys.map((key, index) => [key, results[index]]),
+    ) as Record<PublicBoardKey, LeaderboardEntry[]>;
+  }
+
+  /// Публичные рейтинги. Раздел выключен флагом — пустые таблицы без обращения
+  /// к данным игроков. Включён — ответ из кэша (TTL, single-flight).
+  async list(): Promise<PublicLeaderboards> {
+    if (!(await this.settings.isPublicEnabled())) {
+      return {
+        enabled: false,
+        playtime: [],
+        kills: [],
+        coins: [],
+        achievements: [],
+      };
+    }
+    const boards = await this.cache.getOrLoad(() => this.loadAll());
+    return { enabled: true, ...boards };
   }
 }
