@@ -171,7 +171,11 @@ describe('bridge-register-server', () => {
 
   it('L5: в production-подобной среде нужны оба флага владельца', async () => {
     await expect(
-      registerServer(db(false), ['--slug', 'survival', '--production'], 'production'),
+      registerServer(
+        db(false),
+        ['--slug', 'survival', '--production'],
+        'production',
+      ),
     ).rejects.toThrow(/Отказ/);
     await expect(
       registerServer(
@@ -264,9 +268,7 @@ describe('bridge-print-key', () => {
     expect(() => printKey(a, { BRIDGE_MASTER_SECRET: 'short' })).toThrow();
     // L3: длина есть, разнообразия байтов нет; значение в сообщении не печатается.
     const weak = 'ab'.repeat(20);
-    expect(() => printKey(a, { BRIDGE_MASTER_SECRET: weak })).toThrow(
-      /слабый/,
-    );
+    expect(() => printKey(a, { BRIDGE_MASTER_SECRET: weak })).toThrow(/слабый/);
     try {
       printKey(a, { BRIDGE_MASTER_SECRET: weak });
     } catch (e) {
