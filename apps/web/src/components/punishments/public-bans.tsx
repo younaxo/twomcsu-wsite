@@ -1,7 +1,7 @@
 'use client';
 
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Gavel, Search } from 'lucide-react';
+import { ArrowDownWideNarrow, ArrowLeft, ArrowUpNarrowWide, Gavel, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { DescriptionItem, DescriptionList, PageHeader } from '@/components/admin/page-header';
@@ -309,6 +309,30 @@ export function PublicBansList() {
               </TableBody>
             </Table>
           </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="self-start md:hidden"
+            data-testid="ban-cards-sort"
+            aria-label={
+              filters.order === 'desc'
+                ? 'Сортировка по дате выдачи: сначала новые. Переключить на сначала старые'
+                : 'Сортировка по дате выдачи: сначала старые. Переключить на сначала новые'
+            }
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                order: current.order === 'desc' ? 'asc' : 'desc',
+              }))
+            }
+          >
+            {filters.order === 'desc' ? (
+              <ArrowDownWideNarrow aria-hidden className="size-4" />
+            ) : (
+              <ArrowUpNarrowWide aria-hidden className="size-4" />
+            )}
+            {filters.order === 'desc' ? 'Сначала новые' : 'Сначала старые'}
+          </Button>
           <ul data-testid="ban-cards" className="flex flex-col gap-3 md:hidden">
             {items.map((item) => (
               <BanListCard key={item.ref} item={item} />

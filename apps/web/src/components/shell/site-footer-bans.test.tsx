@@ -48,9 +48,16 @@ beforeEach(() => {
   mocks.get.mockReset();
 });
 
+const settings = (flag?: boolean) => ({
+  siteName: 'TwoMC',
+  socialLinks: [],
+  modules: {},
+  ...(flag === undefined ? {} : { punishmentsPublicEnabled: flag }),
+});
+
 describe('футер: «Список наказаний» (Q74)', () => {
-  it('раздел включён: обычная ссылка на /bans; зонд с limit=1 без авторизации', async () => {
-    mocks.get.mockResolvedValue({ items: [], nextCursor: null });
+  it('флаг включён: обычная ссылка на /bans; зонд /punishments/public не вызывается', async () => {
+    mocks.get.mockResolvedValue(settings(true));
     render(<SiteFooter />, { wrapper: Providers });
     await waitFor(() =>
       expect(column().getByRole('link', { name: 'Список наказаний' })).toHaveAttribute(
@@ -58,42 +65,39 @@ describe('футер: «Список наказаний» (Q74)', () => {
         '/bans',
       ),
     );
-    expect(mocks.get).toHaveBeenCalledWith(
-      '/punishments/public',
-      expect.objectContaining({ auth: false, query: { limit: 1 } }),
-    );
+    expect(mocks.get).toHaveBeenCalledWith('/site/settings', expect.anything());
+    expect(mocks.get).not.toHaveBeenCalledWith('/punishments/public', expect.anything());
   });
 
-  it('503: раздел включён, ссылка остаётся', async () => {
-    mocks.get.mockRejectedValue(apiError(503, 'punishments_unavailable'));
-    render(<SiteFooter />, { wrapper: Providers });
-    await waitFor(() =>
-      expect(column().getByRole('link', { name: 'Список наказаний' })).toHaveAttribute(
-        'href',
-        '/bans',
-      ),
-    );
+  it('флаг выключен или отсутствует: «скоро», без ссылки', async () => {
+    for (const flag of [false, undefined]) {
+      mocks.get.mockResolvedValue(settings(flag));
+      const view = render(<SiteFooter />, { wrapper: Providers });
+      await waitFor(() => expect(mocks.get).toHaveBeenCalled());
+      expect(column().queryByRole('link', { name: /Список наказаний/ })).toBeNull();
+      expect(
+        column()
+          .getByText(/Список наказаний/)
+          .closest('span'),
+      ).toHaveTextContent(/скоро/i);
+      view.unmount();
+    }
   });
 
-  it('404 punishments_public_disabled: «скоро», без ссылки', async () => {
-    mocks.get.mockRejectedValue(apiError(404, 'punishments_public_disabled'));
+  it('ошибка загрузки настроек: «скоро»', async () => {
+    mocks.get.mockRejectedValue(apiError(503, 'unavailable'));
     render(<SiteFooter />, { wrapper: Providers });
     await waitFor(() => expect(mocks.get).toHaveBeenCalled());
     expect(column().queryByRole('link', { name: /Список наказаний/ })).toBeNull();
-    expect(
-      column()
-        .getByText(/Список наказаний/)
-        .closest('span'),
-    ).toHaveTextContent(/скоро/i);
   });
 
-  it('пока идёт проверка: «скоро»', () => {
+  it('пока идёт загрузка: «скоро»', () => {
     mocks.get.mockReturnValue(new Promise(() => undefined));
     render(<SiteFooter />, { wrapper: Providers });
     expect(column().queryByRole('link', { name: /Список наказаний/ })).toBeNull();
   });
 
-  it('режим сайта розыгрыша: «скоро», зонд не выполняется', () => {
+  it('режим сайта розыгрыша: «скоро», настройки не запрашиваются', () => {
     render(
       <ShellModeProvider value={{ mainSiteUrl: 'https://twomc.su', monochromeLogo: true }}>
         <SiteFooter />
@@ -103,6 +107,6 @@ describe('футер: «Список наказаний» (Q74)', () => {
     const el = column().getByRole('link', { name: /^Список наказаний/ });
     expect(el).toHaveAttribute('aria-disabled', 'true');
     expect(el).toHaveTextContent(/скоро/i);
-    expect(mocks.get).not.toHaveBeenCalledWith('/punishments/public', expect.anything());
+    expect(mocks.get).not.toHaveBeenCalledWith('/site/settings', expect.anything());
   });
 });

@@ -197,6 +197,16 @@ describe('/bans: публичный список', () => {
     });
   });
 
+  it('мобильный переключатель сортировки по дате меняет order запроса', async () => {
+    const user = userEvent.setup();
+    mocks.get.mockResolvedValue({ items: [pub()], nextCursor: null, meta: META });
+    render(<PublicBansList />, { wrapper: Providers });
+    await screen.findAllByText('Steve_01');
+    await user.click(screen.getByTestId('ban-cards-sort'));
+    await screen.findByText('Сначала старые');
+    expect(mocks.get.mock.calls.at(-1)?.[1]).toMatchObject({ query: { order: 'asc' } });
+  });
+
   it('пагинация по курсору: «Показать ещё» запрашивает следующую страницу', async () => {
     const user = userEvent.setup();
     mocks.get

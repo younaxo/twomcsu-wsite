@@ -171,3 +171,24 @@ describe('AdminToolsService.listSuspiciousActivity (lastIp, Q21)', () => {
     );
   });
 });
+
+describe('AdminToolsService.getPublicPunishmentsEnabled', () => {
+  const make = (value?: string) =>
+    new AdminToolsService(
+      {
+        siteSetting: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(value === undefined ? null : { value }),
+        },
+      } as unknown as PrismaService,
+      {} as never,
+      {} as never,
+    );
+
+  it('true только при значении "true"', async () => {
+    expect(await make('true').getPublicPunishmentsEnabled()).toBe(true);
+    expect(await make('false').getPublicPunishmentsEnabled()).toBe(false);
+    expect(await make().getPublicPunishmentsEnabled()).toBe(false);
+  });
+});
