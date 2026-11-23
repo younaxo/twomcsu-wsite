@@ -41,6 +41,11 @@ describe('Store payment router (e2e)', () => {
   }
 
   async function orderWith(method: string) {
+    // Корзина пользователя общая для тестов файла: предыдущая проверка (400)
+    // оставляет в ней позицию, и без очистки количество растёт, а сумма заказа
+    // перестаёт совпадать с 100.00 из вебхука (amount_mismatch). Чистим только
+    // корзину своего пользователя.
+    await prisma.cartItem.deleteMany({ where: { cart: { userId } } });
     await addToCart();
     const res = await checkout({ paymentMethod: method }).expect(201);
     const orderNumber = res.body.order.orderNumber as string;
@@ -182,7 +187,8 @@ describe('Store payment router (e2e)', () => {
     expect(order.paymentId).toBe(`mockru_${order.orderNumber}`);
 
     const ok = await postWebhook('mock-ru', event(order)).expect(200);
-    expect(ok.body.accepted).toBe(true);
+    expect(order.total.toFixed(2)).toBe('100.00');
+    expect(ok.body).toEqual({ accepted: true });
     const replay = await postWebhook('mock-ru', event(order)).expect(200);
     expect(replay.body.reason).toBe('already_processed');
     const after = await prisma.order.findUniqueOrThrow({
