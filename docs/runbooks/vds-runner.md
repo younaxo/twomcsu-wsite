@@ -88,3 +88,40 @@ ssh -i ~/.ssh/twomc_giveaway_vds -o IdentitiesOnly=yes -o BatchMode=yes -o Stric
 - Образ node:20-bookworm (~1.1 ГБ) тянется с зеркала ECR при первом запуске; при недоступности зеркала задание упадёт на `docker run`.
 - Параллельных заданий нет (очередь строго последовательна), чтобы не вытеснять стенд.
 - `--worktree` берёт неотслеживаемые не игнорируемые файлы: не кладите секреты в корень проекта без `.gitignore`.
+
+## Краткая шпаргалка для других цепочек
+- Поставить задание: `infrastructure/vds-runner/run-remote.sh <job> --worktree <путь-к-своему-worktree>` (job: `unit`, `api-e2e`, `web-build`, `docker-build`).
+- Общая блокировка: все скрипты, ходящие на VDS (`run-remote.sh`, `cdn/install-cdn.sh`, `cdn/sync-cdn.sh`, `test-website/push-release.sh`, `release.sh`),
+  берут одну блокировку `twomc-vds.lock` (каталог `$TEMP/twomc-vds.lock`; в Git Bash `$TEMP` обычно даёт путь вида `/tmp/twomc-vds.lock`). Ручной ssh/scp - только через
+  `infrastructure/vds-runner/with-vds-lock.sh <команда...>` или `vds_ssh_script` из `lib/vds-ssh.sh`.
+- Результаты: `<out>/summary.txt` (итог и числа), `<out>/job.log` (полный лог), `<out>/result.env` (`EXIT=<код>`). Не коммитить. Статус потерянного задания: `run-remote.sh --attach <id>`.
+- Кто ходит: только назначенный специалист (один исполнитель за раз), без секретов в командах и выводе, без production twomc.su; `.env*`, `~/.twomc` и
+  `/home/twomc/test-website-credentials.txt` не читать. Python и docker локально не запускаются: тяжёлое идёт на VDS.
+
+## Откат стенда test-website
+Стенд (`/srv/twomc-stand`) выкладывает `infrastructure/test-website/release.sh` (внутри `push-release.sh` + `deploy-stand.sh <sha12>` на сервере).
+Откат образов и кода - повторный запуск `deploy-stand.sh` с предыдущим sha; каталог `releases/<prev-sha>` и его образы остаются до ручного удаления:
+```bash
+# под блокировкой; sha12 предыдущего выпуска смотрите в ls -t /srv/twomc-stand/releases
+infrastructure/vds-runner/with-vds-lock.sh ssh -i ~/.ssh/twomc_giveaway_vds -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+  twomc@31.76.77.45 '/srv/twomc-stand/ops/deploy-stand.sh <prev-sha12>'
+```
+Схема БД стенда НЕ откатывается (только `migrate deploy` вперёд): откат на sha со старой схемой допустим лишь для expand-миграций. Затем проверка health стенда (см. `docs/runbooks/test-website-stand.md`).
+Откат CDN: `cdn-setup.sh` сам возвращает прежний nginx-конфиг при падении `nginx -t` (код 20). Ручной откат: удалить `/etc/nginx/conf.d/cdn-files.conf`, `nginx -t`, `systemctl reload nginx`;
+файлы `/srv/cdn-files` и бэкапы `/srv/backups/cdn-files` остаются (подробности - `docs/runbooks/cdn.md`).
+
+## Типичные сбои
+| Симптом | Причина и действие |
+|---|---|
+| код 255, `Permission denied` / `Connection timed out` | сбой входа или fail2ban. НЕ повторять в цикле; доложить chief, проверить ключ `~/.ssh/twomc_giveaway_vds` и `known_hosts` (StrictHostKeyChecking=yes) |
+| `vds-lock: ожидание другого исполнителя` | идёт чужая операция; ждать (до 600 с). Мёртвая блокировка снимается сама; руками `rm -rf` не трогать чужую живую |
+| `vds-lock: не удалось получить блокировку` | таймаут: владелец жив слишком долго; повторить позже, не удалять каталог |
+| код 70 | тайм-аут ожидания, задание на сервере продолжает работу: `run-remote.sh --attach <id>` |
+| `Недопустимый аргумент` / `Недопустимый id` | аргументы ограничены `[A-Za-z0-9._:/=,@+-]`; кириллица, пробелы, кавычки в аргументах не допускаются |
+| `jest ... signal=SIGKILL` | OOM воркеров, не ошибка теста; не снимать `--maxWorkers=3` |
+| `exit=99` в `result.env` | worker потерян посреди задания; перезапустить задание |
+| падение на `docker run` при первом запуске | недоступно зеркало ECR образа node:20-bookworm; повторить позже |
+| `Другой деплой уже выполняется` | flock стенда; дождаться окончания деплоя |
+| `Мало места на диске` / нет RAM и swap | перед сборкой стенда освободить диск (`cleanup.sh` раннера), проверить swap |
+| `install-cdn.sh` код 10 | DNS `cdn-files.twomc.su` не указывает на VDS: блокер владельца, certbot не запускается |
+| `install-cdn.sh` код 20 | `nginx -t` не прошёл, прежний конфиг восстановлен; смотреть вывод `nginx -t` |
