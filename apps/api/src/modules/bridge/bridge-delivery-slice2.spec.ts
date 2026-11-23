@@ -42,11 +42,14 @@ describe('BridgeDeliveryService.ack: токен в верхнем регистр
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    const svc = new BridgeDeliveryService(prisma as never, {
-      enabled: true,
-      masterSecret: 'x',
-      deliveryEnabled: true,
-    } as unknown as BridgeConfig);
+    const svc = new BridgeDeliveryService(
+      prisma as never,
+      {
+        enabled: true,
+        masterSecret: 'x',
+        deliveryEnabled: true,
+      } as unknown as BridgeConfig,
+    );
     const res = await svc.ack('survival', {
       jobId: 'job_12345678',
       claimToken: TOKEN.toUpperCase(),
