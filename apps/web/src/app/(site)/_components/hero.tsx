@@ -81,9 +81,9 @@ export function HomeHero() {
     <section
       id="hero"
       aria-labelledby="hero-title"
-      className="grid gap-8 lg:grid-cols-[1.15fr_1fr] lg:items-center"
+      className="grid grid-cols-1 gap-8 lg:grid-cols-[1.15fr_1fr] lg:items-center"
     >
-      <div className="flex flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-6">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border bg-surface px-3 py-1 text-xs font-medium text-muted-foreground">
             <span aria-hidden className={cn('size-2 rounded-full', HEALTH_LABEL[health].dot)} />
@@ -126,7 +126,7 @@ export function HomeHero() {
           <Stat
             label="IP"
             value={
-              <span className="truncate font-mono text-base" data-testid="hero-address">
+              <span className="block truncate font-mono text-base" data-testid="hero-address">
                 {SERVER_ADDRESS}
               </span>
             }
@@ -134,14 +134,14 @@ export function HomeHero() {
           <Stat
             label="Версии"
             value={
-              <span className="font-mono text-base" data-testid="hero-versions">
+              <span className="break-words font-mono text-base" data-testid="hero-versions">
                 {SUPPORTED_VERSIONS || versions.join(', ') || 'уточняется'}
               </span>
             }
           />
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-3 [&>*]:min-h-10">
           <Button asChild size="lg">
             <Link href="#quick-start">
               <Play />
@@ -158,7 +158,7 @@ export function HomeHero() {
         </div>
       </div>
 
-      <div className="grid gap-3" data-testid="hero-media">
+      <div className="grid min-w-0 grid-cols-1 gap-3" data-testid="hero-media">
         {/* Реальные скриншоты сервера (ADR-0096): крупный — над сгибом. */}
         <figure className="relative aspect-[16/10] overflow-hidden rounded-xl border bg-surface-sunken shadow-lg">
           <ScreenshotPicture

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney } from '@/lib/format';
 import { pickShowcaseProducts, useHomeProducts } from './home-hooks';
@@ -47,7 +48,9 @@ function ProductCard({ product }: { product: ProductListItem }) {
         {product.category ? (
           <p className="text-xs text-muted-foreground">{product.category.name}</p>
         ) : null}
-        <h3 className="truncate text-base font-semibold">{product.name}</h3>
+        <h3 className="truncate text-base font-semibold" title={product.name}>
+          {product.name}
+        </h3>
         {product.description ? (
           <p className="line-clamp-2 text-sm text-muted-foreground">{product.description}</p>
         ) : null}
@@ -81,10 +84,22 @@ export function HomeShop() {
     >
       <HomeRecentPurchases />
       {products.isPending ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="home-shop-grid">
+        <div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          data-testid="home-shop-grid"
+        >
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} className="h-64 rounded-xl" />
           ))}
+        </div>
+      ) : products.isError && items.length === 0 ? (
+        <div data-testid="home-shop-grid">
+          <ErrorState
+            error={products.error}
+            title="Не удалось загрузить магазин"
+            onRetry={() => products.refetch()}
+            retrying={products.isFetching}
+          />
         </div>
       ) : items.length === 0 ? (
         <div data-testid="home-shop-grid">
@@ -95,7 +110,10 @@ export function HomeShop() {
           />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="home-shop-grid">
+        <div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          data-testid="home-shop-grid"
+        >
           {items.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}

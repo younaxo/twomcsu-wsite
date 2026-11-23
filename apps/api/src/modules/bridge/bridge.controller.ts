@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
+import { BridgeDeliveryService } from './bridge-delivery.service';
+import { parseAckBody, parseClaimBody } from './bridge-delivery-schema';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgeRateLimitGuard } from './bridge-rate-limit.guard';
 import {
@@ -24,6 +26,7 @@ import {
 import { parseEnvelope } from './bridge-schema';
 import { BridgeSignatureGuard } from './bridge-signature.guard';
 import {
+  forbidden,
   invalidEnvelope,
   tooManyRequests,
   unauthorized,
@@ -32,6 +35,7 @@ import {
 import { BRIDGE_CONFIG, BridgeConfig } from './bridge.config';
 import {
   BRIDGE_PROTOCOL,
+  DELIVERY_POLL_AFTER_MS,
   MAX_EVENT_DATA_BYTES,
   MAX_EVENTS_PER_BATCH,
 } from './bridge.constants';
@@ -51,6 +55,7 @@ export class BridgeController {
     @Inject(BRIDGE_CONFIG) private readonly config: BridgeConfig,
     private readonly ingest: BridgeIngestService,
     private readonly redis: BridgeRedisService,
+    private readonly delivery: BridgeDeliveryService,
   ) {}
 
   @Get('handshake')
@@ -115,5 +120,59 @@ export class BridgeController {
         // Слот сам истечёт по TTL.
       }
     }
+  }
+
+  /// Плагин забирает задания выдачи (0.13, ADR-0194). Выключено флагом ->
+  /// 503; у сервера нет возможности `delivery` -> 403.
+  @Post('delivery/claim')
+  @HttpCode(HttpStatus.OK)
+  async deliveryClaim(
+    @Req() req: BridgeRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ctx = this.deliveryContext(req, res);
+    const parsed = parseClaimBody(req.body);
+    if (!parsed.ok) throw invalidEnvelope();
+    try {
+      const jobs = await this.delivery.claim(ctx.slug, parsed.value.max);
+      return {
+        jobs,
+        pollAfterMs: DELIVERY_POLL_AFTER_MS,
+        serverTime: new Date().toISOString(),
+      };
+    } catch {
+      this.logger.error(`bridge delivery claim unavailable key=${ctx.keyId}`);
+      throw unavailable(res, 5);
+    }
+  }
+
+  /// Подтверждение исхода сервером; идемпотентно по `jobId` и `claimToken`.
+  @Post('delivery/ack')
+  @HttpCode(HttpStatus.OK)
+  async deliveryAck(
+    @Req() req: BridgeRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ctx = this.deliveryContext(req, res);
+    const parsed = parseAckBody(req.body);
+    if (!parsed.ok) throw invalidEnvelope();
+    try {
+      const results = [];
+      for (const item of parsed.value.results) {
+        results.push(await this.delivery.ack(ctx.slug, item));
+      }
+      return { results, serverTime: new Date().toISOString() };
+    } catch {
+      this.logger.error(`bridge delivery ack unavailable key=${ctx.keyId}`);
+      throw unavailable(res, 5);
+    }
+  }
+
+  private deliveryContext(req: BridgeRequest, res: Response) {
+    const ctx = req.bridge;
+    if (ctx === undefined) throw unauthorized();
+    if (!this.delivery.isOperational()) throw unavailable(res, 30);
+    if (!ctx.capabilities.has('delivery')) throw forbidden();
+    return ctx;
   }
 }
