@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/lib/auth/store';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { orderHref, useMyOrders, type OrderView } from '@/lib/store/checkout';
+import { paymentMethodLabel } from '@/lib/store/payment-methods';
 
 function OrdersSkeleton({ rows }: { rows: number }) {
   return (
@@ -26,6 +27,7 @@ function OrdersSkeleton({ rows }: { rows: number }) {
 }
 
 function OrderRow({ order }: { order: OrderView }) {
+  const method = paymentMethodLabel(order.payment?.method);
   return (
     <li>
       <Link
@@ -39,6 +41,7 @@ function OrderRow({ order }: { order: OrderView }) {
           </span>
           <span className="text-xs text-muted-foreground">
             {order.createdAt ? formatDateTime(order.createdAt) : 'Дата неизвестна'}
+            {method ? <span data-testid="order-row-method"> · {method}</span> : null}
           </span>
         </span>
         <span className="text-sm font-semibold tabular">{formatMoney(order.total)}</span>
