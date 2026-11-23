@@ -17,7 +17,12 @@
 
 ## VDS (31.76.77.45)
 
-По команде владельца: защита (пользователь twomc с ключом, root и пароли по SSH выключены, ufw 22/80/443, fail2ban, синхронизация времени), Docker/nginx/certbot, тестовый стенд основного сайта на test-website.twomc.su (basic auth, noindex, тестовые данные, мок-платежи, домен из конфигурации для переноса на twomc.su). giveaway.twomc.su не выкладывается (пауза). В работе. После настройки — владельцу сделать снимок диска в панели хостинга.
+- Сделано (отчёт platform director, ветка feature/deploy-test-website, коммит 4d95d8e5, не опубликована): пользователь twomc по ключу с sudo; root и пароли по SSH выключены (вход root отклоняется); ufw 22/80/443; fail2ban (sshd, nginx-http-auth); chrony UTC; Docker, nginx, certbot; контейнеры api/web/postgres/redis (БД на 127.0.0.1, redis без порта); сертификат test-website.twomc.su до 21.02.2027; default_server 444 (giveaway.twomc.su не выложен, закрыт); RAM 16 ГБ, диск 197 ГБ.
+- Проверено снаружи (chief, curl): https://test-website.twomc.su без входа → 401; X-Robots-Tag noindex и robots Disallow — по отчёту директора.
+- Проблема: SSH закрывается до баннера после серии подключений (вероятно штраф sshd PerSourcePenalties); пауза без подключений, затем повтор.
+- Пароль basic auth: /home/twomc/test-website-basic-auth.txt (600). Режим API на стенде — NODE_ENV=development (мок-платежи и guard демо-сида), стенд закрыт basic auth.
+- Домен: cookie и CORS из env; места с зашитым twomc.su в коде перечислены в отчёте (вынос в конфиг — отдельный срез перед переносом на twomc.su).
+- Владельцу: сделать снимок диска в панели хостинга.
 
 ## Проценты (оценка)
 
