@@ -81,9 +81,9 @@ nohup /srv/twomc-stand/ops/deploy-stand.sh <sha12> > /srv/twomc-stand/deploy.log
 ```sh
 dig +short test-website.twomc.su @1.1.1.1                      # с сервера: 31.76.77.45
 curl -sI https://test-website.twomc.su                          # 401 без auth
-printf 'user = "%s"\n' "$(cat ~/test-website-basic-auth.txt)" | curl -K - -sI https://test-website.twomc.su   # 200 + X-Robots-Tag
+printf 'user = "%s"\n' "$(grep -v '^Устарело' ~/test-website-basic-auth.txt)" | curl -K - -sI https://test-website.twomc.su   # 200 + X-Robots-Tag
 curl -s https://test-website.twomc.su/robots.txt                # Disallow: /
-printf 'user = "%s"\n' "$(cat ~/test-website-basic-auth.txt)" | curl -K - -s https://test-website.twomc.su/api/health
+printf 'user = "%s"\n' "$(grep -v '^Устарело' ~/test-website-basic-auth.txt)" | curl -K - -s https://test-website.twomc.su/api/health
 curl -sI http://test-website.twomc.su                           # 301 на https
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: unknown.example.invalid' http://127.0.0.1/   # 000 (444)
 sudo ufw status verbose; sudo fail2ban-client status sshd; timedatectl
