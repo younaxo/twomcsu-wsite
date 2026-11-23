@@ -20,7 +20,7 @@ describe('UsersSearchService (Q73)', () => {
     await service.search('al_x', 1, 20);
     const args = findMany.mock.calls[0][0];
     expect(args.where).toEqual({
-      username: { contains: 'al_x', mode: 'insensitive' },
+      username: { contains: 'al\\_x', mode: 'insensitive' },
       profileVisibility: 'EVERYONE',
       isBanned: false,
       accountType: { not: 'SYSTEM' },
@@ -32,6 +32,16 @@ describe('UsersSearchService (Q73)', () => {
       tag: true,
       avatar: true,
     });
+  });
+
+  it.each([
+    ['%%', '\\%\\%'],
+    ['a_b', 'a\\_b'],
+    ['a\\b', 'a\\\\b'],
+  ])('экранирует спецсимволы LIKE: %s', async (q, expected) => {
+    const { service, findMany } = make();
+    await service.search(q, 1, 20);
+    expect(findMany.mock.calls[0][0].where.username.contains).toBe(expected);
   });
 
   it('отдаёт только публичные поля, без id', async () => {

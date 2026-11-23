@@ -3,6 +3,11 @@ import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from './public-user';
 
+/** Экранирует спецсимволы LIKE/ILIKE (escape по умолчанию в PostgreSQL — обратный слеш). */
+export function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 export interface UserSearchItem {
   username: string;
   tag: string | null;
@@ -18,7 +23,8 @@ export interface UserSearchResult {
 
 /// Поиск игроков по нику (Q73, ADR-0192). Только публичные поля; в выдачу
 /// попадают лишь профили с `profileVisibility = EVERYONE`, не заблокированные
-/// и не системные. `contains` в Prisma экранирует `%` и `_` сам.
+/// и не системные. Prisma для PostgreSQL НЕ экранирует `%` и `_` в
+/// `contains`, поэтому экранируем сами (обратный слеш, `%`, `_`).
 @Injectable()
 export class UsersSearchService {
   constructor(
@@ -33,7 +39,7 @@ export class UsersSearchService {
   ): Promise<UserSearchResult> {
     const rows = await this.prisma.user.findMany({
       where: {
-        username: { contains: q, mode: 'insensitive' },
+        username: { contains: escapeLike(q), mode: 'insensitive' },
         profileVisibility: 'EVERYONE',
         isBanned: false,
         accountType: { not: 'SYSTEM' },
