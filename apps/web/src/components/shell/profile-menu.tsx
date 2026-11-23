@@ -32,7 +32,6 @@ import { cn } from '@/lib/cn';
 import { useIncomingRequestsCount } from '@/lib/friends/hooks';
 import { useProfileSummary } from '@/lib/profile/hooks';
 import { formatBadgeCount } from '@/lib/site/document-badge';
-import { useModuleAvailability } from '@/lib/site/status';
 import {
   MINI_PROFILE_ADMIN,
   MiniProfileAdminContent,
@@ -78,8 +77,6 @@ export function ProfileMenu() {
   const summary = useProfileSummary(user?.username ?? '', open && !!user);
   const wallet = useWallet(open && !!user);
   const friendRequests = useIncomingRequestsCount(status === 'authenticated' && !!user);
-  // Модуль магазина выключен (или идут его техработы) — пункт «Заказы» скрыт.
-  const store = useModuleAvailability('store');
 
   useEffect(() => {
     if (status === 'idle') {
@@ -101,11 +98,7 @@ export function ProfileMenu() {
     );
   }
 
-  const entries = miniProfileEntries(
-    user.username,
-    { friendRequests: friendRequests.data?.count },
-    { storeEnabled: !store.reason },
-  );
+  const entries = miniProfileEntries(user.username, { friendRequests: friendRequests.data?.count });
   const admin = can(ADMIN_ENTRY_REQUIREMENT);
   const header = (bleed: boolean) => (
     <MiniProfileSummary

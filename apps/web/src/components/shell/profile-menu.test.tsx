@@ -195,6 +195,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(items).toEqual([
       'Мой профиль',
       'Настройки',
+      'Безопасность и сессии',
       'Друзья3',
       'Сообщения',
       'Обращения',
@@ -229,7 +230,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     );
   });
 
-  it('модуль магазина выключен — пункт «Заказы» скрыт', async () => {
+  it('модуль магазина выключен — «Избранное» и «Заказы» не скрыты (план 1.4)', async () => {
     const user = userEvent.setup();
     fetchMock.mockImplementation(async (...args) => {
       const { path } = requestInfo(args);
@@ -241,17 +242,20 @@ describe('Mini profile в header (ADR-0088)', () => {
       return new Response(null, { status: 404 });
     });
     render(<ProfileMenu />, { wrapper: Providers });
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some((call) => requestInfo(call).path.endsWith('/site/status')),
-      ).toBe(true),
-    );
     await user.click(screen.getByRole('button', { name: /^Профиль: / }));
     const menu = await screen.findByRole('menu');
     await waitFor(() =>
-      expect(within(menu).queryByRole('menuitem', { name: 'Заказы' })).toBeNull(),
+      expect(within(menu).getByRole('menuitem', { name: 'Заказы' })).toHaveAttribute(
+        'href',
+        '/shop/orders',
+      ),
     );
     expect(within(menu).getByRole('menuitem', { name: /Обращения/ })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Избранное' })).toBeInTheDocument();
+    expect(within(menu).getByRole('menuitem', { name: 'Безопасность и сессии' })).toHaveAttribute(
+      'href',
+      '/settings/security',
+    );
   });
 
   it('админ-панель — отдельный блок только при effective permission, «Выйти» — последним', async () => {
