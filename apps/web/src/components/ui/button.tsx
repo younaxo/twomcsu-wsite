@@ -42,11 +42,11 @@ export const buttonVariants = cva(
         link: 'h-auto px-0 text-primary-soft-foreground underline-offset-4 hover:underline disabled:hover:no-underline aria-disabled:hover:no-underline',
       },
       size: {
-        sm: 'h-control-sm px-3 text-sm',
+        sm: 'h-control-sm px-3 text-sm max-sm:h-10',
         md: 'h-control px-control-px text-sm',
         lg: 'h-control-lg px-5 text-base',
         icon: 'size-[var(--control-h)] p-0',
-        'icon-sm': 'size-[var(--control-h-sm)] p-0',
+        'icon-sm': 'size-[var(--control-h-sm)] p-0 max-sm:size-10',
       },
     },
     defaultVariants: {
