@@ -1,2 +1,6 @@
 7a6779ee3037d28b810c134a5c30337c4cf68029:apps/api/README.md:generic-api-key:5
 b091e2a8a325f168b3ce67b9614f9a693c437b66:docs/implementation/CHANGELOG.md:generic-api-key:8
+# Стенд test-website: заведомо неверный пароль 'stand:wrong' в проверке 401 (verify.sh), не секрет; в новых коммитах собирается во время выполнения
+4d95d8e5eaa03ef62517b673f3fec90f51486f34:infrastructure/test-website/verify.sh:curl-auth-user:12
+4d95d8e5eaa03ef62517b673f3fec90f51486f34:infrastructure/test-website/verify.sh:curl-auth-user:18
+9a007e8a6273c393f392f908ce9151b21f384982:infrastructure/test-website/verify.sh:curl-auth-user:34

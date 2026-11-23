@@ -1,0 +1,119 @@
+# Тестовый стенд основного сайта. Подстановка (envsubst, только эти переменные):
+#   ${STAND_DOMAIN} ${STAND_GATE_TOKEN} ${WEB_PORT} ${API_PORT}
+# Установка и выпуск сертификата: setup-nginx.sh. Домен берётся ТОЛЬКО из STAND_DOMAIN.
+#
+# Схема: один origin. /      -> web (Next.js, 127.0.0.1:${WEB_PORT})
+#                  /api/   -> api (NestJS, 127.0.0.1:${API_PORT}), префикс /api срезается
+# Защита: basic auth на всём, кроме /robots.txt и ACME. Приложение шлёт Authorization: Bearer и тем
+# затирает кэшированный basic, поэтому после успешного basic auth выдаётся cookie-пропуск __Host-stand_gate (префикс __Host-: только Secure, Path=/, без Domain)
+# (HttpOnly, Secure); с ним basic не запрашивается повторно. Запросы изнутри docker-сети (SSR web ->
+# публичный API-URL) пропускаются по адресу источника. Заголовок Basic к приложению не пробрасывается.
+
+geo $stand_internal {
+    default          0;
+    127.0.0.1/32     1;
+    172.16.0.0/12    1;
+}
+
+map "$stand_internal:$http_cookie" $stand_auth_realm {
+    default                         "TwoMC test stand";
+    "~^1:"                          off;
+    "~^0:(?:.*;[ ]*)?__Host-stand_gate=${STAND_GATE_TOKEN}(?:;.*)?$"   off;
+}
+
+# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass: приложение его не видит и не может утечь/залогировать.
+map $http_cookie $stand_fwd_cookie {
+    default $http_cookie;
+    "~^(?<ck_pre>.*?);?[ ]*__Host-stand_gate=[0-9a-f]+(?<ck_post>.*)$"   "$ck_pre$ck_post";
+}
+
+# Cookie выдаётся только если пришли basic-учётные данные; add_header без always не добавляет его
+# к ответам 401 (иначе неверный пароль тоже получал бы пропуск).
+map $remote_user $stand_set_cookie {
+    ""      "";
+    default "__Host-stand_gate=${STAND_GATE_TOKEN}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200";
+}
+
+map $http_authorization $stand_fwd_authz {
+    default     $http_authorization;
+    "~^Basic "  "";
+}
+
+map $http_upgrade $stand_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${STAND_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${STAND_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${STAND_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${STAND_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # noindex на каждом ответе, включая 401.
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Strict-Transport-Security "max-age=86400" always;
+    add_header Set-Cookie $stand_set_cookie;
+
+    auth_basic $stand_auth_realm;
+    auth_basic_user_file /etc/nginx/stand.htpasswd;
+
+    client_max_body_size 20m;
+
+    location = /robots.txt {
+        auth_basic off;
+        default_type text/plain;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/;
+        # API под префиксом /api (префикс срезается): cookie API с Path=/auth (two_factor_challenge, social_nonce,
+        # social_pkce; Set-Cookie и clearCookie с тем же Path) иначе не уходят браузером на /api/auth/*.
+        # Path=/ (refresh-cookie) правилом не затрагивается.
+        proxy_cookie_path /auth /api/auth;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $stand_connection_upgrade;
+        proxy_read_timeout 120s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:${WEB_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $stand_connection_upgrade;
+    }
+}
