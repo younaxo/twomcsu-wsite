@@ -48,7 +48,7 @@ Denylist (`lib/wt-filter.sh`): `.env*` (кроме шаблонов `.env.exampl
 ```bash
 infrastructure/vds-runner/run-remote.sh unit      --worktree /c/path/to/my-worktree
 infrastructure/vds-runner/run-remote.sh api-e2e   --worktree /c/path/to/my-worktree
-infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/my-worktree --out /c/path/to/scratch/out   # берутся и неотслеживаемые файлы, git add не нужен
+infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/my-worktree --out /c/path/to/scratch/out   # по умолчанию только отслеживаемые файлы; новые — git add -N или флаг --include-untracked
 ```
 - Скрипт можно запускать из любого worktree (путь к скрипту берётся из ветки, где он есть; в `main` - после слияния).
 - Параллельный запуск от нескольких исполнителей безопасен: SSH сериализуется локальной блокировкой, задания на сервере идут по очереди (FIFO); ожидание - короткими опросами.
