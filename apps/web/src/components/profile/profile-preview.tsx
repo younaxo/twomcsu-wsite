@@ -166,11 +166,18 @@ export function ProfilePreviewCard({
             <Stat label="K/D" value={summary.statistics.killDeathRatio.toFixed(2)} />
             <Stat label="Убийства" value={formatNumber(summary.statistics.kills)} />
             <Stat label="Смерти" value={formatNumber(summary.statistics.deaths)} />
+            {summary.statistics.coins !== undefined ? (
+              <Stat label="Монеты" value={formatNumber(summary.statistics.coins)} />
+            ) : null}
           </div>
         ) : (
           <p className="flex items-center gap-2 text-xs text-subtle-foreground">
             <Gamepad2 aria-hidden className="size-4" />
-            {summary.statisticsHidden ? 'Игрок скрыл статистику.' : 'Игровой статистики пока нет.'}
+            {summary.statisticsEnabled === false
+              ? 'Статистика игроков скоро появится.'
+              : summary.statisticsHidden
+                ? 'Игрок скрыл статистику.'
+                : 'Игровой статистики пока нет.'}
           </p>
         )}
         <dl className="flex gap-4 text-sm">
