@@ -41,6 +41,13 @@ describe('Profile summary (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    // Публичная статистика выключена по умолчанию: включаем флаг (не сбрасываем —
+    // другие наборы идут параллельно на той же БД).
+    await prisma.siteSetting.upsert({
+      where: { key: 'stats.public.enabled' },
+      create: { key: 'stats.public.enabled', value: 'true' },
+      update: { value: 'true' },
+    });
   });
 
   afterAll(async () => {
@@ -91,6 +98,7 @@ describe('Profile summary (e2e)', () => {
       kills: 7,
       deaths: 3,
       killDeathRatio: 2.33,
+      coins: 0,
     });
     await prisma.user.update({
       where: { id: owner.id },

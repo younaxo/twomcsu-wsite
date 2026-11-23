@@ -16,7 +16,7 @@ import { cn } from '@/lib/cn';
 import { formatNumber, plural } from '@/lib/format';
 
 /// Рейтинги (срез 5.8, ADR-0127): топ-10 по времени в игре, убийствам,
-/// монетам, достижениям и покупкам. Игроки со скрытой статистикой или
+/// монетам и достижениям (без «Покупок», Q66). Игроки со скрытой статистикой или
 /// закрытым профилем в рейтинг не попадают (решает API).
 
 interface LeaderboardEntry {
@@ -27,7 +27,9 @@ interface LeaderboardEntry {
   value: number;
 }
 
-type Board = 'playtime' | 'kills' | 'coins' | 'achievements' | 'purchases';
+type Board = 'playtime' | 'kills' | 'coins' | 'achievements';
+
+type LeaderboardsResponse = Partial<Record<Board, LeaderboardEntry[]>> & { enabled?: boolean };
 
 const BOARDS: Record<
   Board,
@@ -56,19 +58,13 @@ const BOARDS: Record<
     format: (value) => formatNumber(value),
     empty: 'Пока никто не получил достижений.',
   },
-  purchases: {
-    label: 'Покупки',
-    format: (value) =>
-      `${formatNumber(value)} ${plural(value, { one: 'заказ', few: 'заказа', many: 'заказов' })}`,
-    empty: 'Пока нет завершённых заказов.',
-  },
 };
 
 function LeaderboardsContent() {
   const [board, setBoard] = useState<Board>('playtime');
   const data = useQuery({
     queryKey: ['leaderboards'],
-    queryFn: () => api.get<Record<Board, LeaderboardEntry[]>>('/leaderboards', { auth: false }),
+    queryFn: () => api.get<LeaderboardsResponse>('/leaderboards', { auth: false }),
     staleTime: 60_000,
   });
   const meta = BOARDS[board];
@@ -90,6 +86,12 @@ function LeaderboardsContent() {
         <SkeletonRows rows={5} />
       ) : data.isError ? (
         <ErrorState error={data.error} onRetry={() => data.refetch()} />
+      ) : data.data.enabled === false ? (
+        <EmptyState
+          icon={<Trophy />}
+          title="Раздел скоро"
+          description="Рейтинги игроков появятся совсем скоро."
+        />
       ) : entries.length === 0 ? (
         <EmptyState
           icon={<Trophy />}
@@ -105,7 +107,7 @@ function LeaderboardsContent() {
         />
       ) : (
         <ol
-          className="flex flex-col divide-y divide-border-subtle rounded-xl bg-surface shadow-sm"
+          className="flex flex-col divide-y overflow-hidden divide-border-subtle rounded-xl bg-surface shadow-sm"
           data-testid="leaderboard"
         >
           {entries.map((entry) => (
