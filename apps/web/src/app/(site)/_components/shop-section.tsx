@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney } from '@/lib/format';
 import { pickShowcaseProducts, useHomeProducts } from './home-hooks';
@@ -85,6 +86,15 @@ export function HomeShop() {
           {Array.from({ length: 4 }, (_, index) => (
             <Skeleton key={index} className="h-64 rounded-xl" />
           ))}
+        </div>
+      ) : products.isError && items.length === 0 ? (
+        <div data-testid="home-shop-grid">
+          <ErrorState
+            error={products.error}
+            title="Не удалось загрузить магазин"
+            onRetry={() => products.refetch()}
+            retrying={products.isFetching}
+          />
         </div>
       ) : items.length === 0 ? (
         <div data-testid="home-shop-grid">

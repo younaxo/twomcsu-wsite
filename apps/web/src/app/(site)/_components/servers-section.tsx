@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { StatusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
@@ -130,10 +131,11 @@ export function HomeServers() {
       {overview.isPending ? (
         <Skeleton className="h-72 w-full rounded-xl" />
       ) : overview.isError ? (
-        <EmptyState
-          icon={<Server />}
+        <ErrorState
+          error={overview.error}
           title="Не удалось опросить сервера"
-          description="Попробуйте обновить страницу чуть позже."
+          onRetry={() => overview.refetch()}
+          retrying={overview.isFetching}
         />
       ) : servers.length === 0 ? (
         <EmptyState

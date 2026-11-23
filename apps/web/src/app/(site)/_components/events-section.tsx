@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { formatDateTime, plural } from '@/lib/format';
@@ -133,6 +134,13 @@ export function HomeEvents() {
           <Skeleton className="h-40 rounded-xl" />
           <Skeleton className="h-40 rounded-xl" />
         </div>
+      ) : events.isError && !active && !next ? (
+        <ErrorState
+          error={events.error}
+          title="Не удалось загрузить события"
+          onRetry={() => events.refetch()}
+          retrying={events.isFetching}
+        />
       ) : !active && !next ? (
         <EmptyState
           icon={<CalendarClock />}

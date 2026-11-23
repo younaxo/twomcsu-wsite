@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/cn';
@@ -136,6 +137,13 @@ export function HomeNews() {
           <Skeleton className="h-72 rounded-xl" />
           <Skeleton className="h-72 rounded-xl" />
         </div>
+      ) : news.isError && !news.data ? (
+        <ErrorState
+          error={news.error}
+          title="Не удалось загрузить новости"
+          onRetry={() => news.refetch()}
+          retrying={news.isFetching}
+        />
       ) : (
         <Tabs value={tab} onValueChange={(value) => setTab(value as NewsTab)}>
           <TabsList aria-label="Тип публикаций">
