@@ -42,16 +42,27 @@ sudo touch /var/log/cdn-files-backup.log; sudo chown "$USER_NAME" /var/log/cdn-f
 echo "== nginx + сертификат"
 command -v envsubst >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gettext-base >/dev/null
 CONF=/etc/nginx/conf.d/cdn-files.conf
+PREV=""; if sudo test -f "$CONF"; then PREV="$(mktemp /tmp/cdn-conf-prev.XXXXXX)"; sudo cat "$CONF" > "$PREV"; fi
+# Откат: nginx -t не прошёл -> вернуть прежний конфиг (или убрать наш), чтобы чужой reload не сломал nginx.
+apply_conf() {   # $1 - шаблон
+  envsubst '${CDN_DOMAIN}' < "$1" | sudo tee "$CONF" >/dev/null
+  if ! sudo nginx -t; then
+    echo "nginx -t не прошёл: откат $CONF" >&2
+    if [[ -n "$PREV" ]]; then sudo install -m 644 "$PREV" "$CONF"; else sudo rm -f "$CONF"; fi
+    sudo nginx -t >&2 || true
+    exit 20
+  fi
+}
 export CDN_DOMAIN
 if ! sudo test -s "/etc/letsencrypt/live/${CDN_DOMAIN}/fullchain.pem"; then
-  envsubst '${CDN_DOMAIN}' < "$W/ops/nginx.cdn.http-only.conf.template" | sudo tee "$CONF" >/dev/null
-  sudo nginx -t
+  apply_conf "$W/ops/nginx.cdn.http-only.conf.template"
   sudo systemctl reload nginx
   sudo certbot certonly --webroot -w /var/www/certbot -d "$CDN_DOMAIN" \
     --non-interactive --agree-tos --register-unsafely-without-email
 fi
-envsubst '${CDN_DOMAIN}' < "$W/ops/nginx.cdn.conf.template" | sudo tee "$CONF" >/dev/null
-sudo nginx -t
+# При откате второго шага вернуться к http-only (рабочему), а не к исходному состоянию.
+if sudo test -f "$CONF"; then PREV="$(mktemp /tmp/cdn-conf-prev.XXXXXX)"; sudo cat "$CONF" > "$PREV"; fi
+apply_conf "$W/ops/nginx.cdn.conf.template"
 sudo systemctl reload nginx
 sudo install -d /etc/letsencrypt/renewal-hooks/deploy
 [[ -x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh ]] || {
