@@ -138,6 +138,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'topics.view',
           'forms.view',
           'voting.sites.view',
+          'streams.view',
         ],
         keywords: [
           'новости',
@@ -148,6 +149,9 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'документы',
           'голосование',
           'рейтинги',
+          'стримы',
+          'twitch',
+          'youtube',
         ],
         sections: [
           { href: '/admin/content', label: 'Обзор', requirement: 'content.view' },
@@ -156,6 +160,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           { href: '/admin/topics', label: 'Темы', requirement: 'topics.view' },
           { href: '/admin/forms', label: 'Формы', requirement: 'forms.view' },
           { href: '/admin/voting', label: 'Голосование', requirement: 'voting.sites.view' },
+          { href: '/admin/streams', label: 'Стримы', requirement: 'streams.view' },
         ],
       },
       {
