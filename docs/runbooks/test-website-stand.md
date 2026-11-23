@@ -1,19 +1,19 @@
 # Runbook: тестовый стенд основного сайта (test-website.twomc.su)
 
 Назначение: закрытый стенд основного сайта на отдельном VDS с тестовыми данными и мок-платежами. Это НЕ production и НЕ dev.twomc.su. Розыгрыш (giveaway.twomc.su) на этом сервере не размещён и не настраивался; неизвестные Host (в том числе giveaway) закрыты default_server.
-Команда владельца на создание стенда: 2026-11-23. Артефакты: `infrastructure/test-website/`. В документе нет значений секретов, только пути.
+Команда владельца на создание стенда: 2026-11-23. VDS переустановлен владельцем с нуля 2026-11-23 (Ubuntu 24.04.4); прежнего стенда нет, всё развёрнуто заново скриптами из `infrastructure/test-website/`. Артефакты: `infrastructure/test-website/`. В документе нет значений секретов, только пути.
 
 ## 1. Что стоит на сервере
 
 | Что                                         | Значение                                                                                                                                                                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| VDS                                         | 31.76.77.45, Ubuntu 24.04, 6 vCPU, 16 ГБ RAM, диск 197 ГБ, swap-файл 512 МБ (от провайдера)                                                                                                                                 |
+| VDS | 31.76.77.45, Ubuntu 24.04.4 LTS (переустановка 2026-11-23), 6 vCPU, 15 ГБ RAM, диск 197 ГБ |
 | Пользователь                                | `twomc` (группа sudo, NOPASSWD через `/etc/sudoers.d/90-twomc`, проверено `visudo -cf`), вход только по ключу                                                                                                               |
 | Ключ владельца                              | `~/.ssh/twomc_giveaway_vds` (приватный ключ нигде не копируется); `authorized_keys` у `twomc` и у root один и тот же                                                                                                        |
 | SSH                                         | `/etc/ssh/sshd_config.d/00-twomc-hardening.conf`: `PermitRootLogin no`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`                                                                                      |
-| Host key (проверять при первом подключении) | ED25519 `SHA256:e15L2T8AVCAuwzpUAjGXZQC6faC4KPb80abop9Djwa4`; RSA `SHA256:ur6Oe+la5Fey51yHuEzQ4Sqr3r4u0ymXYhJ7WtbZobY`; ECDSA `SHA256:NHcQ1W2gXSX5ApQ/4szBc8T0EKWmASkSwKE7AdqjjsY`                                          |
+| Host key (проверять при первом подключении) | ED25519 `SHA256:vToFfPnb3dry/ALQltOu4TnTCesoN7WYi0F9edsCa6g` (после переустановки 2026-11-23; прежние отпечатки недействительны; RSA/ECDSA не фиксировались)                                          |
 | Firewall                                    | ufw: deny incoming; allow OpenSSH, 80/tcp, 443/tcp (IPv4 и IPv6)                                                                                                                                                            |
-| fail2ban                                    | jail `sshd` (10 попыток / 10 мин, бан 10 минут, без aggressive) и `nginx-http-auth` (8 попыток / 10 мин, бан 10 минут). Запасной выход при бане своего IP: консоль провайдера, `sudo fail2ban-client unban <ip>` (раздел 7) |
+| fail2ban                                    | jail `sshd` (ignoreip: loopback и IP оператора из OWNER_IP, 10 попыток / 10 мин, бан 10 минут, без aggressive) и `nginx-http-auth` (8 попыток / 10 мин, бан 10 минут). Запасной выход при бане своего IP: консоль провайдера, `sudo fail2ban-client unban <ip>` (раздел 7) |
 | Время                                       | chrony, часовой пояс UTC; unattended-upgrades (security) включены                                                                                                                                                           |
 | Docker                                      | docker-ce из официального репозитория, compose-плагин; пользователь `twomc` в группе docker                                                                                                                                 |
 | nginx / certbot                             | nginx 1.24 (пакет Ubuntu), certbot 2.9 (+ python3-certbot-nginx; сертификат выпущен через webroot), таймер продления systemd                                                                                                |
@@ -26,7 +26,7 @@
 
 ### Создание пользователя и закрытие root (порядок защиты от самоблокировки)
 
-1. `ssh -i <ключ> -o BatchMode=yes -o StrictHostKeyChecking=accept-new root@31.76.77.45`; сверить отпечаток host key с таблицей выше.
+1. `ssh -i <ключ> -o BatchMode=yes -o StrictHostKeyChecking=accept-new <начальный-пользователь>@31.76.77.45 (на свежей Ubuntu 24.04; после hardening root закрыт, дальше только `twomc`)`; сверить отпечаток host key с таблицей выше.
 2. От root: `adduser --disabled-password --gecos "" twomc`, `usermod -aG sudo twomc`, `install -d -m 700 -o twomc -g twomc /home/twomc/.ssh`, `install -m 600 -o twomc -g twomc /root/.ssh/authorized_keys /home/twomc/.ssh/authorized_keys`, строка `twomc ALL=(ALL) NOPASSWD:ALL` в `/etc/sudoers.d/90-twomc` (440) и `visudo -cf`.
 3. ПРОВЕРИТЬ в новом сеансе: `ssh -i <ключ> twomc@31.76.77.45 'sudo -n true'`. Скрипт сам до закрытия root/пароля проверяет EUID != 0, непустой `authorized_keys` и `sudo -n true`, после правки sshd сверяет `sshd -T`, порт SSH для ufw берёт из `sshd -T`. Только после этого запускать `infrastructure/test-website/bootstrap-server.sh` (drop-in sshd, `sshd -t`, reload, ufw: OpenSSH раньше enable, fail2ban, chrony, Docker, nginx, certbot).
 4. Проверить, что вход `twomc` работает, а root отклоняется (`Permission denied (publickey)`).
@@ -133,3 +133,10 @@ Cookie и CORS жёстко не зашиты: `refresh-cookie.ts` берёт `C
 - Ротация секретов приложения: пароль Postgres/Redis записан в томах при инициализации, менять только вместе с томами (`down -v`); `gen-env.sh` намеренно не перезаписывает `stand.env`.
 - Диск: `docker builder prune` и удаление старых тегов образов - вручную и осознанно; перед крупными работами владельцу - снимок диска в панели хостинга.
 - Журналы: `docker logs --tail=100 twomc-stand-api`, `/var/log/nginx/`, `/var/log/letsencrypt/`.
+
+## Заметки о развёртывании 2026-11-23 (после переустановки)
+
+- Учётки стенда: `/home/twomc/test-website-accounts.txt` (600): игрок `stand_player2` (обычная регистрация, код из лога API, так как SMTP не задан) и админ `stand_owner` (BOOTSTRAP_OWNER, роль Owner, включая `store.bundles.view`) с включённой 2FA (TOTP-секрет и резервные коды в том же файле). Без 2FA админ-API отвечает 403 `admin_2fa_required`.
+- Для демо-покупки у игрока должен быть привязанный Minecraft-ник (`minecraft_accounts`); на стенде добавлена строка `StandPlayer` для `stand_player2` (SQL в БД стенда).
+- Тестовая оплата: заказ создаётся PENDING, затем подписанный HMAC вебхук `POST /api/webhooks/payments/test` (заголовки `x-twomc-timestamp`, `x-twomc-signature`, секрет PAYMENT_WEBHOOK_SECRET из stand.env) переводит его в COMPLETED. Выдача на игровой сервер не выполняется (сервера нет).
+- Cookie `two_factor_challenge` выставляется с `Path=/auth` (apps/api/src/modules/auth/refresh-cookie.ts:44); при проксировании API под `/api` браузер её не отправит на `/api/auth/login/2fa`. Проверить вход админа с 2FA в браузере; при воспроизведении завести задачу.

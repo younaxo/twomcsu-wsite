@@ -42,9 +42,13 @@ sudo ufw --force enable
 
 # 3. fail2ban (sshd): мягкий профиль, чтобы оператор не банил сам себя (бан короткий, без aggressive).
 # Запасной выход при бане: консоль провайдера -> sudo fail2ban-client unban <ip> (runbook, раздел 7).
-sudo tee /etc/fail2ban/jail.d/sshd.local >/dev/null <<'CONF'
+# OWNER_IP (необязательно, формат IPv4/IPv6) попадает в ignoreip: оператор не банит сам себя.
+OWNER_IP="${OWNER_IP:-}"
+[[ -z "$OWNER_IP" || "$OWNER_IP" =~ ^[0-9a-fA-F:.]+$ ]] || { echo "Недопустимый OWNER_IP" >&2; exit 1; }
+sudo tee /etc/fail2ban/jail.d/sshd.local >/dev/null <<CONF
 [sshd]
 enabled = true
+ignoreip = 127.0.0.1/8 ::1 ${OWNER_IP}
 maxretry = 10
 findtime = 10m
 bantime = 10m
