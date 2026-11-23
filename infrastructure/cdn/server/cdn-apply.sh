@@ -34,7 +34,14 @@ echo "квота: сейчас $((used/1048576)) МБ, после ~$((after/1048
 (( after <= CDN_QUOTA_MB * 1048576 )) || { echo "Превышена квота CDN ($CDN_QUOTA_MB МБ): синхронизация отклонена, ничего не изменено" >&2; exit 7; }
 
 # Копирование (rsync пишет во временный файл и переименовывает: читатели не видят частичных файлов).
-rsync -a --files-from="$W/new.list" --chmod=D755,F644 --itemize-changes "$stage/" "$ROOT/" | sed 's/^/  rsync: /' | head -50 || true
+# Вывод - в файл (без конвейера: SIGPIPE не обрывает копирование, код rsync не маскируется). Удаление и манифест - только при успехе.
+rc=0
+rsync -a --files-from="$W/new.list" --chmod=D755,F644 --itemize-changes "$stage/" "$ROOT/" > "$W/rsync.log" 2>&1 || rc=$?
+sed 's/^/  rsync: /' "$W/rsync.log" | head -n 50 || true
+if (( rc != 0 )); then
+  echo "rsync завершился с кодом $rc: удаление устаревших и обновление манифеста НЕ выполнены (повторите синхронизацию)" >&2
+  exit 8
+fi
 # Удаление файлов, выложенных прежней синхронизацией, но отсутствующих сейчас.
 deleted=0
 if [[ -f "$MANIFEST" ]]; then

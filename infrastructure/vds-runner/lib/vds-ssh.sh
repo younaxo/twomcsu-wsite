@@ -31,3 +31,15 @@ vds_scp_put() {
   [[ "$2" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "Недопустимый удалённый путь: $2" >&2; return 2; }
   vds_locked _vds_scp_raw "$1" "$2"
 }
+
+# Загрузка бандла в ПРИВАТНЫЙ каталог ~/.twomc-inbox (700) на VDS одним ssh-сеансом (stdin -> файл), вместо общедоступного /tmp.
+#   vds_put_inbox <локальный-файл> <имя-файла>   -> ~/.twomc-inbox/<имя-файла> (umask 077, запись через .part и mv)
+_vds_put_inbox_raw() {
+  local name="$2"
+  ssh "${_VDS_SSH_OPTS[@]}" "$VDS_USER@$VDS_HOST" \
+    "umask 077; mkdir -p -m 700 \"\$HOME/.twomc-inbox\" && chmod 700 \"\$HOME/.twomc-inbox\" && cat > \"\$HOME/.twomc-inbox/$name.part\" && mv -f \"\$HOME/.twomc-inbox/$name.part\" \"\$HOME/.twomc-inbox/$name\"" < "$1"
+}
+vds_put_inbox() {
+  [[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$2" != *..* ]] || { echo "Недопустимое имя файла: $2" >&2; return 2; }
+  vds_locked _vds_put_inbox_raw "$1" "$2"
+}

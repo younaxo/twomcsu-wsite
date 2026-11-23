@@ -8,11 +8,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../vds-runner/lib/vds-ssh.sh
 source "$HERE/../vds-runner/lib/vds-ssh.sh"
-TMP="$(mktemp -d)"
-trap 'vds_lock_release; rm -rf "$TMP"' EXIT
+vds_stage_new
+trap vds_exit_cleanup EXIT
 ID="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
-mkdir -p "$TMP/bundle"
-cp -r "$HERE/server" "$TMP/bundle/ops"
-tar -cf "$TMP/cdn-$ID.tar" -C "$TMP/bundle" .
-( cd "$TMP" && vds_scp_put "cdn-$ID.tar" "/tmp/twomc-cdn-$ID.tar" )
+mkdir -p "$STAGE_TMP/bundle"
+cp -r "$HERE/server" "$STAGE_TMP/bundle/ops"
+tar -cf "$STAGE_TMP/cdn-$ID.tar" -C "$STAGE_TMP/bundle" .
+vds_put_inbox "$STAGE_TMP/cdn-$ID.tar" "twomc-cdn-$ID.tar"
 vds_ssh_script "$HERE/server/remote-entry.sh" "$ID" setup

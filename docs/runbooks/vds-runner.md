@@ -25,17 +25,21 @@ infrastructure/vds-runner/run-remote.sh --attach <id>            # дождат�
 | `web-build` | `pnpm --filter "@twomc/web..." build` (next build с зависимостями) | 4 CPU, 8 ГБ |
 | `docker-build` | сборка образов api и web по `infrastructure/*.Dockerfile` (образы после сборки удаляются) | 8 ГБ, cpu-shares 256 |
 
-Снимок кода: `--ref` - `git archive` коммита (только tracked). `--worktree` - tracked и неотслеживаемые не игнорируемые файлы рабочей копии
-с незакоммиченными правками, без `.env*`, `node_modules`, `.next`, `dist`, `.turbo`, `coverage`, `*.tsbuildinfo`, ключей, `credentials*`, `secrets*`.
+Снимок кода: `--ref` - `git archive` коммита (только tracked). `--worktree` - ТОЛЬКО tracked-файлы рабочей копии (с незакоммиченными правками); новые файлы - `git add -N <файл>`
+или флаг `--include-untracked` (тогда неотслеживаемые не игнорируемые файлы включаются). Перед отправкой печатаются исключённое denylist-ом и неотслеживаемые файлы.
+Denylist (`lib/wt-filter.sh`): `.env*` (кроме шаблонов `.env.example/.sample/.template/.dist`), `.npmrc`, `.netrc`, `.pgpass`, `id_rsa*`, `id_ed25519*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.p8`, `*.kdbx`,
+`service-account*.json`, `*credentials*`, имена на `secret(s)`, `*.sql` (кроме `prisma/migrations/**/migration.sql`), `*.dump`, `*.sqlite*`, `*.db`, `*.tsbuildinfo`, каталоги `node_modules`, `.next`, `.turbo`, `dist`, `coverage`, `secret(s)`.
+Проверка: `infrastructure/vds-runner/tests/selftest.sh`. Бандлы на VDS кладутся в приватный `~/.twomc-inbox` (700), а не в `/tmp`.
 Секреты на сервер не уходят; пароли БД, JWT и ключ 2FA для e2e генерируются на сервере на каждый запуск и живут только в одноразовых контейнерах.
 
 ## Правила доступа к VDS
 - Только `twomc@31.76.77.45`, ключ `~/.ssh/twomc_giveaway_vds`, `IdentitiesOnly=yes`, `BatchMode=yes`, `StrictHostKeyChecking=yes`.
-- Глобальная локальная блокировка `%TEMP%/twomc-vds.lock` (каталог-mkdir, файл `owner` с pid и временем): два исполнителя не открывают SSH одновременно.
-  Мёртвая (pid не существует) и просроченная (старше 900 с) блокировка снимается автоматически. Блокировка держится только на время одной операции scp/ssh, а не всего ожидания.
+- Глобальная локальная блокировка `%TEMP%/twomc-vds.lock` (каталог-mkdir, файл `owner`: pid, время, скрипт, крайний срок): два исполнителя не открывают SSH одновременно.
+  Снимается ТОЛЬКО блокировка с мёртвым pid, либо с истёкшим жёстким потолком `VDS_LOCK_MAX_SEC` (6 ч, записывается владельцем в `owner`); живой владелец ничего не теряет, как бы долго ни работал.
+  Блокировка держится только на время одной операции scp/ssh, а не всего ожидания.
 - Сбой входа не повторяется: скрипт завершается (код 255). Остановитесь и разберитесь (fail2ban: игнорируется наш IP, но не ломайте систему повторами).
 - Блокировка встроена во все скрипты, ходящие на VDS: `run-remote.sh`, `cdn/sync-cdn.sh`, `cdn/install-cdn.sh` (через `lib/vds-ssh.sh`) и
-  `test-website/push-release.sh` (его вызывает `release.sh`; на время всей выкладки «просрочка» блокировки увеличена до 3600 с).
+  `test-website/push-release.sh` (его вызывает `release.sh`; долгая выкладка не теряет блокировку: просрочки по времени нет, только мёртвый pid или потолок 6 ч).
   Для любого другого скрипта или ручной команды: `infrastructure/vds-runner/with-vds-lock.sh <команда...>`; скрипту, который сам зовёт ssh, достаточно
   `source infrastructure/vds-runner/lib/vds-ssh.sh` и `vds_ssh_script`/`vds_scp_put` (или `vds_locked <команда>`). Вложенный вызов безопасен (`VDS_LOCK_HELD=1`).
 
@@ -62,7 +66,9 @@ infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/my-workt
   done/<id>/       result.env, summary.txt, job.log (исходники удаляются сразу)
   ops/<hash>/      неизменяемая копия скриптов раннера версии, с которой пришло задание (worker.sh, lib.sh, jobs/*.sh, cleanup.sh)
   cache/           pnpm-store, corepack, home (общий кеш: повторные install быстрые)
-  worker.lock      flock: один worker; worker.log
+  failed/<id>/     задания, которые не удалось запустить (worker их не повторяет; чистятся как done/)
+  worker.lock      flock: один worker (держится и на время cleanup.sh); worker.log
+~/.twomc-inbox/    приватный (700) приёмник бандлов от клиента; enqueue.sh/remote-entry.sh забирают и удаляют файл
 ```
 id задания: `<UTC>-<job>-<hex6>`. `enqueue.sh` распаковывает бандл, кладёт задание в `queue/` и запускает `worker.sh` в фоне (`setsid nohup nice -n 15 ionice -c3`);
 worker берёт самое старое задание, выполняет в docker (`--cpus`, `--memory`, `--memory-swap`, `--cpu-shares 256` - ниже стандартного веса стенда, `--pids-limit`), по таймауту
@@ -87,7 +93,13 @@ ssh -i ~/.ssh/twomc_giveaway_vds -o IdentitiesOnly=yes -o BatchMode=yes -o Stric
 ## Известные ограничения
 - Образ node:20-bookworm (~1.1 ГБ) тянется с зеркала ECR при первом запуске; при недоступности зеркала задание упадёт на `docker run`.
 - Параллельных заданий нет (очередь строго последовательна), чтобы не вытеснять стенд.
-- `--worktree` берёт неотслеживаемые не игнорируемые файлы: не кладите секреты в корень проекта без `.gitignore`.
+- `--worktree` по умолчанию берёт только tracked-файлы; с `--include-untracked` - и неотслеживаемые не игнорируемые (denylist действует всегда): не кладите секреты в корень проекта без `.gitignore`.
+  Tracked `.npmrc` исключается denylist-ом; если он понадобится для `pnpm install` (приватный реестр), нужен отдельный явный allowlist.
+- M3 (остаток): контейнер node получает `--cap-drop ALL` и `--security-opt no-new-privileges`, но у заданий `unit` и `web-build` остаётся сеть по умолчанию (нужна для `pnpm install`);
+  контейнеры postgres/redis в `api-e2e` без `--cap-drop` (entrypoint postgres требует chown/setuid). Следующий шаг: отдельная сеть с egress-allowlist на время install и `--network none` на время тестов.
+- M4: общий кеш `cache/pnpm-store` и `cache/home` пишется всеми заданиями (отравление кеша заданием из ветки с вредоносным кодом возможно). Следующий шаг: отдельный кеш на ветку/ref или read-only кеш на время тестов.
+- L2-L6, L9-L11 (замечания низкой серьёзности независимого ревью; перечень - в отчёте ревью ветки `feature/vds-runner-cdn`): не закрыты, на безопасность не влияют; бэклог.
+- Задание, которое не удалось запустить, уходит в `failed/` (или в `done/` с `exit=97`) и не повторяется автоматически: перезапускайте вручную.
 
 ## Краткая шпаргалка для других цепочек
 - Поставить задание: `infrastructure/vds-runner/run-remote.sh <job> --worktree <путь-к-своему-worktree>` (job: `unit`, `api-e2e`, `web-build`, `docker-build`).
@@ -115,7 +127,7 @@ infrastructure/vds-runner/with-vds-lock.sh ssh -i ~/.ssh/twomc_giveaway_vds -o I
 |---|---|
 | код 255, `Permission denied` / `Connection timed out` | сбой входа или fail2ban. НЕ повторять в цикле; доложить chief, проверить ключ `~/.ssh/twomc_giveaway_vds` и `known_hosts` (StrictHostKeyChecking=yes) |
 | `vds-lock: ожидание другого исполнителя` | идёт чужая операция; ждать (до 600 с). Мёртвая блокировка снимается сама; руками `rm -rf` не трогать чужую живую |
-| `vds-lock: не удалось получить блокировку` | таймаут: владелец жив слишком долго; повторить позже, не удалять каталог |
+| `vds-lock: не удалось получить блокировку` | таймаут: владелец жив; повторить позже, не удалять каталог (потолок 6 ч снимет только совсем зависшую) |
 | код 70 | тайм-аут ожидания, задание на сервере продолжает работу: `run-remote.sh --attach <id>` |
 | `Недопустимый аргумент` / `Недопустимый id` | аргументы ограничены `[A-Za-z0-9._:/=,@+-]`; кириллица, пробелы, кавычки в аргументах не допускаются |
 | `jest ... signal=SIGKILL` | OOM воркеров, не ошибка теста; не снимать `--maxWorkers=3` |

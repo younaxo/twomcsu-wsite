@@ -12,7 +12,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=../vds-runner/lib/vds-ssh.sh
 source "$HERE/../vds-runner/lib/vds-ssh.sh"
-trap vds_lock_release EXIT
+trap vds_exit_cleanup EXIT
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
 CDN_DOMAIN="${CDN_DOMAIN:-cdn-files.twomc.su}"
 MAX_BYTES=$(( 8 * 1048576 ))
@@ -26,21 +26,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-TMP="$(mktemp -d)"
-trap 'vds_lock_release; rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/src" "$TMP/stage"
+vds_stage_new
+mkdir -p "$STAGE_TMP/src" "$STAGE_TMP/stage"
 PUB="apps/web/public"
 
 # ---- источник
 if [[ -n "$REF" ]]; then
-  git -C "$REPO" archive "$REF" "$PUB" | tar -x -C "$TMP/src"
+  git -C "$REPO" archive "$REF" "$PUB" | tar -x -C "$STAGE_TMP/src"
   DESC="$REF"
 else
-  ( cd "$REPO" && git ls-files -z -- "$PUB" | tr '\0' '\n' | while IFS= read -r f; do [[ -f "$f" ]] && printf '%s\n' "$f"; done > "$TMP/list.txt" )
-  ( cd "$REPO" && tar -cf - -T "$TMP/list.txt" ) | tar -x -C "$TMP/src"
+  ( cd "$REPO" && git ls-files -z -- "$PUB" | tr '\0' '\n' | while IFS= read -r f; do [[ -f "$f" ]] && printf '%s\n' "$f"; done > "$STAGE_TMP/list.txt" )
+  ( cd "$REPO" && tar -cf - -T "$STAGE_TMP/list.txt" ) | tar -x -C "$STAGE_TMP/src"
   DESC="worktree"
 fi
-[[ -d "$TMP/src/$PUB" ]] || { echo "Нет $PUB в источнике" >&2; exit 1; }
+[[ -d "$STAGE_TMP/src/$PUB" ]] || { echo "Нет $PUB в источнике" >&2; exit 1; }
 
 # ---- фильтр
 hex() { od -An -tx1 -N12 "$1" | tr -d ' \n'; }
@@ -58,12 +57,12 @@ check_sig() {   # $1 файл, $2 расширение (нижний регис�
 }
 SVG_BAD='<script|<foreignObject|<iframe|<!ENTITY|javascript:|[[:space:]]on[a-z]+[[:space:]]*=|href[[:space:]]*=[[:space:]]*["'"'"'][[:space:]]*(https?:|//|data:text/html)'
 PRIVATE_RE='(secret|private|credential|password|passwd|token|\.env|backup|dump|\.key|\.pem|\.map$|\.sql|\.zip|\.tar)'
-kept=0; skipped=0; : > "$TMP/skipped.txt"
+kept=0; skipped=0; : > "$STAGE_TMP/skipped.txt"
 while IFS= read -r -d '' abs; do
-  rel="${abs#"$TMP/src/$PUB/"}"
-  ext="${rel##*.}"; ext="$(printf '%s' "$ext" | tr 'A-Z' 'a-z')"
+  rel="${abs#"$STAGE_TMP/src/$PUB/"}"
+  ext="${rel##*.}"   # регистр НЕ меняем: сервер (cdn-apply.sh) принимает только расширения в нижнем регистре
   reason=""
-  if [[ ! "$ext" =~ ^(png|jpg|jpeg|webp|avif|svg|ico)$ ]]; then reason="не изображение из белого списка"
+  if [[ ! "$ext" =~ ^(png|jpg|jpeg|webp|avif|svg|ico)$ ]]; then reason="не изображение из белого списка (расширение только в нижнем регистре)"
   elif [[ ! "$rel" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then reason="небезопасное имя"
   elif [[ "$rel" =~ (^|/)\.\.?(/|$) ]]; then reason="точечный сегмент"
   elif printf '%s' "$rel" | grep -qiE "$PRIVATE_RE"; then reason="похоже на приватное"
@@ -71,26 +70,26 @@ while IFS= read -r -d '' abs; do
   elif ! check_sig "$abs" "$ext"; then reason="сигнатура не соответствует расширению"
   elif [[ "$ext" == svg ]] && grep -aqiE "$SVG_BAD" "$abs"; then reason="SVG с активным содержимым"
   fi
-  if [[ -n "$reason" ]]; then printf '%s\t%s\n' "$rel" "$reason" >> "$TMP/skipped.txt"; skipped=$((skipped+1)); continue; fi
-  mkdir -p "$TMP/stage/$(dirname "$rel")"; cp -- "$abs" "$TMP/stage/$rel"; kept=$((kept+1))
-done < <(find "$TMP/src/$PUB" -type f -print0)
+  if [[ -n "$reason" ]]; then printf '%s\t%s\n' "$rel" "$reason" >> "$STAGE_TMP/skipped.txt"; skipped=$((skipped+1)); continue; fi
+  mkdir -p "$STAGE_TMP/stage/$(dirname "$rel")"; cp -- "$abs" "$STAGE_TMP/stage/$rel"; kept=$((kept+1))
+done < <(find "$STAGE_TMP/src/$PUB" -type f -print0)
 
 echo "Источник: $DESC; к выкладке: $kept, пропущено: $skipped"
-if [[ -s "$TMP/skipped.txt" ]]; then echo "Пропущены (не публичные изображения или не прошли проверку):"; sed 's/^/  /' "$TMP/skipped.txt"; fi
+if [[ -s "$STAGE_TMP/skipped.txt" ]]; then echo "Пропущены (не публичные изображения или не прошли проверку):"; sed 's/^/  /' "$STAGE_TMP/skipped.txt"; fi
 (( kept > 0 )) || { echo "Нечего выкладывать (пустой набор не отправляется: он бы удалил прежние файлы)" >&2; exit 1; }
-( cd "$TMP/stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | sed 's/^/  + /' )
+( cd "$STAGE_TMP/stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | sed 's/^/  + /' )
 if [[ "$DRY" == 1 ]]; then echo "--dry-run: на сервер ничего не отправлено"; exit 0; fi
 
 # ---- бандл и отправка
 ID="$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
-mkdir -p "$TMP/bundle"
-( cd "$TMP/stage" && tar -czf "$TMP/bundle/files.tar.gz" . && find . -type f | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum > "$TMP/bundle/files.sha256" )
-cp -r "$HERE/server" "$TMP/bundle/ops"
-tar -cf "$TMP/cdn-$ID.tar" -C "$TMP/bundle" .
-( cd "$TMP" && vds_scp_put "cdn-$ID.tar" "/tmp/twomc-cdn-$ID.tar" )
+mkdir -p "$STAGE_TMP/bundle"
+( cd "$STAGE_TMP/stage" && tar -czf "$STAGE_TMP/bundle/files.tar.gz" . && find . -type f | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum > "$STAGE_TMP/bundle/files.sha256" )
+cp -r "$HERE/server" "$STAGE_TMP/bundle/ops"
+tar -cf "$STAGE_TMP/cdn-$ID.tar" -C "$STAGE_TMP/bundle" .
+vds_put_inbox "$STAGE_TMP/cdn-$ID.tar" "twomc-cdn-$ID.tar"
 vds_ssh_script "$HERE/server/remote-entry.sh" "$ID" sync
 
 # ---- проверка снаружи (не под SSH-блокировкой, это обычный HTTPS)
-first="$(cd "$TMP/stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | head -1)"
+first="$(cd "$STAGE_TMP/stage" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | head -1)"
 echo "Проверка: https://$CDN_DOMAIN/$first"
 curl -sS -o /dev/null -w 'HTTP %{http_code}, %{content_type}\n' -I "https://$CDN_DOMAIN/$first" || echo "(curl не удался - проверьте DNS/сертификат)"

@@ -35,6 +35,7 @@ run_node() {
   docker run --rm --init \
     --name "twomcr-$id-node" --label "twomc-runner-job=$id" \
     --cpus "$JOB_CPUS" --memory "$mem" --memory-swap "$mem" --cpu-shares "$CPU_SHARES" --pids-limit 4096 \
+    --cap-drop ALL --security-opt no-new-privileges \
     --user "$(id -u):$(id -g)" "${netargs[@]}" \
     -e HOME=/home/runner -e COREPACK_HOME=/cache/corepack -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0 -e CI=true -e NEXT_TELEMETRY_DISABLED=1 \
     -e npm_config_store_dir=/cache/pnpm-store -e PATH=/home/runner/bin:/usr/local/bin:/usr/bin:/bin \
