@@ -5,6 +5,53 @@
 import { readFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 
+// ---- маскирование секретов: ЛЮБОЙ вывод (console.*, необработанные ошибки) проходит через mask(). Значения паролей, ключей, токенов и TOTP-секрета
+// регистрируются при чтении stand.env/accounts и при получении accessToken; дополнительно режутся JWT, Bearer, пароли в URL и otpauth://.
+// Самопроверка без сети и файлов: SMOKE_SELFTEST_MASK=1 node smoke.mjs
+const SECRET_VALUES = new Set();
+const addSecret = (v) => {
+  if (typeof v === 'string' && v.length >= 6) SECRET_VALUES.add(v);
+};
+const SECRET_KEY = /SECRET|PASSWORD|PASS|TOKEN|KEY|PEPPER|SALT|CREDENTIAL|DATABASE_URL|REDIS_URL|DSN/i;
+const mask = (s) => {
+  let t = String(s);
+  for (const v of SECRET_VALUES) t = t.split(v).join('***');
+  return t
+    .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
+    .replace(/(Bearer\s+)\S+/gi, '$1***')
+    .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
+    .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
+};
+const show = (x) => (typeof x === 'string' ? x : x instanceof Error ? (x.stack ?? x.message) : JSON.stringify(x));
+for (const m of ['log', 'info', 'warn', 'error']) {
+  const orig = console[m].bind(console);
+  console[m] = (...a) => orig(...a.map((x) => mask(show(x))));
+}
+process.on('uncaughtException', (e) => {
+  console.error('НЕОБРАБОТАННАЯ ОШИБКА:', e?.message ?? e);
+  process.exit(2);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('НЕОБРАБОТАННЫЙ ОТКАЗ:', e?.message ?? e);
+  process.exit(2);
+});
+if (process.env.SMOKE_SELFTEST_MASK === '1') {
+  const fake = ['fake-' + 'pw-value-1', 'fake-' + 'totp-value-2', 'fake-' + 'backup-value-3'];
+  fake.forEach(addSecret);
+  const probes = [
+    `пароль ${fake[0]}`,
+    `totp=${fake[1]} backup=${fake[2]}`,
+    new Error(`boom ${fake[0]}`),
+    'Authorization: Bearer abc.def.ghi',
+    'jwt ' + ['eyJhbGci' + 'OiJIUzI1NiJ9', 'eyJzdWIi' + 'OiIxIn0', 'sig'].join('.'),
+    'postgresql://user:' + 'hunter2'.repeat(2) + '@db:5432/x',
+    'otpauth://totp/x?secret=' + 'JBSWY3DP' + 'EHPK3PXP',
+  ];
+  const leaked = probes.map((p) => mask(show(p))).filter((o) => fake.some((f) => o.includes(f)) || /hunter2|eyJhbGci|abc\.def|secret=JBSW/.test(o));
+  console.log(leaked.length ? `mask-selftest: УТЕЧКА ${leaked.length}` : `mask-selftest: ok (${probes.length} проб)`);
+  process.exit(leaked.length ? 1 : 0);
+}
+
 const API = process.env.API_URL || 'http://127.0.0.1:4000';
 const WEB = process.env.WEB_URL || 'http://127.0.0.1:3000';
 const read = (p) => readFileSync(p, 'utf8');
@@ -20,6 +67,9 @@ for (const l of read('/in/accounts').split('\n')) {
   const i = l.indexOf(':');
   if (i > 0 && !l.startsWith('Устарело')) acc[l.slice(0, i).trim()] = l.slice(i + 1).trim().split(/\s+/).map((t) => t.replace(/^[a-z_0-9]+=/i, ''));
 }
+for (const [k, v] of Object.entries(env)) if (SECRET_KEY.test(k)) addSecret(v);
+for (const k of ['player', 'admin']) addSecret((acc[k] ?? [])[2]);
+for (const t of acc.admin2fa ?? []) addSecret(t);
 const results = [];
 const rec = (name, ok, evidence) => {
   results.push({ name, ok });
@@ -55,6 +105,7 @@ async function call(method, base, path, { token, body, cookie, raw } = {}) {
   } catch {
     /* не JSON */
   }
+  if (json?.accessToken) addSecret(json.accessToken);
   return { status: res.status, json, text, res };
 }
 const api = (m, p, o) => call(m, API, p, o);
