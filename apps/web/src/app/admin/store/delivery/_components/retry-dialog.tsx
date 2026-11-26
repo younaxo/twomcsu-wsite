@@ -30,12 +30,15 @@ import {
 export function RetryDialog({
   taskId,
   title,
+  bridgeDuplicateRisk = false,
   open,
   onOpenChange,
   onSuccessFocus,
 }: {
   taskId: string;
   title: string;
+  /// Задание Bridge уже передавалось серверу: усиленное предупреждение (M2, R167).
+  bridgeDuplicateRisk?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /// После успеха кнопка-открыватель может исчезнуть (статус сменился): фокус
@@ -127,6 +130,17 @@ export function RetryDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-3">
+            {bridgeDuplicateRisk ? (
+              <p
+                role="alert"
+                data-testid="bridge-retry-warning"
+                className="rounded-lg bg-warning-soft p-3 text-sm text-warning"
+              >
+                Возможна двойная выдача, если сервер выполнил команду. Повтор использует тот же ключ
+                идемпотентности: плагин должен ответить «выполнено», а не выполнять команду снова,
+                но это зависит от версии плагина. Проверьте игрока на сервере.
+              </p>
+            ) : null}
             {failure ? (
               <FormErrorSummary data-testid="delivery-action-error">
                 {failure.message}{' '}
