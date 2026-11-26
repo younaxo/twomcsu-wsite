@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import {
   DEMO_ACHIEVEMENTS,
+  DEMO_AUTHOR,
   DEMO_CATEGORIES,
   DEMO_EVENTS,
   DEMO_FORMS,
@@ -13,11 +14,12 @@ import {
   DEMO_SETTINGS,
   DEMO_TOPICS,
   DEMO_VOTE_SITE,
-  buildDemoEventDates,
+  buildDemoEventRow,
   buildDemoProducts,
   buildDemoPunishmentRow,
   buildDemoSyncState,
-  demoEscapeToHtml,
+  buildDemoTopicRow,
+  demoAuthorTag,
   demoPunishmentSourceId,
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
@@ -32,14 +34,31 @@ async function main(): Promise<void> {
   assertDemoSeedAllowed(process.env);
   const prisma = new PrismaClient();
   try {
-    const author = await prisma.user.findFirst({
-      orderBy: { createdAt: 'asc' },
+    // Отдельный демо-автор: реальные пользователи не попадают в публичные ответы.
+    // Без ролей; пароль — не bcrypt-хеш, вход невозможен.
+    const defaultPosition = await prisma.position.findFirst({
+      where: { isDefault: true },
     });
-    if (!author) {
+    if (!defaultPosition) {
       throw new Error(
-        'Нет ни одного пользователя: сначала выполните обычный `db:seed` с bootstrap-аккаунтами.',
+        'Нет позиции по умолчанию (isDefault): сначала выполните обычный `db:seed`.',
       );
     }
+    const authorData = {
+      email: DEMO_AUTHOR.email,
+      password: DEMO_AUTHOR.password,
+    };
+    const author = await prisma.user.upsert({
+      where: { username: DEMO_AUTHOR.username },
+      create: {
+        username: DEMO_AUTHOR.username,
+        tag: demoAuthorTag(),
+        discriminator: DEMO_AUTHOR.discriminator,
+        positionId: defaultPosition.id,
+        ...authorData,
+      },
+      update: authorData,
+    });
 
     const categoryIds = new Map<string, string>();
     for (const c of DEMO_CATEGORIES) {
@@ -104,16 +123,7 @@ async function main(): Promise<void> {
     }
 
     for (const t of DEMO_TOPICS) {
-      const data = {
-        title: t.title,
-        category: t.category,
-        visibility: 'PUBLIC' as const,
-        description: t.description,
-        content: t.body,
-        contentHtml: demoEscapeToHtml(t.body),
-        order: t.order,
-        isActive: true,
-      };
+      const data = buildDemoTopicRow(t);
       await prisma.topic.upsert({
         where: { slug: t.slug },
         create: { slug: t.slug, createdBy: author.id, ...data },
@@ -123,17 +133,7 @@ async function main(): Promise<void> {
 
     const eventsNow = new Date();
     for (const e of DEMO_EVENTS) {
-      const data = {
-        title: e.title,
-        description: e.description,
-        descriptionHtml: demoEscapeToHtml(e.description),
-        category: e.category,
-        status: e.status,
-        visibility: 'PUBLIC' as const,
-        location: e.location,
-        isFeatured: e.isFeatured,
-        ...buildDemoEventDates(e, eventsNow),
-      };
+      const data = buildDemoEventRow(e, eventsNow);
       await prisma.calendarEvent.upsert({
         where: { slug: e.slug },
         create: { slug: e.slug, createdById: author.id, ...data },

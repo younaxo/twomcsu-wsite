@@ -462,8 +462,23 @@ export function buildDemoSyncState(now: Date) {
 /// Контент для страниц /rules, /faq, /info и /events тестового стенда.
 /// Нейтральный текст без санкций, цен и обязательств; настоящие правила
 /// утверждает администрация.
+export const DEMO_EVENT_DISCLAIMER =
+  'Демонстрационное событие для тестового стенда.';
+
 export const DEMO_CONTENT_DISCLAIMER =
   'Демонстрационный текст для тестового стенда; настоящие правила утверждает администрация.';
+
+/// Заведомо не bcrypt-хеш: bcrypt.compare возвращает false, вход невозможен.
+export const DEMO_AUTHOR = {
+  username: 'demo_system',
+  email: 'demo-system@example.invalid',
+  discriminator: 0,
+  password: '!demo-login-disabled',
+} as const;
+
+export function demoAuthorTag(): string {
+  return `${DEMO_AUTHOR.username}#${String(DEMO_AUTHOR.discriminator).padStart(4, '0')}`;
+}
 
 export type DemoTopicCategory = 'RULES' | 'FAQ' | 'INFORMATION';
 
@@ -475,6 +490,9 @@ export interface DemoTopic {
   body: string;
   order: number;
 }
+
+const eventContent = (body: string): string =>
+  `${DEMO_EVENT_DISCLAIMER}\n\n${body}`;
 
 const topicContent = (body: string): string =>
   `${DEMO_CONTENT_DISCLAIMER}\n\n${body}`;
@@ -559,7 +577,8 @@ export interface DemoEvent {
   title: string;
   description: string;
   category: 'COMMUNITY' | 'UPDATE';
-  status: 'PUBLISHED' | 'COMPLETED';
+  /// Публичная выдача показывает только PUBLISHED; «прошедшее» задаётся датами.
+  status: 'PUBLISHED';
   /// Смещение начала от «сейчас» в днях (отрицательное = прошедшее).
   startOffsetDays: number;
   durationHours: number;
@@ -571,7 +590,7 @@ export const DEMO_EVENTS: DemoEvent[] = [
   {
     slug: 'demo-event-upcoming',
     title: '[Демо] Встреча сообщества',
-    description: topicContent(
+    description: eventContent(
       'Пример будущего события: открытая встреча игроков.',
     ),
     category: 'COMMUNITY',
@@ -584,9 +603,9 @@ export const DEMO_EVENTS: DemoEvent[] = [
   {
     slug: 'demo-event-past',
     title: '[Демо] Итоги прошлой встречи',
-    description: topicContent('Пример прошедшего события: встреча состоялась.'),
+    description: eventContent('Пример прошедшего события: встреча состоялась.'),
     category: 'COMMUNITY',
-    status: 'COMPLETED',
+    status: 'PUBLISHED',
     startOffsetDays: -14,
     durationHours: 2,
     location: 'Игровой сервер',
@@ -602,6 +621,36 @@ export function buildDemoEventDates(
   return {
     startsAt,
     endsAt: new Date(startsAt.getTime() + e.durationHours * 3_600_000),
+  };
+}
+
+/// Поля строки Topic; условия публичной выдачи TopicsService: isActive, PUBLIC.
+export function buildDemoTopicRow(t: DemoTopic) {
+  return {
+    title: t.title,
+    category: t.category,
+    visibility: 'PUBLIC' as const,
+    description: t.description,
+    content: t.body,
+    contentHtml: demoEscapeToHtml(t.body),
+    order: t.order,
+    isActive: true,
+  };
+}
+
+/// Поля строки CalendarEvent; условия публичной выдачи EventsService:
+/// status PUBLISHED, visibility PUBLIC (поля isPublic в модели нет).
+export function buildDemoEventRow(e: DemoEvent, now: Date) {
+  return {
+    title: e.title,
+    description: e.description,
+    descriptionHtml: demoEscapeToHtml(e.description),
+    category: e.category,
+    status: e.status,
+    visibility: 'PUBLIC' as const,
+    location: e.location,
+    isFeatured: e.isFeatured,
+    ...buildDemoEventDates(e, now),
   };
 }
 

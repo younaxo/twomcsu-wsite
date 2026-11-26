@@ -1,5 +1,7 @@
 import {
+  DEMO_AUTHOR,
   DEMO_CONTENT_DISCLAIMER,
+  DEMO_EVENT_DISCLAIMER,
   DEMO_EVENTS,
   DEMO_FORMS,
   DEMO_NEWS,
@@ -7,9 +9,12 @@ import {
   DEMO_SERVERS,
   DEMO_TOPICS,
   buildDemoEventDates,
+  buildDemoEventRow,
   buildDemoProducts,
   buildDemoPunishmentRow,
   buildDemoSyncState,
+  buildDemoTopicRow,
+  demoAuthorTag,
   demoEscapeToHtml,
   demoPunishmentSourceId,
 } from './data';
@@ -193,7 +198,8 @@ describe('demo seed content: topics and events', () => {
     }
     for (const e of DEMO_EVENTS) {
       expect(e.title.startsWith('[Демо] ')).toBe(true);
-      expect(e.description).toContain(DEMO_CONTENT_DISCLAIMER);
+      expect(e.description).toContain(DEMO_EVENT_DISCLAIMER);
+      expect(e.description).not.toContain('правил');
     }
   });
   it('2 события: одно будущее, одно прошедшее', () => {
@@ -203,9 +209,32 @@ describe('demo seed content: topics and events', () => {
     expect(a.startsAt.getTime()).toBeGreaterThan(now.getTime());
     expect(b.endsAt.getTime()).toBeLessThan(now.getTime());
     expect(DEMO_EVENTS[0].status).toBe('PUBLISHED');
-    expect(DEMO_EVENTS[1].status).toBe('COMPLETED');
+    expect(DEMO_EVENTS[1].status).toBe('PUBLISHED');
+  });
+  it('видимость: каждая запись проходит условия публичной выдачи', () => {
+    const now = new Date();
+    for (const t of DEMO_TOPICS) {
+      const row = buildDemoTopicRow(t);
+      expect(row.isActive).toBe(true);
+      expect(row.visibility).toBe('PUBLIC');
+    }
+    for (const e of DEMO_EVENTS) {
+      const row = buildDemoEventRow(e, now);
+      expect(row.status).toBe('PUBLISHED');
+      expect(row.visibility).toBe('PUBLIC');
+    }
   });
   it('экранирование HTML', () => {
     expect(demoEscapeToHtml('<a>&\nb')).toBe('&lt;a&gt;&amp;<br>b');
+  });
+});
+
+describe('demo seed author', () => {
+  it('отдельный пользователь demo_system без входа', () => {
+    expect(DEMO_AUTHOR.username).toBe('demo_system');
+    expect(DEMO_AUTHOR.username.length).toBeLessThanOrEqual(16);
+    expect(DEMO_AUTHOR.email).toBe('demo-system@example.invalid');
+    expect(DEMO_AUTHOR.password.startsWith('$2')).toBe(false);
+    expect(demoAuthorTag()).toBe('demo_system#0000');
   });
 });
