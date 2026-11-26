@@ -84,8 +84,8 @@ function AppealBlock({ item }: { item: MyPunishmentView }) {
       {item.nextAppealAt ? (
         <p className="text-xs text-muted-foreground" data-testid="punishment-next-appeal">
           Повторно обжаловать можно с{' '}
-          <time dateTime={item.nextAppealAt}>{formatDateTime(item.nextAppealAt)}</time> (пауза 24 часа
-          после прошлого обращения).
+          <time dateTime={item.nextAppealAt}>{formatDateTime(item.nextAppealAt)}</time> (пауза 24
+          часа после прошлого обращения).
         </p>
       ) : null}
       {item.appealable ? (
