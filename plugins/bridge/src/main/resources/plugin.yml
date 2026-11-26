@@ -1,0 +1,16 @@
+name: TwoMCBridge
+version: '${version}'
+main: ru.twomc.bridge.BridgePlugin
+api-version: '1.21'
+author: TwoMC
+description: Мост между сайтом TwoMC и игровым сервером. Срез «выдача заказов»: опрос сайта, исполнение разрешённых команд в главном потоке, журнал идемпотентности.
+softdepend: [LuckPerms]
+commands:
+  twomcbridge:
+    description: Состояние выдачи заказов и разбор неизвестного исхода.
+    usage: /twomcbridge status | forget <idempotencyKey>
+    permission: twomc.bridge.admin
+permissions:
+  twomc.bridge.admin:
+    description: Доступ к /twomcbridge.
+    default: op
