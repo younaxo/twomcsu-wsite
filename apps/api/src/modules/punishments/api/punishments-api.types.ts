@@ -149,6 +149,8 @@ export interface MyPunishment {
   scope: PunishmentScopeView;
   /** Можно подать обжалование: активные BAN и MUTE без открытого обращения. */
   appealable: boolean;
+  /** Пока подача закрыта из-за паузы 24 ч после прошлого обращения - когда можно снова; иначе null. */
+  nextAppealAt: IsoDateString | null;
   /** Обжалования этого наказания, новые первыми (до 5). */
   appeals: MyPunishmentAppeal[];
 }

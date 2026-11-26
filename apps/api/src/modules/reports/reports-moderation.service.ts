@@ -1,12 +1,18 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { NotificationType, Report, ReportStatus } from '@prisma/client';
+import {
+  NotificationType,
+  Prisma,
+  Report,
+  ReportStatus,
+} from '@prisma/client';
 import { escapeToHtml } from '../../common/html.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -217,13 +223,34 @@ export class ReportsModerationService {
     return updated;
   }
 
+  /// Переоткрытие закрытого обжалования при уже открытом другом по тому же
+  /// наказанию нарушает частичный уникальный индекс `reports_open_mc_appeal_uniq`
+  /// (ADR-0196): P2002 -> 409 `appeal_already_open`.
+  private async updateReportGuarded(args: Prisma.ReportUpdateArgs) {
+    try {
+      return await this.prisma.report.update(args);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'appeal_already_open',
+          message:
+            'По этому наказанию уже есть другое открытое обращение; переоткрыть это нельзя',
+        });
+      }
+      throw error;
+    }
+  }
+
   async changeStatus(
     reportNumber: string,
     dto: ChangeReportStatusDto,
     actorId: string,
   ) {
     const report = await this.requireReport(reportNumber);
-    const updated = await this.prisma.report.update({
+    const updated = await this.updateReportGuarded({
       where: { id: report.id },
       data: {
         status: dto.status,
@@ -246,7 +273,7 @@ export class ReportsModerationService {
 
   async setVerdict(reportNumber: string, dto: SetVerdictDto, actorId: string) {
     const report = await this.requireReport(reportNumber);
-    const updated = await this.prisma.report.update({
+    const updated = await this.updateReportGuarded({
       where: { id: report.id },
       data: {
         verdict: dto.verdict,

@@ -43,6 +43,8 @@ export interface MyPunishmentView extends PunishmentViewBase {
   reasonMasked: boolean;
   /// Можно подать обжалование (решает сервер).
   appealable: boolean;
+  /// Когда можно обжаловать снова (пауза 24 ч после прошлого обращения), ISO; иначе null.
+  nextAppealAt: string | null;
   /// Обжалования этого наказания, новые первыми.
   appeals: MyPunishmentAppeal[];
 }
@@ -169,6 +171,7 @@ export function toMyView(raw: unknown): MyPunishmentView | null {
     reason: str(raw.reason),
     reasonMasked: raw.reasonMasked === true,
     appealable: raw.appealable === true,
+    nextAppealAt: str(raw.nextAppealAt),
     appeals: toAppeals(raw.appeals),
   };
 }

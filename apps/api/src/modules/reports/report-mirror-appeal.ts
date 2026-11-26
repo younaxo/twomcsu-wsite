@@ -1,10 +1,14 @@
 import type { MinecraftPunishment, Prisma } from '@prisma/client';
-import { refOf, viewStatus } from '../punishments/punishments-view';
+import {
+  APPEAL_REPEAT_COOLDOWN_MS,
+  refOf,
+  viewStatus,
+} from '../punishments/punishments-view';
 
 /// Обжалование наказаний из зеркала LiteBans (срез l1-02, ADR-0194).
 
 /// Повторное обжалование того же наказания после закрытия прежнего — не чаще.
-export const REPORT_APPEAL_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const REPORT_APPEAL_REPEAT_COOLDOWN_MS = APPEAL_REPEAT_COOLDOWN_MS;
 
 /// Поля наказания зеркала в обращении: без выдавшего, снявшего, причины,
 /// uuid, IP-признака и служебных колонок. `subjectName` берёт только персонал.

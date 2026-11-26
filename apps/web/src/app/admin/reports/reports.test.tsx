@@ -212,6 +212,48 @@ describe('Обращения в админке (срез 7.3)', () => {
     expect(await screen.findByTestId('archived-reports')).toHaveTextContent('#R-2');
   });
 
+  const MC_PUNISHMENT = {
+    ref: 'ban-77',
+    kind: 'BAN',
+    status: 'ACTIVE',
+    startedAt: '2026-11-01T10:00:00.000Z',
+    until: null,
+    removedAt: null,
+    subjectName: 'Griefer',
+  };
+
+  it('обжалование наказания сервера: связанное наказание в очереди и в карточке', async () => {
+    mocks.granted.add('reports.view');
+    const appeal = {
+      ...REPORT,
+      type: 'PUNISHMENT_APPEAL',
+      appealedMinecraftPunishment: MC_PUNISHMENT,
+    };
+    mocks.get.mockImplementation(async (path: string) => {
+      if (path === '/moderation/reports') return { items: [appeal], total: 1, page: 1, limit: 30 };
+      if (path === '/reports/R-1') return appeal;
+      return null;
+    });
+    const list = render(<AdminReportsPage />, { wrapper: Providers });
+    const compact = await screen.findByTestId('appealed-mc-punishment-compact');
+    expect(compact).toHaveTextContent('ban-77');
+    expect(compact).toHaveTextContent('Действует');
+    list.unmount();
+    render(<ReportCardPage />, { wrapper: Providers });
+    const card = await screen.findByTestId('appealed-mc-punishment');
+    expect(card).toHaveTextContent('Бан');
+    expect(card).toHaveTextContent('ban-77');
+    expect(card).toHaveTextContent('Игрок: Griefer');
+    expect(card).toHaveTextContent('бессрочно');
+  });
+
+  it('без связанного наказания блока нет', async () => {
+    mocks.granted.add('reports.view');
+    render(<ReportCardPage />, { wrapper: Providers });
+    await screen.findByText('Гриферство на спавне');
+    expect(screen.queryByTestId('appealed-mc-punishment')).toBeNull();
+  });
+
   it('без reports.view — экран 403', async () => {
     render(<AdminReportsPage />, { wrapper: Providers });
     expect(screen.queryByTestId('reports-filters')).toBeNull();
