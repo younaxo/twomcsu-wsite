@@ -21,6 +21,9 @@ export const HEADER_SIGNATURE = 'x-twomc-signature';
 
 export const PATH_HANDSHAKE = '/bridge/v1/handshake';
 export const PATH_EVENTS = '/bridge/v1/events';
+/// Выдача заказов (0.13, ADR-0194): плагин забирает задания и подтверждает их.
+export const PATH_DELIVERY_CLAIM = '/bridge/v1/delivery/claim';
+export const PATH_DELIVERY_ACK = '/bridge/v1/delivery/ack';
 /// Префикс всех путей приёмника (парсер тела M3).
 export const BRIDGE_PATH_PREFIX = '/bridge/v1';
 
@@ -28,6 +31,8 @@ export const BRIDGE_PATH_PREFIX = '/bridge/v1';
 export const ALLOWED_ROUTES: ReadonlyMap<string, string> = new Map([
   [PATH_HANDSHAKE, 'GET'],
   [PATH_EVENTS, 'POST'],
+  [PATH_DELIVERY_CLAIM, 'POST'],
+  [PATH_DELIVERY_ACK, 'POST'],
 ]);
 
 /// Формат заголовков проверяется до любых обращений к Redis и БД (2.3, п. 0).
@@ -74,6 +79,8 @@ export const CAPABILITY_KEYS = [
   'punishments',
   'punishments-authoritative',
   'player-events',
+  /// Сервер принимает задания выдачи заказов (0.13). Выдаётся владельцем явно.
+  'delivery',
 ] as const;
 export type BridgeCapability = (typeof CAPABILITY_KEYS)[number];
 
@@ -82,3 +89,27 @@ export const LOG_AGE_ALERT_DAYS = 8;
 export const LOG_CLEANUP_BATCH_SIZE = 1000;
 export const LOG_CLEANUP_MAX_BATCHES = 500;
 export const DEFAULT_LOG_RETENTION_DAYS = 7;
+
+/// Выдача заказов (0.13, ADR-0194).
+export const DELIVERY_CLAIM_MAX_DEFAULT = 5;
+export const DELIVERY_CLAIM_MAX_LIMIT = 10;
+export const DELIVERY_ACK_MAX_ITEMS = 20;
+/// Рекомендуемая пауза опроса, сообщается плагину в ответе.
+export const DELIVERY_POLL_AFTER_MS = 2000;
+/// Сервер считается «на связи», если `lastSeenAt` не старше.
+export const DELIVERY_SERVER_LIVENESS_MS = 120_000;
+/// Закрытый список статусов подтверждения плагином.
+export const DELIVERY_ACK_STATUSES = [
+  'done',
+  'failed',
+  'retry',
+  'unknown',
+] as const;
+export type DeliveryAckStatus = (typeof DELIVERY_ACK_STATUSES)[number];
+
+/// Очистка закрытых заданий выдачи `bridge_delivery_jobs` (L2, ADR-0194).
+/// Без миграции: удаление пачками по `updatedAt` закрытых строк.
+export const DELIVERY_JOB_RETENTION_DEFAULT_DAYS = 30;
+export const DELIVERY_JOB_RETENTION_MIN_DAYS = 14;
+export const DELIVERY_JOB_CLEANUP_BATCH_SIZE = 500;
+export const DELIVERY_JOB_CLEANUP_MAX_BATCHES = 200;

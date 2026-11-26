@@ -237,15 +237,10 @@ export interface PaymentMethod {
   height: number;
 }
 
+/// Только реально доступные способы (ADR-0193): иностранные карты Visa/Mastercard
+/// выключены по умолчанию (CARD_FOREIGN), поэтому их логотипы не показываем.
+/// Файлы ассетов остаются в public/assets/payment; вернуть — после включения способа.
 export const PAYMENT_METHODS: PaymentMethod[] = [
-  { id: 'visa', label: 'Visa', src: '/assets/payment/visa.svg', width: 48, height: 32 },
-  {
-    id: 'mastercard',
-    label: 'Mastercard',
-    src: '/assets/payment/mastercard.svg',
-    width: 48,
-    height: 32,
-  },
   { id: 'mir', label: 'МИР', src: '/assets/payment/mir.svg', width: 48, height: 32 },
   { id: 'sbp', label: 'СБП', src: '/assets/payment/sbp.svg', width: 48, height: 32 },
 ];

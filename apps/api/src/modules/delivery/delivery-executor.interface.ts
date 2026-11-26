@@ -24,6 +24,9 @@ export interface DeliveryTaskSnapshot {
   decorationId: string | null;
   /// Готовая команда (после подстановки шаблона). В 0.7 всегда null.
   renderedCommand: string | null;
+  /// Только для `bridge` (0.13): целевой сервер и расширение белого списка
+  /// корней команд (настройки сайта); у остальных исполнителей null.
+  bridge?: { serverSlug: string; extraCommandRoots: string[] } | null;
 }
 
 /// Закрытый набор результатов (ADR-0184 п. 1).
@@ -45,6 +48,9 @@ export interface DeliveryExecutor {
   readonly idempotent: boolean;
   /// Берётся ли задание воркером (manual ждёт человека, воркер его не берёт).
   readonly automatic: boolean;
+  /// Необязательно: исполнитель сейчас способен работать (флаги окружения,
+  /// ключи). Нет - воркер не берёт его задания, они остаются в очереди.
+  operational?(): boolean;
   execute(task: DeliveryTaskSnapshot): Promise<DeliveryResult>;
 }
 

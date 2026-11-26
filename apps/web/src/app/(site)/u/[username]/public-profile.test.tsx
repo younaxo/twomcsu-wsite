@@ -175,11 +175,26 @@ describe('Публичный профиль /u/[username]', () => {
     expect(screen.queryByRole('link', { name: 'Редактировать профиль' })).toBeNull();
   });
 
-  it('несуществующий ник (404) — «Профиль не найден»', async () => {
-    mocks.get.mockRejectedValue(new ApiError(404, ['Профиль не найден']));
+  it('несуществующий ник (404) — «Игрок не найден»', async () => {
+    mocks.get.mockRejectedValue(new ApiError(404, ['Prisma: record not found']));
     render(<PublicProfilePage />, { wrapper: Providers });
-    expect(await screen.findByText('Профиль не найден')).toBeInTheDocument();
+    expect(await screen.findByText('Игрок не найден')).toBeInTheDocument();
     expect(screen.queryByTestId('profile-hidden')).toBeNull();
+    expect(screen.queryByText(/Prisma/)).toBeNull();
+  });
+
+  it('503 — «недоступно», без сырого сообщения API', async () => {
+    mocks.get.mockRejectedValue(new ApiError(503, ['pg pool exhausted'], { code: 'MAINTENANCE' }));
+    render(<PublicProfilePage />, { wrapper: Providers });
+    expect(await screen.findByText('Идут технические работы')).toBeInTheDocument();
+    expect(screen.queryByText(/pg pool/)).toBeNull();
+  });
+
+  it('401 — предложение войти', async () => {
+    mocks.get.mockRejectedValue(new ApiError(401, ['jwt expired']));
+    render(<PublicProfilePage />, { wrapper: Providers });
+    expect(await screen.findByRole('link', { name: 'Войти' })).toBeInTheDocument();
+    expect(screen.queryByText(/jwt expired/)).toBeNull();
   });
 
   it('скрытый профиль (200 hidden) — отдельное состояние, без данных и действий', async () => {

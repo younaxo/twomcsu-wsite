@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, SocialPlatform } from '@prisma/client';
+import { LeaderboardsService } from '../leaderboards/leaderboards.service';
+import { StatsSettingsService } from '../leaderboards/stats-settings.service';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
@@ -122,6 +124,8 @@ export class ProfilesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly statsSettings: StatsSettingsService,
+    private readonly leaderboards: LeaderboardsService,
   ) {}
 
   /// Медиа профиля наружу — только готовыми URL (ADR-0088): в БД лежат ключи
@@ -180,6 +184,13 @@ export class ProfilesService {
       },
       select: OWN_PROFILE_SELECT,
     });
+    // Приватность определяет состав рейтингов: кэш сбрасываем сразу, а не по TTL.
+    if (
+      dto.profileVisibility !== undefined ||
+      dto.hideStatistics !== undefined
+    ) {
+      this.leaderboards.invalidate();
+    }
     return this.ownView(updated);
   }
 
@@ -483,6 +494,7 @@ export class ProfilesService {
             kills: true,
             deaths: true,
             killDeathRatio: true,
+            coins: true,
           },
         },
       },
@@ -505,7 +517,9 @@ export class ProfilesService {
         where: { userId: user.id, isCompleted: true },
       }),
     ]);
-    const showStats = isOwner || !user.hideStatistics;
+    // Раздел статистики выключен флагом — наружу ни цифр, ни признака «скрыто».
+    const statsEnabled = await this.statsSettings.isPublicEnabled();
+    const showStats = statsEnabled && (isOwner || !user.hideStatistics);
     return {
       username: user.username,
       hidden: false as const,
@@ -545,9 +559,11 @@ export class ProfilesService {
               kills: user.statistics.kills,
               deaths: user.statistics.deaths,
               killDeathRatio: user.statistics.killDeathRatio,
+              coins: user.statistics.coins,
             }
           : null,
-      statisticsHidden: !showStats,
+      statisticsEnabled: statsEnabled,
+      statisticsHidden: statsEnabled && !showStats,
       friendsCount,
       achievementsCompleted,
     };

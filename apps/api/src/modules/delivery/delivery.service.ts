@@ -40,6 +40,8 @@ import { sanitizeDeliveryError } from './delivery-status';
 import {
   DELIVERY_BACKOFF_MS,
   DELIVERY_BATCH_SIZE,
+  DELIVERY_BRIDGE_ENABLED_SETTING,
+  DELIVERY_BRIDGE_SERVER_SETTING,
   DELIVERY_COMMAND_ENABLED_SETTING,
   DELIVERY_DEFAULT_MAX_ATTEMPTS,
   DELIVERY_ENABLED_SETTING,
@@ -53,6 +55,7 @@ import {
   DELIVERY_RECONCILE_LOOKBACK_MS,
   DELIVERY_SETTINGS_CACHE_MS,
   DONE_STATUSES,
+  EXECUTOR_BRIDGE,
   EXECUTOR_COMMAND,
   EXECUTOR_MANUAL,
   EXECUTOR_SITE,
@@ -61,15 +64,21 @@ import {
   REFUND_BLOCKING_STATUSES,
   RETRY_FROM,
 } from './delivery.constants';
+import { BridgeExecutor } from './executors/bridge.executor';
 import { CommandExecutor } from './executors/command.executor';
 import { ManualExecutor } from './executors/manual.executor';
 import { SiteExecutor } from './executors/site.executor';
 import { WalletExecutor } from './executors/wallet.executor';
+import { isValidSlug } from '../bridge/bridge.constants';
 import { walletLedgerEnabled } from '../wallet/wallet-config';
 
 export interface DeliverySettings {
   enabled: boolean;
   commandEnabled: boolean;
+  /// Исполнитель `bridge` включён настройкой (0.13) и задан сервер.
+  bridgeEnabled: boolean;
+  /// Slug целевого сервера Bridge (валидный формат) или null.
+  bridgeServerSlug: string | null;
   maxAttempts: number;
   /// Расширение белого списка корней команд (ADR-0189).
   extraCommandRoots: string[];
@@ -115,8 +124,9 @@ export class DeliveryService {
     site: SiteExecutor,
     command: CommandExecutor,
     wallet?: WalletExecutor,
+    bridge?: BridgeExecutor,
   ) {
-    for (const executor of [manual, site, command, wallet]) {
+    for (const executor of [manual, site, command, wallet, bridge]) {
       if (executor) this.executors.set(executor.kind, executor);
     }
   }
@@ -154,6 +164,8 @@ export class DeliveryService {
           in: [
             DELIVERY_ENABLED_SETTING,
             DELIVERY_COMMAND_ENABLED_SETTING,
+            DELIVERY_BRIDGE_ENABLED_SETTING,
+            DELIVERY_BRIDGE_SERVER_SETTING,
             DELIVERY_MAX_ATTEMPTS_SETTING,
             EXTRA_ROOTS_SETTING,
           ],
@@ -165,9 +177,15 @@ export class DeliveryService {
       get(DELIVERY_MAX_ATTEMPTS_SETTING) ?? '',
       10,
     );
+    const rawSlug = get(DELIVERY_BRIDGE_SERVER_SETTING)?.trim();
+    const bridgeSlug = rawSlug && isValidSlug(rawSlug) ? rawSlug : null;
     const value: DeliverySettings = {
       enabled: get(DELIVERY_ENABLED_SETTING) === 'true',
       commandEnabled: get(DELIVERY_COMMAND_ENABLED_SETTING) === 'true',
+      bridgeServerSlug: bridgeSlug,
+      // Нужны и включение, и корректный slug: иначе fail closed на `command`.
+      bridgeEnabled:
+        get(DELIVERY_BRIDGE_ENABLED_SETTING) === 'true' && bridgeSlug !== null,
       maxAttempts:
         Number.isInteger(parsedMax) && parsedMax >= 1 && parsedMax <= 20
           ? parsedMax
@@ -256,6 +274,17 @@ export class DeliveryService {
     const extraRoots = templates
       ? (await this.settings()).extraCommandRoots
       : [];
+    // 0.13: при включённом bridge (настройка + регистрация исполнителя) задания
+    // с шаблоном идут на него; иначе, как раньше, на `command` (если включён).
+    const bridgeWanted = Boolean(
+      templates &&
+      (await this.settings()).bridgeEnabled &&
+      this.executors.has(EXECUTOR_BRIDGE) &&
+      this.executors.get(EXECUTOR_BRIDGE)?.operational?.() !== false,
+    );
+    const commandWanted = Boolean(
+      templates && ((await this.settings()).commandEnabled || bridgeWanted),
+    );
 
     const giftIds = [
       ...new Set(
@@ -287,7 +316,7 @@ export class DeliveryService {
       if (executorKind === EXECUTOR_MANUAL && templates) {
         const tpl = this.pickTemplate(templates, item);
         const nick = deliverableNickOrNull(rawNick);
-        if (tpl && nick) {
+        if (tpl && nick && commandWanted) {
           try {
             // Подстановка только через общий валидатор; сбой -> manual.
             renderedCommand = renderCommand(
@@ -299,7 +328,7 @@ export class DeliveryService {
               extraRoots,
             );
             templateVersion = tpl.version;
-            executorKind = EXECUTOR_COMMAND;
+            executorKind = bridgeWanted ? EXECUTOR_BRIDGE : EXECUTOR_COMMAND;
           } catch (error) {
             if (!(error instanceof CommandTemplateError)) throw error;
             this.logger.warn(
@@ -354,7 +383,8 @@ export class DeliveryService {
     ];
     if (productIds.length === 0) return null;
     if (!(await this.isEnabled())) return null;
-    if (!(await this.settings()).commandEnabled) return null;
+    const cfg = await this.settings();
+    if (!cfg.commandEnabled && !cfg.bridgeEnabled) return null;
     return tx.deliveryCommandTemplate.findMany({
       where: { productId: { in: productIds } },
       select: {
@@ -557,7 +587,9 @@ export class DeliveryService {
       .filter(
         (e) =>
           e.automatic &&
-          (e.kind !== EXECUTOR_COMMAND || settings.commandEnabled),
+          (e.kind !== EXECUTOR_COMMAND || settings.commandEnabled) &&
+          (e.kind !== EXECUTOR_BRIDGE ||
+            (settings.bridgeEnabled && (e.operational?.() ?? true))),
       )
       .map((e) => e.kind);
     if (kinds.length === 0) return null;
@@ -728,6 +760,8 @@ export class DeliveryService {
       },
     });
     if (!item) return null;
+    const settings =
+      task.executor === EXECUTOR_BRIDGE ? await this.settings() : null;
     return {
       taskId: task.id,
       orderItemId: task.orderItemId,
@@ -741,6 +775,12 @@ export class DeliveryService {
       quantity: item.quantity,
       decorationId: item.product?.decorationId ?? null,
       renderedCommand: task.renderedCommand,
+      bridge: settings?.bridgeServerSlug
+        ? {
+            serverSlug: settings.bridgeServerSlug,
+            extraCommandRoots: settings.extraCommandRoots,
+          }
+        : null,
     };
   }
 
@@ -957,6 +997,9 @@ export class DeliveryService {
             executor: task.executor,
             from: task.status,
             to: DeliveryTaskStatus.MANUAL_DONE,
+            ...(task.bridgeJob
+              ? { bridgeJobStatus: task.bridgeJob.status }
+              : {}),
             reason: text,
           },
         });
@@ -1028,6 +1071,13 @@ export class DeliveryService {
             from: task.status,
             to: target,
             confirmed: true,
+            // Для разбора двойной выдачи (R167): что известно об очереди Bridge.
+            ...(task.bridgeJob
+              ? {
+                  bridgeJobStatus: task.bridgeJob.status,
+                  bridgeClaimCount: task.bridgeJob.claimCount,
+                }
+              : {}),
             ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
           },
         });
@@ -1080,6 +1130,7 @@ export class DeliveryService {
         orderItemId: true,
         step: true,
         executor: true,
+        bridgeJob: { select: { status: true, claimCount: true } },
       },
     });
   }
@@ -1220,6 +1271,19 @@ const TASK_LIST_SELECT = {
   deliveredAt: true,
   createdAt: true,
   updatedAt: true,
+  /// Состояние очереди Bridge (0.13): только статус и метки, без `claimToken`
+  /// и команды. Нужно админке для разбора UNKNOWN и повтора.
+  bridgeJob: {
+    select: {
+      status: true,
+      serverSlug: true,
+      ackCode: true,
+      claimCount: true,
+      claimedAt: true,
+      ackedAt: true,
+      attempt: true,
+    },
+  },
   orderItem: {
     select: {
       id: true,

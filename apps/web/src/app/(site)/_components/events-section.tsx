@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/cn';
 import { formatDateTime, plural } from '@/lib/format';
@@ -52,7 +53,7 @@ export function EventCard({
   return (
     <Link
       href={`/events/${encodeURIComponent(event.slug)}`}
-      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="block min-w-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <article
         data-testid={`event-${kind}`}
@@ -77,7 +78,7 @@ export function EventCard({
             />
           </div>
         ) : null}
-        <div className="flex flex-1 flex-col gap-2 p-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 p-5">
           <div className="flex flex-wrap items-center gap-2">
             {kind === 'active' ? (
               <Badge tone="success" icon={<Radio />}>
@@ -92,7 +93,12 @@ export function EventCard({
             )}
             {event.server ? <Badge tone="neutral">{event.server}</Badge> : null}
           </div>
-          <h3 className={cn('font-display font-semibold', highlighted ? 'text-xl' : 'text-base')}>
+          <h3
+            className={cn(
+              'break-words font-display font-semibold',
+              highlighted ? 'text-xl' : 'text-base',
+            )}
+          >
             {event.title}
           </h3>
           <p
@@ -129,10 +135,17 @@ export function HomeEvents() {
       description="Ивенты, сезоны и важные обновления по расписанию проекта."
     >
       {events.isPending ? (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Skeleton className="h-40 rounded-xl" />
           <Skeleton className="h-40 rounded-xl" />
         </div>
+      ) : events.isError && !active && !next ? (
+        <ErrorState
+          error={events.error}
+          title="Не удалось загрузить события"
+          onRetry={() => events.refetch()}
+          retrying={events.isFetching}
+        />
       ) : !active && !next ? (
         <EmptyState
           icon={<CalendarClock />}
@@ -141,12 +154,12 @@ export function HomeEvents() {
         />
       ) : (
         <div className="flex flex-col gap-4">
-          <div className={cn('grid gap-4', active && next ? 'lg:grid-cols-2' : '')}>
+          <div className={cn('grid grid-cols-1 gap-4', active && next ? 'lg:grid-cols-2' : '')}>
             {active ? <EventCard event={active} kind="active" now={now} /> : null}
             {next ? <EventCard event={next} kind="next" now={now} /> : null}
           </div>
           {rest.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {rest.map((event) => (
                 <EventCard key={event.id} event={event} kind="upcoming" now={now} />
               ))}

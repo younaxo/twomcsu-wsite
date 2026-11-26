@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   HttpException,
   HttpStatus,
   ServiceUnavailableException,
@@ -49,4 +50,9 @@ export function invalidEnvelope(): HttpException {
     { error: 'invalid_envelope' },
     HttpStatus.UNPROCESSABLE_ENTITY,
   );
+}
+
+/// У сервера нет нужной возможности (`capabilities`, 2.4 контракта).
+export function forbidden(): ForbiddenException {
+  return new ForbiddenException({ error: 'capability_missing' });
 }

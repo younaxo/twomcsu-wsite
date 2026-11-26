@@ -13,7 +13,7 @@ import { RequireSession } from '@/components/auth/require-session';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { getErrorMessage } from '@/lib/api/errors';
+import { getErrorMessage, getSafeErrorMessage } from '@/lib/api/errors';
 import {
   PROVIDER_LABEL,
   PROVIDERS as LOGIN_PROVIDERS_LIST,
@@ -47,7 +47,7 @@ function LinkedAccounts() {
       window.location.assign(url);
     } catch (error) {
       setConnecting(null);
-      setErrors((current) => ({ ...current, [provider]: getErrorMessage(error) }));
+      setErrors((current) => ({ ...current, [provider]: getSafeErrorMessage(error) }));
     }
   };
 

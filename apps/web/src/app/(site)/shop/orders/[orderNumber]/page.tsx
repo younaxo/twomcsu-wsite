@@ -25,6 +25,7 @@ import {
   type OrderItemView,
   type OrderView,
 } from '@/lib/store/checkout';
+import { paymentMethodLabel } from '@/lib/store/payment-methods';
 
 function OrderSkeleton() {
   return (
@@ -44,6 +45,7 @@ function itemTitle(item: OrderItemView): string {
 function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: boolean }) {
   const text = orderStatusText(order.status);
   const delivery = readDeliveryStatus(order.deliveryStatus);
+  const method = paymentMethodLabel(order.payment?.method);
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       <Card className="flex flex-col gap-3" data-testid="order-status-card">
@@ -109,11 +111,19 @@ function OrderBody({ order, autoRefresh }: { order: OrderView; autoRefresh: bool
                   </span>
                 ) : null}
               </span>
-              <span className="tabular">{formatMoney(item.totalPrice)}</span>
+              <span className="shrink-0 whitespace-nowrap tabular">
+                {formatMoney(item.totalPrice)}
+              </span>
             </li>
           ))}
         </ul>
         <dl className="flex flex-col gap-2 border-t border-border-subtle pt-4 text-sm">
+          {method ? (
+            <div className="flex justify-between gap-3" data-testid="order-payment-method">
+              <dt className="text-muted-foreground">Способ оплаты</dt>
+              <dd className="text-right">{method}</dd>
+            </div>
+          ) : null}
           <div className="flex justify-between gap-3">
             <dt className="text-muted-foreground">Товары</dt>
             <dd className="tabular">{formatMoney(order.subtotal)}</dd>
