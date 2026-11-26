@@ -53,6 +53,7 @@ export const DELIVERY_EXECUTORS: { value: string; label: string }[] = [
   { value: 'manual', label: 'Вручную' },
   { value: 'site', label: 'На сайте' },
   { value: 'command', label: 'Команда на сервер' },
+  { value: 'bridge', label: 'Плагин Bridge' },
 ];
 
 export function executorLabel(executor: string): string {
@@ -73,6 +74,56 @@ export const RETRY_FROM: readonly DeliveryTaskStatus[] = ['FAILED', 'NEEDS_ATTEN
 
 export const canMarkManualDone = (status: DeliveryTaskStatus) => MANUAL_DONE_FROM.includes(status);
 export const canRetryDelivery = (status: DeliveryTaskStatus) => RETRY_FROM.includes(status);
+
+/// Состояние задания в очереди Bridge (0.13, ADR-0194). Токена захвата и
+/// команды в ответе нет: только статус и метки.
+export const BRIDGE_JOB_STATUSES = [
+  'QUEUED',
+  'CLAIMED',
+  'DONE',
+  'FAILED',
+  'UNKNOWN',
+  'CANCELLED',
+] as const;
+export type BridgeJobStatus = (typeof BRIDGE_JOB_STATUSES)[number];
+
+export const BRIDGE_JOB_META: Record<BridgeJobStatus, { label: string; hint: string }> = {
+  QUEUED: { label: 'Ждёт сервер', hint: 'Сервер ещё не забрал команду.' },
+  CLAIMED: { label: 'Передано серверу', hint: 'Сервер забрал команду, подтверждения пока нет.' },
+  DONE: { label: 'Сервер выполнил', hint: 'Сервер подтвердил выполнение.' },
+  FAILED: { label: 'Сервер отклонил', hint: 'Сервер сообщил, что выполнить нельзя.' },
+  UNKNOWN: {
+    label: 'Исход неизвестен',
+    hint: 'Подтверждения нет или сервер не уверен. Команда могла выполниться.',
+  },
+  CANCELLED: { label: 'Не выполнялось', hint: 'Команда точно не выполнялась.' },
+};
+
+export function bridgeJobLabel(status: string): string {
+  return BRIDGE_JOB_META[status as BridgeJobStatus]?.label ?? status;
+}
+
+export interface BridgeJobInfo {
+  status: BridgeJobStatus;
+  serverSlug: string;
+  ackCode: string | null;
+  claimCount: number;
+  claimedAt: IsoDateString | null;
+  ackedAt: IsoDateString | null;
+  attempt: number;
+}
+
+/// Повтор способен выдать товар дважды, если задание Bridge уже передавалось
+/// серверу (захвачено, исход неизвестен или не подтверждён).
+export function bridgeRetryMayDuplicate(task: {
+  executor: string;
+  bridgeJob?: { status: string; claimCount: number } | null;
+}): boolean {
+  if (task.executor !== 'bridge') return false;
+  const job = task.bridgeJob;
+  if (!job) return false;
+  return job.claimCount > 0 || job.status === 'UNKNOWN' || job.status === 'CLAIMED';
+}
 
 export interface DeliveryTaskOrderItem {
   id: string;
@@ -95,6 +146,8 @@ export interface DeliveryTaskRow {
   deliveredAt: IsoDateString | null;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
+  /// Только у исполнителя `bridge`, когда задание уже ставилось в очередь.
+  bridgeJob?: BridgeJobInfo | null;
   orderItem: DeliveryTaskOrderItem;
 }
 

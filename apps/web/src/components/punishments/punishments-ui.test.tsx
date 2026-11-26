@@ -293,7 +293,8 @@ function mine(overrides: Record<string, unknown> = {}) {
     reasonMasked: false,
     executor: { name: 'ModAlex' },
     scope: { kind: 'server', name: 'survival' },
-    appealable: false,
+    appealable: true,
+    appeals: [],
     ...overrides,
   };
 }
@@ -425,7 +426,7 @@ describe('/bans: карточки на узких экранах (Q75)', () => {
 });
 
 describe('Мои наказания на серверах: подача обращения (1.2)', () => {
-  it('для активных BAN и MUTE есть «Подать обращение» с номером наказания', async () => {
+  it('если appealable, есть «Обжаловать» со ссылкой на форму с номером наказания', async () => {
     mocks.get.mockResolvedValue({
       linked: true,
       items: [mine(), mine({ ref: 'mute-9', kind: 'MUTE' })],
@@ -435,32 +436,62 @@ describe('Мои наказания на серверах: подача обра
     render(<MyServerPunishments />, { wrapper: Providers });
     const items = await screen.findAllByTestId('server-punishment');
     expect(items).toHaveLength(2);
-    const ban = within(items[0]).getByRole('link', { name: /Подать обращение/ });
-    expect(ban).toHaveAttribute('href', '/support/new/other');
+    const ban = within(items[0]).getByRole('link', { name: /Обжаловать/ });
+    expect(ban).toHaveAttribute('href', '/support/new/punishment_appeal?mc=ban-5');
     expect(ban).toHaveAccessibleName(/ban-5/);
-    expect(items[0]).toHaveTextContent('Укажите номер наказания: ban-5');
-    expect(within(items[1]).getByRole('link', { name: /Подать обращение/ })).toHaveAccessibleName(
+    expect(within(items[1]).getByRole('link', { name: /Обжаловать/ })).toHaveAccessibleName(
       /mute-9/,
     );
-    expect(items[1]).toHaveTextContent('Укажите номер наказания: mute-9');
   });
 
-  it('нет для EXPIRED/REMOVED и для KICK/WARN', async () => {
+  it('нет кнопки, если сервер отдал appealable: false', async () => {
     mocks.get.mockResolvedValue({
       linked: true,
       items: [
-        mine({ ref: 'ban-1', status: 'EXPIRED' }),
-        mine({ ref: 'ban-2', status: 'REMOVED' }),
-        mine({ ref: 'kick-3', kind: 'KICK' }),
-        mine({ ref: 'warn-4', kind: 'WARN' }),
+        mine({ ref: 'ban-1', status: 'EXPIRED', appealable: false }),
+        mine({ ref: 'ban-2', status: 'REMOVED', appealable: false }),
+        mine({ ref: 'kick-3', kind: 'KICK', appealable: false }),
+        mine({ ref: 'warn-4', kind: 'WARN', appealable: false }),
       ],
       nextCursor: null,
       meta: META,
     });
     render(<MyServerPunishments />, { wrapper: Providers });
     expect(await screen.findAllByTestId('server-punishment')).toHaveLength(4);
-    expect(screen.queryByRole('link', { name: /Подать обращение/ })).toBeNull();
-    expect(screen.queryByText(/Укажите номер наказания/)).toBeNull();
+    expect(screen.queryByRole('link', { name: /Обжаловать/ })).toBeNull();
+  });
+
+  it('статус и комментарий обжалования на карточке; чужие поля не выводятся', async () => {
+    mocks.get.mockResolvedValue({
+      linked: true,
+      items: [
+        mine({
+          appealable: false,
+          appeals: [
+            {
+              reportNumber: 'R-2026-0001',
+              status: 'REJECTED',
+              createdAt: '2026-11-03T10:00:00.000Z',
+              resolvedAt: '2026-11-04T10:00:00.000Z',
+              verdict: 'Нарушение подтверждено',
+              internalNote: 'секрет',
+            },
+            { reportNumber: 'bad', status: 'HACKED', createdAt: '2026-11-01T00:00:00.000Z' },
+          ],
+        }),
+      ],
+      nextCursor: null,
+      meta: META,
+    });
+    render(<MyServerPunishments />, { wrapper: Providers });
+    const appeals = await screen.findAllByTestId('punishment-appeal');
+    expect(appeals).toHaveLength(1);
+    expect(appeals[0]).toHaveAttribute('data-status', 'REJECTED');
+    expect(appeals[0]).toHaveTextContent('Отклонено');
+    expect(appeals[0]).toHaveTextContent('Нарушение подтверждено');
+    expect(appeals[0]).not.toHaveTextContent('секрет');
+    expect(screen.queryByRole('link', { name: /Обжаловать наказание/ })).toBeNull();
+    expect(screen.getByText(/не снимает наказание само/)).toBeInTheDocument();
   });
 
   it('503 и 404 punishments_public_disabled: понятные состояния', async () => {

@@ -70,6 +70,7 @@ interface Harness {
     punishmentSyncState: { findMany: jest.Mock };
     minecraftPunishment: { findUnique: jest.Mock };
     minecraftAccount: { findUnique: jest.Mock };
+    report: { findMany: jest.Mock };
     server: { findMany: jest.Mock };
     $queryRaw: jest.Mock;
   };
@@ -99,6 +100,7 @@ function make(
     },
     minecraftPunishment: { findUnique: jest.fn().mockResolvedValue(null) },
     minecraftAccount: { findUnique: jest.fn().mockResolvedValue(null) },
+    report: { findMany: jest.fn().mockResolvedValue([]) },
     server: { findMany: jest.fn().mockResolvedValue([]) },
     $queryRaw: jest.fn().mockResolvedValue([]),
   };
@@ -495,6 +497,63 @@ describe('listMine (п.6, 7)', () => {
     expect(sql.sql).toContain(`"status" <> 'DELETED_AT_SOURCE'`);
     expect(sql.values).toContain(GOOD_UUID);
     expect(res.items[0].kind).toBe('WARN');
+  });
+
+  it('обжалования: только свои, статус и вердикт, appealable=false при открытом', async () => {
+    const h = make();
+    h.prisma.minecraftAccount.findUnique.mockResolvedValue({ uuid: GOOD_UUID });
+    h.prisma.$queryRaw.mockResolvedValue([
+      row({ id: 'cl1' }),
+      row({ id: 'cl2' }),
+    ]);
+    h.prisma.report.findMany.mockResolvedValue([
+      {
+        appealedMinecraftPunishmentId: 'cl1',
+        reportNumber: 'R-2',
+        status: 'IN_REVIEW',
+        createdAt: new Date('2026-11-05T00:00:00Z'),
+        resolvedAt: null,
+        verdict: null,
+      },
+      {
+        appealedMinecraftPunishmentId: 'cl2',
+        reportNumber: 'R-1',
+        status: 'REJECTED',
+        createdAt: new Date('2026-11-01T00:00:00Z'),
+        resolvedAt: new Date('2026-11-02T00:00:00Z'),
+        verdict: 'в'.repeat(1500),
+      },
+    ]);
+    const res = await h.service.listMine('user-7', {});
+    const where = h.prisma.report.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      authorId: 'user-7',
+      type: 'PUNISHMENT_APPEAL',
+      appealedMinecraftPunishmentId: { in: ['cl1', 'cl2'] },
+    });
+    const [a, b] = res.items;
+    expect(a.appealable).toBe(false);
+    expect(a.appeals).toEqual([
+      {
+        reportNumber: 'R-2',
+        status: 'IN_REVIEW',
+        createdAt: '2026-11-05T00:00:00.000Z',
+        resolvedAt: null,
+        verdict: null,
+      },
+    ]);
+    expect(b.appealable).toBe(true);
+    expect(b.appeals[0].status).toBe('REJECTED');
+    expect(b.appeals[0].verdict).toHaveLength(1000);
+    expect(JSON.stringify(res)).not.toMatch(/assignedTo|internalNote|authorId/);
+  });
+
+  it('без наказаний обжалования не запрашиваются', async () => {
+    const h = make();
+    h.prisma.minecraftAccount.findUnique.mockResolvedValue({ uuid: GOOD_UUID });
+    h.prisma.$queryRaw.mockResolvedValue([]);
+    await h.service.listMine('user-7', {});
+    expect(h.prisma.report.findMany).not.toHaveBeenCalled();
   });
 
   it('DELETED_AT_SOURCE, попавший в выборку, не отдаётся', async () => {

@@ -2,6 +2,7 @@ import type { DecimalString } from '@twomc/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
+import { safeErrorMessage } from '@/lib/api/safe-error';
 import { siteKeys } from '@/lib/site/hooks';
 import { useAuthStore } from '@/lib/auth/store';
 
@@ -98,6 +99,12 @@ const CODE_MESSAGES: Record<string, string> = {
   CART_UNIQUE_ALREADY_OWNED: 'Этот товар у вас уже есть, повторно его купить нельзя.',
   CART_GIFT_NOT_ALLOWED: 'Этот товар нельзя подарить: он не подарочный или только для себя.',
   CART_GIFT_UNAVAILABLE: 'Такого игрока нет или ему нельзя подарить. Проверьте ник получателя.',
+  CART_EMPTY: 'Корзина пуста. Добавьте товары, чтобы оформить заказ.',
+  CART_ITEM_NOT_FOUND: 'Этой позиции уже нет в корзине. Обновите корзину.',
+  CART_TARGET_REQUIRED: 'Не выбран товар. Обновите страницу и повторите.',
+  CART_TARGET_AMBIGUOUS: 'Не удалось добавить товар. Обновите страницу и повторите.',
+  VARIANT_NOT_FOUND: 'Этот вариант товара больше недоступен. Обновите страницу и выберите другой.',
+  BUNDLE_NOT_FOUND: 'Этот набор больше недоступен. Обновите страницу.',
 };
 
 /// Запасной разбор для старого API без `code`: определяем код по русскому тексту.
@@ -130,7 +137,7 @@ function waitPhrase(seconds: number | undefined): string {
 }
 
 /// Понятный текст ошибки: сначала по `error.code`, затем по тексту сообщения
-/// (сообщения API по корзине и промокодам русские — отдаются как есть).
+/// (только чтобы определить код). Сырые сообщения API игроку не показываются.
 export function cartErrorMessage(error: unknown, fallback = 'Не удалось выполнить действие.') {
   if (!(error instanceof ApiError)) return fallback;
   if (error.code === 'CART_GIFT_RATE_LIMITED') {
@@ -144,9 +151,14 @@ export function cartErrorMessage(error: unknown, fallback = 'Не удалось
   // Для лимита на покупку сервер указывает число: берём его текст.
   if (code && code !== 'CART_MAX_PER_PURCHASE' && CODE_MESSAGES[code]) return CODE_MESSAGES[code];
   if (code === 'CART_MAX_PER_PURCHASE') {
-    return error.messages[0] ?? 'Достигнут максимум количества этого товара за покупку.';
+    // Число берём из текста сервера, а сам текст не показываем.
+    const limit = /(\d+)\s*шт/i.exec(error.messages.join(' '))?.[1];
+    return limit
+      ? `Достигнут максимум: ${limit} шт. этого товара за одну покупку.`
+      : 'Достигнут максимум количества этого товара за покупку.';
   }
-  return error.messages[0] ?? fallback;
+  // Неизвестный код: общий текст по статусу, без сырых сообщений API.
+  return safeErrorMessage(error, fallback);
 }
 
 /// Текст предупреждения о сохранённом промокоде из `promoError` (200-ответ).

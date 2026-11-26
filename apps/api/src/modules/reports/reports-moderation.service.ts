@@ -31,6 +31,10 @@ import {
   REPORT_PRIORITY_PROVIDER,
   ReportPriorityProvider,
 } from './report-priority.provider';
+import {
+  APPEALED_MC_PUNISHMENT_SELECT,
+  withMirrorView,
+} from './report-mirror-appeal';
 import { buildStaffReportWhere } from './report-staff-filters';
 
 /// Для history: audit-события staff-мутаций пишет AuditInterceptor с
@@ -112,6 +116,10 @@ export class ReportsModerationService {
           author: { select: PUBLIC_USER_SELECT },
           assignedTo: { select: PUBLIC_USER_SELECT },
           targets: true,
+          // Связь обжалования с наказанием сервера (l1-02); без BigInt в JSON.
+          appealedMinecraftPunishment: {
+            select: APPEALED_MC_PUNISHMENT_SELECT,
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -119,9 +127,10 @@ export class ReportsModerationService {
       }),
       this.prisma.report.count({ where }),
     ]);
+    const nowMs = Date.now();
     const items = await Promise.all(
       rows.map(async (row) => ({
-        ...row,
+        ...withMirrorView(row, nowMs, true),
         priority: await this.priority.resolve(row),
       })),
     );

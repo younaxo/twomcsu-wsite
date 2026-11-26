@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/field';
+import { PaymentMethodPicker } from '@/components/store/payment-method-picker';
+import { usePaymentChoice } from '@/lib/store/payment-methods';
 import { formatMoney } from '@/lib/format';
 import {
   OFFER_DOC_HREF,
@@ -41,10 +43,13 @@ export function QuickBuyPanel({
   const nickId = useId();
   const offerId = useId();
   const nickRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [nick, setNick] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [nickError, setNickError] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const choice = usePaymentChoice(true);
   const [failure, setFailure] = useState<QuickBuyErrorInfo | null>(null);
   const [result, setResult] = useState<QuickBuyResult | null>(null);
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
@@ -97,10 +102,21 @@ export function QuickBuyPanel({
 
   const paymentOff = config.data ? !config.data.paymentAvailable : false;
   const loginRequired = failure?.kind === 'login_required';
+  // Без списка способов заказ не отправляем: сервер потребует выбор (payment_method_required).
+  const methodsNotReady = choice.loading || choice.loadError !== null;
+
+  /// Фокус на группу способов оплаты (первую радио-карточку): после рендера, когда ошибка уже в DOM.
+  const focusPayment = () => {
+    setTimeout(() => {
+      formRef.current
+        ?.querySelector<HTMLElement>('[data-testid="quick-buy-payment-methods"] [role="radio"]')
+        ?.focus();
+    }, 0);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (buy.isPending || paymentOff || !config.data) return;
+    if (buy.isPending || paymentOff || methodsNotReady || !config.data) return;
     setFailure(null);
     const nickProblem = validateNick(nick);
     setNickError(nickProblem);
@@ -108,6 +124,12 @@ export function QuickBuyPanel({
       nickRef.current?.focus();
       return;
     }
+    if (choice.required && choice.selected === null) {
+      setPaymentError('Выберите способ оплаты, чтобы оформить заказ.');
+      focusPayment();
+      return;
+    }
+    setPaymentError(null);
     if (!accepted) {
       setOfferError('Подтвердите согласие с офертой, чтобы оформить заказ.');
       return;
@@ -119,6 +141,7 @@ export function QuickBuyPanel({
         quantity,
         guestMinecraftNick: nick.trim(),
         offerVersion: config.data.offerVersion,
+        ...(choice.required && choice.selected ? { paymentMethod: choice.selected } : {}),
       },
       {
         onSuccess: (data) => {
@@ -131,6 +154,12 @@ export function QuickBuyPanel({
             setNickError(info.message);
             nickRef.current?.focus();
           }
+          if (info.kind === 'payment') {
+            setPaymentError(info.message);
+            focusPayment();
+            // Список мог измениться: сбрасываем выбор и перечитываем способы.
+            choice.reload();
+          }
           if (info.kind === 'offer') {
             setAccepted(false);
             setOfferError(info.message);
@@ -142,6 +171,7 @@ export function QuickBuyPanel({
 
   return (
     <form
+      ref={formRef}
       onSubmit={submit}
       noValidate
       aria-label="Покупка без входа"
@@ -186,6 +216,18 @@ export function QuickBuyPanel({
           ) : null}
         </p>
       </div>
+
+      <PaymentMethodPicker
+        choice={{
+          ...choice,
+          select: (code) => {
+            choice.select(code);
+            setPaymentError(null);
+          },
+        }}
+        error={paymentError}
+        testId="quick-buy-payment-methods"
+      />
 
       <div className="flex items-start gap-3">
         <Checkbox
@@ -239,7 +281,10 @@ export function QuickBuyPanel({
       ) : null}
 
       <div data-testid="quick-buy-error">
-        {failure && failure.kind !== 'nick' && failure.kind !== 'offer' ? (
+        {failure &&
+        failure.kind !== 'nick' &&
+        failure.kind !== 'offer' &&
+        failure.kind !== 'payment' ? (
           <p role="alert" className="flex items-start gap-1.5 text-sm font-medium text-destructive">
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
             <span>{failure.message}</span>
@@ -257,7 +302,7 @@ export function QuickBuyPanel({
             type="submit"
             size="lg"
             loading={buy.isPending}
-            disabled={paymentOff || config.isPending}
+            disabled={paymentOff || config.isPending || methodsNotReady}
             data-testid="quick-buy-submit"
           >
             <CreditCard />

@@ -199,12 +199,16 @@ describe('корзина /shop/cart', () => {
     const user = userEvent.setup();
     signIn();
     mocks.get.mockResolvedValue(cart());
-    mocks.patch.mockRejectedValue(new ApiError(400, ['Максимум 2 шт. этого товара за покупку']));
+    mocks.patch.mockRejectedValue(
+      new ApiError(400, ['Максимум 2 шт. этого товара за покупку'], {
+        code: 'CART_MAX_PER_PURCHASE',
+      }),
+    );
     render(<CartPage />, { wrapper: Providers });
     await user.click(
       await screen.findByRole('button', { name: 'Увеличить количество: Тестовая привилегия' }),
     );
-    expect(await screen.findByRole('alert')).toHaveTextContent('Максимум 2 шт.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Достигнут максимум: 2 шт.');
   });
 
   it('удаление позиции: DELETE и объявление для скринридера', async () => {
@@ -295,7 +299,7 @@ describe('корзина /shop/cart', () => {
     render(<CartPage />, { wrapper: Providers });
     await user.click(await screen.findByRole('button', { name: 'Удалить: Тестовая привилегия' }));
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Сбой удаления');
+    expect(alert).toHaveTextContent('Данные изменились. Обновите страницу и повторите.');
     expect(within(screen.getByTestId('cart-item')).getByRole('alert')).toBe(alert);
     expect(screen.getByRole('heading', { level: 1, name: 'Корзина' })).not.toHaveFocus();
   });
@@ -404,12 +408,18 @@ describe('корзина /shop/cart', () => {
     );
     expect(cartErrorMessage(err('PROMO_NOT_STARTED'))).toMatch(/ещё не начал/);
     expect(cartErrorMessage(err('PROMO_FIRST_PURCHASE_ONLY'))).toMatch(/первую покупку/);
-    // Кода PROMO_ALREADY_USED в API нет — текст сервера.
-    expect(cartErrorMessage(err('PROMO_ALREADY_USED', 'Серверный'))).toBe('Серверный');
-    // Лимит на покупку: число берём из текста сервера.
-    expect(cartErrorMessage(err('CART_MAX_PER_PURCHASE', 'Максимум 2 шт.'))).toBe('Максимум 2 шт.');
-    // Неизвестный код — текст сервера.
-    expect(cartErrorMessage(err('SOMETHING_NEW', 'Новая ошибка'))).toBe('Новая ошибка');
+    // Кода PROMO_ALREADY_USED в API нет — общий текст по статусу, без сырого сообщения.
+    expect(cartErrorMessage(err('PROMO_ALREADY_USED', 'Серверный'))).toBe(
+      'Проверьте введённые данные и повторите.',
+    );
+    // Лимит на покупку: число берём из текста сервера, сам текст не показываем.
+    expect(cartErrorMessage(err('CART_MAX_PER_PURCHASE', 'Максимум 2 шт.'))).toBe(
+      'Достигнут максимум: 2 шт. этого товара за одну покупку.',
+    );
+    // Неизвестный код — общий текст по статусу, без сырого сообщения.
+    expect(cartErrorMessage(err('SOMETHING_NEW', 'Новая ошибка'))).toBe(
+      'Проверьте введённые данные и повторите.',
+    );
   });
 
   it('promoError без promoCode не теряется: показывается рядом с формой', async () => {
@@ -437,7 +447,9 @@ describe('корзина /shop/cart', () => {
     expect(cartErrorMessage(new ApiError(400, ['Сумма ниже минимальной']))).toMatch(
       /минимальной для этого промокода/,
     );
-    expect(cartErrorMessage(new ApiError(400, ['Что-то своё']))).toBe('Что-то своё');
+    expect(cartErrorMessage(new ApiError(400, ['Что-то своё']))).toBe(
+      'Проверьте введённые данные и повторите.',
+    );
   });
 
   it('429 на подарок: понятное сообщение с Retry-After', async () => {
@@ -569,15 +581,17 @@ describe('«В корзину» на /shop/[slug]', () => {
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
-  it('ошибка API при добавлении показывается текстом сервера', async () => {
+  it('ошибка API при добавлении показывается общим текстом по статусу', async () => {
     const user = userEvent.setup();
     signIn();
     productRoutes(PRODUCT);
-    mocks.post.mockRejectedValue(new ApiError(404, ['Вариант товара не найден']));
+    mocks.post.mockRejectedValue(new ApiError(404, ['no row']));
     render(<ProductPage />, { wrapper: Providers });
     await screen.findByText('Оплата заказа появится в ближайшем обновлении.');
     await user.click(await screen.findByRole('button', { name: /В корзину/ }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Вариант товара не найден');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не найдено: возможно, это уже удалено.',
+    );
   });
 
   it('уникальный товар, уже лежащий в корзине, повторно не добавляется', async () => {

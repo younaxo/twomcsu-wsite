@@ -1,10 +1,13 @@
 import type {
+  MyPunishmentAppeal,
   PunishmentActivityFilter,
+  PunishmentAppealStatus,
   PunishmentKind,
   PunishmentOrder,
   PunishmentPublicKind,
   PunishmentViewStatus,
 } from '@twomc/shared';
+import { PUNISHMENT_APPEAL_STATUSES } from '@twomc/shared';
 import { api } from '@/lib/api/client';
 
 /// Белый список полей наказаний сервера (этап 02, срез 2, BANS-API-CONTRACT.md).
@@ -38,6 +41,10 @@ export interface MyPunishmentView extends PunishmentViewBase {
   /// Полный очищенный текст; null — не указана.
   reason: string | null;
   reasonMasked: boolean;
+  /// Можно подать обжалование (решает сервер).
+  appealable: boolean;
+  /// Обжалования этого наказания, новые первыми.
+  appeals: MyPunishmentAppeal[];
 }
 
 export interface PunishmentPageMeta {
@@ -120,6 +127,35 @@ export function toPublicView(raw: unknown): PublicPunishmentView | null {
   };
 }
 
+const APPEAL_STATUSES: readonly string[] = PUNISHMENT_APPEAL_STATUSES;
+
+/// Белый список полей обжалования: лишние ключи отбрасываются.
+function toAppeals(value: unknown): MyPunishmentAppeal[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: MyPunishmentAppeal[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) {
+      continue;
+    }
+    const reportNumber = str(item.reportNumber);
+    const status = str(item.status);
+    const createdAt = str(item.createdAt);
+    if (!reportNumber || !createdAt || !status || !APPEAL_STATUSES.includes(status)) {
+      continue;
+    }
+    result.push({
+      reportNumber,
+      status: status as PunishmentAppealStatus,
+      createdAt,
+      resolvedAt: str(item.resolvedAt),
+      verdict: str(item.verdict),
+    });
+  }
+  return result;
+}
+
 export function toMyView(raw: unknown): MyPunishmentView | null {
   if (!isRecord(raw)) {
     return null;
@@ -128,7 +164,13 @@ export function toMyView(raw: unknown): MyPunishmentView | null {
   if (!base) {
     return null;
   }
-  return { ...base, reason: str(raw.reason), reasonMasked: raw.reasonMasked === true };
+  return {
+    ...base,
+    reason: str(raw.reason),
+    reasonMasked: raw.reasonMasked === true,
+    appealable: raw.appealable === true,
+    appeals: toAppeals(raw.appeals),
+  };
 }
 
 function metaOf(raw: Record<string, unknown>): PunishmentPageMeta {

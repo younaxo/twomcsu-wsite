@@ -223,7 +223,11 @@ export type PublicProfileSummary =
         kills: number;
         deaths: number;
         killDeathRatio: number;
+        /// Монеты (голосование); поле появилось с разделом статистики 0.14.
+        coins?: number;
       } | null;
+      /// Раздел статистики включён на сайте (флаг); undefined у старых ответов.
+      statisticsEnabled?: boolean;
       statisticsHidden: boolean;
       friendsCount: number;
       achievementsCompleted: number;
