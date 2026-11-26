@@ -10,7 +10,8 @@ import { ErrorState } from '@/components/ui/error-state';
 import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { ApiError, getErrorMessage } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
+import { publicErrorMessage } from '@/lib/api/safe-error';
 import { useAuthStore } from '@/lib/auth/store';
 import { useAttendance, useEvent, type AttendanceStatus } from '@/lib/events/hooks';
 import { formatDateTime, formatNumber } from '@/lib/format';
@@ -60,7 +61,7 @@ export default function EventPage() {
       { id: data.id, status },
       {
         onSuccess: () => toast.success(STATUS_LABEL[status]),
-        onError: (error) => toast.error(getErrorMessage(error)),
+        onError: (error) => toast.error(publicErrorMessage(error)),
       },
     );
 
@@ -145,7 +146,7 @@ export default function EventPage() {
                   onClick={() =>
                     leave.mutate(data.id, {
                       onSuccess: () => toast.success('Вы больше не участвуете'),
-                      onError: (error) => toast.error(getErrorMessage(error)),
+                      onError: (error) => toast.error(publicErrorMessage(error)),
                     })
                   }
                 >
