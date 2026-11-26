@@ -585,7 +585,7 @@ describe('«В корзину» на /shop/[slug]', () => {
     const user = userEvent.setup();
     signIn();
     productRoutes(PRODUCT);
-    mocks.post.mockRejectedValue(new ApiError(404, ['Вариант товара не найден']));
+    mocks.post.mockRejectedValue(new ApiError(404, ['no row']));
     render(<ProductPage />, { wrapper: Providers });
     await screen.findByText('Оплата заказа появится в ближайшем обновлении.');
     await user.click(await screen.findByRole('button', { name: /В корзину/ }));
