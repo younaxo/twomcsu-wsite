@@ -274,17 +274,53 @@ const OPEN_APPEAL_STATUSES: ReadonlySet<string> = new Set([
   'WAITING_RESPONSE',
 ]);
 
-/// Обжалуемость (Q57 О2): активные BAN и MUTE без открытого обжалования.
+/// Пауза перед повторным обжалованием того же наказания после прежнего
+/// обращения (ADR-0196). Её же применяет создание обращения (reports).
+export const APPEAL_REPEAT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/// Когда закончится пауза после самого свежего обращения автора; null, если
+/// паузы нет (обращений нет или она уже прошла).
+export function appealCooldownEndsAt(
+  appeals: readonly Pick<MyPunishmentAppeal, 'createdAt'>[],
+  nowMs: number,
+): number | null {
+  let latest = -Infinity;
+  for (const a of appeals) {
+    const t = Date.parse(a.createdAt);
+    if (Number.isFinite(t) && t > latest) latest = t;
+  }
+  const end = latest + APPEAL_REPEAT_COOLDOWN_MS;
+  return Number.isFinite(end) && end > nowMs ? end : null;
+}
+
+/// Обжалуемость (Q57 О2): активные BAN и MUTE без открытого обжалования и
+/// вне паузы 24 ч после прошлого обращения (ADR-0196; без nowMs пауза не
+/// учитывается).
 export function isAppealable(
   kind: MirrorRow['kind'],
   status: PunishmentViewStatus,
-  appeals: readonly Pick<MyPunishmentAppeal, 'status'>[],
+  appeals: readonly Pick<MyPunishmentAppeal, 'status' | 'createdAt'>[],
+  nowMs?: number,
 ): boolean {
   return (
     (kind === 'BAN' || kind === 'MUTE') &&
     status === 'ACTIVE' &&
-    !appeals.some((a) => OPEN_APPEAL_STATUSES.has(a.status))
+    !appeals.some((a) => OPEN_APPEAL_STATUSES.has(a.status)) &&
+    (nowMs === undefined || appealCooldownEndsAt(appeals, nowMs) === null)
   );
+}
+
+/// Когда можно подать снова: только для обжалуемого по виду и статусу
+/// наказания без открытого обращения, пока идёт пауза.
+function nextAppealAtOf(
+  kind: MirrorRow['kind'],
+  status: PunishmentViewStatus,
+  appeals: readonly MyPunishmentAppeal[],
+  nowMs: number,
+): string | null {
+  if (!isAppealable(kind, status, appeals)) return null;
+  const end = appealCooldownEndsAt(appeals, nowMs);
+  return end === null ? null : new Date(end).toISOString();
 }
 
 export function toMyPunishment(
@@ -306,7 +342,8 @@ export function toMyPunishment(
     reasonMasked: isReasonMasked(row.reason),
     executor: publicExecutor(row),
     scope: scopeView(row.serverScope, ctx.servers),
-    appealable: isAppealable(row.kind, status, appeals),
+    appealable: isAppealable(row.kind, status, appeals, ctx.nowMs),
+    nextAppealAt: nextAppealAtOf(row.kind, status, appeals, ctx.nowMs),
     appeals: [...appeals],
   };
 }
