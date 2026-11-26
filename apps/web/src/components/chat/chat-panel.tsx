@@ -7,7 +7,7 @@ import type {
   ChatOnlineDto,
 } from '@twomc/shared';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pin, SendHorizontal, Users } from 'lucide-react';
+import { Pin, SendHorizontal, Users, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { io, type Socket } from 'socket.io-client';
@@ -23,7 +23,7 @@ import { api } from '@/lib/api/client';
 import { tokenStore } from '@/lib/api/token-store';
 import { useAuthStore } from '@/lib/auth/store';
 import { cn } from '@/lib/cn';
-import { API_URL } from '@/lib/env';
+import { realtimeTarget } from '@/lib/realtime';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
 /// Общий чат (срез 2.5, ADR-0113): каналы, история «Загрузить раньше»,
@@ -48,13 +48,16 @@ function useChatSocket(channel: ChatChannelDto | null, onRestriction: (r: Restri
   const meId = useAuthStore((state) => state.user?.id ?? null);
   const authenticated = useAuthStore((state) => state.status === 'authenticated');
   const [socket, setSocket] = useState<Socket | null>(null);
+  // Связь потеряна или не установилась: чат работает на опросе истории (без «живых» обновлений).
+  const [offline, setOffline] = useState(false);
   const restrict = useRef(onRestriction);
   restrict.current = onRestriction;
 
   useEffect(() => {
     const token = tokenStore.get();
     if (!channel || !authenticated || !token) return;
-    const connection = io(`${API_URL}/chat`, {
+    const connection = io(realtimeTarget('/chat').url, {
+      path: realtimeTarget('/chat').path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 3,
@@ -63,8 +66,13 @@ function useChatSocket(channel: ChatChannelDto | null, onRestriction: (r: Restri
       void client.invalidateQueries({ queryKey: chatKeys.history(channel.slug) });
       void client.invalidateQueries({ queryKey: chatKeys.pinned(channel.slug) });
     };
-    connection.on('connect', () => connection.emit('join_channel', { channelId: channel.id }));
+    connection.on('connect', () => {
+      setOffline(false);
+      connection.emit('join_channel', { channelId: channel.id });
+    });
+    connection.on('disconnect', () => setOffline(true));
     connection.on('connect_error', (error: Error) => {
+      setOffline(true);
       if (/Забанен/.test(error.message)) {
         restrict.current({ kind: 'banned', until: null, reason: null });
       }
@@ -106,10 +114,11 @@ function useChatSocket(channel: ChatChannelDto | null, onRestriction: (r: Restri
       connection.emit('leave_channel', { channelId: channel.id });
       connection.disconnect();
       setSocket(null);
+      setOffline(false);
     };
   }, [authenticated, channel, client, meId]);
 
-  return socket;
+  return { socket, offline };
 }
 
 function MessageRow({ message }: { message: ChatMessageDto }) {
@@ -163,7 +172,7 @@ function restrictionText(restriction: Restriction): string {
 function ChannelView({ channel }: { channel: ChatChannelDto }) {
   const signedIn = useAuthStore((state) => state.status === 'authenticated');
   const [restriction, setRestriction] = useState<Restriction | null>(null);
-  const socket = useChatSocket(channel, setRestriction);
+  const { socket, offline } = useChatSocket(channel, setRestriction);
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const bottom = useRef<HTMLDivElement>(null);
@@ -178,7 +187,7 @@ function ChannelView({ channel }: { channel: ChatChannelDto }) {
       }),
     getNextPageParam: (last) => (last.page * last.limit < last.total ? last.page + 1 : undefined),
     // Гость без сокета — история обновляется опросом.
-    refetchInterval: signedIn ? false : 15_000,
+    refetchInterval: !signedIn || offline ? 15_000 : false,
   });
   const pinned = useQuery({
     queryKey: chatKeys.pinned(channel.slug),
@@ -204,7 +213,11 @@ function ChannelView({ channel }: { channel: ChatChannelDto }) {
 
   const send = async () => {
     const text = content.trim();
-    if (!text || sending || !socket?.connected) return;
+    if (!text || sending) return;
+    if (!socket?.connected) {
+      toast.error('Нет связи с чатом. Подождите переподключения и повторите.');
+      return;
+    }
     setSending(true);
     try {
       const ack = (await socket
@@ -279,6 +292,17 @@ function ChannelView({ channel }: { channel: ChatChannelDto }) {
         <div ref={bottom} />
       </div>
       <div className="border-t border-border-subtle p-3">
+        {signedIn && offline ? (
+          <p
+            className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"
+            role="status"
+            data-testid="chat-offline"
+          >
+            <WifiOff aria-hidden className="size-3.5 shrink-0" />
+            Нет связи с чатом: новые сообщения подгружаются раз в 15 секунд, отправка временно
+            недоступна.
+          </p>
+        ) : null}
         {!signedIn ? (
           <p className="text-sm text-muted-foreground" data-testid="chat-sign-in">
             <Link
