@@ -127,13 +127,20 @@ public final class BridgePlugin extends JavaPlugin {
             }
             return true;
         }
-        if (args.length == 1 && args[0].equalsIgnoreCase("ackcorrupt")) {
+        if ((args.length == 1 || args.length == 2) && args[0].equalsIgnoreCase("ackcorrupt")) {
             if (store == null) {
                 sender.sendMessage("TwoMC Bridge: журнал ключей не открыт.");
                 return true;
             }
             if (!store.corruptionPending()) {
                 sender.sendMessage("TwoMC Bridge: подтверждать нечего, порча журнала не зафиксирована.");
+                return true;
+            }
+            if (args.length != 2 || !args[1].equalsIgnoreCase("confirm")) {
+                String copy = store.corruptionCopyName();
+                sender.sendMessage("TwoMC Bridge: журнал ключей повреждён. Копия исходного файла: " + (copy == null ? "(не найдена)" : copy)
+                        + ". Проверьте её: потерянная запись о выполненной выдаче даст двойную выдачу. "
+                        + "Если риск принят, повторите: /twomcbridge ackcorrupt confirm");
                 return true;
             }
             boolean ok = store.acknowledgeCorruption();
@@ -144,12 +151,15 @@ public final class BridgePlugin extends JavaPlugin {
                     : "TwoMC Bridge: перезапись журнала не удалась, выдача остаётся выключенной (см. лог).");
             return true;
         }
-        sender.sendMessage("Использование: /twomcbridge status | forget <idempotencyKey> | ackcorrupt");
+        sender.sendMessage("Использование: /twomcbridge status | forget <idempotencyKey> | ackcorrupt [confirm]");
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 2 && args[0].equalsIgnoreCase("ackcorrupt")) {
+            return List.of("confirm");
+        }
         return args.length == 1 ? List.of("status", "forget", "ackcorrupt") : List.of();
     }
 }

@@ -40,17 +40,20 @@ final class Protocol {
     static final List<String> DEFAULT_ROOTS = List.of("lp", "luckperms", "give", "crate", "cratekey", "eco");
     /**
      * Белый список ФОРМ команд по умолчанию (M4, допущение Q112); синтаксис описан в {@link CommandPolicy}. Корни те же,
-     * что в {@link #DEFAULT_ROOTS}. Для cratekey дополнительно допускается форма {@code give <ник> <ключ> [кол-во]}:
-     * она используется в проверках рендера на сайте (command-template-rendered.spec.ts).
+     * что в {@link #DEFAULT_ROOTS}. Дополнительно допускаются формы {@code parent set <группа>}, {@code crate give <ник> <ключ> [кол-во]} и
+     * {@code cratekey give ...}: сайт считает их валидными (command-template-rendered.spec.ts), плагин обязан их принимать.
      */
     static final List<String> DEFAULT_TEMPLATES = List.of(
             "lp user {nick} parent add|addtemp {group} {duration}?",
             "luckperms user {nick} parent add|addtemp {group} {duration}?",
+            "lp user {nick} parent set {group}",
+            "luckperms user {nick} parent set {group}",
             "eco give {nick} {num}",
             "give {nick} {item} {qty}?",
             "crate key give {nick} {key} {qty}?",
             "cratekey key give {nick} {key} {qty}?",
-            "cratekey give {nick} {key} {qty}?");
+            "cratekey give {nick} {key} {qty}?",
+            "crate give {nick} {key} {qty}?");
     /** Зеркало FORBIDDEN_COMMAND_ROOTS сайта плюс несколько служебных: не разрешаются даже через extraRoots. */
     static final List<String> FORBIDDEN_ROOTS = List.of(
             "op", "deop", "stop", "restart", "reload", "rl", "whitelist", "ban", "ban-ip", "banip", "pardon", "pardon-ip", "kick", "execute", "sudo", "console", "plugman", "pl", "plugins", "minecraft:op", "save-all", "save-off", "save-on", "setworldspawn", "gamemode", "fill", "rcon", "bukkit:reload", "bukkit:stop", "minecraft:stop", "minecraft:execute");

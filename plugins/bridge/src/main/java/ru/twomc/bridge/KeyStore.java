@@ -26,6 +26,11 @@ interface KeyStore {
         return false;
     }
 
+    /** Путь к сохранённой копии повреждённого журнала (показывается оператору до подтверждения) или null. */
+    default String corruptionCopyName() {
+        return null;
+    }
+
     /** Оператор подтверждает порчу после ручной проверки копии; журнал переписывается, выдача разрешается. */
     default boolean acknowledgeCorruption() {
         return false;

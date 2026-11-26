@@ -686,20 +686,68 @@ class DeliveryEngineTest {
     }
 
     @Test
-    void ackBadRequestAndUnprocessable_dropTheBatch() throws IOException {
+    void ackBadRequestAndUnprocessable_retryTwiceThenDropTheBatch() throws IOException {
         for (int status : new int[] {400, 422}) {
             Harness h = new Harness();
             try {
                 h.engine.enqueueAck(new DeliveryProtocol.Job("cjob00000001", TOKEN1, "k1:1", "give Steve diamond 1"),
                         DeliveryProtocol.AckStatus.DONE, null);
-                h.transport.thenResponse(new Transport.Response(status, null, null, "{\"error\":\"validation_failed\"}"));
+                for (int i = 0; i < 3; i++) {
+                    h.transport.thenResponse(new Transport.Response(status, null, null, "{\"error\":\"validation_failed\"}"));
+                }
                 h.engine.cycle();
-                assertEquals(0, h.engine.status().outbox(), "пачка отброшена при HTTP " + status);
+                assertEquals(1, h.engine.status().outbox(), "первый отказ HTTP " + status + ": пачка остаётся для повтора");
+                h.now.addAndGet(60_000);
+                h.engine.cycle();
+                assertEquals(1, h.engine.status().outbox(), "второй отказ: пачка всё ещё остаётся");
+                h.now.addAndGet(60_000);
+                h.engine.cycle();
+                assertEquals(0, h.engine.status().outbox(), "после двух повторов пачка отброшена при HTTP " + status);
+                assertEquals(3, h.transport.to(Protocol.PATH_ACK).size());
                 assertTrue(h.logs.text.toString().contains("Пачка ack отброшена"));
                 h.assertNoSecretsLogged();
             } finally {
                 h.store.close();
             }
+        }
+    }
+
+    @Test
+    void ackBadRequestOnce_thenAccepted_keepsTheBatchDelivered() throws IOException {
+        Harness h = new Harness();
+        try {
+            h.engine.enqueueAck(new DeliveryProtocol.Job("cjob00000001", TOKEN1, "k1:1", "give Steve diamond 1"),
+                    DeliveryProtocol.AckStatus.DONE, null);
+            h.transport.thenResponse(new Transport.Response(400, null, null, "{\"error\":\"validation_failed\"}"));
+            h.transport.then(ackAll("accepted", null));
+            h.transport.thenResponse(claimResponse(2000));
+            h.engine.cycle();
+            assertEquals(1, h.engine.status().outbox());
+            h.now.addAndGet(60_000);
+            h.engine.cycle();
+            assertEquals(0, h.engine.status().outbox());
+            assertFalse(h.logs.text.toString().contains("Пачка ack отброшена"));
+        } finally {
+            h.store.close();
+        }
+    }
+
+    @Test
+    void noClaimWhileJobsInFlight() throws IOException {
+        Harness h = new Harness();
+        try {
+            h.transport.thenResponse(claimResponse(1000, job("cjob00000001", "item1:1", "give Steve diamond 1", TOKEN1)));
+            h.transport.thenResponse(claimResponse(1000)); // не должен быть запрошен
+            h.engine.cycle();
+            assertEquals(1, h.engine.status().inFlight(), "команда ждёт главного потока");
+            h.now.addAndGet(60_000); // pollAfterMs давно прошёл
+            h.engine.cycle();
+            h.engine.cycle();
+            assertEquals(1, h.transport.to(Protocol.PATH_CLAIM).size(), "claim при inFlight>0 не делается");
+            h.runMain();
+            assertEquals(0, h.engine.status().inFlight());
+        } finally {
+            h.store.close();
         }
     }
 

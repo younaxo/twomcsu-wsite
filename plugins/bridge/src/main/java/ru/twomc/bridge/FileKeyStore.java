@@ -59,6 +59,8 @@ final class FileKeyStore implements KeyStore {
     private boolean healthy = true;
     /** При чтении найдена порча (не оборванный хвост): выдача выключена до {@link #acknowledgeCorruption()}. */
     private boolean corruptPending;
+    /** Копия повреждённого журнала, сохранённая при обнаружении порчи (для двухшагового ackcorrupt). */
+    private Path badCopy;
     private boolean dirSyncWarned;
 
     private FileKeyStore(Path dir, LongSupplier clock, Logger logger) {
@@ -160,6 +162,8 @@ final class FileKeyStore implements KeyStore {
             // пока оператор не проверит копию и не подтвердит командой /twomcbridge ackcorrupt.
             Path bad = dir.resolve(LOG_NAME + ".bad-" + (clock.getAsLong() / 1000));
             Files.copy(log, bad, StandardCopyOption.REPLACE_EXISTING);
+            badCopy = bad;
+            pruneBadCopies();
             corruptPending = true;
             healthy = false;
             logger.severe("Журнал ключей: повреждённых строк " + corrupt + "; копия сохранена в " + bad.getFileName()
@@ -173,6 +177,41 @@ final class FileKeyStore implements KeyStore {
         if (tornTail || dropped || total > map.size() + 100) {
             compact();
         }
+    }
+
+    /** Сколько копий executed-keys.log.bad-* хранить (последние по времени в имени); старше удаляются. */
+    static final int MAX_BAD_COPIES = 5;
+
+    private void pruneBadCopies() {
+        String prefix = LOG_NAME + ".bad-";
+        try (java.util.stream.Stream<Path> files = Files.list(dir)) {
+            List<Path> bad = new ArrayList<>(files
+                    .filter(p -> p.getFileName().toString().startsWith(prefix))
+                    .toList());
+            // секунды в имени: сравниваем как числа, нечисловой суффикс считаем самым старым
+            bad.sort((a, b) -> Long.compare(badStamp(b, prefix), badStamp(a, prefix)));
+            for (int i = MAX_BAD_COPIES; i < bad.size(); i++) {
+                if (bad.get(i).equals(badCopy)) {
+                    continue;
+                }
+                Files.deleteIfExists(bad.get(i));
+            }
+        } catch (IOException | RuntimeException e) {
+            logger.warning("Журнал ключей: не удалось почистить старые копии .bad (" + e.getClass().getSimpleName() + ").");
+        }
+    }
+
+    private static long badStamp(Path p, String prefix) {
+        try {
+            return Long.parseLong(p.getFileName().toString().substring(prefix.length()));
+        } catch (NumberFormatException e) {
+            return Long.MIN_VALUE;
+        }
+    }
+
+    @Override
+    public synchronized String corruptionCopyName() {
+        return corruptPending && badCopy != null ? badCopy.toString() : null;
     }
 
     private boolean apply(String l) {

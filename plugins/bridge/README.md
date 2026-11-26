@@ -34,7 +34,9 @@
 
 - `/twomcbridge status` показывает состояние журнала, число ключей, ack в очереди, заданий в работе, паузу, последнее событие.
 - `/twomcbridge forget <idempotencyKey>` убирает ключ с исходом UNKNOWN после ручной проверки (разбор неизвестного исхода).
-- `/twomcbridge ackcorrupt` подтверждает повреждение журнала (см. ниже); без него выдача остановлена.
+- `/twomcbridge ackcorrupt` показывает путь копии повреждённого журнала (`executed-keys.log.bad-*`) и просит подтверждения;
+  `/twomcbridge ackcorrupt confirm` подтверждает порчу (журнал переписывается). Без подтверждения выдача остановлена.
+  Хранятся только 5 последних копий `.bad-*`.
 
 ## Модель отказов
 
@@ -43,7 +45,7 @@
 - Ключ в `S` без `D` (сбой между запуском и итогом) это UNKNOWN: команда НЕ повторяется, ack `unknown` с кодом
   `outcome_unknown`. Игрок получил или не получил товар, определяет администратор вручную, затем `forget`.
 - Исключение из `dispatch` даёт UNKNOWN (`dispatch_exception`).
-- Повреждённый журнал: выдача fail-closed (стоп) до `/twomcbridge ackcorrupt`; сайт получает `retry`, а не `failed`.
+- Повреждённый журнал: выдача fail-closed (стоп) до `/twomcbridge ackcorrupt confirm`; сайт получает `retry`, а не `failed`.
 - Ошибка записи журнала до запуска команды: ack `retry` (`store_unavailable`), команда не исполнялась.
 - R167: команда исполняется только если ключ записан в журнал до dispatch; сайт не получает `done` раньше, чем `D`.
 - Отказ локальной проверки команды даёт `failed` с кодом `command_not_allowed` / `command_invalid` / `command_forbidden`,
@@ -57,13 +59,18 @@
 
 ## Белый список и шаблоны (M4)
 
-Белый список по умолчанию включён и проверяет ФОРМУ команды, а не только корень:
+Белый список по умолчанию включён и проверяет ФОРМУ команды, а не только корень. Он принимает ВСЕ формы, которые сайт
+считает валидными (`command-template-rendered.spec.ts`):
 
 ```
 lp|luckperms user <ник> parent add|addtemp <группа> [срок]
+lp|luckperms user <ник> parent set <группа>
 eco give <ник> <число>
 give <ник> <предмет> [кол-во]
-crate|cratekey key give <ник> <ключ> [кол-во]     (и cratekey give <ник> <ключ> [кол-во])
+crate key give <ник> <ключ> [кол-во]
+crate give <ник> <ключ> [кол-во]
+cratekey key give <ник> <ключ> [кол-во]
+cratekey give <ник> <ключ> [кол-во]
 ```
 
 Например `lp user Steve permission set a.b true` отклоняется. Это допущение Q112, оно строже сайта, который сверяет
@@ -73,6 +80,34 @@ crate|cratekey key give <ник> <ключ> [кол-во]     (и cratekey give 
 `a|b` литералы, типы `{nick} {group} {key} {duration} {int} {qty} {num} {item}`, суффикс `?` у хвостовых аргументов.
 Запрещённые корни (op, stop, execute, sudo и др.) не разрешаются никак. Корень нового шаблона добавьте и в расширение
 корней в настройках сайта, иначе сайт не отрендерит такой товар.
+
+### Демо-товары сайта и extraTemplates
+
+Демо-сид сайта (`apps/api/prisma/seed/demo/data.ts`) использует корни `crates` и `rubies`. Их нет в `DEFAULT_COMMAND_ROOTS`
+сайта и в шаблонах плагина по умолчанию. БЕЗ настройки ниже демо-товары (кейсы и рубины) НЕ выдаются: плагин ответит
+`failed` с кодом `command_not_allowed`. На сайте корни `crates` и `rubies` тоже нужно добавить в настройку
+`store.delivery.extra_command_roots`, иначе сайт не отрендерит команду.
+
+Рекомендуется (форма проверяется):
+
+```yaml
+delivery:
+  extraTemplates:
+    - "crates key give {nick} {key} {qty}?"
+    - "rubies give {nick} {int}"
+```
+
+Или корень целиком (шире и опаснее, аргументы не проверяются):
+
+```yaml
+delivery:
+  extraRoots:
+    - crates
+    - rubies
+```
+
+Формы демо-сида: `crates key give <ник> donate|title|ruby 1`, `rubies give <ник> 1` (шаблоны `crates key give {username}
+<ключ> 1` и `rubies give {username} 1`). Если команда рубинов всегда с литералом `1`, строже будет `"rubies give {nick} 1"`.
 
 ## maxPerClaim и fsync в главном потоке
 

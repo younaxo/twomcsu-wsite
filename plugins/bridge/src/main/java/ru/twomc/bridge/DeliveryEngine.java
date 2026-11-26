@@ -59,6 +59,7 @@ final class DeliveryEngine {
     private static final int MAX_MISSING_RESULT_ATTEMPTS = 5;
     private static final long AUTH_PAUSE_MS = 5L * 60 * 1000;
     private static final int AUTH_RETRIES = 3;
+    private static final int BAD_REQUEST_RETRIES = 2;
 
     private final BridgeApi api;
     private final KeyStore store;
@@ -82,6 +83,7 @@ final class DeliveryEngine {
     private long nextClaimAt;
     private int failStreak;
     private int authStreak;
+    private int badRequestStreak;
     private boolean storeWarned;
     /** Единый для ack и claim момент, раньше которого запросов к сайту нет (бэкофф и Retry-After). 0: нет ограничения. */
     private volatile long nextAttemptAt;
@@ -218,6 +220,7 @@ final class DeliveryEngine {
     private void resetStreaks() {
         failStreak = 0;
         authStreak = 0;
+        badRequestStreak = 0;
         nextAttemptAt = 0;
     }
 
@@ -251,8 +254,14 @@ final class DeliveryEngine {
                 logger.severe("Сайт отверг " + op + ": HTTP " + r.status() + (r.errorCode() != null ? " " + r.errorCode() : "")
                         + (r.status() == 403 ? " (у сервера нет возможности delivery на сайте)" : "") + ".");
                 if (ackBatch != null && (r.status() == 400 || r.status() == 422)) {
-                    // Сайт признал саму пачку негодной: повтор того же тела не поможет. Ключи в журнале остаются,
-                    // сайт закроет задания по таймауту как UNKNOWN.
+                    // 400 может быть и временным (сбой прокси, гонка на сайте): два повтора с короткой паузой, затем
+                    // сайт признал пачку негодной. Ключи в журнале остаются, сайт закроет задания по таймауту как UNKNOWN.
+                    badRequestStreak++;
+                    if (badRequestStreak <= BAD_REQUEST_RETRIES) {
+                        logger.warning("Ack отвергнут (HTTP " + r.status() + "), повтор " + badRequestStreak + " из " + BAD_REQUEST_RETRIES + ".");
+                        return backoff(now, 1_000L * badRequestStreak);
+                    }
+                    badRequestStreak = 0;
                     removeFromOutbox(ackBatch);
                     logger.severe("Пачка ack отброшена (" + ackBatch.size() + "). Исход заданий разберёт администратор на сайте.");
                     return 1_000;

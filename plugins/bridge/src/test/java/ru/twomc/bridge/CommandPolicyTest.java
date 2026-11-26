@@ -23,12 +23,33 @@ class CommandPolicyTest {
         assertNull(policy.check("give Steve diamond"));
         assertNull(policy.check("give Steve diamond 3"));
         assertNull(policy.check("give Steve minecraft:diamond 3"));
+        assertNull(policy.check("lp user Steve parent set vip")); // формы сайта (command-template-rendered.spec.ts)
+        assertNull(policy.check("luckperms user Steve parent set vip"));
+        assertNull(policy.check("luckperms user Steve parent set Vip_2"));
+        assertNull(policy.check("crate give Steve key 1"));
+        assertNull(policy.check("crate give Steve key"));
+        assertNull(policy.check("cratekey give Steve a 1"));
         assertNull(policy.check("crate key give Steve vote 1"));
         assertNull(policy.check("crate key give Steve vote"));
         assertNull(policy.check("cratekey key give Steve vote 2"));
         assertNull(policy.check("cratekey give Steve vote 1")); // форма из проверок рендера на сайте
         assertNull(policy.check("eco give Steve 100"));
         assertNull(policy.check("eco give Steve 12.5"));
+    }
+
+    @Test
+    void everyFormTheSiteConsidersValidIsAccepted() {
+        // command-template-rendered.spec.ts, «пропускает»: для расширяющихся корней сайт проверяет только корень
+        for (String c : new String[] {
+                "lp user Steve parent addtemp vip 30d",
+                "luckperms user Steve parent set vip",
+                "give Steve diamond 3",
+                "crate give Steve key 1",
+                "cratekey give Steve a 1",
+                "eco give Steve 100",
+        }) {
+            assertNull(policy.check(c), c);
+        }
     }
 
     @Test
@@ -46,10 +67,20 @@ class CommandPolicyTest {
         for (String c : new String[] {
                 "lp user Steve permission set a.b true",
                 "lp user Steve info",
-                "lp user Steve parent set admin",
                 "lp user Steve parent add",
                 "lp user Steve parent addtemp",
                 "lp user Steve parent add vip 30d extra",
+                "lp user Steve parent set",
+                "lp user Steve parent set vip 30d",
+                "lp user Steve parent set vip extra",
+                "lp user Steve parent remove vip",
+                "lp user Steve parent clear",
+                "crate give Steve key 1 2",
+                "crate give St key 1",
+                "crate give Steve",
+                "crate give Steve key 12345",
+                "crate take Steve key 1",
+                "cratekey give Steve a b 1",
                 "lp user Steve parent add vip 30",
                 "lp group admin permission set x.y true",
                 "lp user St parent add vip", // ник короче 3
@@ -65,7 +96,6 @@ class CommandPolicyTest {
                 "give Steve diamond 99999",
                 "give Steve diamond 1 2",
                 "give Steve",
-                "crate give Steve vote 1",
                 "crate key give Steve vote 1 2",
                 "crate key take Steve vote 1",
                 "cratekey key give St vote 1",

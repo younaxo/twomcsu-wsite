@@ -128,6 +128,30 @@ class FileKeyStoreTest {
         third.close();
     }
 
+    @Test
+    void corruptionCopyNameIsExposedUntilAcknowledged_andOldCopiesArePruned() throws IOException {
+        // 7 старых копий с меньшими метками времени: должны остаться только свежие
+        for (int i = 1; i <= 7; i++) {
+            Files.writeString(dir.resolve(FileKeyStore.LOG_NAME + ".bad-" + i), "old" + i);
+        }
+        writeCorruptLog();
+        FileKeyStore s = open();
+        try {
+            assertTrue(s.corruptionPending());
+            String copy = s.corruptionCopyName();
+            assertTrue(copy != null && copy.contains(FileKeyStore.LOG_NAME + ".bad-"), "путь копии показывается оператору");
+            assertTrue(Files.exists(Path.of(copy)));
+            try (Stream<Path> files = Files.list(dir)) {
+                long n = files.filter(p -> p.getFileName().toString().startsWith(FileKeyStore.LOG_NAME + ".bad-")).count();
+                assertEquals(FileKeyStore.MAX_BAD_COPIES, n, "хранятся только последние копии .bad");
+            }
+            assertTrue(s.acknowledgeCorruption());
+            assertEquals(null, s.corruptionCopyName());
+        } finally {
+            s.close();
+        }
+    }
+
     /** Журнал с одной выполненной записью и двумя повреждёнными строками в начале. */
     private Path writeCorruptLog() throws IOException {
         FileKeyStore s = open();
