@@ -46,7 +46,7 @@ final class CommandPolicy {
         }
         for (int i = 0; i < command.length(); i++) {
             char c = command.charAt(i);
-            if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || c == ' ' || c == ' ') {
+            if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || c == 0x2028 || c == 0x2029) {
                 return Protocol.CODE_INVALID; // перевод строки превратил бы одну команду в несколько
             }
         }

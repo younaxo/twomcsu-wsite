@@ -98,6 +98,17 @@ class BackoffAndConfigTest {
     }
 
     @Test
+    void keyIdGenerationHasNoLeadingZero_likeSiteParseKeyId() {
+        for (String ok : new String[] {"survival.1", "survival.9", "s1.10", "lobby.999999"}) {
+            assertTrue(Protocol.KEY_ID.matcher(ok).matches(), ok);
+        }
+        for (String bad : new String[] {"survival.0", "survival.01", "survival.1000000", "survival.", "survival", "survival.1a",
+                "Survival.1", "survival.-1"}) {
+            assertFalse(Protocol.KEY_ID.matcher(bad).matches(), bad);
+        }
+    }
+
+    @Test
     void urlRules() {
         assertEquals("https://a.invalid:8443", BridgeConfig.buildBase("https://a.invalid:8443").toString());
         assertEquals("http://localhost:4000", BridgeConfig.buildBase("http://localhost:4000").toString());

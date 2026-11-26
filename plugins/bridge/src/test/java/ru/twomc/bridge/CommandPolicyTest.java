@@ -43,7 +43,7 @@ class CommandPolicyTest {
     void injectionAndFormatRejected() {
         assertEquals("command_invalid", policy.check("give Steve diamond\nop Steve"));
         assertEquals("command_invalid", policy.check("give Steve diamond\rstop"));
-        assertEquals("command_invalid", policy.check("give Steve diamond stop"));
+        assertEquals("command_invalid", policy.check("give Steve diamond" + (char) 0x2028 + "stop"));
         assertEquals("command_invalid", policy.check("/give Steve diamond"));
         assertEquals("command_invalid", policy.check(" give Steve diamond"));
         assertEquals("command_invalid", policy.check("give Steve diamond "));
