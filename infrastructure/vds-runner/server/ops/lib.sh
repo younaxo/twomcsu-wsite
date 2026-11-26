@@ -23,6 +23,8 @@ docker_cleanup_job() {
   # shellcheck disable=SC2086
   [[ -z "$c" ]] || docker rm -f $c >/dev/null 2>&1 || true
   docker network ls -q --filter "label=twomc-runner-job=$id" 2>/dev/null | xargs -r docker network rm >/dev/null 2>&1 || true
+  # образы, собранные заданием (docker build --label twomc-runner-job=<id>): удаление по метке, а не по общим именам (при таймауте теги не успевают быть удалены)
+  docker image ls -q --filter "label=twomc-runner-job=$id" 2>/dev/null | sort -u | xargs -r docker rmi -f >/dev/null 2>&1 || true
 }
 
 # run_node <id> <src> <memory> <script-file> [docker-args...]  - выполняет script в контейнере node как uid хоста.

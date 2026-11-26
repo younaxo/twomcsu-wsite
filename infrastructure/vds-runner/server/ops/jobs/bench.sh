@@ -5,6 +5,8 @@
 # Тайм-аут задания не менее 7200 с (worker.sh: job_timeout_for). Контейнеры бенчмарка помечены BENCH_LABEL=twomc-runner-job=<id> и удаляются штатно.
 # Весь каталог результатов (OUT) = $dir/out; run-remote.sh забирает его целиком в --out/out.
 # Перед стартом проверяется, что стенд не под нагрузкой (CPU, loadavg, память, диск, чужие контейнеры, порты 18081-18084); иначе выход 20, бенчмарк не стартует.
+# Параметры проверяются строго (validate_params): диапазоны, PROFILE small|medium|large, cpuset не пересекается и оставляет стенду >= 2 ядер (RUNNER_STAND_MIN_CPUS),
+# DOCKER_BUILD_ARGS - только пары `--build-arg KEY=VAL` и `--no-cache`. ВАЖНО: run-bench.sh из снимка выполняется на ХОСТЕ (не в песочнице) - только доверенные ветки.
 # BENCH_PRECHECK_ONLY=1 (--env BENCH_PRECHECK_ONLY=1): только проверки и `bash -n`, сам бенчмарк НЕ запускается.
 # Коды: 0 успех, 2 неверные параметры, 20 стенд под нагрузкой / нет ресурсов, 21 нет lang-bench в снимке, иначе код run-bench.sh.
 set -uo pipefail
@@ -37,6 +39,74 @@ for k in OHA_IMAGE PROFILE DB_LATENCY_MS DATASET_FILE RULES IMPLS LEVELS DURATIO
 done
 [[ -z "${ENV_BENCH_NODE_IMAGE:-}" ]] || { [[ "$ENV_BENCH_NODE_IMAGE" =~ ^[A-Za-z0-9._:/@+-]+$ ]] || { echo "##### bench: недопустимый BENCH_NODE_IMAGE"; exit 2; }; export NODE_IMAGE="$ENV_BENCH_NODE_IMAGE"; }
 precheck_only="${ENV_BENCH_PRECHECK_ONLY:-0}"
+
+# ---- строгая проверка значений (M2/M3/L3): диапазоны, cpuset не отбирает у стенда ядра, DOCKER_BUILD_ARGS - только --build-arg KEY=VAL и --no-cache
+STAND_MIN_CPUS="${RUNNER_STAND_MIN_CPUS:-2}"      # ядер, которые cpuset бенчмарка обязан оставить стенду (на 6 vCPU: бенчмарк 0-3, стенд 4-5)
+is_int() { [[ "$1" =~ ^[0-9]{1,6}$ ]]; }          # неотрицательное целое без знака (до 999999)
+in_range() { is_int "$1" && (( 10#$1 >= $2 && 10#$1 <= $3 )); }   # in_range <значение> <мин> <макс>
+mem_mb() { # mem_mb <NNm|NNg>: мегабайты (код 1 при неверном формате)
+  [[ "$1" =~ ^([0-9]{1,5})([mg])$ ]] || return 1
+  if [[ "${BASH_REMATCH[2]}" == g ]]; then echo $(( 10#${BASH_REMATCH[1]} * 1024 )); else echo $(( 10#${BASH_REMATCH[1]} )); fi
+}
+expand_cpus() { # expand_cpus <список вида 0-1,4>: по одному номеру в строке; код 1 - неверный формат или номер >= nproc
+  local spec="$1" part a b i ncpu; ncpu="$(nproc)"
+  [[ "$spec" =~ ^[0-9]{1,3}(-[0-9]{1,3})?(,[0-9]{1,3}(-[0-9]{1,3})?)*$ ]] || return 1
+  for part in ${spec//,/ }; do
+    if [[ "$part" == *-* ]]; then a="${part%-*}"; b="${part#*-}"; else a="$part"; b="$part"; fi
+    (( 10#$a <= 10#$b && 10#$b < ncpu )) || return 1
+    for (( i = 10#$a; i <= 10#$b; i++ )); do echo "$i"; done
+  done
+}
+validate_params() {
+  local bad=0 v i ncpu s_list l_list union s_n l_n m h tok expect="" arg_ok=1
+  ncpu="$(nproc)"
+  [[ -z "${PROFILE:-}" || "$PROFILE" =~ ^(small|medium|large)$ ]] || { echo "##### bench: PROFILE должен быть small|medium|large"; bad=1; }
+  [[ -z "${DB_LATENCY_MS:-}" ]] || in_range "$DB_LATENCY_MS" 0 10000 || { echo "##### bench: DB_LATENCY_MS - целое 0..10000"; bad=1; }
+  [[ -z "${DURATION:-}" ]]  || in_range "$DURATION" 1 3600 || { echo "##### bench: DURATION - целое 1..3600 с"; bad=1; }
+  [[ -z "${WARMUP:-}" ]]    || in_range "$WARMUP" 0 3600  || { echo "##### bench: WARMUP - целое 0..3600 с"; bad=1; }
+  [[ -z "${REPEATS:-}" ]]   || in_range "$REPEATS" 1 20   || { echo "##### bench: REPEATS - целое 1..20"; bad=1; }
+  for v in SERVER_NCPU LOADGEN_NCPU; do
+    [[ -z "${!v:-}" ]] || in_range "${!v}" 1 "$ncpu" || { echo "##### bench: $v - целое 1..$ncpu"; bad=1; }
+  done
+  for v in MEM HEAP; do
+    [[ -z "${!v:-}" ]] && continue
+    s_n="$(mem_mb "${!v}")" && (( s_n >= 64 && s_n <= 4096 )) || { echo "##### bench: $v - формат NNm|NNg, 64m..4g"; bad=1; }
+  done
+  if [[ -n "${MEM:-}" && -n "${HEAP:-}" ]]; then
+    m="$(mem_mb "$MEM" 2>/dev/null || echo 0)"; h="$(mem_mb "$HEAP" 2>/dev/null || echo 0)"
+    (( h < m )) || { echo "##### bench: HEAP должен быть меньше MEM"; bad=1; }
+  fi
+  [[ -z "${JAVA_GC:-}" || "$JAVA_GC" =~ ^-XX:[+-]?[A-Za-z0-9]{1,40}(=[A-Za-z0-9.]{1,20})?$ ]] || { echo "##### bench: JAVA_GC - одна опция вида -XX:+UseG1GC"; bad=1; }
+  for v in IMPLS; do
+    for tok in ${IMPLS:-}; do [[ "$tok" =~ ^(ts-current|ts-batch|rust|java)$ ]] || { echo "##### bench: IMPLS - из ts-current ts-batch rust java"; bad=1; break; }; done
+  done
+  for tok in ${LEVELS:-}; do in_range "$tok" 1 100000 || { echo "##### bench: LEVELS - целые 1..100000"; bad=1; break; }; done
+  # DOCKER_BUILD_ARGS (запятые уже заменены пробелами): только `--no-cache` и пары `--build-arg KEY=VAL`
+  for tok in ${DOCKER_BUILD_ARGS:-}; do
+    if [[ -n "$expect" ]]; then
+      [[ "$tok" =~ ^[A-Z][A-Z0-9_]{0,63}=[A-Za-z0-9._:/@+-]{0,200}$ ]] || arg_ok=0
+      expect=""
+    elif [[ "$tok" == --no-cache ]]; then :
+    elif [[ "$tok" == --build-arg ]]; then expect=1
+    else arg_ok=0
+    fi
+  done
+  [[ -z "$expect" && "$arg_ok" == 1 ]] || { echo "##### bench: DOCKER_BUILD_ARGS - только пары '--build-arg,KEY=VAL' и '--no-cache'"; bad=1; }
+  # cpuset: формат, номера < nproc, наборы не пересекаются, стенду остаётся >= STAND_MIN_CPUS ядер
+  s_list="$(expand_cpus "${SERVER_CPUS:-0-1}")" || { echo "##### bench: SERVER_CPUS - неверный список ядер (0..$(( ncpu - 1 )))"; bad=1; s_list=""; }
+  l_list="$(expand_cpus "${LOADGEN_CPUS:-2-3}")" || { echo "##### bench: LOADGEN_CPUS - неверный список ядер (0..$(( ncpu - 1 )))"; bad=1; l_list=""; }
+  s_n="$(grep -c . <<<"$s_list")"; l_n="$(grep -c . <<<"$l_list")"
+  if [[ -n "$s_list" && -n "$l_list" ]]; then
+    union="$(printf '%s\n%s\n' "$s_list" "$l_list" | sort -un | grep -c .)"
+    (( union == s_n + l_n )) || { echo "##### bench: SERVER_CPUS и LOADGEN_CPUS пересекаются"; bad=1; }
+    (( ncpu - union >= STAND_MIN_CPUS )) || { echo "##### bench: cpuset бенчмарка занимает $union из $ncpu ядер: стенду остаётся $(( ncpu - union )) < $STAND_MIN_CPUS"; bad=1; }
+    (( 10#${SERVER_NCPU:-2} <= s_n )) || { echo "##### bench: SERVER_NCPU > числа ядер в SERVER_CPUS ($s_n)"; bad=1; }
+    (( 10#${LOADGEN_NCPU:-2} <= l_n )) || { echo "##### bench: LOADGEN_NCPU > числа ядер в LOADGEN_CPUS ($l_n)"; bad=1; }
+    echo "##### bench: cpuset: сервер $s_n ядер, нагрузчик $l_n, стенду остаётся $(( ncpu - union )) из $ncpu"
+  fi
+  return $bad
+}
+validate_params || { echo "##### bench: недопустимые параметры (код 2)"; exit 2; }
 
 # ---- проверка «стенд не под нагрузкой» и ресурсов
 cpu_busy_pct() { # cpu_busy_pct <секунд>: загрузка всех vCPU (user+system+...; без idle и iowait) за окно

@@ -8,7 +8,7 @@
 # Коды: 0 успех, 10 нет/недопустим --path или Dockerfile, 11 официальная сборка упала, 12 сборка успешна, но jar не найден.
 # Песочница: docker build не умеет --cap-drop/no-new-privileges (RUN-шаги идут с набором прав по умолчанию); лимиты --memory/--cpu-shares/--cpu-quota
 # передаются, но BuildKit их может игнорировать (см. docs/runbooks/vds-runner.md). Извлечение идёт через `docker create` (код не запускается)
-# с --cap-drop ALL, no-new-privileges, --network none. Сеть сборки - стандартная bridge (нужна только для скачивания зависимостей).
+# с --cap-drop ALL, no-new-privileges, --network none; файлы забираются `docker cp ... -` в tar, имена и типы проверяются (без симлинков, `..`, абсолютных путей), распаковка в новый пустой каталог. Сеть сборки - стандартная bridge (нужна только для скачивания зависимостей).
 set -uo pipefail
 id="$1"; src="$2"; dir="$3"
 # shellcheck disable=SC1091
@@ -17,6 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 path="${JOB_PATH:-}"
 valid_rel_path "$path" || { echo "##### java-build: недопустимый --path '$path'"; exit 10; }
 ctx="$src/$path"
+[[ ! -L "$ctx" && ! -L "$ctx/Dockerfile" && "$(realpath -e "$ctx" 2>/dev/null)/" == "$(realpath "$src")/"* ]] || { echo "##### java-build: --path или Dockerfile - симлинк либо выходит за снимок"; exit 10; }
 [[ -f "$ctx/Dockerfile" ]] || { echo "##### java-build: нет $path/Dockerfile в снимке"; exit 10; }
 out="$dir/out"; mkdir -p "$out"
 echo "##### java-build path=$path"
@@ -43,6 +44,7 @@ if [[ -n "$orig_from" ]]; then
     echo "##### gradle-image: $chosen (как в Dockerfile, на Docker Hub)"
   else
     echo "##### gradle-image: ЗАМЕНА gradle:$orig_tag -> $chosen (копия Dockerfile.runner; исходный Dockerfile не изменён)"
+    rm -f "$ctx/Dockerfile.runner"   # L2: в снимке может лежать симлинк с этим именем - запись пошла бы по нему
     sed -E "s|^FROM gradle:[^ ]+|FROM $chosen|" "$ctx/Dockerfile" > "$ctx/Dockerfile.runner"
     dockerfile="$ctx/Dockerfile.runner"
   fi
@@ -55,15 +57,41 @@ build_image() { # build_image <dockerfile> <tag> <logfile>: код docker build
   return $?
 }
 
+EXTRACT_MAX_BYTES=$(( 1024 * 1024 * 1024 ))   # предел размера одного tar-потока из контейнера
+
+# extract_dir <cid> <путь-в-контейнере> <dest>: `docker cp ... -` в tar-файл, проверка имён и типов, распаковка в НОВЫЙ пустой каталог dest.
+# Отклоняется весь архив, если есть абсолютные пути, `..`, симлинки, жёсткие ссылки или спецфайлы (код 1). Отсутствие пути в образе - не ошибка (код 0, dest пуст).
+# После распаковки (запасная мера) в dest удаляются все не обычные файлы и не каталоги; симлинков к моменту report_* нет.
+extract_dir() {
+  local cid="$1" cpath="$2" dest="$3" tmp
+  rm -rf "$dest"; mkdir -p "$dest"
+  tmp="$(mktemp -p "$dir" extract.XXXXXX)" || return 1
+  docker cp "$cid:$cpath" - 2>/dev/null | head -c "$EXTRACT_MAX_BYTES" > "$tmp" || true
+  if [[ ! -s "$tmp" ]]; then rm -f "$tmp"; return 0; fi
+  if (( $(stat -c %s "$tmp") >= EXTRACT_MAX_BYTES )); then echo "##### java-build: $cpath превышает $(( EXTRACT_MAX_BYTES / 1048576 )) МБ, пропущено"; rm -f "$tmp"; return 1; fi
+  if tar -tf "$tmp" 2>/dev/null | grep -qE '^/|(^|/)\.\.(/|$)'; then
+    echo "##### java-build: $cpath отклонён (абсолютные пути или '..' в архиве)"; rm -f "$tmp"; return 1
+  fi
+  if tar -tvf "$tmp" 2>/dev/null | cut -c1 | grep -qv '[-d]'; then
+    echo "##### java-build: $cpath отклонён (симлинки, жёсткие ссылки или спецфайлы в архиве)"; rm -f "$tmp"; return 1
+  fi
+  tar -xf "$tmp" -C "$dest" --no-same-owner --no-same-permissions 2>/dev/null || echo "##### java-build: предупреждение: tar завершился с ошибкой для $cpath"
+  rm -f "$tmp"
+  find "$dest" -mindepth 1 ! -type f ! -type d -delete 2>/dev/null || true
+  chmod -R u+rwX,go-w "$dest" 2>/dev/null || true
+  return 0
+}
+
 extract() { # extract <image> <dest>: libs, test-results, reports из рабочего каталога образа (без запуска кода)
-  local img="$1" dest="$2" cid wd
-  mkdir -p "$dest/libs" "$dest/test-results" "$dest/reports"
+  local img="$1" dest="$2" cid wd rc=0
+  mkdir -p "$dest"
   wd="$(docker image inspect -f '{{.Config.WorkingDir}}' "$img" 2>/dev/null)"; wd="${wd:-/home/gradle/src}"
   cid="$(docker create --cap-drop ALL --security-opt no-new-privileges --network none --label "twomc-runner-job=$id" "$img" true 2>/dev/null)" || return 1
-  docker cp "$cid:$wd/build/libs/." "$dest/libs/" >/dev/null 2>&1 || true
-  docker cp "$cid:$wd/build/test-results/test/." "$dest/test-results/" >/dev/null 2>&1 || true
-  docker cp "$cid:$wd/build/reports/tests/test/." "$dest/reports/" >/dev/null 2>&1 || true
+  extract_dir "$cid" "$wd/build/libs/." "$dest/libs" || rc=1
+  extract_dir "$cid" "$wd/build/test-results/test/." "$dest/test-results" || rc=1
+  extract_dir "$cid" "$wd/build/reports/tests/test/." "$dest/reports" || rc=1
   docker rm -f "$cid" >/dev/null 2>&1 || true
+  return $rc
 }
 
 report_tests() { # report_tests <каталог test-results>: суммы и перечень упавших
@@ -120,6 +148,7 @@ else
   report_javac "$out/build.log"
   if grep -qE '^RUN gradle ' "$dockerfile"; then
     echo "##### java-build: ДИАГНОСТИЧЕСКАЯ сборка (gradle build --continue || true), jar из неё не годится для выпуска"
+    rm -f "$ctx/Dockerfile.runner-diag"
     sed -E 's#^(RUN gradle .*)$#\1 --continue || true#' "$dockerfile" > "$ctx/Dockerfile.runner-diag"
     build_image "$ctx/Dockerfile.runner-diag" "$tag-diag" "$out/build-diag.log"; drc=$?
     echo "##### java-build: диагностическая сборка rc=$drc"

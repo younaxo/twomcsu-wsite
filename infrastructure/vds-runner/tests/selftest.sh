@@ -59,4 +59,20 @@ if command -v node >/dev/null 2>&1; then
 else
   echo "skip T5 (нет node)"
 fi
+
+# --- T6: проверка параметров bench (validate_params, подменённый nproc=6, без docker и сети) и нижний регистр тегов образов
+B="$HERE/server/ops/jobs/bench.sh"
+{ echo 'nproc() { echo 6; }'; sed -n "/^STAND_MIN_CPUS=/,/^validate_params ||/p" "$B" | sed '$d'; } > "$D/validate.sh"
+vp() { ( unset PROFILE DB_LATENCY_MS DURATION WARMUP REPEATS SERVER_NCPU LOADGEN_NCPU MEM HEAP JAVA_GC IMPLS LEVELS DOCKER_BUILD_ARGS SERVER_CPUS LOADGEN_CPUS
+         env "$@" bash -c "source '$D/validate.sh'; validate_params" >/dev/null 2>&1; echo $? ); }
+[[ "$(vp A=1)" == 0 ]] && ok "T6a умолчания (бенчмарк 0-3, стенду 2 ядра) допустимы" || bad "T6a"
+[[ "$(vp SERVER_CPUS=0-2 LOADGEN_CPUS=3-5)" == 1 ]] && ok "T6b cpuset без ядер для стенда отклонён" || bad "T6b"
+[[ "$(vp SERVER_CPUS=0-1 LOADGEN_CPUS=1-2)" == 1 ]] && ok "T6c пересекающиеся cpuset отклонены" || bad "T6c"
+[[ "$(vp SERVER_CPUS=0-9)" == 1 ]] && ok "T6d номер ядра >= nproc отклонён" || bad "T6d"
+[[ "$(vp PROFILE=huge)" == 1 ]] && ok "T6e PROFILE вне small|medium|large отклонён" || bad "T6e"
+[[ "$(vp DB_LATENCY_MS=5x)" == 1 ]] && ok "T6f нечисловой DB_LATENCY_MS отклонён" || bad "T6f"
+[[ "$(vp 'DOCKER_BUILD_ARGS=--privileged')" == 1 ]] && ok "T6g DOCKER_BUILD_ARGS с чужим флагом отклонён" || bad "T6g"
+[[ "$(vp 'DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=node:24 --no-cache')" == 0 ]] && ok "T6h --build-arg KEY=VAL и --no-cache допустимы" || bad "T6h"
+[[ "$(vp MEM=512m HEAP=1g)" == 1 ]] && ok "T6i HEAP >= MEM отклонён" || bad "T6i"
+if grep -nE 'twomcr-\$\{?id\}?-(api|web|java)|-t "twomcr-\$id' "$HERE"/server/ops/jobs/*.sh | grep -v '^$' | grep -q .; then bad "T6j тег образа с id без нижнего регистра"; else ok "T6j теги образов строятся из \${id,,}"; fi
 exit "$fail"
