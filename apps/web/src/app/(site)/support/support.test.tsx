@@ -211,6 +211,26 @@ describe('Обращения (срез 3.5)', () => {
     );
   });
 
+  it('обжалование наказания сервера: ?mc=ban-5 шлёт appealedPunishmentRef без запроса списка сайта', async () => {
+    const user = userEvent.setup();
+    mocks.params = { type: 'punishment_appeal' };
+    mocks.search = new URLSearchParams('mc=ban-5');
+    mocks.post.mockResolvedValue({ reportNumber: 'R-0006' });
+    render(<NewReportPage />, { wrapper: Providers });
+    expect(await screen.findByTestId('mc-appeal-target')).toHaveTextContent('ban-5');
+    expect(mocks.get).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText(/Описание/), 'Не согласен');
+    await user.click(screen.getByRole('button', { name: 'Отправить обращение' }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith('/reports', {
+        type: 'PUNISHMENT_APPEAL',
+        description: 'Не согласен',
+        targets: [],
+        appealedPunishmentRef: 'ban-5',
+      }),
+    );
+  });
+
   it('обжалование: нет обжалуемых наказаний — пояснение, отправка недоступна', async () => {
     mocks.params = { type: 'punishment_appeal' };
     mocks.get.mockResolvedValue([]);

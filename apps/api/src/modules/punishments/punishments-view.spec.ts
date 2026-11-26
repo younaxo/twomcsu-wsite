@@ -369,7 +369,34 @@ describe('me (п.6)', () => {
     const mine = toMyPunishment(row(), ctx)!;
     expect(Object.keys(mine)).not.toContain('removedReason');
     expect(JSON.stringify(mine)).not.toContain('секретная причина снятия');
-    expect(mine.appealable).toBe(false);
+    // Активный BAN без обжалований обжалуем (l1-02), WARN нет.
+    expect(mine.appealable).toBe(true);
+    expect(mine.appeals).toEqual([]);
+    expect(toMyPunishment(row({ kind: 'WARN' }), ctx)!.appealable).toBe(false);
+  });
+
+  it('обжалуемость: открытое обжалование блокирует, закрытое нет, не-ACTIVE нет', () => {
+    const appeal = (status: string) => ({
+      reportNumber: 'R-1',
+      status: status as 'PENDING',
+      createdAt: '2026-11-01T00:00:00.000Z',
+      resolvedAt: null,
+      verdict: null,
+    });
+    for (const open of ['PENDING', 'IN_REVIEW', 'WAITING_RESPONSE']) {
+      expect(toMyPunishment(row(), ctx, [appeal(open)])!.appealable).toBe(
+        false,
+      );
+    }
+    for (const closed of ['RESOLVED', 'REJECTED', 'CLOSED']) {
+      expect(toMyPunishment(row(), ctx, [appeal(closed)])!.appealable).toBe(
+        true,
+      );
+    }
+    expect(toMyPunishment(row({ status: 'REMOVED' }), ctx)!.appealable).toBe(
+      false,
+    );
+    expect(toMyPunishment(row({ kind: 'MUTE' }), ctx)!.appealable).toBe(true);
   });
 
   it('причина своя, маскированная помечается', () => {

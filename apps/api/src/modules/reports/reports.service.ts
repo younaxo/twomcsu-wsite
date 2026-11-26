@@ -10,6 +10,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, Report, ReportStatus, ReportType } from '@prisma/client';
 import { randomBytes } from 'crypto';
+import { AuditService } from '../audit/audit.service';
+import {
+  isOfflineUuid,
+  normalizeAccountUuid,
+} from '../punishments/punishments-read.service';
+import { parseRef, viewStatus } from '../punishments/punishments-view';
 import { escapeToHtml } from '../../common/html.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { PUBLIC_USER_SELECT } from '../users/public-user';
@@ -20,6 +26,11 @@ import { ADMIN_2FA_REQUIRED_MESSAGE } from '../roles/guards/permissions.guard';
 import { ReportHistoryQueryDto } from './dto/report-history-query.dto';
 import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 import { UpdateOwnReportMessageDto } from './dto/update-own-report-message.dto';
+import {
+  APPEALED_MC_PUNISHMENT_SELECT,
+  REPORT_APPEAL_REPEAT_COOLDOWN_MS,
+  withMirrorView,
+} from './report-mirror-appeal';
 import {
   CLOSED_REPORT_STATUSES,
   MODERATOR_NOTES_ORDER,
@@ -111,6 +122,7 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     @Inject(REPORT_PRIORITY_PROVIDER)
     private readonly priority: ReportPriorityProvider,
+    private readonly audit: AuditService,
   ) {}
 
   private assertAuthorCanWrite(report: Report): void {
@@ -259,6 +271,7 @@ export class ReportsService {
         evidenceLinks: true,
         attachments: isStaff ? true : { omit: PLAYER_ATTACHMENT_OMIT },
         appealedPunishment: { select: APPEALED_PUNISHMENT_SELECT },
+        appealedMinecraftPunishment: { select: APPEALED_MC_PUNISHMENT_SELECT },
         messages: {
           where: isStaff ? undefined : { isDeleted: false },
           include: {
@@ -291,16 +304,17 @@ export class ReportsService {
       }
       throw new ForbiddenException('Это обращение вам не принадлежит');
     }
+    const nowMs = Date.now();
     if (isStaff) {
       // Приоритет вычисляется на сервере и виден только персоналу.
       return {
-        ...report,
+        ...withMirrorView(report, nowMs, true),
         priority: await this.priority.resolve(report),
       };
     }
     // Приватность: игрок не видит id сотрудников в сообщениях персонала.
     return {
-      ...report,
+      ...withMirrorView(report, nowMs, false),
       messages: report.messages.map((message) =>
         message.isStaff ? { ...message, authorId: null } : message,
       ),
@@ -377,13 +391,15 @@ export class ReportsService {
     );
 
     const reportNumber = await this.generateReportNumber();
-    const create = (db: Prisma.TransactionClient) =>
+    const mirrorRef = dto.appealedPunishmentRef;
+    const create = (db: Prisma.TransactionClient, mirrorId?: string) =>
       db.report.create({
         data: {
           reportNumber,
           type: dto.type,
           authorId,
           appealedPunishmentId: dto.appealedPunishmentId,
+          appealedMinecraftPunishmentId: mirrorId,
           server: dto.server,
           incidentDate: dto.incidentDate
             ? new Date(dto.incidentDate)
@@ -416,11 +432,50 @@ export class ReportsService {
           targets: { omit: PLAYER_TARGET_OMIT },
           evidenceLinks: true,
           appealedPunishment: { select: APPEALED_PUNISHMENT_SELECT },
+          appealedMinecraftPunishment: {
+            select: APPEALED_MC_PUNISHMENT_SELECT,
+          },
         },
       });
 
     if (!isAppeal) {
-      return create(this.prisma);
+      return withMirrorView(await create(this.prisma), Date.now(), false);
+    }
+    if (mirrorRef !== undefined) {
+      try {
+        const created = await this.prisma.$transaction(async (tx) => {
+          const mirrorId = await this.lockAndValidateMirrorAppeal(
+            tx,
+            authorId,
+            mirrorRef,
+          );
+          const report = await create(tx, mirrorId);
+          // Действие игрока, но связь с наказанием нужна расследованию: аудит
+          // в той же транзакции (без IP и контактов).
+          await this.audit.logInTx(tx, {
+            actorId: authorId,
+            action: 'reports.appeal.create',
+            targetType: 'report',
+            targetId: report.id,
+            changes: { reportNumber, punishmentRef: mirrorRef },
+            severity: 'info',
+          });
+          return report;
+        });
+        return withMirrorView(created, Date.now(), false);
+      } catch (error) {
+        // Частичный уникальный индекс: гонка за пределами блокировки строки.
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException({
+            code: 'appeal_already_open',
+            message: 'По этому наказанию уже есть открытое обращение',
+          });
+        }
+        throw error;
+      }
     }
     // Проверка и создание обжалования — в одной транзакции под блокировкой
     // строки наказания: два параллельных запроса выполняются по очереди, и
@@ -431,7 +486,7 @@ export class ReportsService {
         authorId,
         dto.appealedPunishmentId as string,
       );
-      return create(tx);
+      return withMirrorView(await create(tx), Date.now(), false);
     });
   }
 
@@ -440,14 +495,25 @@ export class ReportsService {
   /// является ли обращение обжалованием.
   private assertAppealShape(dto: CreateReportDto): boolean {
     if (dto.type !== ReportType.PUNISHMENT_APPEAL) {
-      if (dto.appealedPunishmentId !== undefined) {
+      if (
+        dto.appealedPunishmentId !== undefined ||
+        dto.appealedPunishmentRef !== undefined
+      ) {
         throw new BadRequestException(
-          'Поле appealedPunishmentId допустимо только для обжалования наказания',
+          'Поля appealedPunishmentId и appealedPunishmentRef допустимы только для обжалования наказания',
         );
       }
       return false;
     }
-    if (!dto.appealedPunishmentId) {
+    if (
+      dto.appealedPunishmentId !== undefined &&
+      dto.appealedPunishmentRef !== undefined
+    ) {
+      throw new BadRequestException(
+        'Укажите только одно наказание: appealedPunishmentId или appealedPunishmentRef',
+      );
+    }
+    if (!dto.appealedPunishmentId && !dto.appealedPunishmentRef) {
       throw new BadRequestException('Укажите наказание, которое обжалуете');
     }
     return true;
@@ -486,6 +552,95 @@ export class ReportsService {
         'По этому наказанию уже есть открытое обращение',
       );
     }
+  }
+
+  /// Обжалование наказания зеркала (l1-02): блокирует строку зеркала
+  /// (`SELECT ... FOR UPDATE`) и проверяет, что наказание принадлежит автору
+  /// по подтверждённой привязке (uuid, не офлайн-версии 3), действует, не
+  /// имеет открытого обжалования и не обжаловалось слишком недавно. Чужое и
+  /// несуществующее - одинаковый 404. Возвращает id строки зеркала. Только
+  /// внутри транзакции.
+  private async lockAndValidateMirrorAppeal(
+    tx: Prisma.TransactionClient,
+    authorId: string,
+    ref: string,
+  ): Promise<string> {
+    const parsed = parseRef(ref, true);
+    if (parsed === null) {
+      throw new NotFoundException('Наказание не найдено');
+    }
+    const account = await tx.minecraftAccount.findUnique({
+      where: { userId: authorId },
+      select: { uuid: true },
+    });
+    const uuid = account ? normalizeAccountUuid(account.uuid) : null;
+    if (uuid === null || isOfflineUuid(uuid)) {
+      throw new ForbiddenException({
+        code: 'minecraft_not_linked',
+        message: 'Привяжите Minecraft-аккаунт, чтобы обжаловать наказание',
+      });
+    }
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM "minecraft_punishments" WHERE "source" = 'litebans' AND "sourceScope" = 'default' AND "kind" = ${parsed.kind}::"MinecraftPunishmentKind" AND "sourceId" = ${parsed.sourceId} FOR UPDATE`,
+    );
+    const row = await tx.minecraftPunishment.findUnique({
+      where: {
+        source_sourceScope_kind_sourceId: {
+          source: 'litebans',
+          sourceScope: 'default',
+          kind: parsed.kind,
+          sourceId: parsed.sourceId,
+        },
+      },
+    });
+    if (
+      !row ||
+      row.subjectUuid === null ||
+      normalizeAccountUuid(row.subjectUuid) !== uuid ||
+      row.status === 'DELETED_AT_SOURCE'
+    ) {
+      throw new NotFoundException('Наказание не найдено');
+    }
+    if (viewStatus(row, Date.now()) !== 'ACTIVE') {
+      throw new BadRequestException({
+        code: 'punishment_not_appealable',
+        message: 'Обжаловать можно только действующий бан или мут',
+      });
+    }
+    const open = await tx.report.findFirst({
+      where: {
+        appealedMinecraftPunishmentId: row.id,
+        status: { notIn: CLOSED_REPORT_STATUSES },
+      },
+      select: { id: true },
+    });
+    if (open) {
+      throw new ConflictException({
+        code: 'appeal_already_open',
+        message: 'По этому наказанию уже есть открытое обращение',
+      });
+    }
+    const recent = await tx.report.findFirst({
+      where: {
+        appealedMinecraftPunishmentId: row.id,
+        authorId,
+        createdAt: {
+          gte: new Date(Date.now() - REPORT_APPEAL_REPEAT_COOLDOWN_MS),
+        },
+      },
+      select: { id: true },
+    });
+    if (recent) {
+      throw new HttpException(
+        {
+          code: 'appeal_cooldown',
+          message:
+            'Повторно обжаловать это наказание можно через сутки после предыдущего обращения',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return row.id;
   }
 
   async addMessage(
