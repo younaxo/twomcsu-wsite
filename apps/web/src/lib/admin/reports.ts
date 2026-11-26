@@ -271,3 +271,19 @@ export function useStaffReportActions(number: string) {
     banAuthor,
   };
 }
+
+/// Статистика обращений: `reports.stats`. `byStatus`/`byType` — только те
+/// ключи, по которым есть записи (API отдаёт groupBy без нулевых строк).
+export interface ReportsStats {
+  total: number;
+  byStatus: Partial<Record<ReportStatus, number>>;
+  byType: Partial<Record<ReportType, number>>;
+}
+
+export function useReportsStats(enabled = true) {
+  return useQuery({
+    queryKey: ['admin', 'reports', 'stats'] as const,
+    queryFn: () => api.get<ReportsStats>('/admin/reports/stats'),
+    enabled,
+  });
+}

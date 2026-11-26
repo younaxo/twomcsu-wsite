@@ -58,6 +58,16 @@ export interface AdminNavGroup {
   items: AdminNavItem[];
 }
 
+/// Блоки страницы статистики магазина: у каждого своё право.
+const STORE_STATS_KEYS: PermissionKey[] = [
+  'store.stats.overview.view',
+  'store.stats.sales_by_day.view',
+  'store.stats.sales_by_category.view',
+  'store.stats.top_products.view',
+  'store.stats.revenue_by_week.view',
+  'orders.stats',
+];
+
 /// Группы — по ТЗ админки (§62): логическая группировка вместо длинного списка.
 export const ADMIN_NAV: AdminNavGroup[] = [
   {
@@ -138,6 +148,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'topics.view',
           'forms.view',
           'voting.sites.view',
+          'streams.view',
         ],
         keywords: [
           'новости',
@@ -148,6 +159,9 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'документы',
           'голосование',
           'рейтинги',
+          'стримы',
+          'twitch',
+          'youtube',
         ],
         sections: [
           { href: '/admin/content', label: 'Обзор', requirement: 'content.view' },
@@ -156,6 +170,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           { href: '/admin/topics', label: 'Темы', requirement: 'topics.view' },
           { href: '/admin/forms', label: 'Формы', requirement: 'forms.view' },
           { href: '/admin/voting', label: 'Голосование', requirement: 'voting.sites.view' },
+          { href: '/admin/streams', label: 'Стримы', requirement: 'streams.view' },
         ],
       },
       {
@@ -228,8 +243,11 @@ export const ADMIN_NAV: AdminNavGroup[] = [
           'store.bundles.edit',
           'store.bundles.delete',
           'store.currencies.view',
+          ...STORE_STATS_KEYS,
         ],
         keywords: [
+          'статистика',
+          'аналитика',
           'возвраты',
           'выдача',
           'магазин',
@@ -282,6 +300,7 @@ export const ADMIN_NAV: AdminNavGroup[] = [
             label: 'Валюты',
             requirement: 'store.currencies.view',
           },
+          { href: '/admin/store/stats', label: 'Статистика', requirement: STORE_STATS_KEYS },
         ],
       },
     ],
