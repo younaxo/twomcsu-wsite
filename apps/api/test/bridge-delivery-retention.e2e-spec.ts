@@ -81,6 +81,13 @@ describe('Bridge delivery: очистка заданий (0.13 срез 2, e2e)'
     (await prisma.bridgeDeliveryJob.findUnique({ where: { id } })) !== null;
 
   beforeAll(async () => {
+    const url = process.env.DATABASE_URL ?? '';
+    const dbName = url.split('?')[0].split('/').pop() ?? '';
+    if (!/test|e2e|scratch/i.test(dbName)) {
+      throw new Error(
+        `Имя БД "${dbName}" не похоже на одноразовую (нужно test, e2e или scratch): набор остановлен.`,
+      );
+    }
     for (const m of ['log', 'warn', 'error', 'debug', 'verbose'] as const) {
       spies.push(jest.spyOn(Logger.prototype, m).mockImplementation());
     }
