@@ -148,6 +148,8 @@ export interface CreateReportRequest {
   type: ReportType;
   targets?: Array<{ username: string }>;
   appealedPunishmentId?: string;
+  /** Наказание сервера по публичному номеру `ban-123` / `mute-45`; не вместе с `appealedPunishmentId`. */
+  appealedPunishmentRef?: string;
   server?: string;
   incidentDate?: IsoDateString;
   description: string;

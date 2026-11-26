@@ -74,11 +74,13 @@ function setup() {
   prisma.$transaction.mockImplementation((cb: (t: unknown) => unknown) =>
     cb(tx),
   );
+  const audit = { logInTx: jest.fn().mockResolvedValue(undefined) };
   const service = new ReportsService(
     prisma as never,
     new DefaultReportPriorityProvider(),
+    audit as never,
   );
-  return { prisma, tx, calls, service };
+  return { prisma, tx, calls, service, audit };
 }
 
 const appealDto = (extra: Partial<CreateReportDto> = {}): CreateReportDto =>

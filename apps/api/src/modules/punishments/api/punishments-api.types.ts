@@ -108,6 +108,28 @@ export interface PublicPunishmentListQuery extends PunishmentListQuery {
   name?: string;
 }
 
+/** Статусы обжалования (статусы обращения): подано, на рассмотрении, одобрено, отклонено, закрыто. */
+export const PUNISHMENT_APPEAL_STATUSES = [
+  'PENDING',
+  'IN_REVIEW',
+  'WAITING_RESPONSE',
+  'RESOLVED',
+  'REJECTED',
+  'CLOSED',
+] as const;
+export type PunishmentAppealStatus =
+  (typeof PUNISHMENT_APPEAL_STATUSES)[number];
+
+/** Обжалование своего наказания (обращение типа PUNISHMENT_APPEAL). Без данных персонала. */
+export interface MyPunishmentAppeal {
+  reportNumber: string;
+  status: PunishmentAppealStatus;
+  createdAt: IsoDateString;
+  resolvedAt: IsoDateString | null;
+  /** Комментарий персонала (вердикт), обычный текст до 1000 символов; null - пока не задан. */
+  verdict: string | null;
+}
+
 /** Мои наказания: полный очищенный текст причины. */
 export interface MyPunishment {
   ref: string;
@@ -125,8 +147,10 @@ export interface MyPunishment {
   executor: PublicPunishmentExecutor | null;
   /** Q63 п.4: область с названием сервера (4.4). */
   scope: PunishmentScopeView;
-  /** Всегда false до среза обжалования зеркальных наказаний (раздел 9). */
+  /** Можно подать обжалование: активные BAN и MUTE без открытого обращения. */
   appealable: boolean;
+  /** Обжалования этого наказания, новые первыми (до 5). */
+  appeals: MyPunishmentAppeal[];
 }
 
 export interface MyPunishmentListResponse {
