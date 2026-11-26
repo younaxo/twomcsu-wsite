@@ -55,6 +55,7 @@ describe('QuickBuyPanel: способ оплаты', () => {
       'Выберите способ оплаты',
     );
     expect(mocks.post).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getAllByRole('radio')[0]));
     await userEvent.click(screen.getByRole('radio', { name: /Карта РФ/ }));
     await userEvent.click(screen.getByTestId('quick-buy-submit'));
     await waitFor(() => expect(mocks.post).toHaveBeenCalled());
