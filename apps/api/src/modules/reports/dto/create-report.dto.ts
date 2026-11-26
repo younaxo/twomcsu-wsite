@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { ReportEvidenceLinkDto } from './report-evidence-link.dto';
@@ -33,6 +34,14 @@ export class CreateReportDto {
   @IsString()
   @Length(1, 64)
   appealedPunishmentId?: string;
+
+  /// Обжалуемое наказание сервера (зеркало LiteBans): публичный `ref`
+  /// `ban-123` или `mute-45`. Только для PUNISHMENT_APPEAL и не вместе с
+  /// `appealedPunishmentId` (проверяет сервис).
+  @IsOptional()
+  @IsString()
+  @Matches(/^(ban|mute)-[1-9][0-9]{0,17}$/)
+  appealedPunishmentRef?: string;
 
   @IsOptional()
   @IsString()
