@@ -2561,6 +2561,9 @@ model Report {
   contactPhone         String?
   paymentDate          DateTime?
   appealedPunishmentId String?
+  /// Обжалуемое наказание из зеркала игрового сервера (source=litebans). CHECK reports_one_appealed_punishment и частичный
+  /// уникальный индекс reports_open_mc_appeal_uniq заданы вручную в миграции 20261124130000: Prisma их не выражает.
+  appealedMinecraftPunishmentId String?
   assignedToId         String?
   verdict              String?         @db.Text
   verdictHtml          String?         @db.Text
@@ -2584,6 +2587,7 @@ model Report {
 
   author             User            @relation("ReportAuthor", fields: [authorId], references: [id])
   appealedPunishment UserPunishment? @relation(fields: [appealedPunishmentId], references: [id])
+  appealedMinecraftPunishment MinecraftPunishment? @relation("ReportAppealedMinecraftPunishment", fields: [appealedMinecraftPunishmentId], references: [id])
   assignedTo         User?           @relation("ReportAssignee", fields: [assignedToId], references: [id])
 
   targets        ReportTarget[]
@@ -2598,6 +2602,7 @@ model Report {
   @@index([status])
   @@index([assignedToId])
   @@index([appealedPunishmentId])
+  @@index([appealedMinecraftPunishmentId])
   @@map("reports")
 }
 
@@ -3573,6 +3578,8 @@ model MinecraftPunishment {
   lastSeenAt         DateTime                  @default(now())
   lastChangedAt      DateTime                  @default(now())
   deletedAtSource    DateTime?
+
+  reports Report[] @relation("ReportAppealedMinecraftPunishment")
 
   @@unique([source, sourceScope, kind, sourceId])
   @@index([subjectUuid, startedAt])

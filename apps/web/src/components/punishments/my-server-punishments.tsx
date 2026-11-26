@@ -1,7 +1,8 @@
 'use client';
 
+import type { PunishmentAppealStatus } from '@twomc/shared';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
-import { Link2, ServerOff } from 'lucide-react';
+import { Gavel, Link2, ServerOff } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageSection } from '@/components/admin/page-header';
@@ -30,6 +31,72 @@ const STATUS_OPTIONS = [
   { value: 'active', label: 'Действуют' },
   { value: 'ended', label: 'Завершены' },
 ];
+
+const APPEAL_STATUS_LABEL: Record<PunishmentAppealStatus, string> = {
+  PENDING: 'Подано',
+  IN_REVIEW: 'На рассмотрении',
+  WAITING_RESPONSE: 'Ждём вашего ответа',
+  RESOLVED: 'Одобрено',
+  REJECTED: 'Отклонено',
+  CLOSED: 'Закрыто',
+};
+
+/// Обжалование (l1-02): история обращений по наказанию и кнопка «Обжаловать»,
+/// пока сервер разрешает (`appealable`). Решение не снимает наказание на
+/// сервере: статус и комментарий персонала только информируют.
+function AppealBlock({ item }: { item: MyPunishmentView }) {
+  if (!item.appealable && item.appeals.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-2" data-testid="server-punishment-appeal">
+      {item.appeals.length > 0 ? (
+        <ul className="flex flex-col gap-2" aria-label={`Обжалования наказания ${item.ref}`}>
+          {item.appeals.map((appeal) => (
+            <li
+              key={appeal.reportNumber}
+              data-status={appeal.status}
+              data-testid="punishment-appeal"
+              className="flex flex-col gap-1 rounded-lg border border-border p-3 text-sm"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{APPEAL_STATUS_LABEL[appeal.status]}</span>
+                <time className="text-xs text-muted-foreground" dateTime={appeal.createdAt}>
+                  {formatDateTime(appeal.createdAt)}
+                </time>
+                <Link
+                  href={`/support/${encodeURIComponent(appeal.reportNumber)}`}
+                  className="text-xs font-medium underline"
+                >
+                  Обращение {appeal.reportNumber}
+                </Link>
+              </div>
+              {appeal.verdict ? (
+                <p className="whitespace-pre-wrap break-words text-sm">{appeal.verdict}</p>
+              ) : null}
+            </li>
+          ))}
+          <li className="text-xs text-muted-foreground">
+            Решение по обращению не снимает наказание само: снятие делает администрация на сервере.
+          </li>
+        </ul>
+      ) : null}
+      {item.appealable ? (
+        <div className="flex flex-col items-start gap-1">
+          <Button asChild variant="secondary" size="sm">
+            <Link
+              href={`/support/new/punishment_appeal?mc=${encodeURIComponent(item.ref)}`}
+              aria-label={`Обжаловать наказание: ${KIND_LABELS[item.kind]}, номер ${item.ref}`}
+            >
+              <Gavel aria-hidden />
+              Обжаловать
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function MyPunishmentItem({ item }: { item: MyPunishmentView }) {
   return (
@@ -78,27 +145,15 @@ function MyPunishmentItem({ item }: { item: MyPunishmentView }) {
           </dd>
         </div>
       </dl>
-      {item.status === 'ACTIVE' && (item.kind === 'BAN' || item.kind === 'MUTE') ? (
-        <div className="flex flex-col items-start gap-1" data-testid="server-punishment-appeal">
-          <Button asChild variant="secondary" size="sm">
-            <Link
-              href="/support/new/other"
-              aria-label={`Подать обращение по наказанию: ${KIND_LABELS[item.kind]}, номер ${item.ref}`}
-            >
-              Подать обращение
-            </Link>
-          </Button>
-          <p className="text-xs text-muted-foreground">Укажите номер наказания: {item.ref}</p>
-        </div>
-      ) : null}
+      <AppealBlock item={item} />
     </li>
   );
 }
 
 /// «Настройки → Наказания → Наказания на серверах»: история игрока из зеркала
 /// LiteBans (`GET /punishments/me`, этап 02 срез 2). Отдельно от наказаний на
-/// сайте. Игрок видит полный очищенный текст причины. Раздел обжалования для
-/// зеркальных наказаний не показывается: API отдаёт `appealable: false`.
+/// сайте. Игрок видит полный очищенный текст причины. Обжалование и его статус
+/// показываются на карточке (`appealable`, `appeals`).
 export function MyServerPunishments() {
   const [filters, setFilters] = useState<MyFilters>({ status: 'ALL' });
   const query = useInfiniteQuery({

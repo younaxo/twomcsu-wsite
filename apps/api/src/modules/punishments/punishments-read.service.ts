@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  MyPunishmentAppeal,
   MyPunishmentListResponse,
   PUNISHMENT_KINDS,
   PublicPunishment,
@@ -56,6 +57,8 @@ export const PUNISHMENT_SOURCE_NAME = 'litebans';
 export const PUBLIC_STALE_AFTER_MS = 5 * 60_000;
 export const DEFAULT_PUBLIC_LIMIT = 25;
 export const DEFAULT_STAFF_LIMIT = 50;
+export const MAX_APPEALS_PER_PUNISHMENT = 5;
+export const MAX_VERDICT_LENGTH = 1000;
 
 const PUBLIC_KINDS: readonly PunishmentKind[] = ['BAN', 'MUTE'];
 
@@ -230,14 +233,61 @@ export class PunishmentsReadService {
     );
     const servers = await this.loadServers();
     const ctx = { nowMs: nowDate.getTime(), servers };
+    const appeals = await this.loadAppeals(
+      userId,
+      rows.map((r) => r.id),
+    );
     return {
       linked: true,
       items: rows
-        .map((r) => toMyPunishment(r, ctx))
+        .map((r) => toMyPunishment(r, ctx, appeals.get(r.id) ?? []))
         .filter((i): i is NonNullable<typeof i> => i !== null),
       nextCursor,
       meta,
     };
+  }
+
+  /// Обжалования своих наказаний (l1-02): только обращения автора типа
+  /// PUNISHMENT_APPEAL, новые первыми, не более MAX_APPEALS_PER_PUNISHMENT
+  /// на наказание. Данные персонала (исполнитель, заметки) не выбираются.
+  private async loadAppeals(
+    userId: string,
+    punishmentIds: string[],
+  ): Promise<Map<string, MyPunishmentAppeal[]>> {
+    const result = new Map<string, MyPunishmentAppeal[]>();
+    if (punishmentIds.length === 0) return result;
+    const reports = await this.prisma.report.findMany({
+      where: {
+        authorId: userId,
+        type: 'PUNISHMENT_APPEAL',
+        appealedMinecraftPunishmentId: { in: punishmentIds },
+      },
+      select: {
+        appealedMinecraftPunishmentId: true,
+        reportNumber: true,
+        status: true,
+        createdAt: true,
+        resolvedAt: true,
+        verdict: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: punishmentIds.length * MAX_APPEALS_PER_PUNISHMENT,
+    });
+    for (const r of reports) {
+      const key = r.appealedMinecraftPunishmentId;
+      if (key === null) continue;
+      const list = result.get(key) ?? [];
+      if (list.length >= MAX_APPEALS_PER_PUNISHMENT) continue;
+      list.push({
+        reportNumber: r.reportNumber,
+        status: r.status,
+        createdAt: r.createdAt.toISOString(),
+        resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+        verdict: r.verdict ? r.verdict.slice(0, MAX_VERDICT_LENGTH) : null,
+      });
+      result.set(key, list);
+    }
+    return result;
   }
 
   /// Подтверждённая привязка (ADR-0072). uuid версии 3 (офлайн) - как нет

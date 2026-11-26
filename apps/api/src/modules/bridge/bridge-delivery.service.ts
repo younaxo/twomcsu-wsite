@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import { BridgeDeliveryJobStatus, Prisma } from '@prisma/client';
 import {
   EXTRA_ROOTS_SETTING,
@@ -27,6 +28,16 @@ import { resolveCapabilities } from './bridge-capabilities';
 ///    владельца задания; чужое и несуществующее неразличимы (`unknown_job`);
 ///  - команда повторно проверяется по белому списку при выдаче плагину;
 ///  - плагину в ответ не уходит ничего, кроме команды и идентификаторов.
+
+/// Сравнение токенов захвата за постоянное время (L1) без учёта регистра
+/// (L5): сайт выдаёт токен в нижнем регистре, плагин мог привести его иначе.
+/// Разная длина - сразу false (timingSafeEqual требует равные буферы).
+export function claimTokensEqual(stored: string, presented: string): boolean {
+  const a = Buffer.from(stored.toLowerCase(), 'utf8');
+  const b = Buffer.from(presented.toLowerCase(), 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export type JobSnapshot = {
   id: string;
@@ -292,7 +303,7 @@ export class BridgeDeliveryService {
     if (job.claimToken === null) {
       return { jobId: input.jobId, status: 'rejected', code: 'not_claimed' };
     }
-    if (job.claimToken !== input.claimToken) {
+    if (!claimTokensEqual(job.claimToken, input.claimToken)) {
       return { jobId: input.jobId, status: 'rejected', code: 'token_mismatch' };
     }
     const target = ACK_TO_STATUS[input.status];
@@ -304,7 +315,8 @@ export class BridgeDeliveryService {
     }
     const moved = await this.settle(
       job.id,
-      input.claimToken,
+      // Токен из БД (регистр как выдан): CAS точный, сравнение уже прошло.
+      job.claimToken,
       input.status,
       input.code,
     );
