@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { ChatService } from '../chat/chat.service';
 import { CommentsService } from '../comments/comments.service';
+import { LeaderboardsService } from '../leaderboards/leaderboards.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../roles/permission.service';
 import { QuickModerationService } from './quick-moderation.service';
@@ -61,6 +62,7 @@ function build(opts: {
     log: jest.fn().mockResolvedValue(undefined),
     logInTx: jest.fn().mockResolvedValue(undefined),
   };
+  const leaderboards = { invalidate: jest.fn() };
   const auth = { revokeAllSessions: jest.fn().mockResolvedValue(undefined) };
   const service = new QuickModerationService(
     prisma as unknown as PrismaService,
@@ -69,8 +71,9 @@ function build(opts: {
     {} as CommentsService,
     permissions as unknown as PermissionService,
     audit as unknown as AuditService,
+    leaderboards as unknown as LeaderboardsService,
   );
-  return { service, prisma, tx, permissions, audit, auth };
+  return { service, prisma, tx, permissions, audit, auth, leaderboards };
 }
 
 describe('QuickModerationService.ban: «кто выдал», иерархия, гонки (Q48)', () => {
@@ -239,5 +242,42 @@ describe('QuickModerationService.unban (Q48, Q49, ADR-0173)', () => {
     await expect(b.service.unban('x', 'mod')).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('QuickModerationService: сброс кэша рейтингов (ADR-0195)', () => {
+  it('бан сбрасывает кэш рейтингов после транзакции', async () => {
+    const { service, leaderboards } = build({
+      user: { id: 'u1', isBanned: false, bannedById: null },
+    });
+    await service.ban('u1', 'mod', { reason: 'cheat' } as never);
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('разбан сбрасывает кэш рейтингов', async () => {
+    const { service, leaderboards } = build({
+      user: { id: 'u1', isBanned: true, bannedById: 'mod' },
+    });
+    await service.unban('u1', 'mod');
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('неудачный бан (гонка 409) и отказ в разбане кэш не трогают', async () => {
+    const lost = build({
+      user: { id: 'u1', isBanned: false, bannedById: null },
+      updateCount: 0,
+    });
+    await expect(
+      lost.service.ban('u1', 'mod', { reason: 'x' } as never),
+    ).rejects.toThrow(ConflictException);
+    expect(lost.leaderboards.invalidate).not.toHaveBeenCalled();
+    const denied = build({
+      user: { id: 'u1', isBanned: true, bannedById: 'mod' },
+      updateCount: 0,
+    });
+    await expect(denied.service.unban('u1', 'mod')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(denied.leaderboards.invalidate).not.toHaveBeenCalled();
   });
 });
