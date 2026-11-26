@@ -17,6 +17,7 @@ import {
   DELIVERY_PAGE_SIZE,
   DELIVERY_STATUS_META,
   DELIVERY_TASK_STATUSES,
+  bridgeJobLabel,
   EMPTY_DELIVERY_FILTERS,
   buildDeliveryQuery,
   deliveryTaskHref,
@@ -84,7 +85,20 @@ function DeliveryQueue() {
     { key: 'item', header: 'Позиция', cell: (t) => deliveryTaskTitle(t) },
     { key: 'nick', header: 'Ник', cell: (t) => t.nick ?? '—' },
     { key: 'executor', header: 'Исполнитель', cell: (t) => executorLabel(t.executor) },
-    { key: 'status', header: 'Статус', cell: (t) => <DeliveryStatusBadge status={t.status} /> },
+    {
+      key: 'status',
+      header: 'Статус',
+      cell: (t) => (
+        <div className="flex flex-col gap-0.5">
+          <DeliveryStatusBadge status={t.status} />
+          {t.bridgeJob ? (
+            <span className="text-xs text-muted-foreground" data-testid="bridge-job-state">
+              Bridge: {bridgeJobLabel(t.bridgeJob.status)}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
     {
       key: 'attempts',
       header: 'Попыток',
@@ -168,6 +182,20 @@ function DeliveryQueue() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit">Применить</Button>
+          <Button
+            type="button"
+            variant="secondary"
+            data-testid="preset-needs-attention"
+            onClick={() => {
+              const next = { ...EMPTY_DELIVERY_FILTERS, status: 'NEEDS_ATTENTION' as const };
+              setDraft(next);
+              setApplied(next);
+              setErrors({});
+              setPage(1);
+            }}
+          >
+            Требуют внимания
+          </Button>
           <Button type="button" variant="ghost" onClick={reset}>
             Сбросить
           </Button>

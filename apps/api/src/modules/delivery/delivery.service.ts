@@ -997,6 +997,9 @@ export class DeliveryService {
             executor: task.executor,
             from: task.status,
             to: DeliveryTaskStatus.MANUAL_DONE,
+            ...(task.bridgeJob
+              ? { bridgeJobStatus: task.bridgeJob.status }
+              : {}),
             reason: text,
           },
         });
@@ -1068,6 +1071,13 @@ export class DeliveryService {
             from: task.status,
             to: target,
             confirmed: true,
+            // Для разбора двойной выдачи (R167): что известно об очереди Bridge.
+            ...(task.bridgeJob
+              ? {
+                  bridgeJobStatus: task.bridgeJob.status,
+                  bridgeClaimCount: task.bridgeJob.claimCount,
+                }
+              : {}),
             ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
           },
         });
@@ -1120,6 +1130,7 @@ export class DeliveryService {
         orderItemId: true,
         step: true,
         executor: true,
+        bridgeJob: { select: { status: true, claimCount: true } },
       },
     });
   }
@@ -1260,6 +1271,19 @@ const TASK_LIST_SELECT = {
   deliveredAt: true,
   createdAt: true,
   updatedAt: true,
+  /// Состояние очереди Bridge (0.13): только статус и метки, без `claimToken`
+  /// и команды. Нужно админке для разбора UNKNOWN и повтора.
+  bridgeJob: {
+    select: {
+      status: true,
+      serverSlug: true,
+      ackCode: true,
+      claimCount: true,
+      claimedAt: true,
+      ackedAt: true,
+      attempt: true,
+    },
+  },
   orderItem: {
     select: {
       id: true,

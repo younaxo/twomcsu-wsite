@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, CircleCheck, RotateCcw } from 'lucide-react';
+import { ArrowLeft, CircleCheck, RotateCcw, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useRef, useState } from 'react';
@@ -15,6 +15,8 @@ import { Button } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import {
+  BRIDGE_JOB_META,
+  bridgeRetryMayDuplicate,
   canMarkManualDone,
   canRetryDelivery,
   deliveryTaskTitle,
@@ -40,6 +42,7 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
   const manage = can('store.delivery.manage');
   const showDone = manage && canMarkManualDone(task.status);
   const showRetry = manage && canRetryDelivery(task.status);
+  const bridgeWarn = bridgeRetryMayDuplicate(task);
   const orderNumber = task.orderItem.order.orderNumber;
   const dialogTitle = `${deliveryTaskTitle(task)}, заказ ${orderNumber}`;
   const headingRef = useRef<HTMLSpanElement>(null);
@@ -88,6 +91,45 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
           </>
         }
       />
+
+      {task.bridgeJob ? (
+        <PageSection title="Очередь Bridge">
+          <DescriptionList
+            className="rounded-xl bg-surface p-5 shadow-sm"
+            data-testid="bridge-job-summary"
+          >
+            <DescriptionItem term="Состояние">
+              {BRIDGE_JOB_META[task.bridgeJob.status]?.label ?? task.bridgeJob.status}
+            </DescriptionItem>
+            <DescriptionItem term="Сервер" mono>
+              {task.bridgeJob.serverSlug}
+            </DescriptionItem>
+            <DescriptionItem term="Код ответа плагина" mono>
+              {task.bridgeJob.ackCode ?? '—'}
+            </DescriptionItem>
+            <DescriptionItem term="Захватов">{task.bridgeJob.claimCount}</DescriptionItem>
+            <DescriptionItem term="Передано серверу">
+              {formatDateTime(task.bridgeJob.claimedAt)}
+            </DescriptionItem>
+            <DescriptionItem term="Подтверждено">
+              {formatDateTime(task.bridgeJob.ackedAt)}
+            </DescriptionItem>
+          </DescriptionList>
+          {bridgeWarn ? (
+            <div
+              role="note"
+              data-testid="bridge-duplicate-warning"
+              className="mt-2 flex items-start gap-2 rounded-xl bg-warning-soft p-3 text-sm text-warning"
+            >
+              <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning" />
+              <span>
+                Возможна двойная выдача, если сервер уже выполнил команду. Прежде чем повторять,
+                проверьте игрока на сервере; если товар выдан, отметьте задание выданным вручную.
+              </span>
+            </div>
+          ) : null}
+        </PageSection>
+      ) : null}
 
       <PageSection title="Задание">
         <DescriptionList className="rounded-xl bg-surface p-5 shadow-sm" data-testid="task-summary">
@@ -142,6 +184,7 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
         <RetryDialog
           taskId={task.id}
           title={dialogTitle}
+          bridgeDuplicateRisk={bridgeWarn}
           open
           onOpenChange={setRetryOpen}
           onSuccessFocus={focusHeading}
