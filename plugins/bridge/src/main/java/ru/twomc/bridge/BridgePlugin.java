@@ -37,6 +37,7 @@ public final class BridgePlugin extends JavaPlugin {
                 cfg.getString("delivery.keyId", ""),
                 cfg.getString("delivery.keyFile", ""),
                 cfg.getStringList("delivery.extraRoots"),
+                cfg.getStringList("delivery.extraTemplates"),
                 cfg.getInt("delivery.maxPerClaim", 5),
                 cfg.getInt("delivery.keyRetentionDays", 180));
         BridgeConfig.Result res = BridgeConfig.resolve(raw, System.getenv(), getDataFolder().toPath());

@@ -311,6 +311,28 @@ class DeliveryEngineTest {
     }
 
     @Test
+    void allowedRootWithDisallowedShape_isFailedCommandNotAllowed_withoutExecutionOrJournal() throws IOException {
+        Harness h = new Harness();
+        h.transport.thenResponse(claimResponse(2000,
+                job("cjob00000001", "item1:1", "lp user Steve permission set a.b true", TOKEN1),
+                job("cjob00000002", "item2:1", "eco give Steve -5", TOKEN2)));
+        h.transport.then(ackAll("accepted", null));
+
+        h.engine.cycle();
+        h.runMain();
+        h.scheduler.drain();
+
+        assertTrue(h.dispatched.isEmpty(), "команда с неразрешённой формой не исполняется");
+        Req ack = h.transport.to(Protocol.PATH_ACK).get(0);
+        assertEquals("failed", statusOf(ack, 0));
+        assertEquals("command_not_allowed", codeOf(ack, 0));
+        assertEquals("failed", statusOf(ack, 1));
+        assertEquals("command_not_allowed", codeOf(ack, 1));
+        assertEquals(KeyStore.State.NONE, h.store.state("item1:1"));
+        assertEquals(KeyStore.State.NONE, h.store.state("item2:1"));
+    }
+
+    @Test
     void malformedJobFieldsAreClosedAsFailed() throws IOException {
         Harness h = new Harness();
         h.transport.thenResponse(new Transport.Response(200, null, null,

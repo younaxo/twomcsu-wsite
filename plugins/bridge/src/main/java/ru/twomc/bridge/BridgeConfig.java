@@ -23,8 +23,13 @@ import java.util.Set;
  */
 final class BridgeConfig {
     /** Значения «как в config.yml», до проверки. */
-    record Raw(String siteUrl, String keyId, String keyFile, List<String> extraRoots, int maxPerClaim,
-               int keyRetentionDays) {}
+    record Raw(String siteUrl, String keyId, String keyFile, List<String> extraRoots, List<String> extraTemplates,
+               int maxPerClaim, int keyRetentionDays) {
+        /** Без extraTemplates (только белый список по умолчанию и extraRoots). */
+        Raw(String siteUrl, String keyId, String keyFile, List<String> extraRoots, int maxPerClaim, int keyRetentionDays) {
+            this(siteUrl, keyId, keyFile, extraRoots, List.of(), maxPerClaim, keyRetentionDays);
+        }
+    }
 
     /** Результат разбора: либо конфигурация, либо одно понятное описание проблемы (без значений секрета). */
     record Result(BridgeConfig config, String problem, List<String> warnings) {
@@ -91,7 +96,7 @@ final class BridgeConfig {
 
         CommandPolicy policy;
         try {
-            policy = CommandPolicy.of(raw.extraRoots());
+            policy = CommandPolicy.of(raw.extraRoots(), raw.extraTemplates());
         } catch (IllegalArgumentException e) {
             return fail(e.getMessage());
         }
