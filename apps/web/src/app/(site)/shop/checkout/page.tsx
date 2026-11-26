@@ -16,9 +16,11 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PaymentMethodPicker } from '@/components/store/payment-method-picker';
 import { useAuthStore } from '@/lib/auth/store';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { usePublicProfile } from '@/lib/profile/hooks';
+import { usePaymentChoice } from '@/lib/store/payment-methods';
 import { isPositive, itemName, lineFor, useCartView, type CartView } from '@/lib/store/cart';
 import {
   OFFER_DOC_HREF,
@@ -147,6 +149,8 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
   const [accepted, setAccepted] = useState(false);
   const [nickError, setNickError] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const choice = usePaymentChoice(true);
   const [failure, setFailure] = useState<CheckoutErrorInfo | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
@@ -156,6 +160,8 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
       : null;
   const paymentOff = !config.paymentAvailable || failure?.paymentUnavailable === true;
   const busy = createOrder.isPending || redirecting;
+  // Без списка способов заказ не отправляем: сервер потребует выбор (payment_method_required).
+  const methodsNotReady = choice.loading || choice.loadError !== null;
 
   // Возврат кнопкой «Назад» (bfcache) или переключением вкладки: страница снова живая,
   // кнопка оплаты не должна оставаться заблокированной.
@@ -209,12 +215,16 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy || paymentOff) return;
+    if (busy || paymentOff || methodsNotReady) return;
     setFailure(null);
     setNickError(null);
     const trimmedNick = nick.trim();
+    const methodMissing = choice.required && choice.selected === null;
+    setPaymentError(methodMissing ? 'Выберите способ оплаты, чтобы оформить заказ.' : null);
     if (!accepted) {
       setOfferError('Подтвердите согласие с офертой, чтобы оформить заказ.');
+    }
+    if (methodMissing || !accepted) {
       focusFirstInvalid();
       return;
     }
@@ -223,6 +233,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
       {
         offerVersion: config.offerVersion,
         ...(trimmedNick !== '' ? { targetMinecraftNick: trimmedNick } : {}),
+        ...(choice.required && choice.selected ? { paymentMethod: choice.selected } : {}),
       },
       {
         onSuccess: (result) => {
@@ -240,6 +251,11 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
           const info = describeCheckoutError(error);
           setFailure(info);
           if (info.field === 'nick') setNickError(info.message);
+          if (info.field === 'payment') {
+            setPaymentError(info.message);
+            // Список мог измениться: сбрасываем выбор и перечитываем способы.
+            choice.reload();
+          }
           if (info.field === 'offer') {
             setOfferError(info.message);
             if (info.offerOutdated) {
@@ -288,6 +304,23 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
             />
           </FormField>
         </Card>
+
+        {choice.loading || choice.loadError || choice.required ? (
+          <Card className="flex flex-col gap-3">
+            <h2 className="font-display text-lg font-bold">Оплата</h2>
+            <PaymentMethodPicker
+              choice={{
+                ...choice,
+                select: (code) => {
+                  choice.select(code);
+                  setPaymentError(null);
+                },
+              }}
+              error={paymentError}
+              testId="checkout-payment-methods"
+            />
+          </Card>
+        ) : null}
 
         <Card className="flex flex-col gap-3">
           <h2 className="font-display text-lg font-bold">Согласие</h2>
@@ -367,7 +400,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
             type="submit"
             size="lg"
             loading={busy}
-            disabled={paymentOff}
+            disabled={paymentOff || methodsNotReady}
             aria-describedby={paymentOff ? unavailableId : undefined}
             data-testid="checkout-submit"
           >
