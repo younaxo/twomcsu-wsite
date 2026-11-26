@@ -40,4 +40,23 @@ done
 for p in .env.example apps/web/.env.sample apps/api/prisma/migrations/20240101_init/migration.sql apps/api/src/modules/auth/two-factor/secret-box.ts apps/api/src/a.ts package.json pnpm-lock.yaml; do
   wt_denied "$p" && bad "T3 ЛИШНЕЕ исключение: $p" || ok "T3 включён: $p"
 done
+
+# --- T4: аргументы java-build/bench проверяются ДО любого SSH (код 2, сеть не используется)
+rr() { ( VDS_LOCK_DIR="$D/t4-lock" "$HERE/run-remote.sh" "$@" ) >/dev/null 2>&1; echo $?; }
+[[ "$(rr java-build)" == 2 ]] && ok "T4a java-build без --path отклонён" || bad "T4a"
+[[ "$(rr java-build --path ../x)" == 2 ]] && ok "T4b --path с '..' отклонён" || bad "T4b"
+[[ "$(rr java-build --path /etc)" == 2 ]] && ok "T4c абсолютный --path отклонён" || bad "T4c"
+[[ "$(rr java-build --path 'a b')" == 2 ]] && ok "T4d --path с пробелом отклонён" || bad "T4d"
+[[ "$(rr unit --path plugins/bridge)" == 2 ]] && ok "T4e --path вне java-build отклонён" || bad "T4e"
+[[ "$(rr bench --env FOO=1)" == 2 ]] && ok "T4f неизвестный ключ --env отклонён" || bad "T4f"
+[[ "$(rr bench --env 'OHA_IMAGE=a;b')" == 2 ]] && ok "T4g значение --env со спецсимволом отклонено" || bad "T4g"
+[[ "$(rr bench --env PROFILE=small --env PROFILE=large)" == 2 ]] && ok "T4h повтор ключа --env отклонён" || bad "T4h"
+[[ "$(rr unit --env PROFILE=small)" == 2 ]] && ok "T4i --env вне bench отклонён" || bad "T4i"
+
+# --- T5: маскирование секретов в смоуке стенда (без сети; нужен node)
+if command -v node >/dev/null 2>&1; then
+  SMOKE_SELFTEST_MASK=1 node "$HERE/../test-website/smoke.mjs" 2>&1 | grep -q 'mask-selftest: ok' && ok "T5 smoke.mjs маскирует пароли, TOTP, JWT, Bearer, пароли в URL, otpauth" || bad "T5 маскирование смоука"
+else
+  echo "skip T5 (нет node)"
+fi
 exit "$fail"

@@ -59,3 +59,25 @@ summarize_log() {
   local log="$1"
   grep -E '^(Test Suites|Tests|Snapshots|Time):|^ +(Test Files|Tests|Duration) +[0-9]|^##### ' "$log" || true
 }
+
+# ---- java-build (сборка по Dockerfile, например plugins/bridge) и bench (lang-bench)
+JAVA_BUILD_CPUS="${RUNNER_JAVA_BUILD_CPUS:-4}"     # --cpu-quota = CPUS * 100000 (для legacy-сборщика; BuildKit их игнорирует, см. runbook)
+JAVA_BUILD_MEM="${RUNNER_JAVA_BUILD_MEM:-6g}"
+JAVA_TIMEOUT_SEC="${RUNNER_JAVA_TIMEOUT_SEC:-2700}"
+BENCH_TIMEOUT_SEC="${RUNNER_BENCH_TIMEOUT_SEC:-7500}"   # план lang-bench: ориентир 80-95 мин, минимум 7200 с
+BENCH_MIN_TIMEOUT_SEC=7200
+# Зеркало Docker Hub library/* (как для node/redis); для gradle пробуется после Docker Hub.
+ECR_LIBRARY="${RUNNER_ECR_LIBRARY:-public.ecr.aws/docker/library}"
+
+# Выставляет JOB_TIMEOUT_SEC под задание: bench - не менее 7200 с, java-build - свой лимит, остальные - общий.
+job_timeout_for() {
+  case "$1" in
+    bench) JOB_TIMEOUT_SEC="$BENCH_TIMEOUT_SEC"; (( JOB_TIMEOUT_SEC >= BENCH_MIN_TIMEOUT_SEC )) || JOB_TIMEOUT_SEC="$BENCH_MIN_TIMEOUT_SEC" ;;
+    java-build) JOB_TIMEOUT_SEC="$JAVA_TIMEOUT_SEC" ;;
+  esac
+}
+
+# Допустимый относительный путь внутри снимка: без абсолютного пути, без '..', только [A-Za-z0-9._/-].
+valid_rel_path() {
+  [[ "$1" =~ ^[A-Za-z0-9._/-]+$ && "$1" != /* && "$1" != *..* ]]
+}

@@ -11,12 +11,14 @@ infrastructure/vds-runner/run-remote.sh unit
 infrastructure/vds-runner/run-remote.sh api-e2e --ref origin/main
 infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/worktree --out /tmp/out
 infrastructure/vds-runner/run-remote.sh docker-build --ref feature/x
+infrastructure/vds-runner/run-remote.sh java-build --path plugins/bridge --ref origin/feature/bridge-plugin-delivery   # jar + JUnit, см. «java-build»
+infrastructure/vds-runner/run-remote.sh bench --ref <ветка с experiments/lang-bench> --env OHA_IMAGE=<образ:тег> --no-wait   # см. «bench»; сначала BENCH_PRECHECK_ONLY=1
 infrastructure/vds-runner/run-remote.sh api-e2e --no-wait        # поставить и уйти
 infrastructure/vds-runner/run-remote.sh --attach <id>            # дождаться/забрать позже
 ```
 
 Выход: код возврата задания (0 - успех), `70` - тайм-аут ожидания (задание продолжает работать; `--timeout <мин>`, по умолчанию 60), `255` - сбой SSH.
-Артефакты в `--out` (по умолчанию `./vds-runner-out/<id>`; не коммитить): `result.env`, `summary.txt`, `job.log`.
+Артефакты в `--out` (по умолчанию `./vds-runner-out/<id>`; не коммитить): `result.env`, `summary.txt`, `job.log` и, если задание их создало, каталог `out/` (jar, отчёты, результаты бенчмарка).
 
 | Задание | Что делает | Лимиты |
 |---|---|---|
@@ -24,6 +26,8 @@ infrastructure/vds-runner/run-remote.sh --attach <id>            # дождат�
 | `api-e2e` | одноразовые postgres 16 + redis 7 (уникальные имена, своя docker-сеть, tmpfs, без публикации портов), prisma validate, `migrate deploy`, seed, `test:e2e` api как в CI | node 4 CPU / 7 ГБ, pg 1 CPU / 1 ГБ, redis 0.5 CPU / 256 МБ |
 | `web-build` | `pnpm --filter "@twomc/web..." build` (next build с зависимостями) | 4 CPU, 8 ГБ |
 | `docker-build` | сборка образов api и web по `infrastructure/*.Dockerfile` (образы после сборки удаляются) | 8 ГБ, cpu-shares 256 |
+| `java-build` | сборка по Dockerfile из `--path` (цель `build`: gradle build + JUnit), извлечение jar и отчёта тестов в `out/` | 6 ГБ, cpu-shares 256, таймаут 2700 с |
+| `bench` | `experiments/lang-bench/bench/run-bench.sh` (план `docs/reports/lang-bench-plan.md`), результаты целиком в `out/` | 2 ядра сервера + 2 ядра нагрузчика, таймаут не менее 7200 с (по умолчанию 7500) |
 
 Снимок кода: `--ref` - `git archive` коммита (только tracked). `--worktree` - ТОЛЬКО tracked-файлы рабочей копии (с незакоммиченными правками); новые файлы - `git add -N <файл>`
 или флаг `--include-untracked` (тогда неотслеживаемые не игнорируемые файлы включаются). Перед отправкой печатаются исключённое denylist-ом и неотслеживаемые файлы.
@@ -31,6 +35,47 @@ Denylist (`lib/wt-filter.sh`): `.env*` (кроме шаблонов `.env.exampl
 `service-account*.json`, `*credentials*`, имена на `secret(s)`, `*.sql` (кроме `prisma/migrations/**/migration.sql`), `*.dump`, `*.sqlite*`, `*.db`, `*.tsbuildinfo`, каталоги `node_modules`, `.next`, `.turbo`, `dist`, `coverage`, `secret(s)`.
 Проверка: `infrastructure/vds-runner/tests/selftest.sh`. Бандлы на VDS кладутся в приватный `~/.twomc-inbox` (700), а не в `/tmp`.
 Секреты на сервер не уходят; пароли БД, JWT и ключ 2FA для e2e генерируются на сервере на каждый запуск и живут только в одноразовых контейнерах.
+
+## Задание `java-build` (сборка по Dockerfile, например плагин Bridge)
+
+```bash
+infrastructure/vds-runner/run-remote.sh java-build --path plugins/bridge --ref origin/<ветка> --out <каталог>
+```
+- `--path` - каталог с `Dockerfile` внутри снимка (относительный, без `..`, символы `[A-Za-z0-9._/-]`). Исходный Dockerfile не меняется.
+- Собирается цель `build` (в Dockerfile плагина тесты JUnit идут в составе `gradle build`). Из образа без запуска кода (`docker create`, `--cap-drop ALL`, `no-new-privileges`, `--network none`) копируются
+  `build/libs/*.jar`, `build/test-results/test/*.xml`, `build/reports/tests/test/` в `<out>/out/{libs,test-results,reports}`; полный лог сборки - `<out>/out/build.log`.
+- Сводка (`summary.txt`) содержит `##### jar: ...`, `##### junit: tests= passed= failed= errors= skipped=`, `##### junit-FAILED <класс.тест>: <сообщение>`, `##### javac | <ошибка компиляции>`.
+- Тег образа gradle: если `gradle:<версия>-jdkNN` из Dockerfile не найден (`docker manifest inspect`) на Docker Hub и на зеркале ECR (`RUNNER_ECR_LIBRARY`), берётся ближайший меньший патч-тег той же линии
+  (`8.14.5-jdk21` -> `8.14.4-jdk21` -> ... -> `8.14-jdk21`) во временной копии `Dockerfile.runner`; замена пишется в сводку строкой `gradle-image: ЗАМЕНА`.
+- Если официальная сборка упала (компиляция или тесты), запускается диагностическая (`gradle build --continue || true`): отчёт тестов и jar попадают в `<out>/out/diag/` и НЕ годятся для выпуска; код возврата задания остаётся 11.
+- Коды: 0 успех; 10 нет/недопустим `--path` или Dockerfile; 11 сборка (компиляция или тесты) упала; 12 сборка прошла, но jar не найден.
+- Песочница: `docker build` не поддерживает `--cap-drop`/`no-new-privileges`, RUN-шаги идут с набором прав Docker по умолчанию; лимиты `--memory 6g`, `--cpu-shares 256`, `--cpu-quota` передаются, но BuildKit может их игнорировать
+  (так же, как у `docker-build`); сеть - стандартная bridge, нужна только для скачивания зависимостей, портов наружу нет; приоритет `nice 15`; жёсткий таймаут worker-а. Переменные: `RUNNER_JAVA_BUILD_MEM`, `RUNNER_JAVA_BUILD_CPUS`, `RUNNER_JAVA_TIMEOUT_SEC`.
+
+## Задание `bench` (бенчмарк lang-bench)
+
+План и критерии - `docs/reports/lang-bench-plan.md`. Код в `experiments/lang-bench/` должен быть в снимке (`--ref <ветка>`). Ядра 0-3 заняты на 70-95 минут: запускать только в согласованное окно.
+```bash
+# 1) проверка без запуска бенчмарка: «стенд не под нагрузкой», ресурсы, bash -n, доступность образа oha
+infrastructure/vds-runner/run-remote.sh bench --ref origin/<ветка> --env BENCH_PRECHECK_ONLY=1 --env OHA_IMAGE=<образ:закреплённый-тег>
+# 2) реальный запуск (долгий: ставить с --no-wait, затем --attach <id>; ожидание клиента по умолчанию 180 мин)
+infrastructure/vds-runner/run-remote.sh bench --ref origin/<ветка> --env OHA_IMAGE=<образ:тег> --env PROFILE=medium --no-wait
+infrastructure/vds-runner/run-remote.sh --attach <id> --out <каталог>
+```
+- Параметры `--env КЛЮЧ=ЗНАЧЕНИЕ` (значения `[A-Za-z0-9._:/@+,=-]`, ключ не повторять): `OHA_IMAGE` (обязателен, закреплённый тег, не `latest`), `PROFILE`, `DB_LATENCY_MS`, `DATASET_FILE`, `RULES`, `IMPLS`, `LEVELS`, `DURATION`, `WARMUP`, `REPEATS`,
+  `DOCKER_BUILD_ARGS`, `BENCH_NODE_IMAGE` (= `NODE_IMAGE` run-bench), `MEM`, `HEAP`, `SERVER_NCPU`, `SERVER_CPUS`, `LOADGEN_CPUS`, `LOADGEN_NCPU`, `JAVA_GC`, `BENCH_PRECHECK_ONLY`. Списки (`IMPLS`, `LEVELS`, `DOCKER_BUILD_ARGS`) - через запятую
+  (`--env LEVELS=1,50,500`, `--env DOCKER_BUILD_ARGS=--build-arg,NODE_IMAGE=node:24.18.0-alpine@sha256:<digest>`).
+- Проверка перед стартом (`bench.sh`, при провале код 20, бенчмарк не стартует): vCPU >= 4, MemAvailable >= 3 ГБ, свободно >= 10 ГБ, loadavg1 <= 1.5, средняя загрузка CPU за 3x5 с <= 25 %, нет контейнеров `twomc-runner-job`/`lb-*`, свободны порты 18081-18084.
+  Пороги: `RUNNER_BENCH_MAX_LOAD1`, `RUNNER_BENCH_MAX_BUSY_PCT`, `RUNNER_BENCH_MIN_MEM_MB`, `RUNNER_BENCH_MIN_DISK_MB`, `RUNNER_BENCH_MIN_CPUS`.
+- Запуск: `nice -n 15 ionice -c3 bash experiments/lang-bench/bench/run-bench.sh`, `BENCH_LABEL=twomc-runner-job=<id>` (контейнеры вариантов и oha чистятся штатно по метке), `OUT` = `<out>/out` (весь каталог результатов копируется целиком:
+  `summary.md/json`, `meta.json`, `equivalence*.log`, `<вариант>-*.json|csv`, `runner-env.txt` с версиями и ID образов). После прогона образы `langbench-*` удаляются.
+- Таймаут задания: `RUNNER_BENCH_TIMEOUT_SEC` (по умолчанию 7500 с), ниже 7200 с не опускается. Сеть: исходящая для `docker build`/pull; порты только на `127.0.0.1`.
+- Остановка вручную (по решению владельца, под блокировкой): `docker rm -f $(docker ps -aq --filter label=twomc-runner-job)`; задание завершится ошибкой, итог останется в `done/`.
+
+## Откат изменений раннера (java-build, bench, смоук)
+- Скрипты раннера на сервере неизменяемы по хэшу (`/srv/twomc-runner/ops/<hash>`): откат - запуск заданий с прежней версии `infrastructure/vds-runner` (предыдущий коммит; клиент везёт свои ops), старые каталоги `ops/` остаются до очистки.
+  `git revert <коммит>` в ветке возвращает клиентские скрипты (`run-remote.sh`, `enqueue.sh`, `fetch.sh`); серверные состояния (`queue/done`) совместимы: новые необязательные строки `JOB_PATH`/`ENV_*` в `meta.env` старый `enqueue.sh` отвергнет.
+- Образы и данные заданий: `docker rmi twomcr-<id>-java` (удаляется заданием само), `docker rmi langbench-*` (само), `/srv/twomc-runner/done/<id>` чистит `cleanup.sh`; удалять вручную - только по решению владельца.
 
 ## Правила доступа к VDS
 - Только `twomc@31.76.77.45`, ключ `~/.ssh/twomc_giveaway_vds`, `IdentitiesOnly=yes`, `BatchMode=yes`, `StrictHostKeyChecking=yes`.
