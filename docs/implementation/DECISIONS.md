@@ -4666,3 +4666,17 @@ B. Платное снятие бана и мута (UNBAN, UNMUTE).
 **Кэш.** В памяти процесса, TTL 30 с, single-flight с поколением, сброс при смене `profileVisibility` и `hideStatistics`. Допущение (Q109): бан и разбан кэш не сбрасывают — забаненный может оставаться в рейтинге до 30 с; при нескольких инстансах API данные расходятся до 30 с. Лимит `GET /leaderboards` 60/мин.
 
 **Миграций нет.** **Откат.** Revert PR или выключить настройку.
+
+## ADR-0196 — Обжалование наказаний с игровых серверов (LiteBans) со статусом (план 1.2, Q103)
+
+**Решение.** Обжалование наказания из зеркала LiteBans — обращение существующей модели `reports` типа `PUNISHMENT_APPEAL` с новой ссылкой `reports.appealedMinecraftPunishmentId` (FK на `minecraft_punishments`, `ON DELETE SET NULL`). PR #235.
+
+**API.** `POST /reports` принимает `appealedPunishmentRef` (`^(ban|mute)-[1-9][0-9]{0,17}$`, только для `PUNISHMENT_APPEAL`, ровно одно из `appealedPunishmentId`/`appealedPunishmentRef`). Ошибки: 400 (форма; `punishment_not_appealable`), 403 `minecraft_not_linked` (нет привязки или офлайн-uuid), 404 (чужое, несуществующее, удалённое в источнике — неразличимы), 409 `appeal_already_open`, 429 `appeal_cooldown` (24 ч на повтор по тому же наказанию), общий лимит 5 обращений за 10 мин. `GET /punishments/me` добавляет `appealable` и `appeals[]` (`reportNumber`, `status`, даты, `verdict` ≤ 1000 символов). Связанное наказание в обращении — белый список полей без исполнителя, причины, uuid и IP (Q31); `subjectName` — только персоналу. Аудит `reports.appeal.create`.
+
+**Принадлежность.** Наказание сверяется с uuid привязанного аккаунта автора; строка зеркала блокируется (`FOR UPDATE`); одно открытое обжалование — проверка в сервисе и частичный уникальный индекс `reports_open_mc_appeal_uniq` (PENDING/IN_REVIEW/WAITING_RESPONSE). CHECK `reports_one_appealed_punishment` — не более одной ссылки на наказание.
+
+**Границы.** Решение по обжалованию никогда не меняет запись в LiteBans или зеркале (снятие — отдельное действие персонала на сервере / Bridge по отдельному решению).
+
+**Миграция.** `20261124130000_report_appealed_mc_punishment` — expand-only (Q28); CHECK и частичный индекс Prisma не выражает: при `prisma migrate dev` их НЕЛЬЗЯ удалять (дрейф ожидаемый). На production применяет владелец.
+
+**Долг (ревью).** Переоткрытие закрытого обращения при уже открытом другом по тому же наказанию упадёт на уникальном индексе — нужен перехват P2002 → 409 в `reports-moderation.service.ts`; интерфейс связи с наказанием для персонала в админке; учёт cooldown в `appealable`/`nextAppealAt`; рекомендация модераторам не писать в `verdict` IP и внутренние заметки.

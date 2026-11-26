@@ -879,3 +879,11 @@ ADR-0194 (ревью M1). e2e выполняет claim только на пус�
 ## R170 — Ошибки 4xx показывали сырые сообщения API — MITIGATING
 
 Срез 2 фронтенда (ErrorState по умолчанию без сырого текста). Остаток: `cartErrorMessage` (apps/web/src/lib/store/cart.ts) и `messages/invite` — в срезе выбора способа оплаты; тосты `getErrorMessage` (~200 мест) не менялись.
+
+## R171 — Нестабильный unit-тест `bridge.executor.spec.ts` («ack done во время ожидания») — OPEN
+
+27.11: упал в CI PR #232 (Expected "delivered", Received "unknown") — тест завязан на тайминг опроса (250 мс / 10 с). Перезапуск. Нужна детерминированная версия (fake timers / явный сигнал).
+
+## R172 — Потеря инструментов агента во временном каталоге — MITIGATED
+
+Обёртки публикации и слияния жили в временном scratchpad сеанса и пропали при очистке (обнаружено 27.11). Восстановлены по runbook agent-github-access в C:\Users\younaxo\.twomc-agent-tools (agent-push, agent-merge, pr-drive). Неопубликованная работа в worktree (Java-плагин Bridge) сохранена WIP-коммитом 7ccdb05b и отправлена в GitHub.
