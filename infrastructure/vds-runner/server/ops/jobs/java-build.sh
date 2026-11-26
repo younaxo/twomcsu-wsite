@@ -81,7 +81,7 @@ report_tests() { # report_tests <каталог test-results>: суммы и п�
   for f in "$d"/*.xml; do
     awk '/<testcase /{match($0," classname=\"[^\"]*\""); c=substr($0,RSTART+12,RLENGTH-13); match($0," name=\"[^\"]*\""); n=substr($0,RSTART+7,RLENGTH-8)}
          /<(failure|error) /{m=$0; sub(/.*message="/,"",m); sub(/".*/,"",m); print "##### junit-FAILED " c "." n ": " substr(m,1,200)}' "$f"
-  done | head -n 60
+  done | head -n 60 | sed 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g'
   shopt -u nullglob
 }
 
