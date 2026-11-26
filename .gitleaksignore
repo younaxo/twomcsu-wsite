@@ -4,3 +4,6 @@ b091e2a8a325f168b3ce67b9614f9a693c437b66:docs/implementation/CHANGELOG.md:generi
 4d95d8e5eaa03ef62517b673f3fec90f51486f34:infrastructure/test-website/verify.sh:curl-auth-user:12
 4d95d8e5eaa03ef62517b673f3fec90f51486f34:infrastructure/test-website/verify.sh:curl-auth-user:18
 9a007e8a6273c393f392f908ce9151b21f384982:infrastructure/test-website/verify.sh:curl-auth-user:34
+# vds-runner: секреты e2e/unit генерируются во время выполнения ($(rnd)), DATABASE_URL unit — заглушка unused; не секреты
+38aeacc22b16d6dac2b303b52619bb43da8a1962:infrastructure/vds-runner/server/ops/jobs/api-e2e.sh:generic-api-key:29
+38aeacc22b16d6dac2b303b52619bb43da8a1962:infrastructure/vds-runner/server/ops/jobs/unit.sh:generic-api-key:10
