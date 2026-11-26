@@ -73,6 +73,7 @@ function route(config: CheckoutConfig = CONFIG, cart: unknown = CART) {
   mocks.get.mockImplementation((path: string) => {
     if (path === '/store/cart') return Promise.resolve(cart);
     if (path === '/store/checkout-config') return Promise.resolve(config);
+    if (path === '/store/payment-methods') return Promise.resolve({ methods: [] });
     if (path.startsWith('/users/')) {
       return Promise.resolve({ id: 'u1', username: 'steve', minecraftName: 'Steve_MC' });
     }

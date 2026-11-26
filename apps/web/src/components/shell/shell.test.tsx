@@ -304,7 +304,7 @@ describe('SiteFooter', () => {
     );
     expect(
       within(screen.getByRole('list', { name: 'Способы оплаты' })).getAllByRole('listitem'),
-    ).toHaveLength(4);
+    ).toHaveLength(2);
     expect(screen.getByText(/© \d{4} twomc\.su/)).toBeInTheDocument();
     expect(screen.queryByText(/TwoMC\b/)).toBeNull();
   });

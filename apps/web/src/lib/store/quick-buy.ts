@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import type { DeliveryStatus, OrderStatus } from './checkout';
+import { describePaymentMethodError } from './payment-methods';
 
 /// Покупка без входа (слой 0, подэтап 0.12, ADR-0186, ADR-0190). Клиент не считает
 /// суммы и не знает платёжного провайдера: всё приходит от сервера.
@@ -26,6 +27,8 @@ export interface QuickBuyInput {
   quantity: number;
   guestMinecraftNick: string;
   offerVersion: string;
+  /// Код способа оплаты; не передаётся, пока список способов пуст.
+  paymentMethod?: string;
 }
 
 export interface QuickBuyResult {
@@ -71,6 +74,7 @@ export type QuickBuyErrorKind =
   | 'disabled'
   | 'rate_limited'
   | 'offer'
+  | 'payment'
   | 'other';
 
 export interface QuickBuyErrorInfo {
@@ -84,6 +88,8 @@ export function describeQuickBuyError(error: unknown): QuickBuyErrorInfo {
     if (error.status === 429) {
       return { kind: 'rate_limited', message: 'Слишком много попыток, попробуйте через минуту' };
     }
+    const paymentText = describePaymentMethodError(error);
+    if (paymentText) return { kind: 'payment', message: paymentText };
     switch (error.code) {
       case 'nick_unavailable':
         return { kind: 'nick', message: 'Покупка для этого ника недоступна' };
