@@ -478,6 +478,10 @@ class DeliveryEngineTest {
         h.runMain();
         h.scheduler.drain();
         assertEquals(1, h.engine.status().outbox());
+        assertEquals(1, h.transport.to(Protocol.PATH_ACK).size(), "неполный ответ не повторяется в том же цикле");
+        h.engine.cycle(); // гейт бэкоффа ещё закрыт: запроса нет
+        assertEquals(1, h.transport.to(Protocol.PATH_ACK).size());
+        h.now.addAndGet(60_000);
         h.engine.cycle();
         assertEquals(0, h.engine.status().outbox());
         assertEquals(1, results(h.transport.to(Protocol.PATH_ACK).get(1)).size());
@@ -531,10 +535,13 @@ class DeliveryEngineTest {
         for (int i = 0; i < 3; i++) h.transport.thenResponse(new Transport.Response(503, null, null, "{\"error\":\"unavailable\"}"));
         h.engine.cycle();
         long d1 = h.scheduler.lastDelay;
+        h.now.addAndGet(600_000); // гейт бэкоффа единый: без выдержки запроса не будет
         h.engine.cycle();
         long d2 = h.scheduler.lastDelay;
+        h.now.addAndGet(600_000);
         h.engine.cycle();
         long d3 = h.scheduler.lastDelay;
+        assertEquals(3, h.transport.requests.size());
         assertTrue(d1 < d2 && d2 < d3, d1 + " " + d2 + " " + d3);
     }
 
@@ -547,7 +554,9 @@ class DeliveryEngineTest {
         for (int i = 0; i < 3; i++) {
             h.engine.cycle();
             assertEquals(0, h.engine.status().pausedForMs());
+            h.now.addAndGet(20_000); // дольше бэкоффа 2/4/8 с
         }
+        assertEquals(3, h.transport.requests.size());
         h.engine.cycle(); // четвёртый 401 подряд
         assertEquals(300_000, h.scheduler.lastDelay);
         assertTrue(h.engine.status().pausedForMs() > 0);
@@ -568,6 +577,100 @@ class DeliveryEngineTest {
         h.engine.cycle();
         assertEquals(300_000, h.scheduler.lastDelay);
         assertTrue(h.logs.text.toString().contains("capability_missing"));
+    }
+
+    @Test
+    void kickAfterRateLimitedAck_doesNotBypassRetryAfter_andNoClaimMeanwhile() throws IOException {
+        Harness h = new Harness();
+        h.transport.thenResponse(claimResponse(2000,
+                job("cjob00000001", "item1:1", "give Steve diamond 1", TOKEN1),
+                job("cjob00000002", "item2:1", "give Alex diamond 1", TOKEN2)));
+        h.transport.thenResponse(new Transport.Response(429, "30", null, "{\"error\":\"rate_limited\"}"));
+        h.transport.then(ackAll("accepted", null));
+
+        h.engine.cycle(); // claim
+        h.mainQueue.remove(0).run(); // первое задание выполнено: ack в очереди и kick
+        h.scheduler.drain(); // ack #1: 429 с Retry-After 30 с
+        assertEquals(1, h.transport.to(Protocol.PATH_ACK).size());
+        assertTrue(h.scheduler.lastDelay >= 30_000, "Retry-After не нарушен: " + h.scheduler.lastDelay);
+
+        h.mainQueue.remove(0).run(); // второе задание выполнено: новый kick, гейт всё ещё закрыт
+        h.scheduler.drain();
+        assertEquals(1, h.transport.to(Protocol.PATH_ACK).size(), "kick не обходит бэкофф и Retry-After");
+        assertEquals(1, h.transport.to(Protocol.PATH_CLAIM).size(), "claim до открытия гейта не выполняется");
+        assertEquals(2, h.engine.status().outbox());
+        assertTrue(h.scheduler.lastDelay >= 29_000, "остаток гейта, а не нулевая задержка: " + h.scheduler.lastDelay);
+
+        h.now.addAndGet(32_000);
+        h.engine.cycle();
+        List<Req> acks = h.transport.to(Protocol.PATH_ACK);
+        assertEquals(2, acks.size());
+        assertEquals(2, results(acks.get(1)).size(), "обе записи уходят одной пачкой");
+        assertEquals(0, h.engine.status().outbox());
+    }
+
+    @Test
+    void ack503_gateIsSharedWithClaim() throws IOException {
+        Harness h = new Harness();
+        h.transport.thenResponse(claimResponse(500, job("cjob00000001", "item1:1", "give Steve diamond 1", TOKEN1)));
+        h.transport.thenResponse(new Transport.Response(503, "20", null, "{\"error\":\"unavailable\"}"));
+        h.transport.then(ackAll("accepted", null));
+        h.engine.cycle();
+        h.runMain();
+        h.scheduler.drain(); // ack: 503, гейт 20 с
+        h.now.addAndGet(5_000); // pollAfterMs (500 мс) давно истёк, но гейт ack ещё закрыт
+        h.engine.cycle();
+        assertEquals(2, h.transport.requests.size(), "ни ack, ни claim во время бэкоффа");
+        h.now.addAndGet(20_000);
+        h.engine.cycle();
+        assertEquals(0, h.engine.status().outbox());
+    }
+
+    @Test
+    void ackFatalStatusesOtherThanBadRequest_keepQueueAndRetryAfterPause() throws IOException {
+        for (int status : new int[] {403, 404, 302, 413}) {
+            Harness h = new Harness();
+            try {
+                h.engine.enqueueAck(new DeliveryProtocol.Job("cjob00000001", TOKEN1, "k1:1", "give Steve diamond 1"),
+                        DeliveryProtocol.AckStatus.DONE, null);
+                h.transport.thenResponse(new Transport.Response(status, null, null, "{\"error\":\"site_refused\"}"));
+                h.transport.then(ackAll("accepted", null));
+
+                h.engine.cycle();
+                assertEquals(1, h.engine.status().outbox(), "очередь сохранена при HTTP " + status);
+                assertEquals(300_000, h.scheduler.lastDelay);
+                assertTrue(h.engine.status().pausedForMs() > 0);
+
+                h.now.addAndGet(10_000);
+                h.engine.cycle();
+                assertEquals(1, h.transport.to(Protocol.PATH_ACK).size(), "во время паузы запросов нет");
+
+                h.now.addAndGet(300_000);
+                h.engine.cycle();
+                assertEquals(2, h.transport.to(Protocol.PATH_ACK).size(), "после паузы тот же ack повторён");
+                assertEquals(0, h.engine.status().outbox());
+            } finally {
+                h.store.close();
+            }
+        }
+    }
+
+    @Test
+    void ackBadRequestAndUnprocessable_dropTheBatch() throws IOException {
+        for (int status : new int[] {400, 422}) {
+            Harness h = new Harness();
+            try {
+                h.engine.enqueueAck(new DeliveryProtocol.Job("cjob00000001", TOKEN1, "k1:1", "give Steve diamond 1"),
+                        DeliveryProtocol.AckStatus.DONE, null);
+                h.transport.thenResponse(new Transport.Response(status, null, null, "{\"error\":\"validation_failed\"}"));
+                h.engine.cycle();
+                assertEquals(0, h.engine.status().outbox(), "пачка отброшена при HTTP " + status);
+                assertTrue(h.logs.text.toString().contains("Пачка ack отброшена"));
+                h.assertNoSecretsLogged();
+            } finally {
+                h.store.close();
+            }
+        }
     }
 
     @Test

@@ -35,7 +35,19 @@ final class DeliveryEngine {
         void run(Runnable r);
     }
 
-    /** Исполнение команды консольным отправителем. true: команда выполнена; false: сервер отверг её. */
+    /**
+     * Исполнение команды консольным отправителем (L1: трактовка {@code Bukkit.dispatchCommand}).
+     *
+     * <p>{@code true}: команда найдена и её обработчик не вернул отказ. Это НЕ доказательство, что игрок получил
+     * выдачу (многие плагины печатают ошибку, но возвращают true). {@code false}: команда не найдена либо обработчик
+     * вернул false (обычно показал справку по использованию). Плагин трактует false как «побочного эффекта нет»:
+     * ответ ack {@code failed}, ключ получает состояние FAILED, а повтор того же заказа админом на сайте исполнит
+     * команду снова. Если обработчик возвращает false ПОСЛЕ частичного эффекта, повтор может дать двойную выдачу:
+     * проверяйте такие случаи вручную до повтора. Исключение из {@code dispatch} трактуется иначе: исход неизвестен
+     * (ack {@code unknown}, повтор запрещён).
+     *
+     * @throws Exception любое исключение означает «исход неизвестен», не «команда не выполнялась»
+     */
     interface CommandRunner {
         boolean dispatch(String command) throws Exception;
     }
@@ -71,6 +83,9 @@ final class DeliveryEngine {
     private int failStreak;
     private int authStreak;
     private boolean storeWarned;
+    /** Единый для ack и claim момент, раньше которого запросов к сайту нет (бэкофф и Retry-After). 0: нет ограничения. */
+    private volatile long nextAttemptAt;
+    /** Длинная пауза (401 подряд, отказ сайта): только для отображения в status; гейт запросов тоже учитывает её. */
     private volatile long pausedUntil;
     private volatile String last = "ещё не опрашивал";
 
@@ -109,6 +124,11 @@ final class DeliveryEngine {
         timer = scheduler.schedule(delayMs, this::cycle);
     }
 
+    /**
+     * Просит цикл выполниться немедленно (например, чтобы сразу отправить ack). Цикл всё равно проходит через гейт
+     * {@code nextAttemptAt}/{@code pausedUntil} в {@link #step()}: бэкофф и Retry-After после 429/503 не обходятся,
+     * при закрытом гейте цикл лишь заново ставит таймер на остаток времени.
+     */
     private void kick() {
         if (!stopped) scheduler.execute(this::cycle);
     }
@@ -122,24 +142,38 @@ final class DeliveryEngine {
         } catch (Throwable t) {
             failStreak++;
             logger.warning("Сбой цикла выдачи: " + t.getClass().getSimpleName());
-            delay = Backoff.delayMs(failStreak, null, random);
+            delay = backoff(clock.getAsLong(), Backoff.delayMs(failStreak, null, random));
         }
         arm(delay);
+    }
+
+    /** Закрывает гейт запросов к сайту на delay мс от now и возвращает delay. */
+    private long backoff(long now, long delay) {
+        nextAttemptAt = now + delay;
+        return delay;
     }
 
     private long step() {
         long now = clock.getAsLong();
         dropExpiredAcks(now);
-        if (now < pausedUntil) {
-            return pausedUntil - now;
+        long gate = Math.max(pausedUntil, nextAttemptAt);
+        if (now < gate) {
+            return gate - now; // единый гейт для ack и claim, в том числе при kick()
         }
         // 1. Сначала подтверждаем уже выполненное.
         for (int i = 0; i < MAX_ACK_BATCHES_PER_CYCLE && outboxSize() > 0; i++) {
             List<AckItem> batch = peekBatch();
             BridgeApi.Result<List<AckResult>> r = api.ack(batch);
             if (r.kind() == BridgeApi.Kind.OK) {
-                resetStreaks();
-                applyAck(batch, r.value());
+                authStreak = 0;
+                if (applyAck(batch, r.value())) {
+                    resetStreaks();
+                } else {
+                    // Сайт не вернул итог по части заданий (или статус незнакомый): повтор только после бэкоффа.
+                    failStreak++;
+                    last = "ack: неполный ответ сайта";
+                    return backoff(now, Backoff.delayMs(failStreak, r.retryAfterSeconds(), random));
+                }
             } else {
                 return onFailure("ack", r, batch);
             }
@@ -180,6 +214,7 @@ final class DeliveryEngine {
     private void resetStreaks() {
         failStreak = 0;
         authStreak = 0;
+        nextAttemptAt = 0;
     }
 
     private long onFailure(String op, BridgeApi.Result<?> r, List<AckItem> ackBatch) {
@@ -197,7 +232,7 @@ final class DeliveryEngine {
                     return AUTH_PAUSE_MS;
                 }
                 logger.warning("Сайт отвечает 401 на " + op + " (попытка " + authStreak + " из " + AUTH_RETRIES + ").");
-                return Backoff.delayMs(authStreak, null, random);
+                return backoff(now, Backoff.delayMs(authStreak, null, random));
             }
             case RETRYABLE -> {
                 failStreak++;
@@ -205,17 +240,24 @@ final class DeliveryEngine {
                 if (failStreak == 1 || failStreak % 10 == 0) {
                     logger.warning("Сайт недоступен для " + op + " (" + last + "), повтор позже; подряд неудач: " + failStreak);
                 }
-                return Backoff.delayMs(failStreak, r.retryAfterSeconds(), random);
+                return backoff(now, Backoff.delayMs(failStreak, r.retryAfterSeconds(), random));
             }
             default -> {
                 last = op + ": HTTP " + r.status() + (r.errorCode() != null ? " " + r.errorCode() : "");
                 logger.severe("Сайт отверг " + op + ": HTTP " + r.status() + (r.errorCode() != null ? " " + r.errorCode() : "")
                         + (r.status() == 403 ? " (у сервера нет возможности delivery на сайте)" : "") + ".");
-                if (ackBatch != null) {
-                    // Исправить повтором нельзя. Ключи в журнале остаются, сайт закроет задания по таймауту как UNKNOWN.
+                if (ackBatch != null && (r.status() == 400 || r.status() == 422)) {
+                    // Сайт признал саму пачку негодной: повтор того же тела не поможет. Ключи в журнале остаются,
+                    // сайт закроет задания по таймауту как UNKNOWN.
                     removeFromOutbox(ackBatch);
                     logger.severe("Пачка ack отброшена (" + ackBatch.size() + "). Исход заданий разберёт администратор на сайте.");
                     return 1_000;
+                }
+                // 403/404/3xx/413 и прочее на ack: причина, скорее всего, в настройке сайта, прокси или версии (а не в
+                // самих заданиях). Очередь ack СОХРАНЯЕТСЯ, пауза и повтор; по таймауту сайт всё равно закроет задания,
+                // а старше 24 часов ack отбрасываются (dropExpiredAcks).
+                if (ackBatch != null) {
+                    logger.severe("Очередь ack сохранена (" + outboxSize() + "), пауза 5 минут, затем повтор.");
                 }
                 pausedUntil = now + AUTH_PAUSE_MS;
                 return AUTH_PAUSE_MS;
@@ -271,7 +313,8 @@ final class DeliveryEngine {
         }
     }
 
-    private void applyAck(List<AckItem> batch, List<AckResult> results) {
+    /** @return true, если по каждому заданию пачки получен окончательный итог (в очереди ничего не осталось от пачки). */
+    private boolean applyAck(List<AckItem> batch, List<AckResult> results) {
         Map<String, AckResult> byId = new HashMap<>();
         for (AckResult r : results) byId.put(r.jobId(), r);
         List<AckItem> done = new ArrayList<>();
@@ -295,6 +338,7 @@ final class DeliveryEngine {
             }
         }
         removeFromOutbox(done);
+        return done.size() == batch.size();
     }
 
     private void dropExpiredAcks(long now) {
