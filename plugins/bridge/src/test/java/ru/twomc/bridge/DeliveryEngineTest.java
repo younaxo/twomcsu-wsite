@@ -433,6 +433,7 @@ class DeliveryEngineTest {
         h.now.addAndGet(60_000);
         h.engine.cycle(); // ack #2: сетевая ошибка
         assertEquals(2, h.engine.status().outbox());
+        assertEquals(1, h.transport.to(Protocol.PATH_CLAIM).size(), "новый claim до подтверждения не выполняется");
         h.now.addAndGet(60_000);
         h.engine.cycle(); // ack #3: принято
         assertEquals(0, h.engine.status().outbox());
@@ -444,7 +445,14 @@ class DeliveryEngineTest {
         assertNotEquals(acks.get(0).headers().get("x-twomc-nonce"), acks.get(1).headers().get("x-twomc-nonce"));
         assertNotEquals(acks.get(1).headers().get("x-twomc-nonce"), acks.get(2).headers().get("x-twomc-nonce"));
         assertNotEquals(acks.get(0).headers().get("x-twomc-signature"), acks.get(2).headers().get("x-twomc-signature"));
-        assertEquals(1, h.transport.to(Protocol.PATH_CLAIM).size(), "новый claim до подтверждения не выполняется");
+        // Контракт 14.6: claim только при пустой очереди ack. После accepted (ack #3) очередь пуста, и claim в том же
+        // цикле допустим, но строго ПОСЛЕ последнего ack: ни один claim не предшествует подтверждению.
+        List<Req> all = h.transport.requests;
+        int lastAck = -1;
+        for (int i = 0; i < all.size(); i++) if (all.get(i).path().equals(Protocol.PATH_ACK)) lastAck = i;
+        for (int i = 1; i < all.size(); i++) {
+            if (all.get(i).path().equals(Protocol.PATH_CLAIM)) assertTrue(i > lastAck, "второй claim только после принятого ack");
+        }
         h.assertNoSecretsLogged();
     }
 
