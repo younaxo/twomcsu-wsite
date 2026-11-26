@@ -45,7 +45,7 @@ const APPEAL_STATUS_LABEL: Record<PunishmentAppealStatus, string> = {
 /// пока сервер разрешает (`appealable`). Решение не снимает наказание на
 /// сервере: статус и комментарий персонала только информируют.
 function AppealBlock({ item }: { item: MyPunishmentView }) {
-  if (!item.appealable && item.appeals.length === 0) {
+  if (!item.appealable && item.appeals.length === 0 && !item.nextAppealAt) {
     return null;
   }
   return (
@@ -80,6 +80,13 @@ function AppealBlock({ item }: { item: MyPunishmentView }) {
             Решение по обращению не снимает наказание само: снятие делает администрация на сервере.
           </li>
         </ul>
+      ) : null}
+      {item.nextAppealAt ? (
+        <p className="text-xs text-muted-foreground" data-testid="punishment-next-appeal">
+          Повторно обжаловать можно с{' '}
+          <time dateTime={item.nextAppealAt}>{formatDateTime(item.nextAppealAt)}</time> (пауза 24 часа
+          после прошлого обращения).
+        </p>
       ) : null}
       {item.appealable ? (
         <div className="flex flex-col items-start gap-1">
