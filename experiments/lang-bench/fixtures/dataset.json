@@ -1,0 +1,29 @@
+{
+  "bulkDiscounts": [
+    { "id": "b1", "productId": "p001", "productType": null, "minQuantity": 10, "minAmount": null, "discountType": "PERCENT", "discountValue": "5.0", "isActive": true },
+    { "id": "b2", "productId": "p001", "productType": null, "minQuantity": 50, "minAmount": null, "discountType": "PERCENT", "discountValue": "10.0", "isActive": true },
+    { "id": "b3", "productId": "p002", "productType": null, "minQuantity": 5, "minAmount": "100.00", "discountType": "FIXED", "discountValue": "15.00", "isActive": true },
+    { "id": "b4", "productId": null, "productType": "KEY", "minQuantity": 3, "minAmount": null, "discountType": "PERCENT", "discountValue": "7.5", "isActive": true },
+    { "id": "b5", "productId": null, "productType": "PRIVILEGE", "minQuantity": 2, "minAmount": "50.00", "discountType": "BONUS", "discountValue": "20.00", "isActive": true },
+    { "id": "b6", "productId": "p003", "productType": null, "minQuantity": 0, "minAmount": null, "discountType": "PERCENT", "discountValue": "50.0", "isActive": false },
+    { "id": "b7", "productId": null, "productType": "CURRENCY", "minQuantity": 100, "minAmount": null, "discountType": "FIXED", "discountValue": "100000.00", "isActive": true },
+    { "id": "b8", "productId": null, "productType": "DECORATION", "minQuantity": 1, "minAmount": null, "discountType": "PERCENT", "discountValue": "2.5", "isActive": true }
+  ],
+  "loyaltyDiscounts": [
+    { "id": "l1", "minPurchases": 1, "discountPercent": "2.5", "isActive": true },
+    { "id": "l2", "minPurchases": 5, "discountPercent": "5.0", "isActive": true },
+    { "id": "l3", "minPurchases": 20, "discountPercent": "10.0", "isActive": true },
+    { "id": "l4", "minPurchases": 50, "discountPercent": "50.0", "isActive": false }
+  ],
+  "promoCodes": [
+    { "code": "SUMMER10", "discountType": "PERCENT", "discountValue": "10.0", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "FIX50", "discountType": "FIXED", "discountValue": "50.00", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": "100.00", "firstPurchaseOnly": false },
+    { "code": "FIRST15", "discountType": "PERCENT", "discountValue": "15.0", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": true },
+    { "code": "KEYONLY", "discountType": "PERCENT", "discountValue": "20.0", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": ["KEY"], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "OLD1", "discountType": "PERCENT", "discountValue": "10.0", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": "2026-01-01T00:00:00Z", "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "FUTURE1", "discountType": "PERCENT", "discountValue": "10.0", "maxUses": null, "usedCount": 0, "validFrom": "2027-01-01T00:00:00Z", "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "USED10", "discountType": "PERCENT", "discountValue": "10.0", "maxUses": 10, "usedCount": 10, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "OFF1", "discountType": "PERCENT", "discountValue": "10.0", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": false, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false },
+    { "code": "BONUS5", "discountType": "BONUS", "discountValue": "5.00", "maxUses": null, "usedCount": 0, "validFrom": null, "validUntil": null, "isActive": true, "applicableToTypes": [], "minOrderAmount": null, "firstPurchaseOnly": false }
+  ]
+}
