@@ -106,3 +106,10 @@ export const DELIVERY_ACK_STATUSES = [
   'unknown',
 ] as const;
 export type DeliveryAckStatus = (typeof DELIVERY_ACK_STATUSES)[number];
+
+/// Очистка закрытых заданий выдачи `bridge_delivery_jobs` (L2, ADR-0194).
+/// Без миграции: удаление пачками по `updatedAt` закрытых строк.
+export const DELIVERY_JOB_RETENTION_DEFAULT_DAYS = 30;
+export const DELIVERY_JOB_RETENTION_MIN_DAYS = 14;
+export const DELIVERY_JOB_CLEANUP_BATCH_SIZE = 500;
+export const DELIVERY_JOB_CLEANUP_MAX_BATCHES = 200;
