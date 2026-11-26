@@ -148,6 +148,10 @@ ssh -i ~/.ssh/twomc_giveaway_vds -o IdentitiesOnly=yes -o BatchMode=yes -o Stric
   контейнеры postgres/redis в `api-e2e` без `--cap-drop` (entrypoint postgres требует chown/setuid). Следующий шаг: отдельная сеть с egress-allowlist на время install и `--network none` на время тестов.
 - M4: общий кеш `cache/pnpm-store` и `cache/home` пишется всеми заданиями (отравление кеша заданием из ветки с вредоносным кодом возможно). Следующий шаг: отдельный кеш на ветку/ref или read-only кеш на время тестов.
 - L2-L6, L9-L11 (замечания низкой серьёзности независимого ревью; перечень - в отчёте ревью ветки `feature/vds-runner-cdn`): не закрыты, на безопасность не влияют; бэклог.
+- M1: лимиты `docker build` (`--memory`, `--memory-swap`, `--cpu-shares`, `--cpu-quota`) BuildKit к RUN-шагам НЕ применяет; у `docker-build` и `java-build` реальные ограничения - `nice -n 15`, таймаут worker-а, очистка образов по метке. Не рассчитывать на лимиты и собирать только доверенный код.
+- M6: `bench` исполняет `experiments/lang-bench/bench/run-bench.sh` из снимка НА ХОСТЕ (не в песочнице, с доступом к docker-сокету пользователя раннера), поэтому ставить его можно только для доверенных веток, прошедших ревью.
+- L1: смоук стенда (`infrastructure/test-website/run-smoke.sh`) выполняет `DELETE /store/cart` для тестового игрока (очищает его корзину), включает флаги `stats.public.enabled` и `punishments.public.enabled` и создаёт заказ тестового игрока; запускать только на тестовом стенде, не на production.
+- Каталог `infrastructure/vds-runner/vds-runner-out/` (и любой `vds-runner-out/`, куда `run-remote.sh` пишет по умолчанию относительно текущего каталога) содержит артефакты прогонов (логи, jar, результаты) и добавлен в `.gitignore`: не коммитить.
 - Задание, которое не удалось запустить, уходит в `failed/` (или в `done/` с `exit=97`) и не повторяется автоматически: перезапускайте вручную.
 
 ## Краткая шпаргалка для других цепочек

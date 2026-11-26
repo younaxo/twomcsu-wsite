@@ -49,3 +49,6 @@ apps/web/public/local-cdn/
 
 # Маркеры релиза production-деплоя (infrastructure/deploy.sh)
 .release*
+
+# артефакты прогонов раннера VDS (run-remote.sh)
+vds-runner-out/
