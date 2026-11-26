@@ -102,7 +102,7 @@ report_javac() { # report_javac <build.log>: ошибки компиляции (
   grep -E 'What went wrong|Execution failed for task|Could not resolve|FAILED$' "$log" | sed -E 's/^#[0-9]+ [0-9.]+ //' | sort -u | head -n 20 | sed 's/^/##### gradle | /'
 }
 
-tag="twomcr-$id-java"
+tag="twomcr-${id,,}-java"      # docker требует нижний регистр в имени образа (id содержит заглавные T и Z)
 echo "##### java-build: сборка (официальный Dockerfile, цель build, тесты в составе gradle build)"
 t0=$SECONDS
 build_image "$dockerfile" "$tag" "$out/build.log"; brc=$?
