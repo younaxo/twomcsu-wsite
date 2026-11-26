@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { CalculateCartDto } from './dto/calculate-cart.dto';
@@ -180,10 +176,14 @@ export class CartService {
 
   async addItem(userId: string, dto: AddCartItemDto) {
     if (!dto.variantId && !dto.bundleId) {
-      throw new BadRequestException('Нужно указать variantId или bundleId');
+      throw badRequest(
+        StoreCartError.CART_TARGET_REQUIRED,
+        'Нужно указать variantId или bundleId',
+      );
     }
     if (dto.variantId && dto.bundleId) {
-      throw new BadRequestException(
+      throw badRequest(
+        StoreCartError.CART_TARGET_AMBIGUOUS,
         'Нельзя указать одновременно variantId и bundleId',
       );
     }
@@ -200,7 +200,10 @@ export class CartService {
         include: { product: true },
       });
       if (!variant || !variant.isActive || !variant.product.isActive) {
-        throw new NotFoundException('Вариант товара не найден');
+        throw notFound(
+          StoreCartError.VARIANT_NOT_FOUND,
+          'Вариант товара не найден',
+        );
       }
       const giftToUserId = await this.resolveGiftTarget(
         userId,
@@ -224,7 +227,7 @@ export class CartService {
         where: { id: dto.bundleId },
       });
       if (!bundle || !bundle.isActive) {
-        throw new NotFoundException('Набор не найден');
+        throw notFound(StoreCartError.BUNDLE_NOT_FOUND, 'Набор не найден');
       }
       target = {
         variantId: null,
@@ -292,7 +295,10 @@ export class CartService {
       include: { cart: true },
     });
     if (!item || item.cart.userId !== userId) {
-      throw new NotFoundException('Позиция корзины не найдена');
+      throw notFound(
+        StoreCartError.CART_ITEM_NOT_FOUND,
+        'Позиция корзины не найдена',
+      );
     }
     return item;
   }
@@ -321,7 +327,10 @@ export class CartService {
       });
       const current = items.find((i) => i.id === itemId);
       if (!current) {
-        throw new NotFoundException('Позиция корзины не найдена');
+        throw notFound(
+          StoreCartError.CART_ITEM_NOT_FOUND,
+          'Позиция корзины не найдена',
+        );
       }
       const quantity = dto.quantity ?? current.quantity;
       // Смена получателя могла сделать строку такой же, как другая — сливаем.
@@ -379,7 +388,7 @@ export class CartService {
   async applyPromo(userId: string, code: string) {
     const cart = await this.requireCart(userId);
     if (cart.items.length === 0) {
-      throw new BadRequestException('Корзина пуста');
+      throw badRequest(StoreCartError.CART_EMPTY, 'Корзина пуста');
     }
     const { lines } = await this.pricing.priceLines(cart.items);
     const productTypes = lines
