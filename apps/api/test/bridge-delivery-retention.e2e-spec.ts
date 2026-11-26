@@ -83,9 +83,16 @@ describe('Bridge delivery: очистка заданий (0.13 срез 2, e2e)'
   beforeAll(async () => {
     const url = process.env.DATABASE_URL ?? '';
     const dbName = url.split('?')[0].split('/').pop() ?? '';
-    if (!/test|e2e|scratch/i.test(dbName)) {
+    // Защита M-1: набор удаляет строки, поэтому только на одноразовой БД.
+    // Разрешено, если имя содержит test/e2e/scratch ИЛИ CI === 'true'.
+    // Это безопасно: GitHub Actions выставляет CI=true и поднимает одноразовый
+    // service-контейнер Postgres (БД называется `twomc`), а раннер VDS передаёт
+    // -e CI=true в контейнер с одноразовой БД. На машине разработчика CI не
+    // задан, поэтому общая dev-БД и production остаются защищены по имени.
+    const isCi = process.env.CI === 'true';
+    if (!isCi && !/test|e2e|scratch/i.test(dbName)) {
       throw new Error(
-        `Имя БД "${dbName}" не похоже на одноразовую (нужно test, e2e или scratch): набор остановлен.`,
+        `Имя БД "${dbName}" не похоже на одноразовую (нужно test, e2e или scratch, либо CI=true): набор остановлен.`,
       );
     }
     for (const m of ['log', 'warn', 'error', 'debug', 'verbose'] as const) {
