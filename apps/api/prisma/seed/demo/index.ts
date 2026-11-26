@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   DEMO_ACHIEVEMENTS,
   DEMO_CATEGORIES,
+  DEMO_EVENTS,
   DEMO_FORMS,
   DEMO_NEWS,
   DEMO_PUNISHMENT_SCOPE,
@@ -10,10 +11,13 @@ import {
   DEMO_SERVER_CATEGORY,
   DEMO_SERVERS,
   DEMO_SETTINGS,
+  DEMO_TOPICS,
   DEMO_VOTE_SITE,
+  buildDemoEventDates,
   buildDemoProducts,
   buildDemoPunishmentRow,
   buildDemoSyncState,
+  demoEscapeToHtml,
   demoPunishmentSourceId,
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
@@ -95,6 +99,44 @@ async function main(): Promise<void> {
       await prisma.news.upsert({
         where: { slug: n.slug },
         create: { slug: n.slug, authorId: author.id, ...data },
+        update: data,
+      });
+    }
+
+    for (const t of DEMO_TOPICS) {
+      const data = {
+        title: t.title,
+        category: t.category,
+        visibility: 'PUBLIC' as const,
+        description: t.description,
+        content: t.body,
+        contentHtml: demoEscapeToHtml(t.body),
+        order: t.order,
+        isActive: true,
+      };
+      await prisma.topic.upsert({
+        where: { slug: t.slug },
+        create: { slug: t.slug, createdBy: author.id, ...data },
+        update: data,
+      });
+    }
+
+    const eventsNow = new Date();
+    for (const e of DEMO_EVENTS) {
+      const data = {
+        title: e.title,
+        description: e.description,
+        descriptionHtml: demoEscapeToHtml(e.description),
+        category: e.category,
+        status: e.status,
+        visibility: 'PUBLIC' as const,
+        location: e.location,
+        isFeatured: e.isFeatured,
+        ...buildDemoEventDates(e, eventsNow),
+      };
+      await prisma.calendarEvent.upsert({
+        where: { slug: e.slug },
+        create: { slug: e.slug, createdById: author.id, ...data },
         update: data,
       });
     }
@@ -267,7 +309,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
     );
   } finally {
     await prisma.$disconnect();
