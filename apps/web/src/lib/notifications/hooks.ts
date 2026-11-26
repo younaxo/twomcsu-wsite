@@ -14,7 +14,7 @@ import { io } from 'socket.io-client';
 import { api } from '@/lib/api/client';
 import { tokenStore } from '@/lib/api/token-store';
 import { useAuthStore } from '@/lib/auth/store';
-import { API_URL } from '@/lib/env';
+import { realtimeTarget } from '@/lib/realtime';
 import { siteKeys } from '@/lib/site/hooks';
 import { toast } from '@/components/ui/toast';
 import { inAppDecision, inAppLink, useActiveConversation } from './in-app';
@@ -165,7 +165,8 @@ export function useNotificationsRealtime() {
   useEffect(() => {
     const token = tokenStore.get();
     if (!authenticated || !token) return;
-    const socket = io(`${API_URL}/notifications`, {
+    const socket = io(realtimeTarget('/notifications').url, {
+      path: realtimeTarget('/notifications').path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 5,
