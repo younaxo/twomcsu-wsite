@@ -22,6 +22,14 @@ export const STORE_CART_ERROR_CODES = {
   CART_GIFT_UNAVAILABLE: 'CART_GIFT_UNAVAILABLE',
   /// Подарки: слишком много операций с подарком (429, заголовок Retry-After).
   CART_GIFT_RATE_LIMITED: 'CART_GIFT_RATE_LIMITED',
+  /// Корзина и оформление: позиции и цели добавления.
+  CART_EMPTY: 'CART_EMPTY',
+  CART_ITEM_NOT_FOUND: 'CART_ITEM_NOT_FOUND',
+  CART_TARGET_REQUIRED: 'CART_TARGET_REQUIRED',
+  CART_TARGET_AMBIGUOUS: 'CART_TARGET_AMBIGUOUS',
+  /// Вариант не найден, выключен или принадлежит выключенному товару (причина не раскрывается).
+  VARIANT_NOT_FOUND: 'VARIANT_NOT_FOUND',
+  BUNDLE_NOT_FOUND: 'BUNDLE_NOT_FOUND',
 } as const;
 
 export type StoreCartErrorCode =
