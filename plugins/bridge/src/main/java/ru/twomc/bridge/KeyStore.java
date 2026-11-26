@@ -21,6 +21,16 @@ interface KeyStore {
     /** Оператор снимает STARTED/UNKNOWN после ручной проверки. DONE снять нельзя. */
     boolean forget(String key);
 
+    /** true: при открытии найдена порча журнала, выдача выключена до {@link #acknowledgeCorruption()} (fail closed). */
+    default boolean corruptionPending() {
+        return false;
+    }
+
+    /** Оператор подтверждает порчу после ручной проверки копии; журнал переписывается, выдача разрешается. */
+    default boolean acknowledgeCorruption() {
+        return false;
+    }
+
     boolean healthy();
 
     int size();

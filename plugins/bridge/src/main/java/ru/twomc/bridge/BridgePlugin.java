@@ -45,12 +45,15 @@ public final class BridgePlugin extends JavaPlugin {
             return;
         }
         BridgeConfig conf = res.config();
+        for (String w : res.warnings()) {
+            getLogger().warning(w);
+        }
 
         try {
             store = FileKeyStore.open(getDataFolder().toPath(), System::currentTimeMillis, conf.keyRetentionMs, getLogger());
         } catch (IOException | RuntimeException e) {
             // Без журнала ключей выдавать нельзя: двойная выдача (R167).
-            boolean locked = e.getMessage() != null && e.getMessage().startsWith("журнал ключей уже занят");
+            boolean locked = e instanceof JournalBusyException;
             getLogger().severe("Выдача заказов ВЫКЛЮЧЕНА: журнал ключей недоступен ("
                     + (locked ? "уже занят другим экземпляром плагина" : e.getClass().getSimpleName()) + ").");
             store = null;
@@ -93,7 +96,8 @@ public final class BridgePlugin extends JavaPlugin {
                 return true;
             }
             DeliveryEngine.Status s = engine.status();
-            sender.sendMessage("TwoMC Bridge: журнал " + (s.storeHealthy() ? "исправен" : "НЕДОСТУПЕН") + ", ключей " + s.storeSize()
+            sender.sendMessage("TwoMC Bridge: журнал " + (s.storeHealthy() ? "исправен"
+                    : store != null && store.corruptionPending() ? "ПОВРЕЖДЁН (нужен /twomcbridge ackcorrupt)" : "НЕДОСТУПЕН") + ", ключей " + s.storeSize()
                     + ", ack в очереди " + s.outbox() + ", заданий в работе " + s.inFlight()
                     + (s.pausedForMs() > 0 ? ", пауза ещё " + (s.pausedForMs() / 1000) + " с" : "") + ". Последнее: " + s.last());
             return true;
@@ -122,12 +126,29 @@ public final class BridgePlugin extends JavaPlugin {
             }
             return true;
         }
-        sender.sendMessage("Использование: /twomcbridge status | forget <idempotencyKey>");
+        if (args.length == 1 && args[0].equalsIgnoreCase("ackcorrupt")) {
+            if (store == null) {
+                sender.sendMessage("TwoMC Bridge: журнал ключей не открыт.");
+                return true;
+            }
+            if (!store.corruptionPending()) {
+                sender.sendMessage("TwoMC Bridge: подтверждать нечего, порча журнала не зафиксирована.");
+                return true;
+            }
+            boolean ok = store.acknowledgeCorruption();
+            getLogger().warning("Оператор " + sender.getName() + " подтвердил порчу журнала ключей" + (ok ? "" : " (перезапись не удалась)"));
+            sender.sendMessage(ok
+                    ? "TwoMC Bridge: порча подтверждена, журнал переписан, выдача возобновится в течение 30 секунд. "
+                    + "Копия исходного файла осталась в executed-keys.log.bad-*."
+                    : "TwoMC Bridge: перезапись журнала не удалась, выдача остаётся выключенной (см. лог).");
+            return true;
+        }
+        sender.sendMessage("Использование: /twomcbridge status | forget <idempotencyKey> | ackcorrupt");
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        return args.length == 1 ? List.of("status", "forget") : List.of();
+        return args.length == 1 ? List.of("status", "forget", "ackcorrupt") : List.of();
     }
 }

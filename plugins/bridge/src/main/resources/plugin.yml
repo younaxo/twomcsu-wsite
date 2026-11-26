@@ -7,8 +7,8 @@ description: Мост между сайтом TwoMC и игровым серве
 softdepend: [LuckPerms]
 commands:
   twomcbridge:
-    description: Состояние выдачи заказов и разбор неизвестного исхода.
-    usage: /twomcbridge status | forget <idempotencyKey>
+    description: Состояние выдачи заказов, разбор неизвестного исхода, подтверждение порчи журнала.
+    usage: /twomcbridge status | forget <idempotencyKey> | ackcorrupt
     permission: twomc.bridge.admin
 permissions:
   twomc.bridge.admin:

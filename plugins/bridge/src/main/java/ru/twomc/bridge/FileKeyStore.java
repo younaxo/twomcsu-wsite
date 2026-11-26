@@ -34,9 +34,13 @@ import java.util.zip.CRC32;
  * выбирает «лучше не выдать, чем выдать дважды», а разбор неизвестного отдан администратору.
  *
  * <p>При открытии: эксклюзивная блокировка {@code executed-keys.lock} (второй сервер на той же папке не
- * запустится), чтение, отсечение записей старше срока хранения, при порче или оборванном хвосте копия исходного
- * файла сохраняется как {@code executed-keys.log.bad-<секунды>}, затем атомарная перезапись
- * (tmp + fsync + ATOMIC_MOVE).
+ * запустится; отдельное исключение {@link JournalBusyException}), чтение, отсечение записей старше срока хранения.
+ * Оборванный последний кусок без {@code \n} (типичное падение посреди записи) это норма: он отбрасывается, файл
+ * атомарно переписывается (tmp + fsync + ATOMIC_MOVE + fsync каталога). ПОРЧА (строка с неверной CRC или форматом
+ * не в хвосте) это fail closed: копия сохраняется как {@code executed-keys.log.bad-<секунды>}, {@link #healthy()}
+ * равен false, выдача выключена, файл не трогается до явного подтверждения оператора
+ * ({@link #acknowledgeCorruption()}, команда {@code /twomcbridge ackcorrupt}); затем файл переписывается без
+ * повреждённых строк.
  */
 final class FileKeyStore implements KeyStore {
     static final String LOG_NAME = "executed-keys.log";
@@ -53,6 +57,9 @@ final class FileKeyStore implements KeyStore {
     private FileLock lock;
     private FileChannel out;
     private boolean healthy = true;
+    /** При чтении найдена порча (не оборванный хвост): выдача выключена до {@link #acknowledgeCorruption()}. */
+    private boolean corruptPending;
+    private boolean dirSyncWarned;
 
     private FileKeyStore(Path dir, LongSupplier clock, Logger logger) {
         this.dir = dir;
@@ -67,7 +74,11 @@ final class FileKeyStore implements KeyStore {
         try {
             s.acquireLock();
             s.load(retentionMs);
+            boolean created = !Files.exists(s.log);
             s.out = FileChannel.open(s.log, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+            if (created) {
+                s.fsyncDir(); // запись о новом файле в каталоге тоже должна пережить падение питания
+            }
         } catch (IOException | RuntimeException e) {
             s.close();
             throw e;
@@ -83,7 +94,23 @@ final class FileKeyStore implements KeyStore {
             lock = null;
         }
         if (lock == null) {
-            throw new IOException("журнал ключей уже занят другим экземпляром плагина");
+            throw new JournalBusyException();
+        }
+    }
+
+    /**
+     * fsync каталога после создания файла и после rename: без него запись каталога может не пережить падение
+     * питания. Best-effort: на Windows каталог открыть для force нельзя, это не ошибка (один раз в лог).
+     */
+    private void fsyncDir() {
+        try (FileChannel ch = FileChannel.open(dir, StandardOpenOption.READ)) {
+            ch.force(true);
+        } catch (IOException | RuntimeException e) {
+            if (!dirSyncWarned) {
+                dirSyncWarned = true;
+                logger.warning("Журнал ключей: fsync каталога недоступен (" + e.getClass().getSimpleName()
+                        + "); долговечность переименования файла зависит от файловой системы.");
+            }
         }
     }
 
@@ -129,14 +156,21 @@ final class FileKeyStore implements KeyStore {
         map.values().removeIf(e -> e.state == State.FAILED || e.ts < cutoffSec);
         boolean dropped = map.size() != before;
         if (corrupt > 0) {
+            // Fail closed (M3): потеря записи DONE означала бы повторную выдачу. Журнал НЕ переписывается, выдача выключена,
+            // пока оператор не проверит копию и не подтвердит командой /twomcbridge ackcorrupt.
             Path bad = dir.resolve(LOG_NAME + ".bad-" + (clock.getAsLong() / 1000));
             Files.copy(log, bad, StandardCopyOption.REPLACE_EXISTING);
+            corruptPending = true;
+            healthy = false;
             logger.severe("Журнал ключей: повреждённых строк " + corrupt + "; копия сохранена в " + bad.getFileName()
-                    + ". Проверьте возможную потерю записей о выполненной выдаче.");
-        } else if (tornTail) {
+                    + ". ВЫДАЧА ВЫКЛЮЧЕНА: проверьте возможную потерю записей о выполненной выдаче и подтвердите командой "
+                    + "/twomcbridge ackcorrupt (журнал при этом будет переписан без повреждённых строк).");
+            return;
+        }
+        if (tornTail) {
             logger.warning("Журнал ключей: оборван последний кусок записи (падение сервера); он отброшен.");
         }
-        if (tornTail || corrupt > 0 || dropped || total > map.size() + 100) {
+        if (tornTail || dropped || total > map.size() + 100) {
             compact();
         }
     }
@@ -204,11 +238,15 @@ final class FileKeyStore implements KeyStore {
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(tmp, log, StandardCopyOption.REPLACE_EXISTING);
         }
+        fsyncDir();
     }
 
     // ---- запись ----
 
     private boolean append(char type, String key) {
+        if (!healthy) {
+            return false; // журнал недоступен или ждёт ackcorrupt: на диск ничего не пишем (L6)
+        }
         if (out == null) {
             healthy = false;
             return false;
@@ -267,6 +305,38 @@ final class FileKeyStore implements KeyStore {
             return false;
         }
         map.remove(key);
+        return true;
+    }
+
+    @Override
+    public synchronized boolean corruptionPending() {
+        return corruptPending;
+    }
+
+    /**
+     * Оператор проверил копию {@code executed-keys.log.bad-*} и принимает риск потери записей. Журнал переписывается без
+     * повреждённых строк (tmp + fsync + ATOMIC_MOVE + fsync каталога), после чего выдача разрешается. false: подтверждать
+     * нечего либо перезапись не удалась (журнал остаётся недоступным).
+     */
+    @Override
+    public synchronized boolean acknowledgeCorruption() {
+        if (!corruptPending) {
+            return false;
+        }
+        try {
+            if (out != null) {
+                out.close(); // перед rename закрываем дескриптор старого файла (на Windows иначе замена невозможна)
+                out = null;
+            }
+            compact();
+            out = FileChannel.open(log, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+        } catch (IOException | RuntimeException e) {
+            logger.severe("Журнал ключей: подтверждение порчи не удалось (" + e.getClass().getSimpleName() + "); выдача остаётся выключенной.");
+            return false;
+        }
+        corruptPending = false;
+        healthy = true;
+        logger.warning("Журнал ключей: оператор подтвердил порчу; файл переписан без повреждённых строк, выдача разрешена.");
         return true;
     }
 

@@ -1,5 +1,6 @@
 package ru.twomc.bridge;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -113,6 +114,8 @@ class FileKeyStoreTest {
         Files.writeString(log, Files.readString(log) + "S|1800000000|order7:1|dead", StandardCharsets.UTF_8); // без \n
 
         FileKeyStore again = open();
+        assertTrue(again.healthy(), "оборванный хвост без \\n это норма, не порча");
+        assertFalse(again.corruptionPending());
         assertEquals(KeyStore.State.DONE, again.state("order6:1"));
         assertEquals(KeyStore.State.NONE, again.state("order7:1"));
         assertTrue(again.begin("order8:1")); // дописывается на новую строку, а не склеивается с обрывком
@@ -125,24 +128,77 @@ class FileKeyStoreTest {
         third.close();
     }
 
-    @Test
-    void corruptLineIsSkippedAndOriginalKept() throws IOException {
+    /** Журнал с одной выполненной записью и двумя повреждёнными строками в начале. */
+    private Path writeCorruptLog() throws IOException {
         FileKeyStore s = open();
         s.begin("order9:1");
         s.finish("order9:1", KeyStore.State.DONE);
         s.close();
-
         Path log = dir.resolve(FileKeyStore.LOG_NAME);
         Files.writeString(log, "garbage line\nD|1800000000|order10:1|00000000\n" + Files.readString(log), StandardCharsets.UTF_8);
+        return log;
+    }
+
+    @Test
+    void corruptJournalFailsClosedUntilOperatorAcknowledges() throws IOException {
+        Path log = writeCorruptLog();
+        byte[] original = Files.readAllBytes(log);
 
         FileKeyStore again = open();
+        assertFalse(again.healthy(), "порча: выдача выключена");
+        assertTrue(again.corruptionPending());
         assertEquals(KeyStore.State.DONE, again.state("order9:1"));
         assertEquals(KeyStore.State.NONE, again.state("order10:1")); // неверная CRC
-        again.close();
+        assertFalse(again.begin("new:1"), "пока порча не подтверждена, begin отказывает");
+        assertFalse(again.forget("order9:1"));
+        assertFalse(again.finish("new:1", KeyStore.State.DONE), "finish при healthy=false ничего не пишет");
+        assertArrayEquals(original, Files.readAllBytes(log), "до подтверждения файл не меняется");
         try (Stream<Path> files = Files.list(dir)) {
             assertTrue(files.anyMatch(p -> p.getFileName().toString().startsWith(FileKeyStore.LOG_NAME + ".bad-")),
                     "копия повреждённого журнала должна сохраниться");
         }
+        again.close();
+
+        FileKeyStore restarted = open(); // перезапуск без подтверждения: по-прежнему выключено
+        assertFalse(restarted.healthy());
+        assertTrue(restarted.corruptionPending());
+
+        assertTrue(restarted.acknowledgeCorruption());
+        assertTrue(restarted.healthy());
+        assertFalse(restarted.corruptionPending());
+        assertFalse(restarted.acknowledgeCorruption(), "подтверждать больше нечего");
+        assertTrue(restarted.begin("new:1"));
+        assertFalse(Files.readString(log).contains("garbage"), "после подтверждения журнал переписан");
+        restarted.close();
+
+        FileKeyStore third = open();
+        assertTrue(third.healthy());
+        assertEquals(KeyStore.State.DONE, third.state("order9:1"));
+        assertEquals(KeyStore.State.STARTED, third.state("new:1"));
+        third.close();
+    }
+
+    @Test
+    void acknowledgeWithoutCorruptionDoesNothing() throws IOException {
+        FileKeyStore s = open();
+        assertFalse(s.acknowledgeCorruption());
+        assertTrue(s.healthy());
+        s.close();
+    }
+
+    @Test
+    void finishOnUnhealthyStoreWritesNothing() throws IOException {
+        FileKeyStore s = open();
+        assertTrue(s.begin("w:1"));
+        Path log = dir.resolve(FileKeyStore.LOG_NAME);
+        byte[] before = Files.readAllBytes(log);
+        s.close(); // healthy = false
+        assertFalse(s.finish("w:1", KeyStore.State.DONE));
+        assertArrayEquals(before, Files.readAllBytes(log));
+
+        FileKeyStore again = open();
+        assertEquals(KeyStore.State.STARTED, again.state("w:1"), "исход не записан, после рестарта ключ неизвестен");
+        again.close();
     }
 
     @Test
@@ -184,7 +240,7 @@ class FileKeyStoreTest {
     @Test
     void secondInstanceOnSameFolderIsRefused() throws IOException {
         FileKeyStore s = open();
-        assertThrows(IOException.class, this::open);
+        assertThrows(JournalBusyException.class, this::open);
         s.close();
         open().close(); // после закрытия блокировка снята
     }

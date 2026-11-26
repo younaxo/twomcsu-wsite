@@ -6,10 +6,15 @@ import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Рабочие настройки выдачи. Значения из config.yml переопределяются переменными окружения
@@ -22,7 +27,11 @@ final class BridgeConfig {
                int keyRetentionDays) {}
 
     /** Результат разбора: либо конфигурация, либо одно понятное описание проблемы (без значений секрета). */
-    record Result(BridgeConfig config, String problem) {
+    record Result(BridgeConfig config, String problem, List<String> warnings) {
+        Result(BridgeConfig config, String problem) {
+            this(config, problem, List.of());
+        }
+
         boolean ok() {
             return config != null;
         }
@@ -88,6 +97,7 @@ final class BridgeConfig {
         }
 
         String hex = keyHexEnv;
+        List<String> warnings = new ArrayList<>();
         if (hex.isEmpty()) {
             if (keyFile.isEmpty()) {
                 return fail("не задан секрет: TWOMC_BRIDGE_KEY_HEX или keyFile (config.yml, TWOMC_BRIDGE_KEY_FILE)");
@@ -99,13 +109,36 @@ final class BridgeConfig {
             } catch (IOException | RuntimeException e) {
                 return fail("не удалось прочитать файл ключа (" + e.getClass().getSimpleName() + ")");
             }
+            String perm = permissionWarning(keyPath);
+            if (perm != null) {
+                warnings.add(perm);
+            }
         }
         if (!Protocol.KEY_HEX.matcher(hex).matches()) {
             return fail("секрет сервера должен быть 64 hex-символа"); // значение не печатаем
         }
         byte[] key = HexFormat.of().parseHex(hex);
         long retentionMs = raw.keyRetentionDays() * 24L * 60L * 60L * 1000L;
-        return new Result(new BridgeConfig(base, keyId, key, policy, raw.maxPerClaim(), retentionMs), null);
+        return new Result(new BridgeConfig(base, keyId, key, policy, raw.maxPerClaim(), retentionMs), null,
+                List.copyOf(warnings));
+    }
+
+    /**
+     * L7: предупреждение, если файл ключа доступен не только владельцу (шире 600) на POSIX-системе. Режим не секрет и
+     * печатается. Не POSIX (Windows) или ошибка чтения атрибутов: null (проверить нельзя, не считается проблемой).
+     */
+    static String permissionWarning(Path keyPath) {
+        try {
+            Set<PosixFilePermission> perms = Files.getPosixFilePermissions(keyPath);
+            Set<PosixFilePermission> allowed = EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE);
+            if (!allowed.containsAll(perms)) {
+                return "Файл ключа доступен шире, чем владельцу (режим " + PosixFilePermissions.toString(perms)
+                        + "): выполните chmod 600 на файле ключа, секрет могут прочитать другие пользователи сервера.";
+            }
+            return null;
+        } catch (IOException | RuntimeException e) { // RuntimeException включает UnsupportedOperationException (не POSIX)
+            return null;
+        }
     }
 
     /** База сайта без пути. http допустим только для localhost. */

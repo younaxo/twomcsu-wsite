@@ -187,12 +187,16 @@ final class DeliveryEngine {
         }
         if (!store.healthy()) {
             if (!storeWarned) {
-                logger.severe("Журнал ключей недоступен: опрос заданий остановлен до перезапуска (иначе возможна двойная выдача).");
+                logger.severe(store.corruptionPending()
+                        ? "Журнал ключей повреждён: опрос заданий остановлен до подтверждения оператором "
+                                + "(/twomcbridge ackcorrupt), иначе возможна двойная выдача."
+                        : "Журнал ключей недоступен: опрос заданий остановлен до перезапуска (иначе возможна двойная выдача).");
                 storeWarned = true;
             }
-            last = "журнал ключей недоступен";
+            last = store.corruptionPending() ? "журнал повреждён, нужен /twomcbridge ackcorrupt" : "журнал ключей недоступен";
             return 30_000;
         }
+        storeWarned = false;
         if (now < nextClaimAt) {
             return nextClaimAt - now;
         }

@@ -694,6 +694,26 @@ class DeliveryEngineTest {
     }
 
     @Test
+    void corruptJournal_blocksClaims_untilOperatorAcknowledges() throws IOException {
+        java.nio.file.Files.writeString(dir.resolve(FileKeyStore.LOG_NAME), "garbage line\n", StandardCharsets.UTF_8);
+        Harness h = new Harness();
+        try {
+            assertTrue(h.store.corruptionPending());
+            h.engine.cycle();
+            assertEquals(0, h.transport.requests.size(), "при порче журнала claim не выполняется");
+            assertEquals(30_000, h.scheduler.lastDelay);
+            assertTrue(h.logs.text.toString().contains("ackcorrupt"));
+
+            assertTrue(h.store.acknowledgeCorruption());
+            h.transport.thenResponse(claimResponse(2000));
+            h.engine.cycle();
+            assertEquals(1, h.transport.to(Protocol.PATH_CLAIM).size(), "после подтверждения опрос возобновляется");
+        } finally {
+            h.store.close();
+        }
+    }
+
+    @Test
     void shutdown_returnsUnstartedJobsAsRetry_andLateMainTasksDoNothing() throws IOException {
         Harness h = new Harness();
         h.transport.thenResponse(claimResponse(2000,

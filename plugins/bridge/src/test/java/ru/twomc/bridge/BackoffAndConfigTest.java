@@ -6,10 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -66,6 +69,30 @@ class BackoffAndConfigTest {
         assertEquals("survival.1", r.config().keyId);
         assertEquals(32, r.config().key().length);
         assertFalse(r.config().toString().contains(HEX));
+    }
+
+    @Test
+    void keyFilePermissionsWiderThan600AreWarnedOnPosix() throws IOException {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"), "нужна POSIX-файловая система");
+        Path key = dir.resolve("perm-key.txt");
+        Files.writeString(key, HEX + "\n");
+
+        Files.setPosixFilePermissions(key, PosixFilePermissions.fromString("rw-------"));
+        BridgeConfig.Result strict = BridgeConfig.resolve(raw("https://a.invalid", "survival.1", "perm-key.txt"), Map.of(), dir);
+        assertTrue(strict.ok(), strict.problem());
+        assertTrue(strict.warnings().isEmpty());
+
+        Files.setPosixFilePermissions(key, PosixFilePermissions.fromString("rw-r--r--"));
+        BridgeConfig.Result wide = BridgeConfig.resolve(raw("https://a.invalid", "survival.1", "perm-key.txt"), Map.of(), dir);
+        assertTrue(wide.ok(), "предупреждение не отключает выдачу");
+        assertEquals(1, wide.warnings().size());
+        assertTrue(wide.warnings().get(0).contains("rw-r--r--"));
+        assertFalse(wide.warnings().get(0).contains(HEX));
+
+        // Секрет из переменной окружения: файла нет, предупреждений нет.
+        BridgeConfig.Result env = BridgeConfig.resolve(raw("https://a.invalid", "survival.1", "perm-key.txt"),
+                Map.of("TWOMC_BRIDGE_KEY_HEX", HEX), dir);
+        assertTrue(env.warnings().isEmpty());
     }
 
     @Test
