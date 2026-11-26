@@ -28,9 +28,22 @@ describe('способы оплаты', () => {
           { code: 'SBP', title: ' ', currency: 'RUB' },
           { code: 'SBP', title: 'дубль', currency: 'RUB' },
           { title: 'без кода' },
+          { code: 'WEIRD', title: 'Неизвестный', currency: 'RUB' },
+          { code: 'toString', title: 'proto', currency: 'RUB' },
         ],
       }),
     ).toEqual([{ code: 'SBP', title: 'СБП', currency: 'RUB' }]);
+  });
+
+  it('коды вне PAYMENT_METHOD_CODES отбрасываются', () => {
+    expect(
+      normalizePaymentMethods({
+        methods: [
+          { code: 'WEIRD', title: 'x', currency: 'RUB' },
+          { code: 'CRYPTO', title: 'Крипто', currency: 'USDT' },
+        ],
+      }),
+    ).toEqual([{ code: 'CRYPTO', title: 'Крипто', currency: 'USDT' }]);
   });
 
   it('ошибки выбора способа распознаются только по кодам 0.8b', () => {
@@ -64,5 +77,23 @@ describe('ошибки без сырых сообщений API', () => {
     expect(safeErrorMessage(new NetworkError('boom'))).toMatch(/Нет соединения/);
     expect(safeErrorMessage(new ApiError(502, ['bad gateway']))).toMatch(/временно недоступен/);
     expect(safeErrorMessage(new Error('secret'), 'Запасной')).toBe('Запасной');
+  });
+});
+
+describe('cartErrorMessage: коды корзины и оформления', () => {
+  const coded = (code: string, raw = 'сырой текст сервера') =>
+    cartErrorMessage(new ApiError(code === 'VARIANT_NOT_FOUND' ? 404 : 400, [raw], { code }));
+
+  it.each([
+    ['CART_EMPTY', /Корзина пуста/],
+    ['CART_ITEM_NOT_FOUND', /уже нет в корзине/],
+    ['CART_TARGET_REQUIRED', /Не выбран товар/],
+    ['CART_TARGET_AMBIGUOUS', /Не удалось добавить/],
+    ['VARIANT_NOT_FOUND', /больше недоступен/],
+    ['BUNDLE_NOT_FOUND', /набор/],
+  ])('%s — понятный текст без сырого сообщения', (code, pattern) => {
+    const text = coded(code);
+    expect(text).toMatch(pattern);
+    expect(text).not.toContain('сырой текст сервера');
   });
 });

@@ -62,7 +62,7 @@ export function PaymentMethodPicker({
     value: method.code,
     label: method.title,
     description: method.currency ? `Валюта: ${paymentCurrencyLabel(method.currency)}` : undefined,
-    icon: METHOD_ICONS[method.code] ?? <CreditCard />,
+    icon: Object.hasOwn(METHOD_ICONS, method.code) ? METHOD_ICONS[method.code] : <CreditCard />,
   }));
 
   return (

@@ -43,6 +43,7 @@ export function QuickBuyPanel({
   const nickId = useId();
   const offerId = useId();
   const nickRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [nick, setNick] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [nickError, setNickError] = useState<string | null>(null);
@@ -104,6 +105,15 @@ export function QuickBuyPanel({
   // Без списка способов заказ не отправляем: сервер потребует выбор (payment_method_required).
   const methodsNotReady = choice.loading || choice.loadError !== null;
 
+  /// Фокус на группу способов оплаты (первую радио-карточку): после рендера, когда ошибка уже в DOM.
+  const focusPayment = () => {
+    setTimeout(() => {
+      formRef.current
+        ?.querySelector<HTMLElement>('[data-testid="quick-buy-payment-methods"] [role="radio"]')
+        ?.focus();
+    }, 0);
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (buy.isPending || paymentOff || methodsNotReady || !config.data) return;
@@ -116,6 +126,7 @@ export function QuickBuyPanel({
     }
     if (choice.required && choice.selected === null) {
       setPaymentError('Выберите способ оплаты, чтобы оформить заказ.');
+      focusPayment();
       return;
     }
     setPaymentError(null);
@@ -145,6 +156,7 @@ export function QuickBuyPanel({
           }
           if (info.kind === 'payment') {
             setPaymentError(info.message);
+            focusPayment();
             // Список мог измениться: сбрасываем выбор и перечитываем способы.
             choice.reload();
           }
@@ -159,6 +171,7 @@ export function QuickBuyPanel({
 
   return (
     <form
+      ref={formRef}
       onSubmit={submit}
       noValidate
       aria-label="Покупка без входа"

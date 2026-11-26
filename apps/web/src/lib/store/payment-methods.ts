@@ -4,6 +4,7 @@ import type {
   PublicPaymentMethod,
   StorePaymentErrorCode,
 } from '@twomc/shared';
+import { PAYMENT_METHOD_CODES } from '@twomc/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { api } from '@/lib/api/client';
@@ -54,7 +55,12 @@ export function normalizePaymentMethods(data: unknown): PublicPaymentMethod[] {
   const seen = new Set<string>();
   const result: PublicPaymentMethod[] = [];
   for (const raw of list as Array<Partial<PublicPaymentMethod> | null>) {
-    if (!raw || typeof raw.code !== 'string' || (raw.code as string) === '' || seen.has(raw.code))
+    if (
+      !raw ||
+      typeof raw.code !== 'string' ||
+      !(PAYMENT_METHOD_CODES as readonly string[]).includes(raw.code) ||
+      seen.has(raw.code)
+    )
       continue;
     seen.add(raw.code);
     const title =
