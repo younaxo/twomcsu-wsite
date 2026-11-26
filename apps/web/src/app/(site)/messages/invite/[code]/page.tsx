@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { ApiError, getErrorMessage } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
+import { safeErrorMessage } from '@/lib/api/safe-error';
 import { useInvite, useJoinInvite } from '@/lib/messages/hooks';
 
 /// Приглашение в группу по ссылке: название и «Вступить».
@@ -24,7 +25,7 @@ function InviteContent({ code }: { code: string }) {
         description={
           invite.error instanceof ApiError && invite.error.status === 404
             ? 'Ссылку отозвали или она неверная.'
-            : getErrorMessage(invite.error)
+            : safeErrorMessage(invite.error, 'Не удалось загрузить приглашение. Попробуйте позже.')
         }
       />
     );
@@ -42,7 +43,8 @@ function InviteContent({ code }: { code: string }) {
         onClick={() =>
           join.mutate(undefined, {
             onSuccess: (conversation) => router.replace(`/messages/${conversation.id}`),
-            onError: (error) => toast.error(getErrorMessage(error)),
+            onError: (error) =>
+              toast.error(safeErrorMessage(error, 'Не удалось вступить в группу.')),
           })
         }
       >
