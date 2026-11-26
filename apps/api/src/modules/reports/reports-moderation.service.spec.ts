@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { DefaultReportPriorityProvider } from './report-priority.provider';
 import { ReportsModerationService } from './reports-moderation.service';
 
@@ -192,6 +194,47 @@ describe('ReportsModerationService.assign', () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'm1', isBanned: false });
     await service.assign('R-1', { assignedToId: 'm1' }, 'm1');
     expect(notifications.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportsModerationService: переоткрытие обжалования (P2002)', () => {
+  const p2002 = () =>
+    new Prisma.PrismaClientKnownRequestError('dup', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+
+  it('changeStatus: P2002 -> 409 appeal_already_open, без уведомления', async () => {
+    const { prisma, notifications, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row({ status: 'RESOLVED' }));
+    prisma.report.update.mockRejectedValue(p2002());
+    const err = await service
+      .changeStatus('R-1', { status: 'PENDING' }, 'm1')
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.getResponse()).toMatchObject({ code: 'appeal_already_open' });
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
+  it('setVerdict: P2002 -> 409 appeal_already_open', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row({ status: 'RESOLVED' }));
+    prisma.report.update.mockRejectedValue(p2002());
+    await expect(
+      service.setVerdict('R-1', { verdict: 'Ок', status: 'IN_REVIEW' }, 'm1'),
+    ).rejects.toMatchObject({
+      response: { code: 'appeal_already_open' },
+      status: 409,
+    });
+  });
+
+  it('прочие ошибки не маскируются', async () => {
+    const { prisma, service } = setup();
+    prisma.report.findUnique.mockResolvedValue(row());
+    prisma.report.update.mockRejectedValue(new Error('boom'));
+    await expect(
+      service.changeStatus('R-1', { status: 'IN_REVIEW' }, 'm1'),
+    ).rejects.toThrow('boom');
   });
 });
 
