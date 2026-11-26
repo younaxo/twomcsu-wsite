@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { toast } from '@/components/ui/toast';
-import { getErrorMessage } from '@/lib/api/errors';
+import { publicErrorMessage } from '@/lib/api/safe-error';
 import { useAuthStore } from '@/lib/auth/store';
 import { TURNSTILE_SITE_KEY } from '@/lib/env';
 import { formatDateTime } from '@/lib/format';
@@ -147,7 +147,7 @@ export function FormFiller({ form, inviteCode }: { form: FormDto; inviteCode?: s
       {
         onSuccess: () => setDone(true),
         onError: (error) => {
-          setFormError(getErrorMessage(error));
+          setFormError(publicErrorMessage(error));
           turnstileRef.current?.reset();
           setCaptchaToken(null);
         },
@@ -246,7 +246,7 @@ export function FormFiller({ form, inviteCode }: { form: FormDto; inviteCode?: s
                     { values, currentStep: step, inviteCode },
                     {
                       onSuccess: () => toast.success('Черновик сохранён'),
-                      onError: (error) => toast.error(getErrorMessage(error)),
+                      onError: (error) => toast.error(publicErrorMessage(error)),
                     },
                   )
                 }
