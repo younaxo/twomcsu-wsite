@@ -6,6 +6,7 @@ import { LifeBuoy, Lock, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
+import { AppealedMcPunishment } from '@/components/admin/appealed-mc-punishment';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -171,6 +172,9 @@ function ReportRow({ report }: { report: StaffReportSummary }) {
           <Badge tone={REPORT_PRIORITY_TONE[report.priority]} data-testid="report-priority">
             {REPORT_PRIORITY_LABEL[report.priority]}
           </Badge>
+        ) : null}
+        {report.appealedMinecraftPunishment ? (
+          <AppealedMcPunishment punishment={report.appealedMinecraftPunishment} compact />
         ) : null}
         {report.isLocked ? <Lock aria-label="Заблокировано" className="size-3.5" /> : null}
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">

@@ -13,6 +13,7 @@ import {
 } from '../roles/permission.service';
 import { ChatService } from '../chat/chat.service';
 import { CommentsService } from '../comments/comments.service';
+import { LeaderboardsService } from '../leaderboards/leaderboards.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { BanUserDto } from './dto/ban-user.dto';
 import { KickUserDto } from './dto/kick-user.dto';
@@ -28,6 +29,7 @@ export class QuickModerationService {
     private readonly comments: CommentsService,
     private readonly permissions: PermissionService,
     private readonly audit: AuditService,
+    private readonly leaderboards: LeaderboardsService,
   ) {}
 
   private async requireUser(userId: string) {
@@ -134,6 +136,9 @@ export class QuickModerationService {
         },
       });
     });
+    // Бан убирает игрока из публичных рейтингов (isBanned): кэш сбрасываем
+    // сразу, а не по TTL (ADR-0195).
+    this.leaderboards.invalidate();
     await this.auth.revokeAllSessions(targetId);
     return punishment;
   }
@@ -188,6 +193,8 @@ export class QuickModerationService {
         severity: 'warning',
       });
     });
+    // Разбан возвращает игрока в рейтинги (ADR-0195).
+    this.leaderboards.invalidate();
     return { success: true };
   }
 

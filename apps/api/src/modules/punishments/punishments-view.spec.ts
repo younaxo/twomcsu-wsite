@@ -399,6 +399,34 @@ describe('me (п.6)', () => {
     expect(toMyPunishment(row({ kind: 'MUTE' }), ctx)!.appealable).toBe(true);
   });
 
+  it('пауза 24 ч после прошлого обращения: appealable=false и nextAppealAt', () => {
+    const at = (offsetMs: number) => ({
+      reportNumber: 'R-1',
+      status: 'REJECTED' as const,
+      createdAt: new Date(NOW + offsetMs).toISOString(),
+      resolvedAt: null,
+      verdict: null,
+    });
+    const HOUR = 3600_000;
+    const fresh = toMyPunishment(row(), ctx, [at(-2 * HOUR)])!;
+    expect(fresh.appealable).toBe(false);
+    expect(fresh.nextAppealAt).toBe(new Date(NOW + 22 * HOUR).toISOString());
+    const old = toMyPunishment(row(), ctx, [at(-25 * HOUR)])!;
+    expect(old.appealable).toBe(true);
+    expect(old.nextAppealAt).toBeNull();
+    // Открытое обращение: nextAppealAt не показывается (блокирует оно, не пауза).
+    const open = toMyPunishment(row(), ctx, [
+      { ...at(-HOUR), status: 'PENDING' as const },
+    ])!;
+    expect(open.appealable).toBe(false);
+    expect(open.nextAppealAt).toBeNull();
+    // Не-ACTIVE наказание: срока нет.
+    expect(
+      toMyPunishment(row({ status: 'REMOVED' }), ctx, [at(-HOUR)])!
+        .nextAppealAt,
+    ).toBeNull();
+  });
+
   it('причина своя, маскированная помечается', () => {
     expect(toMyPunishment(row({ reason: 'ok' }), ctx)!.reasonMasked).toBe(
       false,

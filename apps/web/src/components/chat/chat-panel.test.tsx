@@ -115,6 +115,28 @@ describe('Общий чат (срез 2.5)', () => {
     );
   });
 
+  it('потеря связи — пометка про опрос истории; пока нет связи, отправка даёт понятный тост', async () => {
+    const user = userEvent.setup();
+    serve();
+    render(<ChatPanel />, { wrapper: Providers });
+    await screen.findByLabelText('Сообщение в чат');
+    expect(screen.queryByTestId('chat-offline')).toBeNull();
+
+    mocks.socket.connected = false;
+    act(() => mocks.handlers.get('connect_error')?.(new Error('xhr poll error')));
+    expect(await screen.findByTestId('chat-offline')).toHaveTextContent('Нет связи с чатом');
+
+    await user.type(screen.getByLabelText('Сообщение в чат'), 'тест{Enter}');
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      'Нет связи с чатом. Подождите переподключения и повторите.',
+    );
+    expect(mocks.socket.emitWithAck).not.toHaveBeenCalled();
+
+    mocks.socket.connected = true;
+    act(() => mocks.handlers.get('connect')?.(undefined));
+    await waitFor(() => expect(screen.queryByTestId('chat-offline')).toBeNull());
+  });
+
   it('отказ сервера (флуд) — тост с текстом; мут — плашка вместо поля ввода', async () => {
     const user = userEvent.setup();
     serve();

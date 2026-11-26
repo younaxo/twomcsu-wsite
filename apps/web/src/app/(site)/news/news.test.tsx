@@ -13,12 +13,13 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   delete: vi.fn(),
+  patch: vi.fn(),
   slug: 'patch-1',
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 vi.mock('@/lib/api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api/client')>()),
-  api: { get: mocks.get, post: mocks.post, delete: mocks.delete },
+  api: { get: mocks.get, post: mocks.post, delete: mocks.delete, patch: mocks.patch },
 }));
 vi.mock('@/components/ui/toast', () => ({ toast: mocks.toast }));
 vi.mock('next/navigation', () => ({
@@ -51,8 +52,10 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  for (const fn of [mocks.get, mocks.post, mocks.delete]) fn.mockReset();
+  for (const fn of [mocks.get, mocks.post, mocks.delete, mocks.patch]) fn.mockReset();
   mocks.post.mockResolvedValue({});
+  mocks.patch.mockResolvedValue({});
+  mocks.toast.error.mockReset();
   useAuthStore.setState({ status: 'authenticated', user: { id: 'me' } as never });
 });
 
@@ -128,5 +131,62 @@ describe('Новости (срез 3.3)', () => {
     });
     render(<NewsArticlePage />, { wrapper: Providers });
     expect(await screen.findByText('Новость не найдена')).toBeInTheDocument();
+  });
+
+  it('комментарий: автор правит текст (PATCH); ошибка API в toast без технических деталей', async () => {
+    const user = userEvent.setup();
+    mocks.get.mockImplementation(async (path: string) =>
+      path.endsWith('/comments')
+        ? {
+            items: [
+              {
+                id: 'c1',
+                parentId: null,
+                content: 'Привет',
+                createdAt: '2026-10-01T11:00:00.000Z',
+                isEdited: true,
+                isPinned: false,
+                author: { id: 'me', username: 'Alex', avatar: null },
+                reactions: [],
+                myReaction: null,
+                canEdit: true,
+                canDelete: true,
+              },
+            ],
+            total: 1,
+            page: 1,
+            limit: 20,
+          }
+        : {
+            ...ITEM,
+            content: 'Текст',
+            likesCount: 0,
+            commentsCount: 1,
+            allowComments: true,
+            liked: false,
+            tags: [],
+            author: null,
+          },
+    );
+    render(<NewsArticlePage />, { wrapper: Providers });
+    const comment = await screen.findByTestId('news-comment');
+    expect(comment).toHaveTextContent('изменён');
+    await user.click(within(comment).getByRole('button', { name: 'Изменить комментарий' }));
+    const box = within(comment).getByLabelText('Текст комментария');
+    await user.clear(box);
+    await user.type(box, 'Исправлено');
+    await user.click(within(comment).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() =>
+      expect(mocks.patch).toHaveBeenCalledWith('/news/patch-1/comments/c1', {
+        content: 'Исправлено',
+      }),
+    );
+
+    mocks.patch.mockRejectedValueOnce(new ApiError(400, ['content must be shorter than 2000']));
+    await user.click(within(comment).getByRole('button', { name: 'Изменить комментарий' }));
+    await user.click(within(comment).getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() =>
+      expect(mocks.toast.error).toHaveBeenCalledWith('Проверьте введённые данные и повторите.'),
+    );
   });
 });

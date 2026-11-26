@@ -10,8 +10,18 @@ const FALLBACK: Record<number, string> = {
   409: 'Конфликт: по этому наказанию уже есть открытое обращение или данные изменились.',
 };
 
+/// Коды обжалования наказания сервера (ADR-0196): понятнее общего текста статуса.
+const BY_CODE: Record<string, string> = {
+  appeal_cooldown:
+    'Это наказание уже обжаловали менее суток назад. Повторно подать обращение можно через 24 часа после предыдущего.',
+  appeal_already_open:
+    'По этому наказанию уже есть открытое обращение. Дождитесь решения или ответьте в нём.',
+};
+
 export function describeSupportError(error: unknown): string {
   if (error instanceof ApiError) {
+    const byCode = error.code ? BY_CODE[error.code] : undefined;
+    if (byCode) return byCode;
     const generic = FALLBACK[error.status];
     const own = getErrorMessage(error);
     const isDefault = ['Некорректный запрос', 'Недостаточно прав', 'Не найдено', 'Конфликт данных'];

@@ -294,6 +294,7 @@ function mine(overrides: Record<string, unknown> = {}) {
     executor: { name: 'ModAlex' },
     scope: { kind: 'server', name: 'survival' },
     appealable: true,
+    nextAppealAt: null,
     appeals: [],
     ...overrides,
   };
@@ -459,6 +460,20 @@ describe('Мои наказания на серверах: подача обра
     render(<MyServerPunishments />, { wrapper: Providers });
     expect(await screen.findAllByTestId('server-punishment')).toHaveLength(4);
     expect(screen.queryByRole('link', { name: /Обжаловать/ })).toBeNull();
+  });
+
+  it('пауза 24 ч: показывает, когда можно обжаловать снова, без кнопки', async () => {
+    mocks.get.mockResolvedValue({
+      linked: true,
+      items: [mine({ appealable: false, nextAppealAt: '2026-11-28T10:00:00.000Z' })],
+      nextCursor: null,
+      meta: META,
+    });
+    render(<MyServerPunishments />, { wrapper: Providers });
+    const note = await screen.findByTestId('punishment-next-appeal');
+    expect(note).toHaveTextContent('Повторно обжаловать можно с');
+    expect(note.querySelector('time')).toHaveAttribute('datetime', '2026-11-28T10:00:00.000Z');
+    expect(screen.queryByRole('link', { name: /Обжаловать наказание/ })).toBeNull();
   });
 
   it('статус и комментарий обжалования на карточке; чужие поля не выводятся', async () => {

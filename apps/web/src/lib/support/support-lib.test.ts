@@ -46,6 +46,16 @@ describe('lib/support', () => {
     );
     expect(describeSupportError(new Error('boom'))).toBe('boom');
   });
+
+  it('describeSupportError: 429 appeal_cooldown и 409 appeal_already_open — по коду', () => {
+    const cooldown = new ApiError(429, ['Повторно обжаловать можно через сутки'], {
+      code: 'appeal_cooldown',
+    });
+    expect(describeSupportError(cooldown)).toMatch(/через 24 часа/);
+    const open = new ApiError(409, ['x'], { code: 'appeal_already_open' });
+    expect(describeSupportError(open)).toMatch(/уже есть открытое/);
+    expect(describeSupportError(new ApiError(429, ['Слишком часто']))).toBe('Слишком часто');
+  });
 });
 
 describe('lib/admin/reports', () => {

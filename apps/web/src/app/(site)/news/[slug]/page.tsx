@@ -1,6 +1,6 @@
 'use client';
 
-import { Eye, Heart, Link2, Newspaper, Trash2 } from 'lucide-react';
+import { Eye, Heart, Link2, Newspaper, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
@@ -16,7 +16,8 @@ import { Textarea } from '@/components/ui/input';
 import { SafeMarkdown } from '@/components/ui/safe-markdown';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
-import { ApiError, getErrorMessage } from '@/lib/api/errors';
+import { ApiError } from '@/lib/api/errors';
+import { publicErrorMessage } from '@/lib/api/safe-error';
 import { useAuthStore } from '@/lib/auth/store';
 import { cn } from '@/lib/cn';
 import { formatDate, formatNumber, formatRelative } from '@/lib/format';
@@ -38,6 +39,7 @@ function Comments({ article }: { article: NewsArticleDto }) {
   const actions = useNewsActions(article.slug);
   const [content, setContent] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const items = query.data?.pages.flatMap((page) => page.items ?? []) ?? [];
 
   const submit = (event: FormEvent) => {
@@ -46,8 +48,21 @@ function Comments({ article }: { article: NewsArticleDto }) {
     if (!text) return;
     actions.comment.mutate(text, {
       onSuccess: () => setContent(''),
-      onError: (error) => toast.error(getErrorMessage(error)),
+      onError: (error) => toast.error(publicErrorMessage(error)),
     });
+  };
+
+  const saveEdit = (event: FormEvent) => {
+    event.preventDefault();
+    const text = editing?.text.trim();
+    if (!editing || !text) return;
+    actions.edit.mutate(
+      { commentId: editing.id, content: text },
+      {
+        onSuccess: () => setEditing(null),
+        onError: (error) => toast.error(publicErrorMessage(error)),
+      },
+    );
   };
 
   return (
@@ -116,18 +131,62 @@ function Comments({ article }: { article: NewsArticleDto }) {
                   <span className="text-xs text-subtle-foreground">
                     {formatRelative(item.createdAt)}
                   </span>
-                  {item.canDelete ? (
-                    <IconButton
-                      size="sm"
-                      aria-label="Удалить комментарий"
-                      className="ml-auto"
-                      onClick={() => setRemoving(item.id)}
-                    >
-                      <Trash2 />
-                    </IconButton>
+                  {item.isEdited ? (
+                    <span className="text-xs text-subtle-foreground">· изменён</span>
                   ) : null}
+                  <span className="ml-auto flex items-center gap-1">
+                    {item.canEdit ? (
+                      <IconButton
+                        size="sm"
+                        aria-label="Изменить комментарий"
+                        onClick={() => setEditing({ id: item.id, text: item.content })}
+                      >
+                        <Pencil />
+                      </IconButton>
+                    ) : null}
+                    {item.canDelete ? (
+                      <IconButton
+                        size="sm"
+                        aria-label="Удалить комментарий"
+                        onClick={() => setRemoving(item.id)}
+                      >
+                        <Trash2 />
+                      </IconButton>
+                    ) : null}
+                  </span>
                 </div>
-                <p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>
+                {editing?.id === item.id ? (
+                  <form className="flex flex-col gap-2" onSubmit={saveEdit}>
+                    <Textarea
+                      aria-label="Текст комментария"
+                      value={editing.text}
+                      maxLength={2000}
+                      rows={2}
+                      autoFocus
+                      onChange={(event) => setEditing({ id: item.id, text: event.target.value })}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setEditing(null)}
+                      >
+                        Отмена
+                      </Button>
+                      <Button
+                        size="sm"
+                        type="submit"
+                        loading={actions.edit.isPending}
+                        disabled={!editing.text.trim()}
+                      >
+                        Сохранить
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>
+                )}
                 <div className="mt-1 flex flex-wrap gap-1">
                   {REACTION_KEYS.map((key) => {
                     const { icon: Icon, label } = ACTIVITY_REACTION_META[key];
@@ -145,7 +204,7 @@ function Comments({ article }: { article: NewsArticleDto }) {
                           signedIn &&
                           actions.react.mutate(
                             { commentId: item.id, key },
-                            { onError: (error) => toast.error(getErrorMessage(error)) },
+                            { onError: (error) => toast.error(publicErrorMessage(error)) },
                           )
                         }
                         className={cn(
@@ -261,7 +320,7 @@ export default function NewsArticlePage() {
             loading={actions.like.isPending}
             onClick={() =>
               actions.like.mutate(data.id, {
-                onError: (error) => toast.error(getErrorMessage(error)),
+                onError: (error) => toast.error(publicErrorMessage(error)),
               })
             }
           >
