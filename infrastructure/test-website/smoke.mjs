@@ -19,6 +19,9 @@ const mask = (s) => {
   return t
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
     .replace(/(Bearer\s+)\S+/gi, '$1***')
+    .replace(/(Basic\s+)[A-Za-z0-9+/=]{4,}/gi, '$1***')
+    .replace(/("(?:password|passwd|pass|pwd|secret|token|accessToken|refreshToken|totp|backupCode|backupCodes)"\s*:\s*")[^"]{4,}(")/gi, '$1***$2')
+    .replace(/\b((?:password|passwd|pass|pwd|secret|token)\s*=\s*)[^\s&"',;]{4,}/gi, '$1***')
     .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
     .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
 };
@@ -46,8 +49,13 @@ if (process.env.SMOKE_SELFTEST_MASK === '1') {
     'jwt ' + ['eyJhbGci' + 'OiJIUzI1NiJ9', 'eyJzdWIi' + 'OiIxIn0', 'sig'].join('.'),
     'postgresql://user:' + 'hunter2'.repeat(2) + '@db:5432/x',
     'otpauth://totp/x?secret=' + 'JBSWY3DP' + 'EHPK3PXP',
+    `{"password":"${'zz' + 'unknown-pw-1'}","login":"x"}`,
+    `password=${'zz' + 'unknown-pw-2'}&x=1`,
+    `Authorization: Basic ${'QUJD' + 'REVGR0g='}`,
   ];
-  const leaked = probes.map((p) => mask(show(p))).filter((o) => fake.some((f) => o.includes(f)) || /hunter2|eyJhbGci|abc\.def|secret=JBSW/.test(o));
+  const leaked = probes
+    .map((p) => mask(show(p)))
+    .filter((o) => fake.some((f) => o.includes(f)) || /hunter2|eyJhbGci|abc\.def|secret=JBSW|unknown-pw|QUJDREVG/.test(o));
   console.log(leaked.length ? `mask-selftest: УТЕЧКА ${leaked.length}` : `mask-selftest: ok (${probes.length} проб)`);
   process.exit(leaked.length ? 1 : 0);
 }
