@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import type { MinecraftPunishment } from '@prisma/client';
 import {
   MyPunishment,
+  MyPunishmentAppeal,
   PUNISHMENT_REASON_KEYS,
   PublicPunishment,
   PublicPunishmentExecutor,
@@ -266,9 +267,30 @@ export function toPublicPunishment(
   };
 }
 
+/// Статусы обращения, при которых обжалование считается открытым.
+const OPEN_APPEAL_STATUSES: ReadonlySet<string> = new Set([
+  'PENDING',
+  'IN_REVIEW',
+  'WAITING_RESPONSE',
+]);
+
+/// Обжалуемость (Q57 О2): активные BAN и MUTE без открытого обжалования.
+export function isAppealable(
+  kind: MirrorRow['kind'],
+  status: PunishmentViewStatus,
+  appeals: readonly Pick<MyPunishmentAppeal, 'status'>[],
+): boolean {
+  return (
+    (kind === 'BAN' || kind === 'MUTE') &&
+    status === 'ACTIVE' &&
+    !appeals.some((a) => OPEN_APPEAL_STATUSES.has(a.status))
+  );
+}
+
 export function toMyPunishment(
   row: MirrorRow,
   ctx: Pick<PublicViewContext, 'nowMs' | 'servers'>,
+  appeals: readonly MyPunishmentAppeal[] = [],
 ): MyPunishment | null {
   const status = viewStatus(row, ctx.nowMs);
   if (status === 'DELETED_AT_SOURCE') return null;
@@ -284,7 +306,8 @@ export function toMyPunishment(
     reasonMasked: isReasonMasked(row.reason),
     executor: publicExecutor(row),
     scope: scopeView(row.serverScope, ctx.servers),
-    appealable: false,
+    appealable: isAppealable(row.kind, status, appeals),
+    appeals: [...appeals],
   };
 }
 

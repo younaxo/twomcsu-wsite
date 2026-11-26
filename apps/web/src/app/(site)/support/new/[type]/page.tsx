@@ -26,6 +26,8 @@ import {
 /// и e-mail (без покупок и платежей); прочие — сервер и описание.
 /// Лишние поля на сервер не уходят: сервер отвечает 400 на appealedPunishmentId
 /// у любого типа, кроме обжалования.
+const MC_REF_PATTERN = /^(ban|mute)-[1-9][0-9]{0,17}$/;
+
 interface FormErrors {
   target?: string;
   punishment?: string;
@@ -38,11 +40,17 @@ function ReportForm({ type }: { type: ReportType }) {
   const router = useRouter();
   const { create, createDonation } = useSupportActions();
   const isAppeal = meta.kind === 'appeal';
-  const punishments = useMyPunishments(isAppeal);
-  const appealable = (punishments.data ?? []).filter((item) => item.isAppealable !== false);
+  const searchParams = useSearchParams();
+  // `?mc=ban-123` — наказание сервера (l1-02): привязка без выбора из списка сайта.
+  const mcRaw = searchParams.get('mc') ?? '';
+  const mcRef = isAppeal && MC_REF_PATTERN.test(mcRaw) ? mcRaw : '';
+  const punishments = useMyPunishments(isAppeal && !mcRef);
+  const appealable = (mcRef ? [] : (punishments.data ?? [])).filter(
+    (item) => item.isAppealable !== false,
+  );
   const [target, setTarget] = useState('');
   // `?punishment=ID` подставляет наказание; неизвестный или необжалуемый ID игнорируется.
-  const wanted = useSearchParams().get('punishment') ?? '';
+  const wanted = searchParams.get('punishment') ?? '';
   const [chosenId, setChosenId] = useState<string | null>(null);
   const wantedValid = appealable.some((item) => item.id === wanted);
   const punishmentId = chosenId ?? (wantedValid ? wanted : '');
@@ -63,7 +71,8 @@ function ReportForm({ type }: { type: ReportType }) {
     event.preventDefault();
     const next: FormErrors = {};
     if (meta.needsTarget && !target.trim()) next.target = 'Укажите ник нарушителя.';
-    if (isAppeal && !punishmentId) next.punishment = 'Выберите наказание, которое обжалуете.';
+    if (isAppeal && !mcRef && !punishmentId)
+      next.punishment = 'Выберите наказание, которое обжалуете.';
     if (!description.trim()) next.description = 'Опишите, что произошло.';
     setErrors(next);
     if (Object.keys(next).length > 0) return;
@@ -84,7 +93,11 @@ function ReportForm({ type }: { type: ReportType }) {
       description: text,
       // Цели нужны только жалобам; у остальных типов список пуст.
       targets: meta.needsTarget ? [{ username: target.trim() }] : [],
-      ...(isAppeal ? { appealedPunishmentId: punishmentId } : {}),
+      ...(isAppeal && mcRef
+        ? { appealedPunishmentRef: mcRef }
+        : isAppeal
+          ? { appealedPunishmentId: punishmentId }
+          : {}),
       ...(!isAppeal && server.trim() ? { server: server.trim() } : {}),
     };
     create.mutate(body, done);
@@ -107,7 +120,14 @@ function ReportForm({ type }: { type: ReportType }) {
           />
         </Field>
       ) : null}
-      {isAppeal ? (
+      {isAppeal && mcRef ? (
+        <p className="text-sm" data-testid="mc-appeal-target">
+          Обжалуется наказание на сервере: <span className="font-medium">{mcRef}</span>.{' '}
+          <Link href="/settings/punishments" className="underline">
+            История наказаний
+          </Link>
+        </p>
+      ) : isAppeal ? (
         punishments.isPending ? (
           <p className="text-sm text-muted-foreground">Загружаем ваши наказания…</p>
         ) : punishments.isError ? (
@@ -198,7 +218,7 @@ function ReportForm({ type }: { type: ReportType }) {
         type="submit"
         className="self-end"
         loading={create.isPending || createDonation.isPending}
-        disabled={isAppeal && !punishments.isPending && appealable.length === 0}
+        disabled={isAppeal && !mcRef && !punishments.isPending && appealable.length === 0}
       >
         Отправить обращение
       </Button>
