@@ -1,0 +1,18 @@
+# НЕ СОБИРАЛОСЬ ЛОКАЛЬНО (тулчейн Rust на ПК запрещён правилами; сборка только на VDS-раннере в Docker).
+[package]
+name = "cart-calc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
+rust_decimal = "1.36"
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
