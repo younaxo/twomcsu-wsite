@@ -25,3 +25,19 @@ export function safeErrorMessage(error: unknown, fallback = 'Не удалось
       return fallback;
   }
 }
+
+const CYRILLIC = /[А-Яа-яЁё]/;
+
+/// Текст для публичных страниц контента: понятное русское сообщение домена
+/// (4xx: «Форма закрыта», «Приглашение истекло») показывается как есть, всё
+/// остальное — английские тексты валидации, имена полей, 5xx — заменяется
+/// безопасной формулировкой по статусу.
+export function publicErrorMessage(error: unknown, fallback?: string): string {
+  if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
+    const first = error.messages[0]?.trim();
+    if (first && first.length <= 200 && CYRILLIC.test(first) && !/[\n\r]/.test(first)) {
+      return first;
+    }
+  }
+  return safeErrorMessage(error, fallback);
+}
