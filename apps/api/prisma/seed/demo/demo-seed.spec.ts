@@ -4,8 +4,11 @@ import {
   DEMO_EVENT_DISCLAIMER,
   DEMO_EVENTS,
   DEMO_FORMS,
+  DEMO_APPEALS,
   DEMO_NEWS,
+  DEMO_PUNISHMENT_ACCOUNT,
   DEMO_PUNISHMENTS,
+  DEMO_SETTINGS,
   DEMO_SERVERS,
   DEMO_TOPICS,
   buildDemoEventDates,
@@ -31,7 +34,12 @@ import {
   demoPlayerTag,
   demoSlotsHash,
 } from './social';
-import { seedDemoSocial } from './social-seed';
+import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
+import {
+  STAND_PLAYER_UUID,
+  STAND_PUNISHMENTS,
+  seedDemoStandPlayer,
+} from './stand-player';
 import {
   assertDemoSeedAllowed,
   assertDemoUserNotForeign,
@@ -333,6 +341,9 @@ describe('demo seed social data', () => {
 });
 
 /// Простая in-memory подмена Prisma: upsert по сериализованному `where`.
+const keyOf = (w: unknown): string =>
+  JSON.stringify(w, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+
 function fakePrisma() {
   const tables = new Map<string, Map<string, Record<string, unknown>>>();
   let seq = 0;
@@ -341,8 +352,15 @@ function fakePrisma() {
     findUnique: (args: { where: Record<string, unknown> }) => {
       calls.push(`${name}.findUnique`);
       return Promise.resolve(
-        tables.get(name)?.get(JSON.stringify(args.where)) ?? null,
+        tables.get(name)?.get(keyOf(args.where)) ?? null,
       );
+    },
+    findFirst: (args: { where: Record<string, unknown> }) => {
+      calls.push(`${name}.findFirst`);
+      const hit = [...(tables.get(name)?.values() ?? [])].find((r) =>
+        Object.entries(args.where).every(([k, v]) => r[k] === v),
+      );
+      return Promise.resolve(hit ?? null);
     },
     upsert: (args: {
       where: Record<string, unknown>;
@@ -352,7 +370,7 @@ function fakePrisma() {
       calls.push(`${name}.upsert`);
       const t = tables.get(name) ?? new Map();
       tables.set(name, t);
-      const key = JSON.stringify(args.where);
+      const key = keyOf(args.where);
       const prev = t.get(key);
       const row = prev
         ? { ...prev, ...args.update }
@@ -473,5 +491,276 @@ describe('seedDemoSocial: защита и чужие пользователи', 
     await expect(
       assertDemoUserNotForeign(mk('x@y.z'), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
     ).rejects.toThrow(/demo_system/);
+  });
+});
+
+describe('demo: настройки, «Мои наказания», обжалования', () => {
+  it('настройки: статистика и магазин включены, исполнители выдачи выключены', () => {
+    expect(DEMO_SETTINGS['stats.public.enabled']).toBe('true');
+    expect(DEMO_SETTINGS['store.delivery.enabled']).toBe('true');
+    expect(DEMO_SETTINGS['store.delivery.executor.command.enabled']).toBe('false');
+    expect(DEMO_SETTINGS['store.delivery.executor.bridge.enabled']).toBe('false');
+    expect(DEMO_SETTINGS).not.toHaveProperty('punishments.paidRemoval');
+  });
+  it('аккаунт: валидный uuid версии 4 (не офлайн), демо-игрок из списка', () => {
+    const { uuid, name, username } = DEMO_PUNISHMENT_ACCOUNT;
+    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(uuid.charAt(14)).not.toBe('3');
+    expect(name.length).toBeLessThanOrEqual(16);
+    expect(DEMO_PLAYERS.map((p) => p.username)).toContain(username);
+  });
+  it('subjectUuid у BAN активного, MUTE истёкшего и WARN; в строке зеркала', () => {
+    const mine = DEMO_PUNISHMENTS.filter((p) => p.subjectUuid);
+    expect(mine.map((p) => [p.kind, p.status]).sort()).toEqual([
+      ['BAN', 'ACTIVE'],
+      ['MUTE', 'EXPIRED'],
+      ['WARN', 'EXPIRED'],
+    ]);
+    const row = buildDemoPunishmentRow(mine[0], new Date());
+    expect(row.subjectUuid).toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+    const other = DEMO_PUNISHMENTS.find((p) => !p.subjectUuid)!;
+    expect(buildDemoPunishmentRow(other, new Date()).subjectUuid).toBeNull();
+    const ids = DEMO_PUNISHMENTS.map((p) => `${p.kind}:${p.sourceId}`);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it('обжалования: одно на рассмотрении, одно отклонённое, ссылаются на существующее наказание', () => {
+    expect(DEMO_APPEALS.map((a) => a.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+    for (const a of DEMO_APPEALS) {
+      const p = DEMO_PUNISHMENTS.find((x) => x.sourceId === a.punishmentSourceId);
+      expect(p?.kind).toBe(a.punishmentKind);
+      expect(p?.subjectUuid).toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+      expect(a.description.startsWith('[Демо]')).toBe(true);
+    }
+    expect(DEMO_APPEALS.filter((a) => a.status === 'IN_REVIEW')).toHaveLength(1);
+  });
+});
+
+describe('seedDemoPunishmentLinks (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+  const prepare = () => {
+    const f = fakePrisma();
+    f.tables.set(
+      'user',
+      new Map([
+        [
+          JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }),
+          {
+            id: 'u-ember',
+            username: DEMO_PUNISHMENT_ACCOUNT.username,
+            email: demoPlayerEmail(DEMO_PUNISHMENT_ACCOUNT.username),
+          },
+        ],
+      ]),
+    );
+    const mp = new Map<string, Record<string, unknown>>();
+    for (const a of DEMO_APPEALS) {
+      const key = JSON.stringify({
+        source_sourceScope_kind_sourceId: {
+          source: 'litebans',
+          sourceScope: 'default',
+          kind: a.punishmentKind,
+          sourceId: demoPunishmentSourceId(a.punishmentSourceId),
+        },
+      }, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+      mp.set(key, { id: `mp-${a.punishmentSourceId}` });
+    }
+    f.tables.set('minecraftPunishment', mp);
+    return f;
+  };
+
+  it('создаёт аккаунт и обращения, повтор не дублирует', async () => {
+    const { prisma, tables } = prepare();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = prisma as any;
+    await seedDemoPunishmentLinks(db);
+    await seedDemoPunishmentLinks(db);
+    expect(tables.get('minecraftAccount')!.size).toBe(1);
+    const acc = [...tables.get('minecraftAccount')!.values()][0];
+    expect(acc).toMatchObject({
+      userId: 'u-ember',
+      uuid: DEMO_PUNISHMENT_ACCOUNT.uuid,
+      name: DEMO_PUNISHMENT_ACCOUNT.name,
+    });
+    const reports = [...tables.get('report')!.values()];
+    expect(reports).toHaveLength(DEMO_APPEALS.length);
+    for (const r of reports) {
+      expect(r).toMatchObject({
+        type: 'PUNISHMENT_APPEAL',
+        authorId: 'u-ember',
+        appealedMinecraftPunishmentId: 'mp-9001',
+      });
+    }
+    expect(reports.map((r) => r.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+  });
+
+  it('без разрешённого окружения отклоняется до обращения к БД', async () => {
+    process.env.NODE_ENV = 'production';
+    const { prisma, calls } = prepare();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/fail closed/);
+    expect(calls).toEqual([]);
+  });
+
+  it('чужой пользователь demo_ember: ничего не записано', async () => {
+    const { prisma, tables, calls } = prepare();
+    tables.get('user')!.set(
+      JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }),
+      { id: 'real', username: DEMO_PUNISHMENT_ACCOUNT.username, email: 'real@mail.test' },
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/demo_ember/);
+    expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+});
+
+describe('seedDemoStandPlayer (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    jest.restoreAllMocks();
+  });
+  const userKey = (n: string) => JSON.stringify({ username: n });
+  const prepare = (username?: string, existingAccount?: Record<string, unknown>) => {
+    const f = fakePrisma();
+    if (username) {
+      f.tables.set(
+        'user',
+        new Map([[userKey(username), { id: 'u-stand', username }]]),
+      );
+    }
+    if (existingAccount) {
+      f.tables.set(
+        'minecraftAccount',
+        new Map([[JSON.stringify({ userId: 'u-stand' }), existingAccount]]),
+      );
+    }
+    return f;
+  };
+  const run = (f: ReturnType<typeof fakePrisma>, name?: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    seedDemoStandPlayer(f.prisma as any, {
+      ...ok,
+      ...(name ? { DEMO_STAND_PLAYER_USERNAME: name } : {}),
+    } as NodeJS.ProcessEnv);
+
+  it('env не задана: ничего не пишется', async () => {
+    const f = prepare('tester');
+    await run(f);
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+
+  it('пользователя нет: предупреждение без имени, без записей', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = prepare();
+    await run(f, 'secretname');
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).not.toContain('secretname');
+  });
+
+  it('demo_*: пропуск', async () => {
+    const f = prepare('demo_ember');
+    await run(f, 'demo_ember');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('создаёт аккаунт, 3 наказания и одно обжалование; повтор не дублирует', async () => {
+    const f = prepare('tester');
+    await run(f, 'tester');
+    await run(f, 'tester');
+    const acc = [...f.tables.get('minecraftAccount')!.values()];
+    expect(acc).toHaveLength(1);
+    expect(acc[0]).toMatchObject({
+      userId: 'u-stand',
+      uuid: STAND_PLAYER_UUID,
+      name: 'StandPlayer',
+    });
+    expect(STAND_PLAYER_UUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(STAND_PLAYER_UUID).not.toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+    const pun = [...f.tables.get('minecraftPunishment')!.values()];
+    expect(pun.map((p) => [p.kind, p.status]).sort()).toEqual([
+      ['BAN', 'ACTIVE'],
+      ['MUTE', 'EXPIRED'],
+      ['WARN', 'EXPIRED'],
+    ]);
+    for (const p of pun) {
+      expect(p).toMatchObject({
+        source: 'litebans',
+        subjectUuid: STAND_PLAYER_UUID,
+        issuerHidden: true,
+        ipBan: false,
+      });
+    }
+    const reports = [...f.tables.get('report')!.values()];
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      type: 'PUNISHMENT_APPEAL',
+      status: 'IN_REVIEW',
+      authorId: 'u-stand',
+    });
+    const ban = pun.find((p) => p.kind === 'BAN')!;
+    expect(reports[0].appealedMinecraftPunishmentId).toBe(ban.id);
+    // Данные пользователя не трогаются.
+    expect(f.tables.has('userRole')).toBe(false);
+    expect(f.calls.some((c) => c.startsWith('user.upsert'))).toBe(false);
+    const ids = STAND_PUNISHMENTS.map((p) => p.sourceId);
+    for (const d of DEMO_PUNISHMENTS) expect(ids).not.toContain(d.sourceId);
+  });
+
+  it('уже есть настоящий MinecraftAccount: пропуск без наказаний и обжалования', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const real = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: real, name: 'Existing' });
+    await run(f, 'tester');
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(f.tables.has('minecraftPunishment')).toBe(false);
+    expect(f.tables.has('report')).toBe(false);
+    expect(String(warn.mock.calls[0][0])).not.toContain('tester');
+  });
+
+  it('аккаунт уже с фиктивным uuid: наказания создаются', async () => {
+    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: STAND_PLAYER_UUID, name: 'StandPlayer' });
+    await run(f, 'tester');
+    expect(f.tables.get('minecraftPunishment')!.size).toBe(3);
+  });
+
+  it('роли персонала: пропуск без записей', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = prepare('tester');
+    f.tables.set('userRole', new Map([['k', { userId: 'u-stand', roleId: 'r1' }]]));
+    await run(f, 'tester');
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+
+  it('повтор не возвращает обработанное обжалование в IN_REVIEW', async () => {
+    const f = prepare('tester');
+    await run(f, 'tester');
+    const rep = [...f.tables.get('report')!.values()][0];
+    rep.status = 'RESOLVED';
+    rep.verdict = 'ACCEPTED';
+    await run(f, 'tester');
+    expect([...f.tables.get('report')!.values()][0]).toMatchObject({ status: 'RESOLVED', verdict: 'ACCEPTED' });
+  });
+
+  it('без разрешённого окружения отклоняется', async () => {
+    const f = prepare('tester');
+    await expect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      seedDemoStandPlayer(f.prisma as any, {
+        ...ok,
+        NODE_ENV: 'production',
+        DEMO_STAND_PLAYER_USERNAME: 'tester',
+      } as NodeJS.ProcessEnv),
+    ).rejects.toThrow(/fail closed/);
+    expect(f.calls).toEqual([]);
   });
 });
