@@ -10,6 +10,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -56,6 +57,8 @@ export class EventsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  // Поверх глобального лимита (100/мин): запись на событие — не частое действие.
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post(':id/attendance')
   async attend(
     @CurrentUser() user: AuthenticatedUser,
