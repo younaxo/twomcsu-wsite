@@ -14,6 +14,8 @@ const AUTH_FAILURE_WINDOW_S = 60;
 /// TTL маркера свежести записи: дольше срока хранения журнала (7 суток).
 export const STALE_MARKER_TTL_S = 8 * 24 * 60 * 60;
 const SLOT_SAFETY_TTL_S = 30;
+/// Срок дедупликации `player.*` (5.2 контракта).
+export const PLAYER_EVENT_TTL_S = 24 * 60 * 60;
 /// Блокировка записи на время применения: дольше таймаута транзакции зеркала.
 export const RECORD_LOCK_TTL_MS = 15_000;
 const RECORD_LOCK_WAIT_MS = 5_000;
@@ -198,6 +200,42 @@ export class BridgeRedisService {
       String(STALE_MARKER_TTL_S),
     );
     return Number(res) === 1;
+  }
+
+  /// Дедупликация `player.*` в Redis (контракт 5.2, TTL 24 часа). Значение
+  /// `r:<hash>` - принято, применение не завершено (повтор применяется
+  /// заново); `a:<hash>` - применено. Другой хэш при том же `eventId` - conflict.
+  async claimPlayerEvent(
+    slug: string,
+    eventId: string,
+    hash: string,
+  ): Promise<'new' | 'retry' | 'duplicate' | 'conflict'> {
+    const key = `bridge:pe:${slug}:${eventId}`;
+    const set = await this.redis.client.set(
+      key,
+      `r:${hash}`,
+      'EX',
+      PLAYER_EVENT_TTL_S,
+      'NX',
+    );
+    if (set === 'OK') return 'new';
+    const cur = await this.redis.client.get(key);
+    if (cur === null) return 'new';
+    if (cur.slice(2) !== hash) return 'conflict';
+    return cur.startsWith('a:') ? 'duplicate' : 'retry';
+  }
+
+  async markPlayerEventApplied(
+    slug: string,
+    eventId: string,
+    hash: string,
+  ): Promise<void> {
+    await this.redis.client.set(
+      `bridge:pe:${slug}:${eventId}`,
+      `a:${hash}`,
+      'EX',
+      PLAYER_EVENT_TTL_S,
+    );
   }
 
   /// Выполнить `fn` под блокировкой записи `(slug, kind, sourceId)`: события

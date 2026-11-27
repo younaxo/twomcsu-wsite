@@ -32,6 +32,7 @@ function config(over: Partial<BridgeConfig> = {}): BridgeConfig {
     applyLatencyLimitMs: 2000,
     bodyReadTimeoutMs: 10000,
     deliveryEnabled: false,
+    statsEnabled: false,
     ...over,
   };
 }

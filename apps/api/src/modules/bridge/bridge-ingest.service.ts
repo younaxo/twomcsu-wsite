@@ -1,10 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { payloadHash } from './bridge-crypto';
 import {
   BridgePunishmentSource,
   BridgeSourceEvent,
 } from './bridge-punishment.source';
+import { BridgeStatsService } from './bridge-stats.service';
 import { BridgeRedisService } from './bridge-redis.service';
 import {
   BridgeBatch,
@@ -12,6 +13,7 @@ import {
   PunishmentEventType,
   parseHello,
   parseOverflow,
+  parseStatsSnapshot,
   parsePunishmentData,
 } from './bridge-schema';
 import { BRIDGE_CONFIG, BridgeConfig } from './bridge.config';
@@ -58,6 +60,9 @@ export class BridgeIngestService {
     private readonly prisma: PrismaService,
     private readonly redis: BridgeRedisService,
     private readonly source: BridgePunishmentSource,
+    /// Без сервиса статистики (тесты старых срезов) `player.stats.snapshot`
+    /// отвечает `unsupported_type`, а бан не сбрасывает кэш рейтингов.
+    @Optional() private readonly stats?: BridgeStatsService,
   ) {}
 
   async ingest(
@@ -131,7 +136,18 @@ export class BridgeIngestService {
       }
       return this.handlePunishment(ctx, ev, nowMs);
     }
-    // player.* (срез 1 - выключено), будущие и неизвестные типы.
+    if (ev.type === 'player.stats.snapshot') {
+      // Выключено флагом или нет возможности `player-events` - как неизвестный тип.
+      if (
+        this.stats === undefined ||
+        !this.config.statsEnabled ||
+        !ctx.capabilities.has('player-events')
+      ) {
+        return reject('unsupported_type');
+      }
+      return this.handleStatsSnapshot(ctx, ev, nowMs, this.stats);
+    }
+    // player.join/quit (срез 1 - выключено), будущие и неизвестные типы.
     return reject('unsupported_type');
   }
 
@@ -245,6 +261,8 @@ export class BridgeIngestService {
             return { eventId: ev.eventId, status: 'stale' };
           }
           await this.source.publish(sourceEvent);
+          // Q109: бан и разбан через Bridge сбрасывают кэш рейтингов (с троттлингом).
+          if (kind === 'BAN') this.stats?.invalidateRankings();
           // Шаг 3: `applied`; строка могла быть удалена очисткой журнала.
           const updated = await this.prisma.bridgeEventLog.updateMany({
             where: logKey,
@@ -266,6 +284,61 @@ export class BridgeIngestService {
           return { eventId: ev.eventId, status: 'accepted' };
         },
       );
+    } catch (err) {
+      this.logger.error(
+        `bridge apply failed key=${ctx.keyId} id=${ev.eventId} type=${ev.type} error=${err instanceof Error ? err.name : 'unknown'}`,
+      );
+      throw err;
+    }
+  }
+
+  /// `player.stats.snapshot` (ADR-0195): дедупликация в Redis по `eventId`
+  /// (TTL 24 ч), монотонность по `occurredAt`, привязка по UUID. Игрок без
+  /// привязки к аккаунту: событие принимается (`accepted`), данные НЕ
+  /// сохраняются (нет владельца записи, лишних персональных данных не копим).
+  private async handleStatsSnapshot(
+    ctx: BridgeAuthContext,
+    ev: BridgeEventEnvelope,
+    nowMs: number,
+    stats: BridgeStatsService,
+  ): Promise<EventResult> {
+    const reject = (code: EventCode): EventResult => ({
+      eventId: ev.eventId,
+      status: 'rejected',
+      code,
+    });
+    const occurredMs = ev.occurredAt.getTime();
+    if (
+      occurredMs < nowMs - OCCURRED_MAX_AGE_MS ||
+      occurredMs > nowMs + OCCURRED_MAX_FUTURE_MS
+    ) {
+      return reject('invalid_data');
+    }
+    const parsed = parseStatsSnapshot(ev.data);
+    if (!parsed.ok) return reject('invalid_data');
+    const hash = payloadHash(ev.data);
+    try {
+      const claim = await this.redis.claimPlayerEvent(
+        ctx.slug,
+        ev.eventId,
+        hash,
+      );
+      if (claim === 'conflict') return reject('conflict');
+      if (claim === 'duplicate') {
+        return { eventId: ev.eventId, status: 'duplicate' };
+      }
+      const userId = await stats.findUserId(parsed.value.uuid);
+      let result: 'applied' | 'skipped_unlinked' | 'stale' = 'skipped_unlinked';
+      if (userId !== null) {
+        result = await this.redis.withRecordLock('all', 'stats', userId, () =>
+          stats.apply(ctx.slug, userId, parsed.value, occurredMs),
+        );
+      }
+      await this.redis.markPlayerEventApplied(ctx.slug, ev.eventId, hash);
+      return {
+        eventId: ev.eventId,
+        status: result === 'stale' ? 'stale' : 'accepted',
+      };
     } catch (err) {
       this.logger.error(
         `bridge apply failed key=${ctx.keyId} id=${ev.eventId} type=${ev.type} error=${err instanceof Error ? err.name : 'unknown'}`,
