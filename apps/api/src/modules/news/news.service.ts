@@ -275,6 +275,7 @@ ${entries}
   }
 
   async createComment(userId: string, slug: string, dto: CreateNewsCommentDto) {
+    await this.requireNotBanned(userId);
     const news = await this.prisma.news.findUnique({ where: { slug } });
     if (!news || news.status !== NewsStatus.PUBLISHED) {
       throw new NotFoundException('Новость не найдена');
@@ -364,21 +365,46 @@ ${entries}
     }
   }
 
+  /// Забаненный не пишет и не правит комментарии (JwtStrategy отсекает его и раньше;
+  /// проверка дублируется на случай бана внутри жизни токена и прямых вызовов сервиса).
+  private async requireNotBanned(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isBanned: true },
+    });
+    if (!user || user.isBanned) {
+      throw new ForbiddenException('Аккаунт заблокирован');
+    }
+  }
+
   async updateComment(
     userId: string,
+    slug: string,
     commentId: string,
     dto: UpdateNewsCommentDto,
   ) {
+    await this.requireNotBanned(userId);
+    const news = await this.prisma.news.findUnique({ where: { slug } });
+    if (!news || news.status !== NewsStatus.PUBLISHED) {
+      throw new NotFoundException('Новость не найдена');
+    }
     const comment = await this.prisma.newsComment.findUnique({
       where: { id: commentId },
     });
     if (!comment || comment.isDeleted) {
       throw new NotFoundException('Комментарий не найден');
     }
+    // Комментарий должен принадлежать новости из адреса: иначе 404 (не раскрываем чужие).
+    if (comment.newsId !== news.id) {
+      throw new NotFoundException('Комментарий не найден');
+    }
     if (comment.authorId !== userId) {
       throw new ForbiddenException(
         'Редактировать можно только свои комментарии',
       );
+    }
+    if (!news.allowComments) {
+      throw new ForbiddenException('Комментарии к этой новости отключены');
     }
     return this.prisma.newsComment.update({
       where: { id: commentId },

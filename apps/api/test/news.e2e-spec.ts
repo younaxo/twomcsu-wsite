@@ -484,6 +484,87 @@ describe('News (e2e)', () => {
       .expect(200);
   });
 
+  it('правка комментария: чужая новость 404, allowComments=false 403, забаненный 401', async () => {
+    const otherSlug = `${slug}-other`;
+    await request(app.getHttpServer())
+      .post('/admin/news')
+      .set('Authorization', auth(editor))
+      .send({
+        slug: otherSlug,
+        title: 'Другая новость',
+        content: 'Содержимое другой новости',
+        category: 'ANNOUNCEMENT',
+        status: 'PUBLISHED',
+      })
+      .expect(201);
+
+    const created = await request(app.getHttpServer())
+      .post(`/news/${slug}/comments`)
+      .set('Authorization', auth(alice))
+      .send({ content: 'Комментарий для проверки правки' })
+      .expect(201);
+    const ownId: string = created.body.id;
+    const patchUrl = (s: string) => `/news/${s}/comments/${ownId}`;
+
+    // Комментарий принадлежит другой новости: адрес с чужим slug даёт 404.
+    await request(app.getHttpServer())
+      .patch(patchUrl(otherSlug))
+      .set('Authorization', auth(alice))
+      .send({ content: 'правка через чужой slug' })
+      .expect(404);
+    await request(app.getHttpServer())
+      .patch(patchUrl(`${slug}-missing`))
+      .set('Authorization', auth(alice))
+      .send({ content: 'правка через несуществующий slug' })
+      .expect(404);
+    expect(
+      (await prisma.newsComment.findUniqueOrThrow({ where: { id: ownId } }))
+        .content,
+    ).toBe('Комментарий для проверки правки');
+
+    // Комментарии отключены.
+    await request(app.getHttpServer())
+      .patch(`/admin/news/${newsId}`)
+      .set('Authorization', auth(editor))
+      .send({ allowComments: false })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(patchUrl(slug))
+      .set('Authorization', auth(alice))
+      .send({ content: 'правка при выключенных комментариях' })
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch(`/admin/news/${newsId}`)
+      .set('Authorization', auth(editor))
+      .send({ allowComments: true })
+      .expect(200);
+
+    // Забаненный автор не правит (JwtStrategy отсекает по isBanned).
+    await prisma.user.update({
+      where: { id: alice.id },
+      data: { isBanned: true },
+    });
+    try {
+      await request(app.getHttpServer())
+        .patch(patchUrl(slug))
+        .set('Authorization', auth(alice))
+        .send({ content: 'правка забаненного' })
+        .expect(401);
+    } finally {
+      await prisma.user.update({
+        where: { id: alice.id },
+        data: { isBanned: false },
+      });
+    }
+
+    // Нормальная правка своего комментария работает.
+    await request(app.getHttpServer())
+      .patch(patchUrl(slug))
+      .set('Authorization', auth(alice))
+      .send({ content: 'Исправленный комментарий' })
+      .expect(200);
+  });
+
   it('admin: список с фильтрами, статистика, архивация скрывает из публичного списка', async () => {
     const filtered = await request(app.getHttpServer())
       .get('/admin/news')
