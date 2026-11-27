@@ -895,3 +895,11 @@ ADR-0194 (ревью M1). e2e выполняет claim только на пус�
 ## R174 — `bridge.controller.spec.ts` нестабилен в параллельном прогоне — OPEN
 
 27.11: 2 теста падали при одновременном прогоне с раннером, отдельно проходят 26/26. Причина не разобрана.
+
+## R175 — Скан `deploy.sh` ложно останавливает деплой на `BEFORE TRUNCATE` — OPEN
+
+0.10 (28.11): скан деструктивных миграций ищет слово `TRUNCATE`, а миграция `20261124110000_wallet_ledger_hardening` содержит `CREATE TRIGGER … BEFORE TRUNCATE` (защитный триггер, не удаление данных). На первом деплое скан пропускается; на последующих владельцу понадобится `ALLOW_DESTRUCTIVE_MIGRATION=1` после чтения файла и снимка (описано в docs/runbooks/deploy.md). Правка скана — по решению владельца (Q114).
+
+## R176 — localhost-значения по умолчанию не отвергаются в production — OPEN
+
+0.10 (28.11): `WEB_ORIGIN`, `FRONTEND_URL`, `CDN_BASE_URL` и redirect URI соцсетей при незаданном значении принимают localhost; Joi-проверка production их не отвергает. Также в Joi нет `BRIDGE_DELIVERY_ENABLED`, `BRIDGE_DELIVERY_JOB_*`, `STORE_DELIVERY_ENABLED`, `DELIVERY_RECONCILE_ENABLED` (опечатка в булевом значении молча даёт значение по умолчанию). Предложение: ужесточить схему отдельным срезом (fail closed).

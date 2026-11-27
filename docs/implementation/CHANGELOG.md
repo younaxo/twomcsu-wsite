@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Production-минимум 0.10 — документы (28.11)
+
+- Обновлены docs/runbooks: production-env-checklist (все переменные с правилами production и fail-closed, в т. ч. PAYMENT_METHODS, Bridge-выдача, retention, stats), deploy (миграции слоя 0–1, что нельзя удалять, откат флагами), payments, acceptance-checklist (разделы M, N), smoke-test, monitoring (очереди выдачи, UNKNOWN, вебхуки, realtime, CDN). Новый go-live-plan.md.
+
 ### Слой 2: контент и realtime — изменения поведения (28.11)
 
 - Правка комментария к новости (`PATCH /news/:slug/comments/:id`): комментарий должен принадлежать новости из slug (иначе 404, неразличимо с несуществующим); при `allowComments=false` — 403; забаненный автор не может править и создавать комментарии. Правка комментария к снятой с публикации новости больше не работает (404) — так же, как создание.
