@@ -10,7 +10,8 @@
 #               (переименовывается в .restored-<UTC>). Журнал изменений - /home/twomc/bridge-dev-srv.changes.log (см. ptero.sh).
 # Ничего не удаляется: ни мир, ни данные игроков, ни файлы; плагины не ставятся и не снимаются. Секреты не печатаются (печатаются ники, булевы значения, имена файлов).
 # Коды: 0 готово, 1 ошибка, 2 аргументы, 3 выполнено с предупреждением (состояние техработ или whitelist не подтверждено), 4 сервер не запущен, 5 занят lock.
-# Тестовый режим STAND_TEST=1 (сухие прогоны на заглушках): DEVSRV_STATE_FILE, DEVSRV_PG_CONTAINER, DEVSRV_POLL_SLEEP.
+# Тестовый режим STAND_TEST=1 (сухие прогоны на заглушках) разрешён только по правилам ptero.sh (PTERO_TEST_ROOT с маркером .ptero-test-root в scratchpad/tmp):
+# DEVSRV_STATE_FILE (внутри PTERO_TEST_ROOT), DEVSRV_PG_CONTAINER, DEVSRV_POLL_SLEEP. Вне VDS (нет /home/twomc) скрипт отказывает.
 export LC_ALL=C
 set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
@@ -18,8 +19,10 @@ if ! declare -F stand_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURC
 trap '_da_cleanup' EXIT
 _da_cleanup() { ptero_cleanup; stand_cleanup; }
 
-if [[ "${STAND_TEST:-0}" == 1 ]]; then
-  DA_STATE="${DEVSRV_STATE_FILE:-/home/twomc/bridge-dev-srv.access.state}"; DA_PG="${DEVSRV_PG_CONTAINER:-twomc-stand-postgres}"; DA_SLEEP="${DEVSRV_POLL_SLEEP:-2}"
+if [[ "${_PT_TEST:-0}" == 1 ]]; then
+  DA_STATE="${DEVSRV_STATE_FILE:?STAND_TEST=1 требует DEVSRV_STATE_FILE}"
+  [[ "$DA_STATE" == "$PTERO_TEST_ROOT"/* && "$DA_STATE" != *..* ]] || { echo "ОТКАЗ: DEVSRV_STATE_FILE вне PTERO_TEST_ROOT" >&2; exit 1; }
+  DA_PG="${DEVSRV_PG_CONTAINER:-twomc-stand-postgres}"; DA_SLEEP="${DEVSRV_POLL_SLEEP:-2}"
 else
   DA_STATE=/home/twomc/bridge-dev-srv.access.state; DA_PG=twomc-stand-postgres; DA_SLEEP=2
 fi
@@ -40,6 +43,10 @@ done
 [[ -n "$MODE" ]] || usage
 [[ "$MODE" == open || ${#NICKS[@]} -eq 0 ]] || { echo "Ники принимает только --open" >&2; exit 2; }
 [[ "$MODE" != open || ${#NICKS[@]} -gt 0 || "$NO_OWNER" == 0 ]] || { echo "--open: укажите хотя бы один ник (ник владельца стенда добавляется сам)" >&2; exit 2; }
+# запуск не на VDS: каталога /home/twomc нет (в тестовом режиме проверка не нужна)
+if [[ "${_PT_TEST:-0}" != 1 && ! -d /home/twomc ]]; then
+  echo "ОТКАЗ: нет /home/twomc - скрипт работает только на VDS; запускайте через run-on-vds.sh script devsrv-access.sh ..." >&2; exit 1
+fi
 umask 077
 
 # ---------- вспомогательные функции ----------
@@ -69,6 +76,11 @@ _da_no_nick() { ! _da_has_nick "$1"; }
 MT_JAR=""; MT_DIR=""; MT_KEY=""; MT_VAL="unknown"; MT_CMD_ON=""; MT_CMD_OFF=""; MT_CMD_RELOAD=""
 _DA_MT_RE='maintenance|techwork|tech-work|tehrab|techrab|closeserver|serverlock|lockdown'
 
+# Проверки значений из state-файла и листинга: они попадают в путь, в sed-выражение и в консольные команды.
+_da_mt_valid_dir() { [[ -z "$1" || "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; }
+_da_mt_valid_key() { [[ -z "$1" || "$1" =~ ^[A-Za-z][A-Za-z_-]{0,39}$ ]]; }
+_da_mt_valid_cmd() { [[ -z "$1" || "$1" == "maintenance on" || "$1" == "maintenance off" || "$1" == "maintenance reload" ]]; }
+
 # _da_mt_find: ищет плагин техработ в /plugins по именам jar и каталогов; профиль команд по документации плагина.
 # Maintenance (KennyTV): `maintenance on|off`, `maintenance reload`. Для прочих плагинов команды неизвестны (только чтение состояния).
 _da_mt_find() {
@@ -82,7 +94,7 @@ _da_mt_find() {
   fi
   local ident; ident="$(_da_lc "${MT_JAR}${MT_DIR}")"
   if [[ "$ident" == *maintenance* ]]; then MT_CMD_ON="maintenance on"; MT_CMD_OFF="maintenance off"; MT_CMD_RELOAD="maintenance reload"; fi
-  [[ "$MT_DIR" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ || -z "$MT_DIR" ]] || MT_DIR=""
+  _da_mt_valid_dir "$MT_DIR" || MT_DIR=""
   return 0
 }
 
@@ -153,7 +165,7 @@ _da_state_write() {
   chmod 600 "$tmp" && mv -f -- "$tmp" "$DA_STATE"
 }
 _da_lock() {
-  if ! command -v flock >/dev/null 2>&1; then [[ "${STAND_TEST:-0}" == 1 ]] && return 0; say "ОТКАЗ: на VDS нет flock"; return 1; fi
+  if ! command -v flock >/dev/null 2>&1; then [[ "${_PT_TEST:-0}" == 1 ]] && return 0; say "ОТКАЗ: на VDS нет flock"; return 1; fi
   exec 8>"$DA_STATE.lock" && chmod 600 "$DA_STATE.lock" 2>/dev/null
   flock -n 8 || { say "ОТКАЗ: devsrv-access.sh уже выполняется (lock $DA_STATE.lock)"; return 5; }
 }
@@ -275,6 +287,8 @@ do_restore() {
   MT_DIR="$(_da_state_get MT_DIR)"; [[ "$MT_DIR" == "-" ]] && MT_DIR=""
   MT_KEY="$(_da_state_get MT_KEY)"; [[ "$MT_KEY" == "-" ]] && MT_KEY=""
   MT_CMD_ON="$(_da_state_get MT_CMD_ON)"; MT_CMD_RELOAD="$(_da_state_get MT_CMD_RELOAD)"; MT_CMD_OFF=""
+  _da_mt_valid_dir "$MT_DIR" && _da_mt_valid_key "$MT_KEY" && _da_mt_valid_cmd "$MT_CMD_ON" && _da_mt_valid_cmd "$MT_CMD_RELOAD" \
+    || { say "ОТКАЗ: в state недопустимые MT_DIR/MT_KEY/MT_CMD_*: state повреждён или подменён, ничего не выполнено (разберитесь вручную)"; exit 1; }
   say "state: открыт $(_da_state_get OPENED_AT); добавлено нами: ${added:--}; техработы были: ${mt_was:-?}"
 
   # whitelist remove: только добавленные нами

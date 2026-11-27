@@ -25,6 +25,7 @@ suffix="${url#*/servers/$FAKE_UUID}"
 echo "$method $suffix" >> "$FAKE/calls.log"
 code=200; body='{}'
 case "${suffix%%\?*}" in
+  "") body="{\"object\":\"server\",\"attributes\":{\"server_owner\":true,\"identifier\":\"11111111\",\"uuid\":\"$FAKE_UUID\",\"name\":\"${FAKE_NAME-dev-srv}\",\"node\":\"n1\"}}" ;;
   /resources) body="{\"object\":\"stats\",\"attributes\":{\"current_state\":\"$(cat "$FAKE/state")\"}}" ;;
   /network/allocations) body='{"object":"list","data":[{"object":"allocation","attributes":{"id":1,"ip":"127.0.0.1","ip_alias":"127.0.0.1","port":25565,"is_default":true}}]}' ;;
   /websocket) body='{"data":{"token":"abc.def-1","socket":"wss:\/\/node.test\/api\/servers\/x\/ws"}}' ;;
@@ -34,8 +35,8 @@ case "${suffix%%\?*}" in
       body='{"object":"list","data":['; first=1
       for e in "$p"/*; do
         [[ -e "$e" ]] || continue; (( first )) || body+=','; first=0
-        [[ -d "$e" ]] && isf=false || isf=true
-        body+="{\"object\":\"file_object\",\"attributes\":{\"name\":\"$(basename "$e")\",\"mode\":\"-rw-r--r--\",\"size\":1,\"is_file\":$isf}}"
+        [[ -d "$e" ]] && isf=false || isf=true; sl=false; [[ -f "$FAKE/symlinks" ]] && grep -qxF "$(basename "$e")" "$FAKE/symlinks" && sl=true
+        body+="{\"object\":\"file_object\",\"attributes\":{\"name\":\"$(basename "$e")\",\"mode\":\"-rw-r--r--\",\"size\":1,\"is_file\":$isf,\"symlink\":$sl}}"
       done
       body+=']}'
     else code=404; fi ;;

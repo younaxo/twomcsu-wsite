@@ -38,8 +38,27 @@ export LC_ALL=C   # проверки [A-Za-z] и регэкспы не зави�
 # Зависимости на VDS: bash, curl, sed, grep, mktemp; для players_online/console_tail - docker и образ node:22 (встроенный WebSocket).
 # Печатаемые функции пишут только несекретное. Коды возврата: 0 успех, 1 отказ/ошибка API, 2 неверные аргументы.
 
-# Путь фиксирован и НЕ переопределяется окружением; исключение - тестовый режим STAND_TEST=1 (сухие прогоны на фиктивных файлах).
-if [[ "${STAND_TEST:-0}" == 1 ]]; then PTERO_CRED_FILE="${PTERO_CRED_FILE:-/home/twomc/pterodactyl-credentials.txt}"; else PTERO_CRED_FILE=/home/twomc/pterodactyl-credentials.txt; fi
+# Тестовый режим STAND_TEST=1 разрешён ТОЛЬКО если PTERO_TEST_ROOT - существующий каталог (не ссылка, не /home/twomc*), в пути которого есть
+# сегмент scratchpad, tmp или temp, внутри лежит маркер-файл .ptero-test-root, а PTERO_CRED_FILE и PTERO_CHANGES_LOG - внутри этого каталога.
+# Иначе STAND_TEST сбрасывается в 0, пути остаются боевыми, а ptero_init отказывает (_PT_REFUSED). Переменные PTERO_POWER_NOGUARD и
+# PTERO_GUARD_WAIT1/2 действуют только в разрешённом тестовом режиме (_PT_TEST=1).
+_PT_TEST=0; _PT_REFUSED=""
+if [[ "${STAND_TEST:-0}" == 1 ]]; then
+  _pt_tr="${PTERO_TEST_ROOT:-}"; _pt_trl="${_pt_tr,,}"
+  if [[ "$_pt_tr" == /* && "$_pt_tr" != *..* && "$_pt_tr" != /home/twomc* && -d "$_pt_tr" && ! -L "$_pt_tr" && -f "$_pt_tr/.ptero-test-root" \
+        && "$_pt_trl" =~ /(scratchpad|tmp|temp)(/|$) \
+        && "${PTERO_CRED_FILE:-}" == "$_pt_tr"/* && "${PTERO_CRED_FILE:-}" != *..* \
+        && "${PTERO_CHANGES_LOG:-}" == "$_pt_tr"/* && "${PTERO_CHANGES_LOG:-}" != *..* ]]; then
+    _PT_TEST=1
+  else
+    _PT_REFUSED="STAND_TEST=1 отклонён: нужен PTERO_TEST_ROOT (каталог внутри scratchpad/tmp с маркером .ptero-test-root; не /home/twomc) и PTERO_CRED_FILE/PTERO_CHANGES_LOG внутри него"
+    STAND_TEST=0; echo "ptero: ОТКАЗ: $_PT_REFUSED" >&2
+  fi
+  unset _pt_tr _pt_trl
+fi
+if [[ "$_PT_TEST" == 1 ]]; then PTERO_CRED_FILE="$PTERO_CRED_FILE"; else PTERO_CRED_FILE=/home/twomc/pterodactyl-credentials.txt; fi
+# Имя единственного разрешённого сервера: UUID в репозитории не хранится, сервер из учётных данных проверяется по имени (ptero_init). Окружением не переопределяется.
+_PT_EXPECT_NAME=dev-srv
 
 # Проверка файла с секретами перед подключением: обычный файл (не ссылка), права РОВНО 600, владелец - текущий пользователь; иначе отказ.
 twomc_secure_file() {
@@ -70,11 +89,17 @@ _pt_wipe() { [[ -n "${PTERO_BODY:-}" && -f "$PTERO_BODY" ]] && : > "$PTERO_BODY"
 _pt_mktemp() { _PT_LAST="$(umask 077; mktemp "${TMPDIR:-/tmp}/ptero.XXXXXX")" || return 1; PTERO_TMPS+=("$_PT_LAST"); }
 
 ptero_init() {
-  [[ -r "$PTERO_CRED_FILE" ]] || { ptero_die "нет файла учётных данных (PTERO_CRED_FILE)"; return 1; }
+  [[ -z "$_PT_REFUSED" ]] || { ptero_die "$_PT_REFUSED"; return 1; }
+  PTERO_SRV=""   # до успешной проверки имени сервера ни один запрос не уходит (_pt_req требует PTERO_SRV)
+  if [[ ! -e "$PTERO_CRED_FILE" ]]; then
+    ptero_die "файла учётных данных нет ($PTERO_CRED_FILE): скрипт работает только на VDS; запускайте через run-on-vds.sh script <скрипт> ..."; return 1
+  fi
+  [[ -r "$PTERO_CRED_FILE" ]] || { ptero_die "файл учётных данных есть, но нет доступа на чтение (пользователь/права): запускайте от пользователя twomc на VDS через run-on-vds.sh script <скрипт> ..."; return 1; }
   twomc_secure_file "$PTERO_CRED_FILE" || { ptero_die "файл учётных данных отвергнут (нужны права 600 и владелец - текущий пользователь)"; return 1; }
   PANEL_URL=""; SERVER_UUID=""; CLIENT_API_KEY=""
   # shellcheck disable=SC1090
   . "$PTERO_CRED_FILE"
+  _PT_EXPECT_NAME=dev-srv   # файл учётных данных не может подменить константу
   [[ -n "$PANEL_URL" && -n "$SERVER_UUID" && -n "$CLIENT_API_KEY" ]] || { ptero_die "в файле нет PANEL_URL, SERVER_UUID или CLIENT_API_KEY"; return 1; }
   [[ "$SERVER_UUID" =~ ^[0-9a-fA-F-]{8,36}$ ]] || { ptero_die "SERVER_UUID неверного формата"; return 1; }
   [[ "$PANEL_URL" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._/-]*)?$ ]] || { ptero_die "PANEL_URL должен быть http(s)://хост[/путь]"; return 1; }
@@ -83,8 +108,18 @@ ptero_init() {
   base="${base%/account/api}"
   PTERO_ORIGIN="${base%/}"
   PTERO_BASE="${PTERO_ORIGIN}/api/client"
-  PTERO_SRV="$PTERO_BASE/servers/$SERVER_UUID"
   _pt_mktemp || return 1; PTERO_BODY="$_PT_LAST"
+  PTERO_SRV="$PTERO_BASE/servers/$SERVER_UUID"
+  # GUARD имени сервера: GET деталей сервера (единственный запрос до проверки), attributes.name обязан быть dev-srv, иначе отказ.
+  local nm; _pt_req GET "" || { PTERO_SRV=""; return 1; }
+  if [[ "$PTERO_HTTP" == "200" ]] && grep -q '"object":"server"' "$PTERO_BODY"; then
+    nm="$(grep -o '"name":"[^"]*"' "$PTERO_BODY" | head -n1 | sed 's/^"name":"//; s/"$//')"
+  else nm=""; fi
+  _pt_wipe
+  if [[ "$nm" != "$_PT_EXPECT_NAME" ]]; then
+    PTERO_SRV=""; CLIENT_API_KEY=""
+    ptero_die "ОТКАЗ: имя сервера по SERVER_UUID не $_PT_EXPECT_NAME (HTTP $PTERO_HTTP); другие серверы запрещены, дальнейшие запросы не выполняются"; return 1
+  fi
   return 0
 }
 
@@ -105,7 +140,7 @@ _pt_check_endpoint() {
 }
 
 # Политика путей (см. шапку). _pt_path_allowed <list|read|fetch|backup|write|upload> <путь>: сначала явный запрет, затем белый список.
-_PT_TS_RE='[0-9]{8}T[0-9]{6}Z'
+_PT_TS_RE='[0-9]{8}T[0-9]{6}Z(-[0-9]{5})?'   # UTC + необязательный суффикс -<мс><счётчик> (копии в одну секунду не затирают друг друга)
 _PT_PLUGDIR_RE='[A-Za-z0-9][A-Za-z0-9._-]{0,63}'
 
 # Явный запрет: мир, данные игроков, чужие jar. Печатает причину и возвращает 0, если путь запрещён.
@@ -261,6 +296,7 @@ ptero_startup_vars() {
 if [[ "${STAND_TEST:-0}" == 1 ]]; then PTERO_CHANGES_LOG="${PTERO_CHANGES_LOG:-/home/twomc/bridge-dev-srv.changes.log}"; else PTERO_CHANGES_LOG=/home/twomc/bridge-dev-srv.changes.log; fi
 declare -A _PT_BACKED=()   # путь -> 1: бэкап этого файла в текущем процессе уже сделан
 declare -A _PT_PREV=()     # путь -> sha256:<12> прежнего содержимого | absent (для столбца «было»)
+_PT_BAK_N=0               # счётчик копий в процессе (часть имени .bak-)
 _PT_GUARD_OK=0             # 1 после успешного ptero_restart_guard; сбрасывается после restart/stop/kill
 
 # _pt_jclean: одна строка без управляющих символов и «|», без длинных hex/токенов и ключа панели, не длиннее 160 символов.
@@ -284,6 +320,36 @@ ptero_journal() {
   local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   ( umask 077; printf '%s | %s | %s | %s | %s\n' "$ts" "$(_pt_jclean "${1:-}")" "$(_pt_jclean "${2:-}")" "$(_pt_jclean "${3:--}")" "$(_pt_jclean "${4:--}")" >> "$PTERO_CHANGES_LOG" ) 2>/dev/null \
     || { ptero_die "не удалось записать строку журнала изменений"; return 1; }
+}
+
+# Журнал «до действия»: _pt_jb пишет строку со статусом «начато» ПЕРЕД действием (не записалась - действие не выполняется),
+# _pt_je после действия - «выполнено» или «ОШИБКА». Столбец «стало»: <статус>; <значение> [подробности].
+_pt_jb() { ptero_journal "$1" "$2" "$3" "начато; ${4:--}"; }
+_pt_je() { # <файл|команда> <параметр> <было> <стало> <0 успех|1 ошибка> [подробности]
+  local st="выполнено"; [[ "${5:-0}" == 0 ]] || st="ОШИБКА"
+  ptero_journal "$1" "$2" "$3" "$st; ${4:--} ${6:-}" || echo "WARN: строка журнала не записана" >&2
+}
+# PTERO_POWER_NOGUARD действует только в разрешённом тестовом режиме
+_pt_noguard() { [[ "$_PT_TEST" == 1 && "${PTERO_POWER_NOGUARD:-0}" == 1 ]]; }
+
+# _pt_symlink_ok <путь>: сам файл (и каталог плагина) в листинге панели не символическая ссылка. Нет каталога/файла (404) - можно; прочая ошибка - отказ.
+_pt_symlink_ok() {
+  local p="$1" dir base d2 b2 rec n h
+  dir="$(dirname "$p")"; base="$(basename "$p")"
+  for n in 1 2; do
+    _pt_req GET "/files/list?directory=$(_pt_urlenc_path "$dir")" || return 1
+    case "$PTERO_HTTP" in
+      200) rec="$(sed 's/{"object":"file_object"/\n&/g' "$PTERO_BODY" | grep -F "\"name\":\"$base\"" | head -n1)"; _pt_wipe
+           if [[ "$rec" == *'"symlink":true'* ]]; then ptero_die "ОТКАЗ: $p - символическая ссылка (запись запрещена)"; return 1; fi ;;
+      404) _pt_wipe; return 0 ;;
+      *) h="$PTERO_HTTP"; _pt_wipe; ptero_die "ОТКАЗ: не удалось проверить $dir на ссылки (HTTP $h)"; return 1 ;;
+    esac
+    # второй проход: сам каталог в родительском листинге (/plugins/<имя> внутри /plugins)
+    d2="$(dirname "$dir")"; b2="$(basename "$dir")"
+    [[ "$dir" == /plugins/* ]] || return 0
+    dir="$d2"; base="$b2"
+  done
+  return 0
 }
 
 # _pt_write_ready: запись разрешена (PTERO_ALLOW_WRITE=1) и журнал открывается.
@@ -313,7 +379,8 @@ ptero_backup() {
        _PT_PREV["$p"]=absent; _PT_BACKED["$p"]=1; return 10 ;;
   esac
   sha="$(sha256sum -- "$tmp" | cut -c1-12)"; _PT_PREV["$p"]="sha256:$sha"
-  ts="$(date -u +%Y%m%dT%H%M%SZ)"; bak="$p.bak-$ts"
+  local ms; ms="$(date -u +%3N 2>/dev/null)"; [[ "$ms" =~ ^[0-9]{3}$ ]] || ms=000
+  ts="$(date -u +%Y%m%dT%H%M%SZ)-$ms$(printf '%02d' $(( ++_PT_BAK_N % 100 )))"; bak="$p.bak-$ts"
   ptero_file_write "$bak" "$tmp" || { : > "$tmp"; return 1; }
   : > "$tmp"
   if [[ "$p" == */bridge-key.txt ]]; then
@@ -326,28 +393,94 @@ ptero_backup() {
   return 0
 }
 
+# _pt_fetch_old <путь> <локальный-файл>: прежнее содержимое для журнала изменений. 0 - прочитано; 10 - файла нет; 1 - ошибка чтения.
+_pt_fetch_old() {
+  _pt_req GET "/files/contents?file=$(_pt_urlenc_path "$1")" || return 1
+  case "$PTERO_HTTP" in
+    200) ( umask 077; cat "$PTERO_BODY" > "$2" ) || { _pt_wipe; return 1; }; _pt_wipe; return 0 ;;
+    404) _pt_wipe; return 10 ;;
+    *) _pt_wipe; ptero_file_exists "$1" && return 1; return 10 ;;
+  esac
+}
+
+# _pt_names <файл>: значения "name" из whitelist.json/ops.json, по одному в строке, без повторов.
+_pt_names() { grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*"' "$1" 2>/dev/null | sed 's/.*:[[:space:]]*"\(.*\)"/\1/' | tr -d '\r' | sort -u; }
+
+# _pt_secret_key <ключ>: ключ server.properties, значение которого в журнал не пишется.
+_pt_secret_key() { local k="${1,,}"; [[ "$k" == *pass* || "$k" == *secret* || "$k" == *token* || "$k" == *key* ]]; }
+
+# _pt_changes <путь> <новый-файл> <старый-файл|"">: заполняет массив _PT_ENTS строками «файл<SOH>параметр<SOH>было<SOH>стало».
+#  /server.properties - по изменённым ключам (параметр, было, стало; секретные ключи скрыты); /whitelist.json и /ops.json - добавленные и удалённые ники;
+#  прочее - хэш (sha256:<12>), как раньше.
+_pt_changes() {
+  local p="$1" new="$2" old="$3" k w n a b cnt=0 sep=$'\001' sha was
+  _PT_ENTS=()
+  sha="sha256:$(sha256sum -- "$new" | cut -c1-12)"; was="${_PT_PREV[$p]:-unknown}"; [[ -n "$old" ]] || was=absent
+  case "$p" in
+    /server.properties)
+      [[ -n "$old" ]] || old=/dev/null
+      while IFS="$sep" read -r k w n; do
+        [[ -n "$k" ]] || continue
+        if _pt_secret_key "$k"; then w="<скрыто>"; n="<скрыто>"; fi
+        (( ++cnt <= 60 )) && _PT_ENTS+=("$p$sep$k$sep$w$sep$n")
+      done < <(awk '
+        function parse(l,   i) { sub(/\r$/, "", l); if (l ~ /^[ \t]*(#|$)/) return 0; i = index(l, "="); if (i == 0) return 0; K = substr(l, 1, i - 1); V = substr(l, i + 1); gsub(/^[ \t]+|[ \t]+$/, "", K); return 1 }
+        FILENAME == ARGV[1] { if (parse($0)) old[K] = V; next }
+        { if (parse($0)) nw[K] = V }
+        END { for (k in nw) { if (!(k in old)) print k "\001-\001" nw[k]; else if (old[k] != nw[k]) print k "\001" old[k] "\001" nw[k] }
+              for (k in old) if (!(k in nw)) print k "\001" old[k] "\001-" }' "$old" "$new" | sort)
+      (( cnt > 60 )) && _PT_ENTS+=("$p${sep}...${sep}-${sep}ещё $((cnt - 60)) изменений ($sha)") ;;
+    /whitelist.json|/ops.json)
+      a=""; [[ -n "$old" ]] && a="$(_pt_names "$old")"; b="$(_pt_names "$new")"
+      while IFS= read -r k; do [[ -n "$k" ]] && _PT_ENTS+=("$p${sep}ник добавлен${sep}-${sep}$k"); done < <(comm -13 <(printf '%s\n' "$a") <(printf '%s\n' "$b"))
+      while IFS= read -r k; do [[ -n "$k" ]] && _PT_ENTS+=("$p${sep}ник удалён${sep}$k${sep}-"); done < <(comm -23 <(printf '%s\n' "$a") <(printf '%s\n' "$b")) ;;
+  esac
+  (( ${#_PT_ENTS[@]} > 0 )) || _PT_ENTS+=("$p${sep}file_write${sep}$was${sep}$sha")
+}
+
 # file_write <путь-на-сервере> <локальный-файл>: POST /files/write?file=... (тело = содержимое файла, без вывода).
-# Критичный файл: до первой записи за процесс делается ptero_backup (нет копии - нет записи).
+# Порядок: проверка путей и журнала, отказ для символической ссылки, ПЕРЕД КАЖДОЙ записью критичного файла - новая копия .bak-<UTC>-<мс><счётчик>
+# (нет копии - нет записи), строка журнала «начато» (не записалась - отказ), запись, строка «выполнено/ОШИБКА».
 ptero_file_write() {
-  local p="$1" re="\\.bak-$_PT_TS_RE\$" brc was now sha hide=0 res
+  local p="$1" re="\\.bak-$_PT_TS_RE\$" brc hide=0 ok=0 e old="" orc=10 sep=$'\001' jf jp jw jn
   _pt_check_path "$p" || return 2
   _pt_path_allowed write "$p" || return 2
   [[ -f "$2" ]] || { ptero_die "нет локального файла для записи"; return 2; }
   _pt_write_ready "file_write $p" || return 1
-  if _pt_critical_path "$p" && [[ -z "${_PT_BACKED[$p]:-}" ]]; then
-    ptero_backup "$p"; brc=$?
-    (( brc == 0 || brc == 10 )) || { ptero_die "бэкап перед записью не сделан: $p, запись отменена"; return 1; }
-  fi
+  _pt_symlink_ok "$p" || return 1
   [[ "$p" == */bridge-key.txt* ]] && hide=1
-  was="${_PT_PREV[$p]:-unknown}"; [[ "$p" =~ $re ]] && was=absent
-  sha="$(sha256sum -- "$2" | cut -c1-12)"; now="sha256:$sha"
-  if (( hide == 1 )); then was="<скрыто>"; now="<скрыто>"; fi
-  _pt_req POST "/files/write?file=$(_pt_urlenc_path "$p")" --data-binary "@$2" -H 'Content-Type: text/plain' || return 1
-  if [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]; then res="http=$PTERO_HTTP"; else res="FAILED http=$PTERO_HTTP"; fi
-  ptero_journal "$p" "file_write" "$was" "$now $res" || echo "WARN: строка журнала не записана" >&2
-  [[ "$res" != FAILED* ]] || { echo "file_write: HTTP $PTERO_HTTP" >&2; return 1; }
+  if _pt_critical_path "$p"; then
+    if (( hide == 0 )); then
+      _pt_mktemp || return 1; old="$_PT_LAST"
+      _pt_fetch_old "$p" "$old"; orc=$?
+      (( orc == 0 || orc == 10 )) || { : > "$old"; ptero_die "не прочитано прежнее содержимое $p: запись отменена"; return 1; }
+      (( orc == 0 )) || { : > "$old"; old=""; }
+    fi
+    ptero_backup "$p"; brc=$?
+    (( brc == 0 || brc == 10 )) || { [[ -z "$old" ]] || : > "$old"; ptero_die "бэкап перед записью не сделан: $p, запись отменена"; return 1; }
+  fi
+  if (( hide == 1 )); then
+    _PT_ENTS=("$p${sep}file_write${sep}<скрыто>${sep}<скрыто>")
+  elif [[ "$p" =~ $re ]]; then
+    _PT_ENTS=("$p${sep}file_write${sep}absent${sep}sha256:$(sha256sum -- "$2" | cut -c1-12)")
+  else
+    _pt_changes "$p" "$2" "$old"
+  fi
+  [[ -z "$old" ]] || : > "$old"
+  for e in "${_PT_ENTS[@]}"; do
+    IFS="$sep" read -r jf jp jw jn <<<"$e"
+    _pt_jb "$jf" "$jp" "$jw" "$jn" || { ptero_die "журнал: запись «начато» не сделана, запись файла отменена"; return 1; }
+  done
+  _pt_req POST "/files/write?file=$(_pt_urlenc_path "$p")" --data-binary "@$2" -H 'Content-Type: text/plain' || {
+    for e in "${_PT_ENTS[@]}"; do IFS="$sep" read -r jf jp jw jn <<<"$e"; _pt_je "$jf" "$jp" "$jw" "$jn" 1 "не отправлено"; done; return 1; }
+  [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]] && ok=1
+  for e in "${_PT_ENTS[@]}"; do
+    IFS="$sep" read -r jf jp jw jn <<<"$e"
+    if (( ok == 1 )); then _pt_je "$jf" "$jp" "$jw" "$jn" 0 "http=$PTERO_HTTP"; else _pt_je "$jf" "$jp" "$jw" "$jn" 1 "http=$PTERO_HTTP"; fi
+  done
+  (( ok == 1 )) || { echo "file_write: HTTP $PTERO_HTTP" >&2; return 1; }
   if [[ "$p" =~ $re ]]; then _PT_BACKED["${p%.bak-*}"]=1; fi   # копию сделал вызывающий (например, install-bridge.sh)
-  if (( hide == 0 )); then _PT_PREV["$p"]="$now"; fi
+  (( hide == 0 )) && _PT_PREV["$p"]="sha256:$(sha256sum -- "$2" | cut -c1-12)"
   return 0
 }
 
@@ -366,6 +499,7 @@ ptero_upload() {
   sha="$(sha256sum -- "$local_file" | cut -c1-12)"
   _pt_req GET /files/upload || return 1
   [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "upload: получение URL, HTTP $PTERO_HTTP" >&2; return 1; }
+  _pt_jb "/plugins/$name" "upload" "$was" "sha256:$sha" || { _pt_wipe; ptero_die "журнал: запись «начато» не сделана, загрузка отменена"; return 1; }
   local url; url="$(ptero_json_str "$PTERO_BODY" url)"; _pt_wipe
   url="${url//\\//\/}"; url="${url//\u0026/&}"
   [[ "$url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/upload/file\?[A-Za-z0-9._=\&%~+-]+$ ]] || { url=""; ptero_die "signed URL неожиданного формата"; return 1; }
@@ -375,9 +509,9 @@ ptero_upload() {
     -X POST --form "files=@${local_file};filename=${name}" </dev/null 2>/dev/null)" || code="000"
   unset url
   if [[ "$code" == "200" || "$code" == "204" ]]; then
-    ptero_journal "/plugins/$name" "upload" "$was" "sha256:$sha http=$code" || echo "WARN: строка журнала не записана" >&2
+    _pt_je "/plugins/$name" "upload" "$was" "sha256:$sha" 0 "http=$code"
   else
-    ptero_journal "/plugins/$name" "upload" "$was" "FAILED http=$code sha256:$sha" || true
+    _pt_je "/plugins/$name" "upload" "$was" "sha256:$sha" 1 "http=$code"
     echo "upload: HTTP $code" >&2; return 1
   fi
 }
@@ -389,17 +523,18 @@ ptero_power() {
   case "$sig" in restart|stop|start|kill) ;; *) ptero_die "power: разрешены restart, stop, start, kill"; return 2 ;; esac
   _pt_write_ready "power $sig" || return 1
   if [[ "$sig" != start ]]; then
-    if [[ "${PTERO_POWER_NOGUARD:-0}" == 1 ]]; then via=NOGUARD
+    if _pt_noguard; then via=NOGUARD
     elif [[ "$_PT_GUARD_OK" != 1 ]]; then ptero_die "power $sig: сначала ptero_restart_guard (проверка игроков и say за 60 с); исключение - PTERO_POWER_NOGUARD=1"; return 1
     fi
   fi
   was="$(ptero_state 2>/dev/null)"; was="${was:-?}"
-  _pt_req POST /power -H 'Content-Type: application/json' --data-raw "{\"signal\":\"$sig\"}" || return 1
+  _pt_jb "power" "$sig" "state=$was" "signal ($via)" || { ptero_die "журнал: запись «начато» не сделана, действие отменено"; return 1; }
+  _pt_req POST /power -H 'Content-Type: application/json' --data-raw "{\"signal\":\"$sig\"}" || { _pt_je "power" "$sig" "state=$was" "signal ($via)" 1 "не отправлено"; return 1; }
   if [[ "$PTERO_HTTP" == "204" ]]; then
     _PT_GUARD_OK=0
-    ptero_journal "power" "$sig" "state=$was" "signal sent http=204 ($via)" || echo "WARN: строка журнала не записана" >&2
+    _pt_je "power" "$sig" "state=$was" "signal sent ($via)" 0 "http=204"
   else
-    ptero_journal "power" "$sig" "state=$was" "FAILED http=$PTERO_HTTP ($via)" || true
+    _pt_je "power" "$sig" "state=$was" "signal ($via)" 1 "http=$PTERO_HTTP"
     echo "power: HTTP $PTERO_HTTP" >&2; return 1
   fi
 }
@@ -424,6 +559,7 @@ _pt_cmd_json_escape() { local c="$1"; c="${c//\\/\\\\}"; c="${c//\"/\\\"}"; prin
 # _pt_cmd_verb <команда>: имя команды в нижнем регистре без ведущего «/» и без пространства имён (minecraft:, bukkit:, essentials: ...).
 _pt_cmd_verb() {
   local c="${1,,}" v
+  c="${c#"${c%%[! ]*}"}"   # ведущие пробелы (если вызвали без санитизации)
   v="${c%% *}"; v="${v#/}"
   [[ "$v" == *:* ]] && v="${v##*:}"
   printf '%s' "$v"
@@ -433,14 +569,16 @@ _pt_cmd_verb() {
 # поэтому `minecraft:execute` и `bukkit:reload` не обходят список. Это защита от ошибки, а не граница безопасности: мир и данные игроков
 # дополнительно защищены тем, что в ptero.sh нет удаления файлов. Печатает причину, код 0 - команда запрещена.
 _pt_cmd_denied() {
-  local c="${1,,}" v rest lpre
+  local c="${1,,}" v rest lpre a1=""
+  c="${c#"${c%%[! ]*}"}"
   v="$(_pt_cmd_verb "$1")"
   rest=""; [[ "$c" == *" "* ]] && rest="${c#* }"
+  read -r a1 _ <<<"$rest"
   case "$v" in
     "") echo "пустое имя команды"; return 0 ;;
     plugman|plugin|pm|pluginmanager|reload|rl)
       echo "управление плагинами и глобальный reload: сторонние плагины не загружать, не выгружать, не удалять и не перезагружать целиком (reload плагина - его собственной командой)"; return 0 ;;
-    /*|we|worldedit|fawe|fastasyncworldedit|mv|mvm|mvdelete|mvremove|mvunload|mvconfirm|mvclone|mvregen|multiverse|multiverse-core|multiverse-inventories|mvinv|world|worlds|wm|worldmanager|regen|chunky|fill|fillbiome|clone)
+    /*|we|worldedit|fawe|fastasyncworldedit|mv|mvm|mvdelete|mvremove|mvunload|mvconfirm|mvclone|mvregen|multiverse|multiverse-core|multiverse-inventories|mvinv|world|worlds|wm|worldmanager|regen|chunky|fill|fillbiome|clone|setblock)
       echo "удаление, перегенерация или массовое изменение мира: мир удалять нельзя"; return 0 ;;
     clear|clearinventory|ci|eci|eclear|clearall|eco|economy|authme|nlogin|login|l|register|reg|unregister|unreg|changepassword|changepass)
       echo "очистка данных игрока (инвентарь, экономика) или команды авторизации с паролями (удаление данных игроков; пароли попали бы в журнал и argv)"; return 0 ;;
@@ -449,9 +587,21 @@ _pt_cmd_denied() {
         echo "plugins load/unload/delete/enable/disable: сторонние плагины не загружать, не выгружать и не удалять через консоль"; return 0 ;; esac ;;
     execute|function|schedule|datapack|sudo|esudo|su|sudoall|runas|console|cmd)
       echo "обёртка, исполняющая другую команду или чужой код (обходит денайлист)"; return 0 ;;
-    lp|luckperms)
+    kill|ekill|killall|ekillall|butcher|mobkill|mkill|remove|eremove)
+      echo "kill/remove: убийство или удаление игроков и сущностей (селекторы @e/@a/@p/@r и ники) - данные игроков и мира"; return 0 ;;
+    data)
+      [[ "$a1" == get ]] || { echo "data merge/remove/modify: правка данных сущностей, блоков и хранилищ (разрешён только data get)"; return 0; } ;;
+    forceload|worldborder|wb|tick|gamerule|save-off)
+      echo "forceload/worldborder/tick/gamerule/save-off: изменение мира, правил игры или отключение сохранения мира"; return 0 ;;
+    give|egive|i|ei|item|eitem|eggive)
+      echo "give/item: выдача предметов меняет инвентарь и данные игроков"; return 0 ;;
+    delhome|edelhome|deletehome|remhome|rmhome|delwarp|edelwarp|deletewarp|remwarp|rmwarp)
+      echo "delhome/delwarp: удаление домов и варпов (данные игроков)"; return 0 ;;
+    pex|permissionsex|pexbukkit)
+      echo "PermissionsEx: массовые операции с правами (используйте точечные команды LuckPerms)"; return 0 ;;
+    lp|luckperms|perms|perm|permission|permissions|lpb|lpv)
       lpre=' (bulkupdate|delete[a-z]*|clear|migrate|import|trackclear) '
-      if [[ " $rest " =~ $lpre ]]; then echo "LuckPerms: массовое изменение или удаление данных прав"; return 0; fi ;;
+      if [[ " $rest " =~ $lpre ]]; then echo "LuckPerms (lp/perms/perm/permissions): массовое изменение или удаление данных прав"; return 0; fi ;;
   esac
   return 1
 }
@@ -467,7 +617,7 @@ _pt_cmd_allowed() {
   local reason
   _pt_cmd_sanitize "$1" || return 1
   if reason="$(_pt_cmd_denied "$1")"; then ptero_die "команда запрещена: $reason"; return 1; fi
-  if _pt_cmd_needs_guard "$1" && [[ "$_PT_GUARD_OK" != 1 && "${PTERO_POWER_NOGUARD:-0}" != 1 ]]; then
+  if _pt_cmd_needs_guard "$1" && [[ "$_PT_GUARD_OK" != 1 ]] && ! _pt_noguard; then
     ptero_die "консольные stop/restart: сначала ptero_restart_guard (игроки, say, 60 с); исключение - PTERO_POWER_NOGUARD=1"; return 1
   fi
   return 0
@@ -478,11 +628,14 @@ ptero_command() {
   local ro=0
   _pt_cmd_allowed "$1" || return 2
   _pt_cmd_readonly "$1" && ro=1
-  if (( ro == 0 )); then _pt_write_ready "command" || return 1; fi
-  _pt_req POST /command -H 'Content-Type: application/json' --data-raw "{\"command\":\"$(_pt_cmd_json_escape "$1")\"}" || return 1
   if (( ro == 0 )); then
-    if [[ "$PTERO_HTTP" == "204" ]]; then ptero_journal "console: $1" "command" "-" "sent http=204" || echo "WARN: строка журнала не записана" >&2
-    else ptero_journal "console: $1" "command" "-" "FAILED http=$PTERO_HTTP" || true; fi
+    _pt_write_ready "command" || return 1
+    _pt_jb "console: $1" "command" "-" "-" || { ptero_die "журнал: запись «начато» не сделана, команда не отправлена"; return 1; }
+  fi
+  _pt_req POST /command -H 'Content-Type: application/json' --data-raw "{\"command\":\"$(_pt_cmd_json_escape "$1")\"}" || { (( ro == 1 )) || _pt_je "console: $1" "command" "-" "-" 1 "не отправлено"; return 1; }
+  if (( ro == 0 )); then
+    if [[ "$PTERO_HTTP" == "204" ]]; then _pt_je "console: $1" "command" "-" "sent" 0 "http=204"
+    else _pt_je "console: $1" "command" "-" "-" 1 "http=$PTERO_HTTP"; fi
   fi
   [[ "$PTERO_HTTP" == "204" ]] || { echo "command: HTTP $PTERO_HTTP" >&2; return 1; }
   if _pt_cmd_needs_guard "$1"; then _PT_GUARD_OK=0; fi
@@ -552,6 +705,7 @@ _pt_ws() {
   sock="${sock//\\\//\/}"   # JSON экранирует «/» как «\/»
   : > "$PTERO_BODY"
   [[ "$tok" =~ ^[A-Za-z0-9._-]+$ && "$sock" =~ ^wss?://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._/-]+$ ]] || { ptero_die "ответ websocket неожиданного формата"; return 1; }
+  if (( jr == 1 )); then _pt_jb "console: $send" "command (websocket)" "-" "-" || { ptero_die "журнал: запись «начато» не сделана, команда не отправлена"; return 1; }; fi
   # Значения передаются через --env-file из process substitution (не в argv и не в docker inspect с -e).
   timeout $(( secs + 40 )) docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m \
     --env-file <(printf 'PT_WS_TOKEN=%s\nPT_WS_SOCKET=%s\nPT_ORIGIN=%s\nPT_SECS=%s\nPT_SEND=%s\nPT_LOGS=%s\nPT_UNTIL=%s\nPT_FAIL=%s\nPT_FILTER=%s\n' \
@@ -559,7 +713,7 @@ _pt_ws() {
     "$img" node -e "$_PT_WS_JS" </dev/null 2>/dev/null
   local rc=$?
   unset tok sock
-  if (( jr == 1 )); then ptero_journal "console: $send" "command (websocket)" "-" "sent rc=$rc" || echo "WARN: строка журнала не записана" >&2; fi
+  if (( jr == 1 )); then if (( rc == 0 )); then _pt_je "console: $send" "command (websocket)" "-" "sent" 0 "rc=$rc"; else _pt_je "console: $send" "command (websocket)" "-" "-" 1 "rc=$rc"; fi; fi
   if [[ -n "$send" ]] && _pt_cmd_needs_guard "$send"; then _PT_GUARD_OK=0; fi
   return $rc
 }
@@ -688,7 +842,8 @@ _pt_guard_probe() {
 # второе предупреждение и ещё 30 с). SLP=0 -> перекрёстная проверка list: 0 -> можно; >0 -> предупреждение; list недоступен -> консервативно: предупреждение
 # и 60 с, затем restart. SLP и list недоступны -> отказ (код 1). Только при PTERO_ALLOW_WRITE=1. Ожидания для сухих прогонов: PTERO_GUARD_WAIT1/PTERO_GUARD_WAIT2.
 _ptero_restart_guard_impl() {
-  local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pr s l n n2 s2 l2 blind=0
+  local why="$1" w1=60 w2=30 pr s l n n2 s2 l2 blind=0
+  if [[ "$_PT_TEST" == 1 ]]; then w1="${PTERO_GUARD_WAIT1:-60}"; w2="${PTERO_GUARD_WAIT2:-30}"; fi   # ожидания можно сократить только в тестовом режиме
   [[ "$why" =~ ^(install|rollback|access|config)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "restart_guard требует PTERO_ALLOW_WRITE=1"; return 1; }
   pr="$(_pt_guard_probe)"; s="${pr% *}"; l="${pr#* }"   # stderr (диагностика ws) виден
@@ -735,8 +890,9 @@ ptero_mkdir() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || { ptero_die "недопустимое имя каталога"; return 2; }
   [[ "${1%/}" == "/plugins" && "$2" == "TwoMCBridge" ]] || { ptero_die "mkdir: разрешён только /plugins/TwoMCBridge"; return 2; }
   _pt_write_ready "mkdir" || return 1
-  _pt_req POST /files/create-folder -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"name\":\"$2\"}" || return 1
-  ptero_journal "${1%/}/$2" "mkdir" "-" "http=$PTERO_HTTP" || true
+  _pt_jb "${1%/}/$2" "mkdir" "-" "-" || { ptero_die "журнал: запись «начато» не сделана, действие отменено"; return 1; }
+  _pt_req POST /files/create-folder -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"name\":\"$2\"}" || { _pt_je "${1%/}/$2" "mkdir" "-" "-" 1 "не отправлено"; return 1; }
+  if [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]; then _pt_je "${1%/}/$2" "mkdir" "-" "-" 0 "http=$PTERO_HTTP"; else _pt_je "${1%/}/$2" "mkdir" "-" "-" 1 "http=$PTERO_HTTP"; fi
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
@@ -746,8 +902,9 @@ ptero_chmod() {
   local re="^bridge-key\.txt(\.bak-$_PT_TS_RE)?\$"
   [[ "${1%/}" == "/plugins/TwoMCBridge" && "$2" =~ $re && "$3" == "600" ]] || { ptero_die "chmod: разрешён только 600 для bridge-key.txt[.bak-<время>] в /plugins/TwoMCBridge"; return 2; }
   _pt_write_ready "chmod" || return 1
-  _pt_req POST /files/chmod -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"file\":\"$2\",\"mode\":\"$3\"}]}" || return 1
-  ptero_journal "${1%/}/$2" "chmod" "-" "$3 http=$PTERO_HTTP" || true
+  _pt_jb "${1%/}/$2" "chmod" "-" "$3" || { ptero_die "журнал: запись «начато» не сделана, действие отменено"; return 1; }
+  _pt_req POST /files/chmod -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"file\":\"$2\",\"mode\":\"$3\"}]}" || { _pt_je "${1%/}/$2" "chmod" "-" "$3" 1 "не отправлено"; return 1; }
+  if [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]; then _pt_je "${1%/}/$2" "chmod" "-" "$3" 0 "http=$PTERO_HTTP"; else _pt_je "${1%/}/$2" "chmod" "-" "$3" 1 "http=$PTERO_HTTP"; fi
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
@@ -759,8 +916,9 @@ ptero_rename() {
   if [[ "$root" == "/plugins/TwoMCBridge" && ( "$2" == "config.yml" || "$2" == "bridge-key.txt" ) && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
   [[ "$ok" == 1 ]] || { ptero_die "rename: разрешено только <файл Bridge> -> <файл>.disabled-<время>"; return 2; }
   _pt_write_ready "rename" || return 1
-  _pt_req POST /files/rename -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"from\":\"$2\",\"to\":\"$3\"}]}" || return 1
-  ptero_journal "$root/$2" "rename" "$2" "$3 http=$PTERO_HTTP" || true
+  _pt_jb "$root/$2" "rename" "$2" "$3" || { ptero_die "журнал: запись «начато» не сделана, действие отменено"; return 1; }
+  _pt_req POST /files/rename -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"from\":\"$2\",\"to\":\"$3\"}]}" || { _pt_je "$root/$2" "rename" "$2" "$3" 1 "не отправлено"; return 1; }
+  if [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]; then _pt_je "$root/$2" "rename" "$2" "$3" 0 "http=$PTERO_HTTP"; else _pt_je "$root/$2" "rename" "$2" "$3" 1 "http=$PTERO_HTTP"; fi
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
