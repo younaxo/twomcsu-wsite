@@ -158,6 +158,12 @@ const envBaseKeys: Joi.PartialSchemaMap = {
       }),
     }),
 
+  /// Белый список IP сервисов голосования (через запятую, точные адреса, без
+  /// CIDR). По умолчанию пусто = выключен: опубликованные IP сервисов в
+  /// репозитории не подтверждены (Q121). Адрес берётся из req.ip с учётом
+  /// TRUST_PROXY. Чужой адрес получает тот же 401, что и неверный секрет.
+  VOTING_WEBHOOK_ALLOWED_IPS: Joi.string().allow('').default(''),
+
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })
     .required(),

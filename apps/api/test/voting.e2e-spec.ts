@@ -204,15 +204,24 @@ describe('Voting (e2e)', () => {
     expect(site.nextVoteAt).toBeNull();
   });
 
-  it('webhook: неверный секрет и несуществующий пользователь отклоняются честно', async () => {
+  it('webhook: нет секрета, неверный секрет и неизвестный slug — единый 401 без деталей', async () => {
+    const noSecret = await request(app.getHttpServer())
+      .post(`/voting/webhook/${slug}`)
+      .send({ username: alice.username })
+      .expect(401);
     const wrongSecret = await request(app.getHttpServer())
       .post(`/voting/webhook/${slug}`)
       .send({ secret: 'wrong-secret', username: alice.username })
-      .expect(200);
-    expect(wrongSecret.body).toEqual({
-      accepted: false,
-      reason: 'invalid_secret',
-    });
+      .expect(401);
+    const unknownSlug = await request(app.getHttpServer())
+      .post(`/voting/webhook/e2e-${unique}-no-such-site`)
+      .send({ secret: 'wrong-secret', username: alice.username })
+      .expect(401);
+    expect(wrongSecret.body).toEqual(noSecret.body);
+    expect(unknownSlug.body).toEqual(noSecret.body);
+    expect(JSON.stringify(noSecret.body)).not.toMatch(/secret|slug|user/i);
+    // Ни одна ветка отказа не начислила награду и не создала голос.
+    expect(await prisma.playerVote.count({ where: { siteId } })).toBe(0);
 
     const noUser = await request(app.getHttpServer())
       .post(`/voting/webhook/${slug}`)
@@ -242,6 +251,10 @@ describe('Voting (e2e)', () => {
       .send({ secret, username: alice.username })
       .expect(200);
     expect(again.body).toEqual({ accepted: false, reason: 'cooldown' });
+    const afterAgain = await prisma.playerStatistics.findUnique({
+      where: { userId: alice.id },
+    });
+    expect(afterAgain?.coins ?? 0).toBe(after?.coins ?? 0);
 
     const overview = await request(app.getHttpServer())
       .get('/voting')
@@ -309,11 +322,10 @@ describe('Voting (e2e)', () => {
 
     await prisma.playerVote.deleteMany({ where: { siteId, userId: alice.id } });
 
-    const withOldSecret = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/voting/webhook/${slug}`)
       .send({ secret, username: alice.username })
-      .expect(200);
-    expect(withOldSecret.body.accepted).toBe(false);
+      .expect(401);
 
     const withNewSecret = await request(app.getHttpServer())
       .post(`/voting/webhook/${slug}`)
@@ -341,9 +353,113 @@ describe('Voting (e2e)', () => {
       .set('Authorization', auth(admin))
       .expect(200);
 
+    // Удалённый сайт неотличим от неверного секрета: единый 401.
     await request(app.getHttpServer())
       .post(`/voting/webhook/${slug}`)
       .send({ secret, username: alice.username })
-      .expect(404);
+      .expect(401);
+  });
+
+  it('webhook: повтор того же голоса (externalId) внутри cooldown — duplicate, награды нет', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/admin/voting/sites')
+      .set('Authorization', auth(admin))
+      .send({
+        slug: `${slug}-idem`,
+        name: 'Idem Top',
+        url: 'https://example.com/idem',
+        cooldownHours: 24,
+        rewardCoins: 11,
+      })
+      .expect(201);
+    const idemSecret = created.body.secret as string;
+    const body = {
+      secret: idemSecret,
+      username: alice.username,
+      externalId: `idem-${unique}`,
+    };
+    const before = await prisma.playerStatistics.findUnique({
+      where: { userId: alice.id },
+    });
+    const first = await request(app.getHttpServer())
+      .post(`/voting/webhook/${slug}-idem`)
+      .send(body)
+      .expect(200);
+    expect(first.body).toEqual({ accepted: true });
+    const replay = await request(app.getHttpServer())
+      .post(`/voting/webhook/${slug}-idem`)
+      .send(body)
+      .expect(200);
+    expect(replay.body).toEqual({ accepted: false, reason: 'duplicate' });
+    const after = await prisma.playerStatistics.findUnique({
+      where: { userId: alice.id },
+    });
+    expect(after?.coins ?? 0).toBe((before?.coins ?? 0) + 11);
+    expect(
+      await prisma.playerVote.count({
+        where: { site: { slug: `${slug}-idem` } },
+      }),
+    ).toBe(1);
+  });
+});
+
+/// Шторм запросов: лимит по IP (60/мин) на маршруте вебхука. Отдельное
+/// приложение с TRUST_PROXY=loopback, чтобы взять адрес из X-Forwarded-For и
+/// не делить счётчик с остальными тестами файла (как bans-throttle).
+describe('Voting webhook: throttle (e2e)', () => {
+  let app: INestApplication | undefined;
+  const LIMIT = 60;
+  const octet = () => 1 + Math.floor(Math.random() * 253);
+  const ip = `198.51.${octet()}.${octet()}`;
+  const otherIp = `198.51.${octet()}.${octet()}`;
+  const unique = randomUUID().slice(0, 8);
+
+  const hit = (xff: string) =>
+    request(app!.getHttpServer())
+      .post(`/voting/webhook/e2e-${unique}-storm`)
+      .set('X-Forwarded-For', xff)
+      .send({ username: 'nobody' });
+
+  beforeAll(async () => {
+    const previous = process.env.TRUST_PROXY;
+    process.env.TRUST_PROXY = 'loopback';
+    try {
+      let loaded!: {
+        Test: typeof import('@nestjs/testing').Test;
+        AppModule: unknown;
+        configureApp: (a: INestApplication) => void;
+      };
+      jest.isolateModules(() => {
+        /* eslint-disable @typescript-eslint/no-require-imports */
+        loaded = {
+          Test: require('@nestjs/testing').Test,
+          AppModule: require('../src/app.module').AppModule,
+          configureApp: require('../src/configure-app').configureApp,
+        };
+        /* eslint-enable @typescript-eslint/no-require-imports */
+      });
+      const moduleRef = await loaded.Test.createTestingModule({
+        imports: [loaded.AppModule as never],
+      }).compile();
+      app = moduleRef.createNestApplication();
+      loaded.configureApp(app);
+      await app.init();
+    } finally {
+      if (previous === undefined) delete process.env.TRUST_PROXY;
+      else process.env.TRUST_PROXY = previous;
+    }
+  }, 30_000);
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  it('60 запросов без секрета — 401, 61-й — 429; другой адрес не затронут', async () => {
+    for (let i = 0; i < LIMIT; i += 1) {
+      const res = await hit(ip);
+      expect(res.status).toBe(401);
+    }
+    await hit(ip).expect(429);
+    await hit(otherIp).expect(401);
   });
 });
