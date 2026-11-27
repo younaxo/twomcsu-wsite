@@ -84,7 +84,7 @@ export function LocalePopover({
         aria-label={`Язык и валюта: ${summary}`}
         data-testid="locale-trigger"
         className={cn(
-          'inline-flex h-control-sm items-center gap-2 rounded border bg-surface px-3 text-sm hover:bg-muted',
+          'inline-flex h-control-sm items-center gap-2 rounded border bg-surface px-3 text-sm hover:bg-muted max-md:h-10',
           className,
         )}
       >

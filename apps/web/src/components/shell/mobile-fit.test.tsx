@@ -13,6 +13,18 @@ import { installFetchMock } from '@/test/http';
 import { ProfileTrigger } from './profile-trigger';
 import { SiteHeader } from './site-header';
 import { SiteLogo } from './site-logo';
+import { LocalePopover } from './locale-popover';
+import { ServerStatusButton } from './server-status-button';
+import { ProductCard } from '@/app/(site)/shop/_components/product-card';
+import type { StoreProduct } from '@/lib/store/catalog';
+
+const PRODUCT: StoreProduct = {
+  id: 'p1',
+  name: 'Полемизм',
+  slug: 'polemizm',
+  description: null,
+  image: null,
+};
 
 /// Адаптив 360/390 px: jsdom не считает вёрстку, поэтому проверяем, что
 /// responsive-классы (сжатие шапки, цели касания ≥ 40 px) на месте. Реальная
@@ -119,5 +131,36 @@ describe('цели касания на мобильных', () => {
 
   it('поля и select (inputClassName) — min-h-10 на мобильных', () => {
     expect(inputClassName).toContain('max-md:min-h-[var(--input-min-h,2.5rem)]');
+  });
+});
+
+describe('цели касания: футер и карточка магазина', () => {
+  it('футер: «Язык и валюта» и «Статус серверов» не ниже 40 px на мобильных', () => {
+    render(
+      <>
+        <LocalePopover variant="footer" />
+        <ServerStatusButton />
+      </>,
+      { wrapper: Providers },
+    );
+    expect(screen.getByTestId('locale-trigger').className).toContain('max-md:h-10');
+    expect(screen.getByRole('link', { name: /Статус серверов/ }).className).toContain(
+      'max-md:h-10',
+    );
+  });
+
+  it('карточка товара: одна ссылка, растянута на карточку, min-h-10 и focus-visible ring', () => {
+    render(
+      <ul>
+        <ProductCard product={PRODUCT} />
+      </ul>,
+    );
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(1);
+    const cls = links[0]!.className;
+    expect(cls).toContain('max-md:min-h-10');
+    expect(cls).toContain('after:absolute');
+    expect(cls).toContain('after:inset-0');
+    expect(cls).toContain('focus-visible:after:ring-2');
   });
 });

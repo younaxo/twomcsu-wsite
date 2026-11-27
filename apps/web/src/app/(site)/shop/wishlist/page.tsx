@@ -59,7 +59,7 @@ function Row({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Link
           href={`/shop/${encodeURIComponent(product.slug)}`}
-          className="truncate rounded-sm text-sm font-semibold outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className="truncate rounded-sm text-sm font-semibold outline-none max-md:py-2.5 hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           {product.name}
         </Link>
