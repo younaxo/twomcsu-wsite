@@ -104,7 +104,7 @@ class SnapshotDataTest {
         assertEquals("green", runs.get(0).color());
         assertEquals("Hello ", runs.get(0).text());
         assertEquals("red", runs.get(1).color());
-        assertTrue(runs.get(1).bold());
+        assertTrue(runs.get(1).bold(), runs.toString());
         assertNull(runs.get(2).color());
         assertFalse(runs.get(2).bold());
     }
