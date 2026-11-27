@@ -22,8 +22,10 @@ import {
   demoAuthorTag,
   demoPunishmentSourceId,
 } from './data';
-import { assertDemoSeedAllowed } from './guard';
+import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
+import { DEMO_PLAYERS, demoPlayerEmail } from './social';
+import { seedDemoSocial } from './social-seed';
 
 const DAY = 86_400_000;
 const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
@@ -44,6 +46,19 @@ async function main(): Promise<void> {
         'Нет позиции по умолчанию (isDefault): сначала выполните обычный `db:seed`.',
       );
     }
+    // Чужого пользователя demo_system не трогаем: прерываем сид до записей.
+    await assertDemoUserNotForeign(
+      prisma,
+      DEMO_AUTHOR.username,
+      DEMO_AUTHOR.email,
+    );
+    for (const p of DEMO_PLAYERS) {
+      await assertDemoUserNotForeign(
+        prisma,
+        p.username,
+        demoPlayerEmail(p.username),
+      );
+    }
     const authorData = {
       email: DEMO_AUTHOR.email,
       password: DEMO_AUTHOR.password,
@@ -57,7 +72,8 @@ async function main(): Promise<void> {
         positionId: defaultPosition.id,
         ...authorData,
       },
-      update: authorData,
+      // email и пароль существующего demo_system не перезаписываются.
+      update: {},
     });
 
     const categoryIds = new Map<string, string>();
@@ -308,8 +324,10 @@ async function main(): Promise<void> {
       });
     }
 
+    const socialSummary = await seedDemoSocial(prisma, defaultPosition.id);
+
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}`,
     );
   } finally {
     await prisma.$disconnect();

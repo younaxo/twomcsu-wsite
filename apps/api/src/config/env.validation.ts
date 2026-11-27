@@ -501,6 +501,9 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// Выдача заказов через Bridge (0.13); по умолчанию выключена. Булево строго
   /// true/false: опечатка ('flase', '1') - ошибка старта.
   BRIDGE_DELIVERY_ENABLED: Joi.boolean().default(false),
+  /// Приём `player.stats.snapshot` (0.14b, ADR-0195); по умолчанию выключен,
+  /// булево строго true/false: опечатка - ошибка старта.
+  BRIDGE_STATS_ENABLED: Joi.boolean().default(false),
   /// Срок хранения закрытых заданий выдачи: 14..3650 суток (не меньше 14 -
   /// разбор спорных выдач). Пусто - значение по умолчанию (readBridgeDeliveryRetention).
   BRIDGE_DELIVERY_JOB_RETENTION_DAYS: Joi.number()
