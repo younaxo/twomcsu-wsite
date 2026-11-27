@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -255,5 +255,22 @@ describe('Новости (срез 3.3)', () => {
     expect(mocks.patch).not.toHaveBeenCalled();
     expect(within(comment).queryByLabelText('Текст комментария')).toBeNull();
     await waitFor(() => expect(edit).toHaveFocus());
+  });
+
+  it('правка комментария: пока запрос идёт, повторная отправка не шлёт второй запрос', async () => {
+    const user = userEvent.setup();
+    mockWithComment();
+    mocks.patch.mockReturnValue(new Promise(() => {}));
+    render(<NewsArticlePage />, { wrapper: Providers });
+    const comment = await screen.findByTestId('news-comment');
+    await user.click(within(comment).getByRole('button', { name: 'Изменить комментарий' }));
+    await user.type(within(comment).getByLabelText('Текст комментария'), ' мир');
+    const save = within(comment).getByRole('button', { name: 'Сохранить' });
+    await user.click(save);
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(save).toBeDisabled());
+    await user.click(save);
+    fireEvent.submit(within(comment).getByLabelText('Текст комментария').closest('form')!);
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 });

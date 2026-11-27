@@ -126,9 +126,10 @@ export class NewsController {
   @Delete('news/:slug/comments/:commentId')
   async deleteComment(
     @CurrentUser() user: AuthenticatedUser,
+    @Param('slug') slug: string,
     @Param('commentId') commentId: string,
   ) {
-    await this.news.removeComment(user.id, commentId);
+    await this.news.removeComment(user.id, slug, commentId);
     return { success: true };
   }
 
