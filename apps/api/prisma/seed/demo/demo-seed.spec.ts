@@ -1,11 +1,21 @@
 import {
+  DEMO_AUTHOR,
+  DEMO_CONTENT_DISCLAIMER,
+  DEMO_EVENT_DISCLAIMER,
+  DEMO_EVENTS,
   DEMO_FORMS,
   DEMO_NEWS,
   DEMO_PUNISHMENTS,
   DEMO_SERVERS,
+  DEMO_TOPICS,
+  buildDemoEventDates,
+  buildDemoEventRow,
   buildDemoProducts,
   buildDemoPunishmentRow,
   buildDemoSyncState,
+  buildDemoTopicRow,
+  demoAuthorTag,
+  demoEscapeToHtml,
   demoPunishmentSourceId,
 } from './data';
 import {
@@ -167,5 +177,64 @@ describe('demo seed form keys', () => {
     expect(demoFieldId('a', 0)).toBe(demoFieldId('a', 0));
     const rs = DEMO_FORMS.map((f) => demoResponseId(f.slug));
     expect(new Set(rs).size).toBe(rs.length);
+  });
+});
+
+describe('demo seed content: topics and events', () => {
+  const count = (c: string) =>
+    DEMO_TOPICS.filter((x) => x.category === c).length;
+  it('3 правила, 4 FAQ, 1-2 информационные страницы', () => {
+    expect(count('RULES')).toBe(3);
+    expect(count('FAQ')).toBe(4);
+    expect(count('INFORMATION')).toBeGreaterThanOrEqual(1);
+    expect(count('INFORMATION')).toBeLessThanOrEqual(2);
+  });
+  it('slug уникальны, заголовки с префиксом, в теле дисклеймер', () => {
+    const all = [...DEMO_TOPICS, ...DEMO_EVENTS];
+    expect(new Set(all.map((x) => x.slug)).size).toBe(all.length);
+    for (const t of DEMO_TOPICS) {
+      expect(t.title.startsWith('[Демо] ')).toBe(true);
+      expect(t.body).toContain(DEMO_CONTENT_DISCLAIMER);
+    }
+    for (const e of DEMO_EVENTS) {
+      expect(e.title.startsWith('[Демо] ')).toBe(true);
+      expect(e.description).toContain(DEMO_EVENT_DISCLAIMER);
+      expect(e.description).not.toContain('правил');
+    }
+  });
+  it('2 события: одно будущее, одно прошедшее', () => {
+    const now = new Date('2026-01-10T00:00:00Z');
+    const [a, b] = DEMO_EVENTS.map((e) => buildDemoEventDates(e, now));
+    expect(DEMO_EVENTS).toHaveLength(2);
+    expect(a.startsAt.getTime()).toBeGreaterThan(now.getTime());
+    expect(b.endsAt.getTime()).toBeLessThan(now.getTime());
+    expect(DEMO_EVENTS[0].status).toBe('PUBLISHED');
+    expect(DEMO_EVENTS[1].status).toBe('PUBLISHED');
+  });
+  it('видимость: каждая запись проходит условия публичной выдачи', () => {
+    const now = new Date();
+    for (const t of DEMO_TOPICS) {
+      const row = buildDemoTopicRow(t);
+      expect(row.isActive).toBe(true);
+      expect(row.visibility).toBe('PUBLIC');
+    }
+    for (const e of DEMO_EVENTS) {
+      const row = buildDemoEventRow(e, now);
+      expect(row.status).toBe('PUBLISHED');
+      expect(row.visibility).toBe('PUBLIC');
+    }
+  });
+  it('экранирование HTML', () => {
+    expect(demoEscapeToHtml('<a>&\nb')).toBe('&lt;a&gt;&amp;<br>b');
+  });
+});
+
+describe('demo seed author', () => {
+  it('отдельный пользователь demo_system без входа', () => {
+    expect(DEMO_AUTHOR.username).toBe('demo_system');
+    expect(DEMO_AUTHOR.username.length).toBeLessThanOrEqual(16);
+    expect(DEMO_AUTHOR.email).toBe('demo-system@example.invalid');
+    expect(DEMO_AUTHOR.password.startsWith('$2')).toBe(false);
+    expect(demoAuthorTag()).toBe('demo_system#0000');
   });
 });
