@@ -88,5 +88,18 @@
       "PowerShell(npx prisma migrate *)",
       "PowerShell(pnpm prisma migrate *)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/deny-python.mjs\""
+          }
+        ]
+      }
+    ]
   }
 }
