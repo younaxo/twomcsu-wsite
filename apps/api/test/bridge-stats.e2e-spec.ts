@@ -8,8 +8,10 @@ import {
   BRIDGE_CONFIG,
   readBridgeConfig,
 } from '../src/modules/bridge/bridge.config';
-import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { LeaderboardsService } from '../src/modules/leaderboards/leaderboards.service';
 import { SETTING_STATS_PUBLIC_ENABLED } from '../src/modules/leaderboards/stats-settings.service';
+import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 import {
   batchBody,
   freshNonce,
@@ -21,18 +23,24 @@ jest.setTimeout(60_000);
 
 /// `player.stats.snapshot` через реальный HTTP-стек Bridge (ADR-0195, Q68):
 /// подписанное событие -> запись в PlayerStatistics -> GET /leaderboards
-/// показывает данные; неподписанное, просроченное и повтор нонса отклоняются.
+/// показывает данные игрока (проверка по его userId); неподписанное,
+/// просроченное и повтор нонса отклоняются.
 ///
 /// Запуск - только на ОДНОРАЗОВОЙ локальной БД и локальном Redis. Мастер-секрет
 /// синтетический; значения из `.env*` не используются. Тест создаёт собственные
-/// сервер (`e2e-<unique>-s`), пользователя и привязку и удаляет их в afterAll;
-/// настройка `stats.public.enabled` возвращается к прежнему значению.
+/// сервер (`e2e-<unique>-s`), пользователя и привязку и удаляет их в afterAll,
+/// вместе с ключами Redis (маркер, блокировка, дедупликация событий);
+/// настройка `stats.public.enabled` возвращается к прежнему значению. Каждый
+/// тест перед запуском сам готовит данные (beforeEach), порядок тестов не
+/// важен.
 const MASTER_SECRET = 'e2e-bridge-synthetic-master-secret-0123456789-abcdef';
 const MASTER = Buffer.from(MASTER_SECRET, 'utf8');
 
 describe('Bridge player.stats.snapshot (e2e)', () => {
-  let app: INestApplication | undefined;
+  let app: INestApplication;
   let prisma: PrismaService;
+  let redis: RedisService;
+  let leaderboards: LeaderboardsService;
   const unique = randomUUID().replace(/-/g, '').slice(0, 6);
   const slug = `e2e-${unique}-s`;
   const slugNoCap = `e2e-${unique}-n`;
@@ -40,22 +48,33 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
   const username = `st${unique}`;
   let userId = '';
   let previousSetting: string | null = null;
+  const sentEventIds: string[] = [];
   const previous = {
     enabled: process.env.BRIDGE_ENABLED,
     secret: process.env.BRIDGE_MASTER_SECRET,
     stats: process.env.BRIDGE_STATS_ENABLED,
   };
+  // Рейтинг показывает топ-10: значение выше любых реальных данных стенда.
   const KILLS = 99_000_000 + Math.floor(Math.random() * 900_000);
 
-  const http = () => request(app!.getHttpServer());
+  const markerKey = () => `bridge:ps:all:stats:${userId}`;
+  const occurredAt = (offsetMs: number) =>
+    new Date(Date.now() + offsetMs).toISOString();
 
   function send(
     forSlug: string,
-    body: Buffer,
+    events: Array<ReturnType<typeof makeEvent>>,
     over: Parameters<typeof signedHeaders>[0] = {},
   ) {
-    const headers = signedHeaders({ slug: forSlug, body, master: MASTER, ...over });
-    return http()
+    for (const ev of events) sentEventIds.push(ev.eventId);
+    const body = batchBody(events);
+    const headers = signedHeaders({
+      slug: forSlug,
+      body,
+      master: MASTER,
+      ...over,
+    });
+    return request(app.getHttpServer())
       .post('/bridge/v1/events')
       .set(headers)
       .set('Content-Type', 'application/json')
@@ -72,16 +91,20 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
       { serverId: forSlug, ...over },
     );
 
-  const boardKills = async () =>
-    (await http().get('/leaderboards').expect(200)).body.kills as Array<{
-      username: string;
-      value: number;
-    }>;
+  const rowOf = () => prisma.playerStatistics.findUnique({ where: { userId } });
+
+  const boardEntry = async () => {
+    const res = await request(app.getHttpServer())
+      .get('/leaderboards')
+      .expect(200);
+    const kills = res.body.kills as Array<{ userId: string; value: number }>;
+    return kills.find((e) => e.userId === userId);
+  };
 
   async function waitForKills(expected: number | null) {
     const deadline = Date.now() + 15_000;
     for (;;) {
-      const entry = (await boardKills()).find((e) => e.username === username);
+      const entry = await boardEntry();
       if (expected === null ? entry === undefined : entry?.value === expected) {
         return;
       }
@@ -108,6 +131,8 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    redis = app.get(RedisService);
+    leaderboards = app.get(LeaderboardsService);
 
     previousSetting =
       (
@@ -152,6 +177,14 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
     });
   });
 
+  /// Каждый тест начинает с чистого состояния игрока: нет строки статистики,
+  /// нет маркера монотонности, кэш рейтингов сброшен.
+  beforeEach(async () => {
+    await prisma.playerStatistics.deleteMany({ where: { userId } });
+    await redis.client.del(markerKey());
+    leaderboards.invalidate();
+  });
+
   afterAll(async () => {
     try {
       if (prisma) {
@@ -170,6 +203,17 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
           });
         }
       }
+      if (redis && userId) {
+        const keys = [
+          markerKey(),
+          `bridge:pl:all:stats:${userId}`,
+          ...sentEventIds.flatMap((id) => [
+            `bridge:pe:${slug}:${id}`,
+            `bridge:pe:${slugNoCap}:${id}`,
+          ]),
+        ];
+        await redis.client.del(...keys);
+      }
     } finally {
       for (const [key, value] of [
         ['BRIDGE_ENABLED', previous.enabled],
@@ -179,19 +223,15 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
-      await app?.close();
+      if (app) await app.close();
     }
   });
 
-  it('подписанный снимок -> запись -> рейтинг показывает данные', async () => {
-    await waitForKills(null); // прогрев кэша: игрока в рейтинге ещё нет
-    const ev = snapshot(slug, KILLS);
-    const res = await send(slug, batchBody([ev])).expect(200);
+  it('подписанный снимок -> запись -> рейтинг показывает данные игрока', async () => {
+    await waitForKills(null); // игрока в рейтинге ещё нет
+    const res = await send(slug, [snapshot(slug, KILLS)]).expect(200);
     expect(res.body.results[0].status).toBe('accepted');
-    const row = await prisma.playerStatistics.findUnique({
-      where: { userId },
-    });
-    expect(row).toMatchObject({
+    expect(await rowOf()).toMatchObject({
       kills: KILLS,
       deaths: 2,
       playTime: 120,
@@ -199,33 +239,31 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
       lastServer: slug,
     });
     await waitForKills(KILLS);
+    const entry = await boardEntry();
+    expect(entry).toMatchObject({ userId, value: KILLS });
   });
 
   it('повтор того же события - duplicate; более старый снимок - stale', async () => {
-    const ev = snapshot(slug, KILLS + 1, {
-      occurredAt: new Date(Date.now() - 2000).toISOString(),
-    });
-    const first = await send(slug, batchBody([ev])).expect(200);
-    // Снимок старше уже принятого (в предыдущем тесте) - stale.
+    await send(slug, [
+      snapshot(slug, KILLS, { occurredAt: occurredAt(0) }),
+    ]).expect(200);
+    const older = snapshot(slug, KILLS + 1, { occurredAt: occurredAt(-2000) });
+    const first = await send(slug, [older]).expect(200);
     expect(first.body.results[0].status).toBe('stale');
-    const again = await send(slug, batchBody([ev])).expect(200);
+    const again = await send(slug, [older]).expect(200);
     expect(again.body.results[0].status).toBe('duplicate');
-    const row = await prisma.playerStatistics.findUnique({
-      where: { userId },
-    });
-    expect(row?.kills).toBe(KILLS);
+    expect((await rowOf())?.kills).toBe(KILLS);
   });
 
   it('более новый снимок перезаписывает', async () => {
-    const ev = snapshot(slug, KILLS + 5, {
-      occurredAt: new Date(Date.now() + 1000).toISOString(),
-    });
-    const res = await send(slug, batchBody([ev])).expect(200);
+    await send(slug, [
+      snapshot(slug, KILLS, { occurredAt: occurredAt(0) }),
+    ]).expect(200);
+    const res = await send(slug, [
+      snapshot(slug, KILLS + 5, { occurredAt: occurredAt(1000) }),
+    ]).expect(200);
     expect(res.body.results[0].status).toBe('accepted');
-    const row = await prisma.playerStatistics.findUnique({
-      where: { userId },
-    });
-    expect(row?.kills).toBe(KILLS + 5);
+    expect((await rowOf())?.kills).toBe(KILLS + 5);
   });
 
   it('метрика вне белого списка - invalid_data, запись не меняется', async () => {
@@ -234,47 +272,51 @@ describe('Bridge player.stats.snapshot (e2e)', () => {
       { uuid: mcUuid, metrics: { coins: 5 } },
       { serverId: slug },
     );
-    const res = await send(slug, batchBody([ev])).expect(200);
+    const res = await send(slug, [ev]).expect(200);
     expect(res.body.results[0]).toMatchObject({
       status: 'rejected',
       code: 'invalid_data',
     });
+    expect(await rowOf()).toBeNull();
   });
 
   it('сервер без player-events: unsupported_type', async () => {
-    const ev = snapshot(slugNoCap, 1);
-    const res = await send(slugNoCap, batchBody([ev])).expect(200);
+    const res = await send(slugNoCap, [snapshot(slugNoCap, 1)]).expect(200);
     expect(res.body.results[0]).toMatchObject({
       status: 'rejected',
       code: 'unsupported_type',
     });
+    expect(await rowOf()).toBeNull();
   });
 
   it('неподписанный запрос: 401', async () => {
     const body = batchBody([snapshot(slug, 1)]);
-    await http()
+    await request(app.getHttpServer())
       .post('/bridge/v1/events')
       .set('Content-Type', 'application/json')
       .send(body.toString('utf8'))
       .expect(401);
+    expect(await rowOf()).toBeNull();
   });
 
   it('неверная подпись: 401', async () => {
-    const body = batchBody([snapshot(slug, 1)]);
-    await send(slug, body, {
+    await send(slug, [snapshot(slug, 1)], {
       master: Buffer.from('another-synthetic-master-secret-0123456789-xyz'),
     }).expect(401);
+    expect(await rowOf()).toBeNull();
   });
 
   it('просроченное время подписи: 401', async () => {
-    const body = batchBody([snapshot(slug, 1)]);
-    await send(slug, body, { nowMs: Date.now() - 120_000 }).expect(401);
+    await send(slug, [snapshot(slug, 1)], {
+      nowMs: Date.now() - 120_000,
+    }).expect(401);
+    expect(await rowOf()).toBeNull();
   });
 
   it('повтор нонса: второй запрос 401', async () => {
-    const body = batchBody([snapshot(slug, 1)]);
+    const events = [snapshot(slug, 1)];
     const nonce = freshNonce();
-    await send(slug, body, { nonce }).expect(200);
-    await send(slug, body, { nonce }).expect(401);
+    await send(slug, events, { nonce }).expect(200);
+    await send(slug, events, { nonce }).expect(401);
   });
 });

@@ -202,6 +202,21 @@ export class BridgeRedisService {
     return Number(res) === 1;
   }
 
+  /// Текущий маркер записи без изменения (L2: сравнение до записи в БД,
+  /// сдвиг маркера - после неё через `claimMarker`); null - маркера нет.
+  async peekMarker(
+    slug: string,
+    kind: string,
+    sourceId: string,
+  ): Promise<number | null> {
+    const cur = await this.redis.client.get(
+      this.staleKey(slug, kind, sourceId),
+    );
+    if (cur === null) return null;
+    const n = Number(cur);
+    return Number.isFinite(n) ? n : null;
+  }
+
   /// Дедупликация `player.*` в Redis (контракт 5.2, TTL 24 часа). Значение
   /// `r:<hash>` - принято, применение не завершено (повтор применяется
   /// заново); `a:<hash>` - применено. Другой хэш при том же `eventId` - conflict.

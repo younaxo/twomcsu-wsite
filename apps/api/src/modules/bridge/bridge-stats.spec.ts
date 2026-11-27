@@ -8,7 +8,7 @@ import {
 } from '../../../test/support/bridge-support';
 import { BridgeIngestService } from './bridge-ingest.service';
 import { BridgePunishmentSource } from './bridge-punishment.source';
-import { BridgeRedisService } from './bridge-redis.service';
+import { BridgeRedisService, RecordLockTimeout } from './bridge-redis.service';
 import {
   BridgeBatch,
   parseEnvelope,
@@ -313,7 +313,7 @@ describe('бан через Bridge сбрасывает кэш рейтинго�
       subjectName: 'Steve',
     });
 
-  it('BAN - invalidate, MUTE - нет', async () => {
+  it('BAN только инвалидирует кэш (isBanned не меняется), MUTE - нет', async () => {
     const { service, leaderboards } = setup();
     await service.ingest(ctx(), batch([punishment('MUTE')]));
     expect(leaderboards.invalidate).not.toHaveBeenCalled();
@@ -325,5 +325,200 @@ describe('бан через Bridge сбрасывает кэш рейтинго�
     const { service, leaderboards } = setup(config({ statsEnabled: false }));
     await service.ingest(ctx(), batch([punishment('BAN')]));
     expect(leaderboards.invalidate).toHaveBeenCalledTimes(1);
+  });
+});
+
+const MARKER_KEY = 'bridge:ps:all:stats:u1';
+const LOCK_KEY = 'bridge:pl:all:stats:u1';
+const at = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+
+describe('применение: сбой, повтор, маркер (L2, L7)', () => {
+  it('сбой записи в БД не сдвигает маркер; повтор того же события применяется', async () => {
+    const { service, rows, upsert, redisClient } = setup();
+    const ev = snap();
+    upsert.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.ingest(ctx(), batch([ev]))).rejects.toThrow();
+    expect(redisClient.store.has(MARKER_KEY)).toBe(false);
+    expect(rows.size).toBe(0);
+    const [res] = await service.ingest(ctx(), batch([ev]));
+    expect(res).toEqual({ eventId: ev.eventId, status: 'accepted' });
+    expect(rows.get('u1')?.kills).toBe(10);
+    expect(redisClient.store.has(MARKER_KEY)).toBe(true);
+  });
+
+  it('сбой записи более нового снимка не блокирует старый (маркер не ушёл вперёд)', async () => {
+    const { service, rows, upsert } = setup();
+    upsert.mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      service.ingest(
+        ctx(),
+        batch([snap({ kills: 99 }, { occurredAt: at(-1000) })]),
+      ),
+    ).rejects.toThrow();
+    const [res] = await service.ingest(
+      ctx(),
+      batch([snap({ kills: 5 }, { occurredAt: at(-5000) })]),
+    );
+    expect(res.status).toBe('accepted');
+    expect(rows.get('u1')?.kills).toBe(5);
+  });
+
+  it('равный occurredAt проходит, побеждает принятый позже', async () => {
+    const { service, rows } = setup();
+    const when = at(-1000);
+    await service.ingest(
+      ctx(),
+      batch([snap({ kills: 1 }, { occurredAt: when })]),
+    );
+    const [res] = await service.ingest(
+      ctx(),
+      batch([snap({ kills: 2 }, { occurredAt: when })]),
+    );
+    expect(res.status).toBe('accepted');
+    expect(rows.get('u1')?.kills).toBe(2);
+  });
+
+  it('гонка SET NX -> GET: ключ исчез между командами - событие новое', async () => {
+    const client = {
+      set: jest.fn().mockResolvedValue(null),
+      get: jest.fn().mockResolvedValue(null),
+    };
+    const redis = new BridgeRedisService(fakeRedisService(client as never));
+    await expect(redis.claimPlayerEvent(SLUG, 'e1', 'h')).resolves.toBe('new');
+  });
+
+  it('блокировка игрока занята: RecordLockTimeout, событие не потеряно', async () => {
+    jest.useFakeTimers();
+    try {
+      const { service, redisClient, rows } = setup();
+      redisClient.store.set(LOCK_KEY, 'other');
+      const ev = snap();
+      const pending = service.ingest(ctx(), batch([ev]));
+      const assertion =
+        expect(pending).rejects.toBeInstanceOf(RecordLockTimeout);
+      await jest.advanceTimersByTimeAsync(6000);
+      await assertion;
+      expect(rows.size).toBe(0);
+      redisClient.store.delete(LOCK_KEY);
+      const [res] = await service.ingest(ctx(), batch([ev]));
+      expect(res.status).toBe('accepted');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('ошибка invalidate не ломает применение', async () => {
+    const { service, rows, leaderboards } = setup();
+    leaderboards.invalidate.mockImplementation(() => {
+      throw new Error('cache down');
+    });
+    const [res] = await service.ingest(ctx(), batch([snap()]));
+    expect(res.status).toBe('accepted');
+    expect(rows.get('u1')?.kills).toBe(10);
+  });
+});
+
+describe('метрики по отдельности (L7)', () => {
+  it('только playTimeMinutes', async () => {
+    const { service, rows } = setup();
+    await service.ingest(ctx(), batch([snap()]));
+    await service.ingest(
+      ctx(),
+      batch([snap({ playTimeMinutes: 200 }, { occurredAt: at(1000) })]),
+    );
+    expect(rows.get('u1')).toMatchObject({
+      playTime: 200,
+      kills: 10,
+      deaths: 4,
+      hits: 50,
+    });
+  });
+
+  it('только hits', async () => {
+    const { service, rows } = setup();
+    await service.ingest(ctx(), batch([snap()]));
+    await service.ingest(
+      ctx(),
+      batch([snap({ hits: 77 }, { occurredAt: at(1000) })]),
+    );
+    expect(rows.get('u1')).toMatchObject({
+      hits: 77,
+      playTime: 90,
+      kills: 10,
+    });
+  });
+
+  it('deaths = 0: записывается 0, K/D равен числу убийств', async () => {
+    const { service, rows } = setup();
+    await service.ingest(ctx(), batch([snap()]));
+    await service.ingest(
+      ctx(),
+      batch([snap({ deaths: 0 }, { occurredAt: at(1000) })]),
+    );
+    expect(rows.get('u1')).toMatchObject({
+      deaths: 0,
+      kills: 10,
+      killDeathRatio: 10,
+    });
+  });
+
+  it('первый снимок без deaths: K/D = kills', async () => {
+    const { service, rows } = setup();
+    await service.ingest(ctx(), batch([snap({ kills: 3 })]));
+    expect(rows.get('u1')).toMatchObject({ deaths: 0, killDeathRatio: 3 });
+  });
+});
+
+describe('BridgeStatsService: сброс кэша, интервалы и остановка (L7)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('повторный сброс после интервала проходит сразу', () => {
+    const { stats, leaderboards } = setup();
+    stats.invalidateRankings();
+    jest.advanceTimersByTime(RANKINGS_INVALIDATE_INTERVAL_MS + 1);
+    stats.invalidateRankings();
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(2);
+    jest.advanceTimersByTime(RANKINGS_INVALIDATE_INTERVAL_MS * 3);
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('onModuleDestroy отменяет отложенный сброс', () => {
+    const { stats, leaderboards } = setup();
+    stats.invalidateRankings();
+    stats.invalidateRankings();
+    stats.onModuleDestroy();
+    jest.advanceTimersByTime(RANKINGS_INVALIDATE_INTERVAL_MS * 2);
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('ошибка отложенного и немедленного сброса логируется, не бросается', () => {
+    const { stats, leaderboards } = setup();
+    leaderboards.invalidate.mockImplementation(() => {
+      throw new Error('x');
+    });
+    expect(() => stats.invalidateRankings()).not.toThrow();
+    stats.invalidateRankings();
+    expect(() =>
+      jest.advanceTimersByTime(RANKINGS_INVALIDATE_INTERVAL_MS + 1),
+    ).not.toThrow();
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it('отложенный сброс из бан-пути: два BAN подряд -> один сразу и один в конце', async () => {
+    const { service, leaderboards } = setup();
+    const ban = (sourceId: string) =>
+      makeEvent('punishment.created', {
+        kind: 'BAN',
+        sourceId,
+        startedAt: new Date().toISOString(),
+        subjectUuid: UUID,
+        subjectName: 'Steve',
+      });
+    await service.ingest(ctx(), batch([ban('201')]));
+    await service.ingest(ctx(), batch([ban('202')]));
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(1);
+    jest.advanceTimersByTime(RANKINGS_INVALIDATE_INTERVAL_MS + 1);
+    expect(leaderboards.invalidate).toHaveBeenCalledTimes(2);
   });
 });

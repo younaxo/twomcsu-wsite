@@ -48,9 +48,11 @@ export class BridgeStatsService implements OnModuleDestroy {
     data: StatsSnapshotData,
     snapshotMs: number,
   ): Promise<StatsApplyResult> {
-    if (!(await this.redis.claimMarker('all', 'stats', userId, snapshotMs))) {
-      return 'stale';
-    }
+    // L2: маркер сначала только читаем (под блокировкой игрока записи
+    // сериализованы), а сдвигаем атомарным Lua ПОСЛЕ успешной записи в БД:
+    // сбой записи не оставляет маркер впереди данных, и повтор применится.
+    const marker = await this.redis.peekMarker('all', 'stats', userId);
+    if (marker !== null && marker > snapshotMs) return 'stale';
     const m = data.metrics;
     const existing = await this.prisma.playerStatistics.findUnique({
       where: { userId },
@@ -75,6 +77,12 @@ export class BridgeStatsService implements OnModuleDestroy {
       create: { userId, ...values },
       update: values,
     });
+    // Сравнение и сдвиг атомарны (Lua). `false` возможен только если блокировка
+    // истекла посреди применения и параллельный снимок успел новее: запись
+    // уже сделана, маркер остаётся у более нового, следующий снимок исправит.
+    if (!(await this.redis.claimMarker('all', 'stats', userId, snapshotMs))) {
+      this.logger.warn('bridge stats marker moved during apply');
+    }
     this.invalidateRankings();
     return 'applied';
   }
@@ -85,7 +93,11 @@ export class BridgeStatsService implements OnModuleDestroy {
     const wait = this.lastInvalidateAt + RANKINGS_INVALIDATE_INTERVAL_MS - now;
     if (wait <= 0) {
       this.lastInvalidateAt = now;
-      this.leaderboards.invalidate();
+      try {
+        this.leaderboards.invalidate();
+      } catch {
+        this.logger.warn('bridge rankings invalidate failed');
+      }
       return;
     }
     if (this.trailing !== null) return;
