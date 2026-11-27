@@ -106,8 +106,8 @@ export function SiteHeader({ className }: { className?: string }) {
         <SiteLogo />
         {mainSiteUrl === null ? <HeaderNav className="mx-auto hidden lg:block" /> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
-          {/* На телефонах уже 440 px счётчик онлайна не помещается рядом
-              с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
+          {/* Уже 440 px счётчик онлайна рядом с логотипом и действиями не
+              помещается: там он переезжает в мобильное меню (с подписью). */}
           {mainSiteUrl !== null ? (
             // Сайт розыгрыша: онлайн, уведомления и профиль требуют API основного
             // сайта; вход пока недоступен: неактивная кнопка с подсказкой «Скоро»
@@ -154,6 +154,9 @@ export function SiteHeader({ className }: { className?: string }) {
               </SheetTitle>
             </SheetHeader>
             <SheetBody>
+              <div className="mb-2 min-[440px]:hidden" onClick={() => setMenuOpen(false)}>
+                <OnlineCounter compact withLabel />
+              </div>
               <HeaderNav onNavigate={() => setMenuOpen(false)} />
             </SheetBody>
           </SheetContent>
