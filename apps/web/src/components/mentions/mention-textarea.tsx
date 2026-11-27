@@ -22,10 +22,7 @@ function setNativeValue(el: HTMLTextAreaElement, next: string) {
 /// родителя отрабатывает как при обычном вводе. Когда список закрыт, клавиши
 /// уходят родителю как раньше (Enter отправляет сообщение).
 export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaProps>(
-  (
-    { wrapperClassName, value, onKeyDown, onChange, onSelect, onClick, onKeyUp, ...props },
-    ref,
-  ) => {
+  ({ wrapperClassName, value, onKeyDown, onChange, onSelect, onClick, onKeyUp, ...props }, ref) => {
     const inner = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(ref, () => inner.current as HTMLTextAreaElement);
 
@@ -38,7 +35,7 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
       el.setSelectionRange(caret, caret);
     }, []);
 
-    const mention = useMentionAutocomplete({ value, commit });
+    const mention = useMentionAutocomplete({ value, commit, maxLength: props.maxLength });
     const syncCaret = () => {
       const el = inner.current;
       if (el) mention.setCaret(el.selectionStart ?? 0);
@@ -50,19 +47,28 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
           {...props}
           ref={inner}
           value={value}
-          role={mention.open ? 'combobox' : props.role}
-          aria-autocomplete={mention.open ? 'list' : props['aria-autocomplete']}
-          aria-expanded={mention.open ? true : undefined}
-          aria-haspopup={mention.open ? 'listbox' : undefined}
-          aria-controls={mention.open ? mention.listboxId : undefined}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={mention.open}
+          aria-haspopup="listbox"
+          aria-controls={mention.listboxId}
           aria-activedescendant={mention.activeOptionId}
           onChange={(event) => {
             mention.setCaret(event.target.selectionStart ?? event.target.value.length);
             onChange?.(event);
           }}
           onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return onKeyDown?.(event);
-            if (mention.handleKeyDown(event)) return;
+            if (
+              mention.handleKeyDown({
+                key: event.key,
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing,
+                keyCode: event.keyCode,
+                preventDefault: () => event.preventDefault(),
+              })
+            ) {
+              return;
+            }
             onKeyDown?.(event);
           }}
           onKeyUp={(event) => {
@@ -78,45 +84,47 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
             onSelect?.(event);
           }}
         />
-        {mention.open ? (
-          <ul
-            id={mention.listboxId}
-            role="listbox"
-            aria-label="Игроки"
-            data-testid="mention-listbox"
-            className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-60 overflow-y-auto rounded border border-border bg-surface p-1 shadow-md"
-          >
-            {mention.error ? (
-              <li role="presentation" className="px-3 py-2 text-sm text-muted-foreground">
-                {mention.error}
-              </li>
-            ) : null}
-            {mention.items.map((item, index) => (
-              <li
-                key={item.username}
-                id={mention.optionId(index)}
-                role="option"
-                aria-selected={index === mention.activeIndex}
-                // mousedown не отбирает фокус у поля
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  mention.select(item);
-                }}
-                onMouseEnter={() => mention.setActiveIndex(index)}
-                className={cn(
-                  'flex min-h-10 cursor-pointer items-center gap-2 rounded px-3 text-sm text-foreground',
-                  index === mention.activeIndex ? 'bg-primary/15' : 'hover:bg-surface-sunken',
-                )}
-              >
-                <UserRound aria-hidden className="size-4 shrink-0 text-subtle-foreground" />
-                <span className="min-w-0 truncate">{item.username}</span>
-                {item.tag ? (
-                  <span className="shrink-0 text-xs text-subtle-foreground">[{item.tag}]</span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <div aria-live="polite" role="status" className="sr-only" data-testid="mention-status">
+          {mention.status}
+        </div>
+        <ul
+          hidden={!mention.open}
+          id={mention.listboxId}
+          role="listbox"
+          aria-label="Игроки"
+          data-testid="mention-listbox"
+          className="absolute inset-x-0 bottom-full z-30 mb-1 max-h-60 overflow-y-auto rounded border border-border bg-surface p-1 shadow-md"
+        >
+          {mention.error ? (
+            <li role="presentation" className="px-3 py-2 text-sm text-muted-foreground">
+              {mention.error}
+            </li>
+          ) : null}
+          {mention.items.map((item, index) => (
+            <li
+              key={item.username}
+              id={mention.optionId(index)}
+              role="option"
+              aria-selected={index === mention.activeIndex}
+              // mousedown не отбирает фокус у поля
+              onMouseDown={(event) => {
+                event.preventDefault();
+                mention.select(item);
+              }}
+              onMouseEnter={() => mention.setActiveIndex(index)}
+              className={cn(
+                'flex min-h-10 cursor-pointer items-center gap-2 rounded px-3 text-sm text-foreground',
+                index === mention.activeIndex ? 'bg-primary/15' : 'hover:bg-surface-sunken',
+              )}
+            >
+              <UserRound aria-hidden className="size-4 shrink-0 text-subtle-foreground" />
+              <span className="min-w-0 truncate">{item.username}</span>
+              {item.tag ? (
+                <span className="shrink-0 text-xs text-subtle-foreground">[{item.tag}]</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       </div>
     );
   },

@@ -11,10 +11,11 @@ vi.mock('@/lib/api/client', async (importOriginal) => ({
 
 const onEnter = vi.fn();
 
-function Host() {
+function Host({ maxLength }: { maxLength?: number }) {
   const [value, setValue] = useState('');
   return (
     <MentionTextarea
+      maxLength={maxLength}
       aria-label="Поле"
       value={value}
       onChange={(e) => setValue(e.target.value)}
@@ -148,5 +149,132 @@ describe('MentionTextarea', () => {
     const field = await typeAt('@st');
     fireEvent.mouseDown(screen.getAllByRole('option')[0] as HTMLElement);
     expect(field.value).toBe('@Steve ');
+  });
+
+  it('постоянные ARIA combobox и live-region, пока список закрыт', () => {
+    render(<Host />);
+    const field = screen.getByLabelText('Поле');
+    expect(field).toHaveAttribute('role', 'combobox');
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    expect(field).toHaveAttribute('aria-autocomplete', 'list');
+    expect(field.getAttribute('aria-controls')).toBeTruthy();
+    expect(field).not.toHaveAttribute('aria-activedescendant');
+    expect(screen.getByTestId('mention-status')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('«ничего не найдено» объявляется в live-region', async () => {
+    mocks.get.mockResolvedValue({ items: [], page: 1, limit: 8, hasMore: false });
+    render(<Host />);
+    await typeAt('@zz');
+    expect(screen.getByTestId('mention-status').textContent).toBe('Игроки не найдены.');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('ошибка дублируется в live-region', async () => {
+    mocks.get.mockRejectedValue(new Error('boom'));
+    render(<Host />);
+    await typeAt('@st');
+    expect(screen.getByTestId('mention-status').textContent).toBeTruthy();
+  });
+
+  it('поздний ответ отменённого запроса игнорируется', async () => {
+    const resolvers: Array<(v: unknown) => void> = [];
+    mocks.get.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+    render(<Host />);
+    await typeAt('@st');
+    await typeAt('@ste');
+    expect(resolvers).toHaveLength(2);
+    await act(async () => {
+      resolvers[0]?.(ITEMS);
+    });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    await act(async () => {
+      resolvers[1]?.({ ...ITEMS, items: [{ username: 'Steven', tag: null, avatar: null }] });
+    });
+    expect(screen.getAllByRole('option')).toHaveLength(1);
+    expect(screen.getByRole('option').textContent).toContain('Steven');
+  });
+
+  it('в окне debounce Enter и Tab не вставляют устаревший ник', async () => {
+    render(<Host />);
+    const field = await typeAt('@st');
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    fireEvent.change(field, { target: { value: '@ste' } });
+    field.setSelectionRange(4, 4);
+    fireEvent.select(field);
+    // список для прежнего запроса уже не выбираем
+    expect(screen.queryByRole('listbox')).toBeNull();
+    expect(field).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.keyDown(field, { key: 'Tab' });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(field.value).toBe('@ste');
+    // Enter без открытого списка уходит родителю (отправка)
+    expect(onEnter).toHaveBeenCalledTimes(1);
+  });
+
+  it('Esc закрывает только до изменения текста до @; после сброса список открывается снова', async () => {
+    render(<Host />);
+    let field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // дальнейший ввод в том же токене остаётся закрытым
+    field = await typeAt('@ste');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    // изменение текста до @ сбрасывает закрытие
+    field = await typeAt('x @ste');
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+  });
+
+  it('после отправки (пустое поле) закрытие сбрасывается', async () => {
+    render(<Host />);
+    let field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Escape' });
+    field = await typeAt('', 0);
+    field = await typeAt('@st');
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0);
+  });
+
+  it('maxLength: вставка, превышающая лимит, не выполняется', async () => {
+    render(<Host maxLength={6} />);
+    const field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(field.value).toBe('@st');
+    expect(onEnter).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mention-status').textContent).toMatch(/Не хватает места/);
+  });
+
+  it('maxLength: вставка, влезающая в лимит, выполняется', async () => {
+    render(<Host maxLength={7} />);
+    const field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(field.value).toBe('@Steve ');
+  });
+
+  it('Shift+Enter не выбирает вариант и уходит родителю', async () => {
+    render(<Host />);
+    const field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Enter', shiftKey: true });
+    expect(field.value).toBe('@st');
+    expect(onEnter).toHaveBeenCalledTimes(1);
+  });
+
+  it('IME composition не перехватывается', async () => {
+    render(<Host />);
+    const field = await typeAt('@st');
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(field, { key: 'Tab', keyCode: 229 });
+    expect(field.value).toBe('@st');
+    expect(onEnter).toHaveBeenCalledTimes(1);
+  });
+
+  it('ник с подчёркиванием ищется целиком; точка и дефис токен не продолжают', async () => {
+    render(<Host />);
+    await typeAt('@Steve_1');
+    expect(mocks.get.mock.calls.at(-1)?.[1]).toMatchObject({ query: { q: 'Steve_1' } });
+    mocks.get.mockClear();
+    await typeAt('@Steve.x');
+    await typeAt('@Steve-x');
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 });

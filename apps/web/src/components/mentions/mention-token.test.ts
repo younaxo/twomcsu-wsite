@@ -31,3 +31,14 @@ describe('applyMention', () => {
     expect(applyMention('@bo', token!, 'Bob')).toEqual({ value: '@Bob ', caret: 5 });
   });
 });
+
+describe('findMentionToken: символы ника', () => {
+  // Формат ника: [A-Za-z0-9_]{3,16} (register-form USERNAME_PATTERN, MINECRAFT_NAME в API).
+  it('подчёркивание и цифры входят в токен', () => {
+    expect(findMentionToken('@Steve_1', 8)?.query).toBe('Steve_1');
+  });
+  it('точка и дефис ник не продолжают', () => {
+    expect(findMentionToken('@Steve.x', 8)).toBeNull();
+    expect(findMentionToken('@Steve-x', 8)).toBeNull();
+  });
+});
