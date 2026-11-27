@@ -1,5 +1,8 @@
 import * as Joi from 'joi';
-import { isStrongMasterSecret } from '../modules/bridge/bridge.constants';
+import {
+  DELIVERY_JOB_RETENTION_MIN_DAYS,
+  isStrongMasterSecret,
+} from '../modules/bridge/bridge.constants';
 import { PAYMENT_METHODS_PATTERN } from '../modules/store/payment/payment-methods';
 import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
@@ -11,6 +14,110 @@ import { resolveTrustProxy } from './trust-proxy';
 /// отсутствующий NODE_ENV НЕ подпадал под ослабление (Joi по умолчанию
 /// пропускает undefined в `is`).
 const NON_PRODUCTION_ENV = Joi.valid(...RELAXED_NODE_ENVS).required();
+
+/// Loopback/«любой адрес» хост: в production не годится как публичный адрес.
+export function isLocalHost(hostname: string): boolean {
+  const host = hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '');
+  return (
+    host === '' ||
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '0.0.0.0' ||
+    host === '::' ||
+    host === '::1' ||
+    /^127\./.test(host)
+  );
+}
+
+/// Публичный адрес в production (R176, fail closed): https и не loopback.
+/// Вне production не применяется — прежнее поведение (любой uri).
+function publicHttpsUrl(name: string) {
+  return Joi.string()
+    .uri({ scheme: ['https'] })
+    .custom((value: string, helpers) => {
+      try {
+        return isLocalHost(new URL(value).hostname)
+          ? helpers.error('publicurl.local')
+          : value;
+      } catch {
+        return helpers.error('string.uri');
+      }
+    })
+    .messages({
+      'any.required': `${name} обязателен в production`,
+      'string.empty': `${name} обязателен в production`,
+      'string.uri': `${name} в production должен быть https-адресом`,
+      'string.uriCustomScheme': `${name} в production должен быть https-адресом`,
+      'publicurl.local': `${name} в production не может указывать на localhost, 127.0.0.1 или 0.0.0.0`,
+    });
+}
+
+/// Обязательный публичный URL: dev/test — любой uri с прежним дефолтом,
+/// production — обязателен, https, не localhost.
+function publicUrlKey(name: string, devDefault: string) {
+  return Joi.string()
+    .uri()
+    .default(devDefault)
+    .when('NODE_ENV', {
+      is: NON_PRODUCTION_ENV,
+      otherwise: publicHttpsUrl(name).required(),
+    });
+}
+
+/// Redirect URI соцвхода: dev/test — прежний дефолт; production — без дефолта,
+/// обязателен только если провайдер настроен (иначе вход выключен), и всегда
+/// https не-localhost, если задан.
+function redirectUriKey(
+  name: string,
+  devDefault: string,
+  enabledBy: [string, string?],
+) {
+  const configured = Joi.string().min(1).required();
+  const [first, second] = enabledBy;
+  const strictOrOptional = Joi.when(first, {
+    is: configured,
+    then: publicHttpsUrl(name).required(),
+    otherwise: second
+      ? Joi.when(second, {
+          is: configured,
+          then: publicHttpsUrl(name).required(),
+          otherwise: publicHttpsUrl(name).allow('').optional(),
+        })
+      : publicHttpsUrl(name).allow('').optional(),
+  });
+  return Joi.string().when('NODE_ENV', {
+    is: NON_PRODUCTION_ENV,
+    then: Joi.string().uri().default(devDefault),
+    otherwise: strictOrOptional,
+  });
+}
+
+/// WEB_ORIGINS (через запятую): в production каждый элемент — https не-localhost.
+const webOriginsList = Joi.string()
+  .allow('')
+  .custom((value: string, helpers) => {
+    for (const item of value
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)) {
+      try {
+        const url = new URL(item);
+        if (url.protocol !== 'https:' || isLocalHost(url.hostname)) {
+          return helpers.error('weborigins.invalid', { item });
+        }
+      } catch {
+        return helpers.error('weborigins.invalid', { item });
+      }
+    }
+    return value;
+  })
+  .messages({
+    'weborigins.invalid':
+      'WEB_ORIGINS в production: каждый origin — https и не localhost ({{#item}})',
+  });
 
 const envBaseKeys: Joi.PartialSchemaMap = {
   /// Fail-closed (ADR-0164): пустой/не заданный NODE_ENV = production, дефолта
@@ -59,10 +166,25 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   REDIS_PORT: Joi.number().port().default(6379),
   REDIS_PASSWORD: Joi.string().allow('').default(''),
 
-  WEB_ORIGIN: Joi.string().uri().default('http://localhost:3000'),
+  /// В production WEB_ORIGIN может отсутствовать, только если задан WEB_ORIGINS
+  /// (CORS читает WEB_ORIGINS первым); значение — https, не localhost.
+  WEB_ORIGIN: Joi.string()
+    .uri()
+    .default('http://localhost:3000')
+    .when('NODE_ENV', {
+      is: NON_PRODUCTION_ENV,
+      otherwise: Joi.when('WEB_ORIGINS', {
+        is: Joi.string().min(1).required(),
+        then: publicHttpsUrl('WEB_ORIGIN').optional(),
+        otherwise: publicHttpsUrl('WEB_ORIGIN').required(),
+      }),
+    }),
   /// Явный CORS allowlist через запятую (ADR-0104); пусто — только WEB_ORIGIN.
-  WEB_ORIGINS: Joi.string().allow('').optional(),
-  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
+  WEB_ORIGINS: Joi.string()
+    .allow('')
+    .optional()
+    .when('NODE_ENV', { is: NON_PRODUCTION_ENV, otherwise: webOriginsList }),
+  FRONTEND_URL: publicUrlKey('FRONTEND_URL', 'http://localhost:3000'),
 
   JWT_ACCESS_SECRET: Joi.string().min(16).required(),
   JWT_REFRESH_SECRET: Joi.string().min(16).required(),
@@ -125,7 +247,7 @@ const envBaseKeys: Joi.PartialSchemaMap = {
 
   /// Файловое хранилище (PHASE 23, ADR-0008).
   STORAGE_DRIVER: Joi.string().valid('local', 's3').default('local'),
-  CDN_BASE_URL: Joi.string().uri().default('http://localhost:4000/uploads'),
+  CDN_BASE_URL: publicUrlKey('CDN_BASE_URL', 'http://localhost:4000/uploads'),
   UPLOADS_DIR: Joi.string().default('./uploads'),
   STORAGE_BUCKET: Joi.string()
     .allow('')
@@ -192,9 +314,11 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// Вход через Discord/Telegram (ADR-0069). Пусто — провайдер выключен.
   DISCORD_CLIENT_ID: Joi.string().allow('').optional(),
   DISCORD_CLIENT_SECRET: Joi.string().allow('').optional(),
-  DISCORD_REDIRECT_URI: Joi.string()
-    .uri()
-    .default('http://localhost:4000/auth/discord/callback'),
+  DISCORD_REDIRECT_URI: redirectUriKey(
+    'DISCORD_REDIRECT_URI',
+    'http://localhost:4000/auth/discord/callback',
+    ['DISCORD_CLIENT_ID'],
+  ),
   TELEGRAM_BOT_USERNAME: Joi.string().allow('').optional(),
   TELEGRAM_BOT_TOKEN: Joi.string().allow('').optional(),
   /// Telegram Login через OpenID Connect (ADR-0071): Client ID/Secret из
@@ -205,9 +329,11 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// `/minecraft/plugin/*`. Пусто — интеграция выключена, шаг Minecraft в
   /// регистрации не требуется.
   MINECRAFT_PLUGIN_SECRET: Joi.string().allow('').min(32).optional(),
-  TELEGRAM_REDIRECT_URI: Joi.string()
-    .uri()
-    .default('http://localhost:4000/auth/telegram/callback'),
+  TELEGRAM_REDIRECT_URI: redirectUriKey(
+    'TELEGRAM_REDIRECT_URI',
+    'http://localhost:4000/auth/telegram/callback',
+    ['TELEGRAM_CLIENT_ID', 'TELEGRAM_BOT_TOKEN'],
+  ),
   STATUS_PAGE_URL: Joi.string().uri().default('https://status.twomc.su'),
   /// Версия юридических документов, фиксируемая в согласиях (ADR-0070).
   LEGAL_DOCS_VERSION: Joi.string().default('draft'),
@@ -372,6 +498,18 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// Хранение журнала дедупликации: не меньше 7 суток (F5), иначе старт отклоняется.
   BRIDGE_LOG_RETENTION_DAYS: Joi.number().integer().min(7).max(365),
   BRIDGE_LOG_CLEANUP_ENABLED: Joi.boolean(),
+  /// Выдача заказов через Bridge (0.13); по умолчанию выключена. Булево строго
+  /// true/false: опечатка ('flase', '1') - ошибка старта.
+  BRIDGE_DELIVERY_ENABLED: Joi.boolean().default(false),
+  /// Срок хранения закрытых заданий выдачи: 14..3650 суток (не меньше 14 -
+  /// разбор спорных выдач). Пусто - значение по умолчанию (readBridgeDeliveryRetention).
+  BRIDGE_DELIVERY_JOB_RETENTION_DAYS: Joi.number()
+    .integer()
+    .min(DELIVERY_JOB_RETENTION_MIN_DAYS)
+    .max(3650)
+    .empty(''),
+  /// Явный false выключает таймер очистки заданий выдачи (по умолчанию включён).
+  BRIDGE_DELIVERY_JOB_CLEANUP_ENABLED: Joi.boolean(),
 
   /// Розыгрыш «Анархия Новой Эры», фаза 1 (giveaway/docs/ADR-G001). Без
   /// GIVEAWAY_ENABLED=true и GIVEAWAY_MASTER_SECRET приёмник отвечает 503.
@@ -400,6 +538,8 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// Капча на выдаче кода (ADR-G002 п. 2.6); по умолчанию выключена.
   GIVEAWAY_CAPTCHA_ENABLED: Joi.boolean().default(false),
 
+  /// Отладка запросов Prisma (prisma.service): по умолчанию выключена.
+  PRISMA_DEBUG: Joi.boolean().optional(),
   /// Общие опции интерактивных транзакций Prisma (ADR-0183): ожидание
   /// соединения для старта транзакции и предельная длительность. Prisma по
   /// умолчанию даёт 2000/5000 мс, что под нагрузкой даёт P2028.
@@ -512,6 +652,18 @@ const giveawayOnlyEnvSchema = fullEnvSchema.keys({
   TURNSTILE_SECRET_KEY: Joi.string().allow('').optional(),
   COOKIE_DOMAIN: Joi.string().allow('').optional(),
   COOKIE_SECURE: Joi.boolean().default(false),
+  /// Публичные адреса сайта в этом режиме не используются (нет auth, писем,
+  /// файлов и соцвхода) - строгие production-правила R176 не применяются.
+  WEB_ORIGIN: Joi.string().uri().default('http://localhost:3000'),
+  WEB_ORIGINS: Joi.string().allow('').optional(),
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
+  CDN_BASE_URL: Joi.string().uri().default('http://localhost:4000/uploads'),
+  DISCORD_REDIRECT_URI: Joi.string()
+    .uri()
+    .default('http://localhost:4000/auth/discord/callback'),
+  TELEGRAM_REDIRECT_URI: Joi.string()
+    .uri()
+    .default('http://localhost:4000/auth/telegram/callback'),
   GIVEAWAY_ENABLED: Joi.boolean().valid(true).required().messages({
     'any.required': 'GIVEAWAY_ENABLED=true обязателен при GIVEAWAY_ONLY=true',
     'any.only': 'GIVEAWAY_ENABLED=true обязателен при GIVEAWAY_ONLY=true',
