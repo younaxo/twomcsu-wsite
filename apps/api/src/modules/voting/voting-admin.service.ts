@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,10 +12,7 @@ import { sha256Hash } from './vote-webhook-secret';
 
 @Injectable()
 export class VotingAdminService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /// F1: секрет всегда генерируется сервером (256 бит), ручного ввода нет —
   /// поэтому достаточно sha256 без pepper (см. ADR-0121, поправка 28.11.2026).
