@@ -7,6 +7,7 @@ import type {
   NewsCategory,
   ProductDuration,
   ProductType,
+  ReportStatus,
 } from '@prisma/client';
 
 /// Чистые фабрики демо-данных (без БД). Цены twomc.su; «от X» = цена варианта
@@ -302,14 +303,27 @@ export interface DemoPunishment {
   status: MinecraftPunishmentStatus;
   daysAgo: number;
   durationDays: number | null;
+  /// Только у демо-аккаунта «Мои наказания» (DEMO_PUNISHMENT_ACCOUNT).
+  subjectUuid?: string;
 }
+
+/// ДЕМО: привязанный Minecraft-аккаунт демо-игрока для «Мои наказания».
+/// uuid фиктивный, версии 4 (третья группа начинается с 4), НЕ офлайн-версии 3:
+/// linkedUuid() в punishments-read.service.ts считает версию 3 «нет привязки».
+/// Не принадлежит реальному игроку.
+export const DEMO_PUNISHMENT_ACCOUNT = {
+  username: 'demo_ember',
+  uuid: 'de30c0de-0000-4000-8000-00000000e4b3',
+  name: 'DemoEmber',
+} as const;
 
 /// Без IP и контактов; выдавший скрыт по умолчанию (Q31).
 export const DEMO_PUNISHMENTS: DemoPunishment[] = [
   {
     sourceId: 9001,
     kind: 'BAN',
-    subjectName: 'DemoGriefer',
+    subjectName: DEMO_PUNISHMENT_ACCOUNT.name,
+    subjectUuid: DEMO_PUNISHMENT_ACCOUNT.uuid,
     reason: 'Грифинг',
     status: 'ACTIVE',
     daysAgo: 2,
@@ -327,7 +341,8 @@ export const DEMO_PUNISHMENTS: DemoPunishment[] = [
   {
     sourceId: 9003,
     kind: 'WARN',
-    subjectName: 'DemoToxic',
+    subjectName: DEMO_PUNISHMENT_ACCOUNT.name,
+    subjectUuid: DEMO_PUNISHMENT_ACCOUNT.uuid,
     reason: 'Оскорбления',
     status: 'EXPIRED',
     daysAgo: 20,
@@ -359,6 +374,16 @@ export const DEMO_PUNISHMENTS: DemoPunishment[] = [
     status: 'REMOVED',
     daysAgo: 12,
     durationDays: 14,
+  },
+  {
+    sourceId: 9007,
+    kind: 'MUTE',
+    subjectName: DEMO_PUNISHMENT_ACCOUNT.name,
+    subjectUuid: DEMO_PUNISHMENT_ACCOUNT.uuid,
+    reason: 'Флуд',
+    status: 'EXPIRED',
+    daysAgo: 9,
+    durationDays: 3,
   },
 ];
 
@@ -409,9 +434,53 @@ export const DEMO_VOTE_SITE = {
 };
 
 /// Только демо-сид; production-дефолт флага не меняется.
+/// Стенд без Bridge и игрового сервера: разделы наполняются демо-данными, а не
+/// скрываются. Исполнители выдачи (команда и Bridge) ЯВНО выключены: заказы
+/// не уходят на игровой сервер. Правила платного снятия (punishments.paidRemoval)
+/// не задаются: им нужен actorUserId системной записи, которую создаёт владелец.
 export const DEMO_SETTINGS: Record<string, string> = {
   'punishments.public.enabled': 'true',
+  'stats.public.enabled': 'true',
+  'store.delivery.enabled': 'true',
+  'store.delivery.executor.command.enabled': 'false',
+  'store.delivery.executor.bridge.enabled': 'false',
 };
+
+export interface DemoAppeal {
+  reportNumber: string;
+  punishmentSourceId: number;
+  punishmentKind: MinecraftPunishmentKind;
+  status: ReportStatus;
+  daysAgo: number;
+  resolvedDaysAgo: number | null;
+  description: string;
+  verdict: string | null;
+}
+
+/// Обжалования demo_ember: отклонённое (старое) и на рассмотрении (новое).
+/// Открыто только одно (частичный уникальный индекс reports_open_mc_appeal_uniq).
+export const DEMO_APPEALS: DemoAppeal[] = [
+  {
+    reportNumber: 'R-DEMO-APPEAL-1',
+    punishmentSourceId: 9001,
+    punishmentKind: 'BAN',
+    status: 'REJECTED',
+    daysAgo: 1.5,
+    resolvedDaysAgo: 1,
+    description: '[Демо] Прошу пересмотреть блокировку: тестовое обжалование.',
+    verdict: '[Демо] Отказано: тестовый вердикт стенда.',
+  },
+  {
+    reportNumber: 'R-DEMO-APPEAL-2',
+    punishmentSourceId: 9001,
+    punishmentKind: 'BAN',
+    status: 'IN_REVIEW',
+    daysAgo: 0.5,
+    resolvedDaysAgo: null,
+    description: '[Демо] Повторное тестовое обжалование блокировки.',
+    verdict: null,
+  },
+];
 
 /// Публичный список читает только `source='litebans'`, `sourceScope='default'`
 /// и требует `PunishmentSyncState.initialSyncDoneAt` по виду. Демо-строки кладутся
@@ -435,6 +504,7 @@ export function buildDemoPunishmentRow(p: DemoPunishment, now: Date) {
   const startedAt = new Date(now.getTime() - p.daysAgo * 86_400_000);
   return {
     subjectName: p.subjectName,
+    subjectUuid: p.subjectUuid ?? null,
     reason: p.reason,
     status: p.status,
     startedAt,

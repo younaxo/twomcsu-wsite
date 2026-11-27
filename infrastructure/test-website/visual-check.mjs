@@ -26,7 +26,7 @@ const WIDTHS = (process.env.WIDTHS || '360,390,1280').split(',').map(Number);
 const PW_DIR = process.env.PW_DIR || '/tmp/pw';
 const { chromium } = createRequire(PW_DIR + '/')('playwright-core');
 
-// Формат файла учёток: секции [basic auth] / [игрок] / [админ], строки "ключ: значение" (login, password, totp_secret).
+// Формат файла учёток: секции формы входа на стенд (в файле у неё историческое имя «basic auth»; ключ password) / [игрок] / [админ], строки "ключ: значение" (login, password, totp_secret).
 const acc = {};
 {
   let sec = '';
@@ -129,12 +129,19 @@ const ADMIN_PAGES = [
 
 const browser = await chromium.launch({ headless: true });
 
+// Вход на стенд: форма /__stand/login (cookie __Host-stand_gate кладётся в контекст). Пароль берётся из секции формы входа на стенд файла учёток (историческое имя «basic auth») и не печатается.
 async function newContext(w) {
-  return browser.newContext({
-    viewport: { width: w, height: 800 },
-    httpCredentials: { username: basic.login, password: basic.password, origin: BASE }, // только для нашего origin: чужие хосты пароль не получают
-    locale: 'ru-RU',
+  const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, locale: 'ru-RU' });
+  const r = await ctx.request.post(`${BASE}/__stand/login`, {
+    form: { password: basic.password, next: '/' },
+    headers: { origin: BASE },
+    maxRedirects: 0,
   });
+  if (r.status() !== 303) {
+    console.error(`Вход на стенд не удался: HTTP ${r.status()}`);
+    process.exit(2);
+  }
+  return ctx;
 }
 
 async function uiLogin(page, who, withTotp) {
