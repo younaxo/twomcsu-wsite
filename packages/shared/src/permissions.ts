@@ -584,6 +584,11 @@ export const PERMISSIONS = [
     module: 'users',
     description: 'Ручная выдача достижения пользователю',
   },
+  {
+    key: 'players.inventory.view',
+    module: 'players',
+    description: 'Просмотр инвентаря и статистики игрока (админ, с записью в журнал аудита; Q116)',
+  },
   { key: 'users.awards', module: 'users', description: 'Выдача/отзыв награды пользователю' },
   { key: 'users.badges', module: 'users', description: 'Выдача/отзыв бейджа пользователю' },
   {

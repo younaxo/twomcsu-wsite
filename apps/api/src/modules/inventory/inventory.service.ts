@@ -18,6 +18,13 @@ import {
   type StoredInventoryRow,
 } from './inventory.store';
 
+export type InventoryAdminResponseDto = Omit<
+  InventoryMeResponseDto,
+  'viewer'
+> & {
+  viewer: { relation: 'admin' };
+};
+
 /// Чтение собственного инвентаря (ADR-0168, раздел 5; срез 2).
 @Injectable()
 export class InventoryService {
@@ -52,6 +59,31 @@ export class InventoryService {
       });
     }
 
+    return this.buildView(userId, server, now, { relation: 'owner' });
+  }
+
+  /// Админский просмотр (Q116): privacy-флаги владельца не применяются, ответ
+  /// того же вида. Нет привязки Minecraft или снимков —   /// (не ошибка). Существование пользователя проверяет вызывающий.
+  async getForAdmin(
+    userId: string,
+    server?: string,
+    now: Date = new Date(),
+  ): Promise<InventoryAdminResponseDto> {
+    if (server !== undefined && !SERVER_SLUG.test(server)) {
+      throw new UnprocessableEntityException({
+        code: 'invalid_param',
+        message: 'Недопустимый параметр server',
+      });
+    }
+    return this.buildView(userId, server, now, { relation: 'admin' });
+  }
+
+  private async buildView<V extends { relation: string }>(
+    userId: string,
+    server: string | undefined,
+    now: Date,
+    viewer: V,
+  ): Promise<Omit<InventoryMeResponseDto, 'viewer'> & { viewer: V }> {
     const rows = await this.store.listForUser(userId, server);
     const bySlug = new Map<string, StoredInventoryRow[]>();
     for (const row of rows) {
@@ -80,7 +112,7 @@ export class InventoryService {
     return {
       state: hasData ? 'ok' : 'no_data',
       servers,
-      viewer: { relation: 'owner' },
+      viewer,
     };
   }
 
