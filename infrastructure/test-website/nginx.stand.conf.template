@@ -162,7 +162,9 @@ server {
         proxy_ssl_name cdn-files.twomc.su;
         proxy_ssl_protocols TLSv1.2 TLSv1.3;
         proxy_ssl_verify on;
+        # Без trusted_certificate nginx не находит корень CA (verify error 20 -> 502). Бандл Debian/Ubuntu (пакет ca-certificates ставит bootstrap-server.sh).
         proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_ssl_verify_depth 3;
         proxy_set_header Host cdn-files.twomc.su;
         proxy_set_header Cookie "";
         proxy_set_header Authorization "";

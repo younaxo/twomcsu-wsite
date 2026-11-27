@@ -24,6 +24,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, string> = {
   news: 'Новости',
   notifications: 'Уведомления',
   orders: 'Заказы',
+  players: 'Игроки',
   positions: 'Должности',
   profile_reports: 'Жалобы на профили',
   promocodes: 'Промокоды',
