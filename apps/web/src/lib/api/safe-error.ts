@@ -18,7 +18,8 @@ const UNSAFE_PATTERNS: readonly RegExp[] = [
   /[\n\r\t]/,
   /[^\s@]+@[^\s@]+/, // email
   /\b\d{1,3}(?:\.\d{1,3}){3}\b/, // IPv4
-  /::|(?=S*[a-f])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}/i, // IPv6 (время 10:30:00 не задевает)
+  /::/, // IPv6 в сжатой записи
+  /(?<![\w:])(?=[0-9a-f:]*[a-f])(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}(?![\w:])/i, // IPv6 (время 10:30:00 не задевает)
   /:\/\/|\bwww\./i, // URL
   /[/\\]/, // пути
   /\b(?:select|insert|update|delete|drop|from|where|join|prisma|sql|stack|exception|error|undefined|null|nan)\b/i,
