@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { inputClassName } from '@/components/ui/input';
 import { SegmentedControl } from '@/components/ui/segmented-control';
@@ -44,13 +45,23 @@ afterEach(() => {
 });
 
 describe('шапка на узких экранах', () => {
-  it('счётчик онлайна скрыт до 440 px, действия справа не сжимаются', () => {
+  it('счётчик онлайна до 440 px уезжает в мобильное меню, действия справа не сжимаются', () => {
     render(<SiteHeader />, { wrapper: Providers });
     const wrapper = screen.getByTestId('online-counter').parentElement!;
     expect(wrapper.className).toContain('max-[439px]:hidden');
     expect(wrapper.className).toContain('lg:hidden');
     expect(wrapper.parentElement!.className).toContain('shrink-0');
     expect(screen.getByTestId('site-header-surface').className).toContain('gap-2');
+  });
+
+  it('меню: компактный счётчик онлайна с подписью виден только до 440 px', async () => {
+    render(<SiteHeader />, { wrapper: Providers });
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть меню' }));
+    const dialog = await screen.findByRole('dialog');
+    const counter = within(dialog).getByTestId('online-counter');
+    expect(counter.parentElement!.className).toContain('min-[440px]:hidden');
+    expect(counter.className).toContain('min-h-10');
+    expect(within(dialog).getByText('игроков онлайн')).toBeInTheDocument();
   });
 
   it('chevron кнопки профиля скрыт на 360 px, ник остаётся скрытым до md', () => {
@@ -71,6 +82,25 @@ describe('шапка на узких экранах', () => {
 });
 
 describe('цели касания на мобильных', () => {
+  it('TabsTrigger: min-h-10 на мобильных в обоих вариантах', () => {
+    render(
+      <>
+        <Tabs defaultValue="a">
+          <TabsList>
+            <TabsTrigger value="a">Линия</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <Tabs defaultValue="b" variant="enclosed">
+          <TabsList>
+            <TabsTrigger value="b">Утопленная</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </>,
+    );
+    expect(screen.getByRole('tab', { name: 'Линия' }).className).toContain('max-md:min-h-10');
+    expect(screen.getByRole('tab', { name: 'Утопленная' }).className).toContain('max-md:min-h-10');
+  });
+
   it('хлебные крошки: ссылка с вертикальным отступом до 40 px', () => {
     render(<Breadcrumbs items={[{ label: 'Магазин', href: '/shop' }, { label: 'Полемизм' }]} />);
     expect(screen.getByRole('link', { name: 'Магазин' }).className).toContain('max-md:py-2.5');
@@ -88,6 +118,6 @@ describe('цели касания на мобильных', () => {
   });
 
   it('поля и select (inputClassName) — min-h-10 на мобильных', () => {
-    expect(inputClassName).toContain('max-md:min-h-10');
+    expect(inputClassName).toContain('max-md:min-h-[var(--input-min-h,2.5rem)]');
   });
 });

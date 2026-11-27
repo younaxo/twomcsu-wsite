@@ -45,6 +45,7 @@ describe('admin shell mobile layout (рендер)', () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).toContain('max-sm:[--control-h:40px]');
     expect(root.className).toContain('max-sm:[--control-h-sm:40px]');
+    expect(root.className).toContain('[--input-min-h:0px]');
   });
 
   it('сайдбар — drawer ниже lg (desktop-панель скрыта), кнопка меню видна только ниже lg', () => {

@@ -79,12 +79,12 @@ export const TabsTrigger = forwardRef<ElementRef<typeof RadixTabs.Trigger>, Tabs
           'disabled:pointer-events-none disabled:opacity-50',
           '[&_svg]:size-4 [&_svg]:shrink-0',
           variant === 'line' && [
-            'h-control border-b-2 border-transparent px-3 text-sm',
+            'h-control border-b-2 border-transparent px-3 text-sm max-md:min-h-10',
             'data-[state=active]:border-primary data-[state=active]:text-foreground',
             'data-[orientation=vertical]:justify-start data-[orientation=vertical]:border-b-0 data-[orientation=vertical]:border-r-2',
           ],
           variant === 'enclosed' && [
-            'h-control-sm rounded-sm px-3 text-sm',
+            'h-control-sm rounded-sm px-3 text-sm max-md:min-h-10',
             'data-[state=active]:bg-surface data-[state=active]:text-foreground data-[state=active]:shadow-sm',
           ],
           className,
