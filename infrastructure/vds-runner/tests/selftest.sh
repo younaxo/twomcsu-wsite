@@ -63,7 +63,7 @@ fi
 # --- T6: проверка параметров bench (validate_params, подменённый nproc=6, без docker и сети) и нижний регистр тегов образов
 B="$HERE/server/ops/jobs/bench.sh"
 { echo 'nproc() { echo 6; }'; sed -n "/^STAND_MIN_CPUS=/,/^validate_params ||/p" "$B" | sed '$d'; } > "$D/validate.sh"
-vp() { ( unset PROFILE DB_LATENCY_MS DURATION WARMUP REPEATS SERVER_NCPU LOADGEN_NCPU MEM HEAP JAVA_GC IMPLS LEVELS DOCKER_BUILD_ARGS SERVER_CPUS LOADGEN_CPUS
+vp() { ( unset OHA_IMAGE NODE_IMAGE DATASET_FILE PROFILE DB_LATENCY_MS DURATION WARMUP REPEATS SERVER_NCPU LOADGEN_NCPU MEM HEAP JAVA_GC IMPLS LEVELS DOCKER_BUILD_ARGS SERVER_CPUS LOADGEN_CPUS
          env "$@" bash -c "source '$D/validate.sh'; validate_params" >/dev/null 2>&1; echo $? ); }
 [[ "$(vp A=1)" == 0 ]] && ok "T6a умолчания (бенчмарк 0-3, стенду 2 ядра) допустимы" || bad "T6a"
 [[ "$(vp SERVER_CPUS=0-2 LOADGEN_CPUS=3-5)" == 1 ]] && ok "T6b cpuset без ядер для стенда отклонён" || bad "T6b"
@@ -72,7 +72,38 @@ vp() { ( unset PROFILE DB_LATENCY_MS DURATION WARMUP REPEATS SERVER_NCPU LOADGEN
 [[ "$(vp PROFILE=huge)" == 1 ]] && ok "T6e PROFILE вне small|medium|large отклонён" || bad "T6e"
 [[ "$(vp DB_LATENCY_MS=5x)" == 1 ]] && ok "T6f нечисловой DB_LATENCY_MS отклонён" || bad "T6f"
 [[ "$(vp 'DOCKER_BUILD_ARGS=--privileged')" == 1 ]] && ok "T6g DOCKER_BUILD_ARGS с чужим флагом отклонён" || bad "T6g"
-[[ "$(vp 'DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=node:24 --no-cache')" == 0 ]] && ok "T6h --build-arg KEY=VAL и --no-cache допустимы" || bad "T6h"
+DG=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+[[ "$(vp "DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=node:24-alpine@$DG --no-cache")" == 0 ]] && ok "T6h NODE_IMAGE по digest и --no-cache допустимы" || bad "T6h"
+[[ "$(vp 'DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=node:24')" == 1 ]] && ok "T6h2 NODE_IMAGE без digest отклонён" || bad "T6h2"
+[[ "$(vp "DOCKER_BUILD_ARGS=--build-arg FOO=x@$DG")" == 1 ]] && ok "T6h3 ключ вне allowlist (FOO) отклонён" || bad "T6h3"
+[[ "$(vp "DOCKER_BUILD_ARGS=--build-arg HTTP_PROXY=http://x@$DG")" == 1 ]] && ok "T6h4 ключ HTTP_PROXY отклонён" || bad "T6h4"
+[[ "$(vp "DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=-evil@$DG")" == 1 ]] && ok "T6h5 NODE_IMAGE со значением на '-' отклонён" || bad "T6h5"
+[[ "$(vp OHA_IMAGE=-v)" == 1 ]] && ok "T6k OHA_IMAGE на '-' отклонён" || bad "T6k"
+[[ "$(vp OHA_IMAGE=ghcr.io/hatoo/oha:1.4.5)" == 0 ]] && ok "T6l обычный OHA_IMAGE допустим" || bad "T6l"
 [[ "$(vp MEM=512m HEAP=1g)" == 1 ]] && ok "T6i HEAP >= MEM отклонён" || bad "T6i"
 if grep -nE 'twomcr-\$\{?id\}?-(api|web|java)|-t "twomcr-\$id' "$HERE"/server/ops/jobs/*.sh | grep -v '^$' | grep -q .; then bad "T6j тег образа с id без нижнего регистра"; else ok "T6j теги образов строятся из \${id,,}"; fi
+
+# --- T7: extract_dir (java-build) на подставных tar: docker подменён функцией, отдающей готовый tar. Отклонение = код 13 и REJECTED=1, каталог dest пуст
+J="$HERE/server/ops/jobs/java-build.sh"
+{ echo 'valid_rel_path() { :; }'; sed -n '/^REJECTED=0/,/^extract() {/p' "$J" | sed '$d'; } > "$D/extract.sh"
+T7="$D/t7"; mkdir -p "$T7/src"; ( cd "$T7/src" && echo data > ok.jar && ln ok.jar hard.jar && mkdir sub && echo r > sub/r.xml && mkfifo fifo.x 2>/dev/null; true )
+mk() { ( cd "$T7/src" && tar -cf "$T7/$1.tar" "${@:2}" ) 2>/dev/null; }
+mk plain ok.jar sub
+mk hard ok.jar hard.jar
+mk dots --transform 's|^|../|' ok.jar
+printf '%s\n' "garbage-not-a-tar" > "$T7/garbage.tar"
+( cd "$T7/src" && tar -cPf "$T7/abs.tar" "$T7/src/ok.jar" ) 2>/dev/null
+[[ -p "$T7/src/fifo.x" ]] && mk fifo fifo.x
+ln -s ok.jar "$T7/src/sym.jar" 2>/dev/null && [[ -L "$T7/src/sym.jar" ]] && mk sym sym.jar
+ed() { # ed <имя tar> -> "код REJECTED файлов-в-dest"
+  ( dir="$T7"; docker() { cat "$T7/$FAKE.tar"; }; FAKE="$1"
+    source "$D/extract.sh"; extract_dir cid /x "$T7/dest-$1" >/dev/null 2>&1; rc=$?
+    echo "$rc $REJECTED $(find "$T7/dest-$1" -type f | wc -l)" ); }
+[[ "$(ed plain)" == "0 0 2" ]] && ok "T7a обычный архив распакован (код 0, 2 файла)" || bad "T7a: $(ed plain)"
+[[ "$(ed hard)" == "13 1 0" ]] && ok "T7b hardlink отклонён (код 13)" || bad "T7b: $(ed hard)"
+[[ "$(ed dots)" == "13 1 0" ]] && ok "T7c '../' отклонён (код 13)" || bad "T7c: $(ed dots)"
+[[ "$(ed abs)" == "13 1 0" ]] && ok "T7d абсолютный путь отклонён (код 13)" || bad "T7d: $(ed abs)"
+[[ "$(ed garbage)" == "13 1 0" ]] && ok "T7e нечитаемый tar (ненулевой код tar -t) отклонён (код 13)" || bad "T7e: $(ed garbage)"
+if [[ -f "$T7/fifo.tar" ]]; then [[ "$(ed fifo)" == "13 1 0" ]] && ok "T7f fifo отклонён (код 13)" || bad "T7f: $(ed fifo)"; else echo "skip T7f (mkfifo недоступен)"; fi
+if [[ -f "$T7/sym.tar" ]]; then [[ "$(ed sym)" == "13 1 0" ]] && ok "T7g симлинк отклонён (код 13)" || bad "T7g: $(ed sym)"; else echo "skip T7g (ln -s недоступен)"; fi
 exit "$fail"

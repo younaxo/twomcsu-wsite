@@ -6,6 +6,7 @@
 # Если официальная сборка упала, запускается диагностическая (`gradle build --continue || true`), чтобы получить отчёт тестов и число упавших;
 # её jar НЕ годится для выпуска (лежит в out/diag/, код возврата задания остаётся ненулевым).
 # Коды: 0 успех, 10 нет/недопустим --path или Dockerfile, 11 официальная сборка упала, 12 сборка успешна, но jar не найден.
+#       13 архив из контейнера ОТКЛОНЁН проверкой (симлинк, жёсткая ссылка, спецфайл, `..`, абсолютный путь, нечитаемый tar-листинг) - артефактам не доверять (M-3).
 # Песочница: docker build не умеет --cap-drop/no-new-privileges (RUN-шаги идут с набором прав по умолчанию); лимиты --memory/--cpu-shares/--cpu-quota
 # передаются, но BuildKit их может игнорировать (см. docs/runbooks/vds-runner.md). Извлечение идёт через `docker create` (код не запускается)
 # с --cap-drop ALL, no-new-privileges, --network none; файлы забираются `docker cp ... -` в tar, имена и типы проверяются (без симлинков, `..`, абсолютных путей), распаковка в новый пустой каталог. Сеть сборки - стандартная bridge (нужна только для скачивания зависимостей).
@@ -57,10 +58,11 @@ build_image() { # build_image <dockerfile> <tag> <logfile>: код docker build
   return $?
 }
 
+REJECTED=0   # 1, если extract_dir отклонил архив (итоговый код 13)
 EXTRACT_MAX_BYTES=$(( 1024 * 1024 * 1024 ))   # предел размера одного tar-потока из контейнера
 
 # extract_dir <cid> <путь-в-контейнере> <dest>: `docker cp ... -` в tar-файл, проверка имён и типов, распаковка в НОВЫЙ пустой каталог dest.
-# Отклоняется весь архив, если есть абсолютные пути, `..`, симлинки, жёсткие ссылки или спецфайлы (код 1). Отсутствие пути в образе - не ошибка (код 0, dest пуст).
+# Отклоняется весь архив (код 13, REJECTED=1): абсолютные пути, `..`, симлинки, жёсткие ссылки, спецфайлы, либо `tar -t`/`tar -tv` завершился с ошибкой (L-4). Прочие сбои (размер, mktemp) - код 1. Отсутствие пути в образе - не ошибка (код 0, dest пуст).
 # После распаковки (запасная мера) в dest удаляются все не обычные файлы и не каталоги; симлинков к моменту report_* нет.
 extract_dir() {
   local cid="$1" cpath="$2" dest="$3" tmp
@@ -69,11 +71,18 @@ extract_dir() {
   docker cp "$cid:$cpath" - 2>/dev/null | head -c "$EXTRACT_MAX_BYTES" > "$tmp" || true
   if [[ ! -s "$tmp" ]]; then rm -f "$tmp"; return 0; fi
   if (( $(stat -c %s "$tmp") >= EXTRACT_MAX_BYTES )); then echo "##### java-build: $cpath превышает $(( EXTRACT_MAX_BYTES / 1048576 )) МБ, пропущено"; rm -f "$tmp"; return 1; fi
-  if tar -tf "$tmp" 2>/dev/null | grep -qE '^/|(^|/)\.\.(/|$)'; then
-    echo "##### java-build: $cpath отклонён (абсолютные пути или '..' в архиве)"; rm -f "$tmp"; return 1
+  local names types
+  if ! names="$(tar -tf "$tmp" 2>/dev/null)"; then
+    echo "##### java-build: $cpath ОТКЛОНЁН (tar -t завершился с ошибкой: архив повреждён или нечитаем)"; REJECTED=1; rm -f "$tmp"; return 13
   fi
-  if tar -tvf "$tmp" 2>/dev/null | cut -c1 | grep -qv '[-d]'; then
-    echo "##### java-build: $cpath отклонён (симлинки, жёсткие ссылки или спецфайлы в архиве)"; rm -f "$tmp"; return 1
+  if grep -qE '^/|(^|/)\.\.(/|$)' <<<"$names"; then
+    echo "##### java-build: $cpath ОТКЛОНЁН (абсолютные пути или '..' в архиве)"; REJECTED=1; rm -f "$tmp"; return 13
+  fi
+  if ! types="$(tar -tvf "$tmp" 2>/dev/null)"; then
+    echo "##### java-build: $cpath ОТКЛОНЁН (tar -tv завершился с ошибкой: типы файлов не проверены)"; REJECTED=1; rm -f "$tmp"; return 13
+  fi
+  if cut -c1 <<<"$types" | grep -qv '[-d]'; then
+    echo "##### java-build: $cpath ОТКЛОНЁН (симлинки, жёсткие ссылки или спецфайлы в архиве)"; REJECTED=1; rm -f "$tmp"; return 13
   fi
   tar -xf "$tmp" -C "$dest" --no-same-owner --no-same-permissions 2>/dev/null || echo "##### java-build: предупреждение: tar завершился с ошибкой для $cpath"
   rm -f "$tmp"
@@ -139,10 +148,14 @@ tail -n 25 "$out/build.log" | sed -E 's/^#[0-9]+ [0-9.]+ //' | sed 's/^/    buil
 
 rc=0
 if (( brc == 0 )); then
-  extract "$tag" "$out" || echo "##### java-build: не удалось создать контейнер для извлечения"
-  report_jars "$out/libs"
-  report_tests "$out/test-results"
-  compgen -G "$out/libs/*.jar" >/dev/null || { echo "##### java-build: jar не найден в build/libs"; rc=12; }
+  extract "$tag" "$out" || echo "##### java-build: извлечение не удалось или архив отклонён (см. выше)"
+  if (( REJECTED )); then
+    echo "##### java-build: архив из контейнера ОТКЛОНЁН проверкой - артефакты не использовать (код 13)"
+    rm -rf "$out/libs" "$out/test-results" "$out/reports"; rc=13
+  else
+    report_jars "$out/libs"; report_tests "$out/test-results"
+    compgen -G "$out/libs/*.jar" >/dev/null || { echo "##### java-build: jar не найден в build/libs"; rc=12; }
+  fi
 else
   rc=11
   report_javac "$out/build.log"
