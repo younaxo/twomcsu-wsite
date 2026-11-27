@@ -57,7 +57,7 @@ function RefLink({ item }: { item: PublicPunishmentView }) {
   return PUBLIC_REF_PATTERN.test(item.ref) ? (
     <Link
       href={`/bans/${item.ref}`}
-      className="rounded-sm font-medium text-primary-soft-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      className="inline-flex rounded-sm font-medium text-primary-soft-foreground underline-offset-2 hover:underline max-md:min-h-10 max-md:items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
     >
       {item.subjectName}
     </Link>
