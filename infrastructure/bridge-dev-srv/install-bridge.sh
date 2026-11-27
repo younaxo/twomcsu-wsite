@@ -174,7 +174,7 @@ if [[ "$MODE" == yes ]]; then
   ptero_restart_guard install || block "проверка игроков перед restart не пройдена"
 else
   pl="$(ptero_players_online 2>/dev/null)"; say "$pl"
-  say "dry-run: число игроков не запрашивается (команда list не отправляется)"
+  say "dry-run: число игроков берётся через SLP (только чтение); команда list не отправляется"
 fi
 
 if [[ "$MODE" == dry ]]; then

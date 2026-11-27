@@ -347,21 +347,92 @@ _pt_ws() {
 # console_tail <секунды> [фильтр-regex]: история и новые строки консоли за N секунд (только совпавшие, ключи вычищены).
 ptero_console_tail() { _pt_ws "$1" "" 1 "" "" "${2:-}"; }
 
-# players_online: отправляет команду list (только при PTERO_ALLOW_WRITE=1) и печатает «players=<N>» либо «players=?».
-# Без записи (dry-run) команда НЕ отправляется: проверяется только websocket (AUTH_OK) и печатается «players=? (dry-run)».
-ptero_players_online() {
-  if [[ "$PTERO_ALLOW_WRITE" != "1" ]]; then
-    local out; out="$(_pt_ws 0 "" 0 "" "" "")" || true
-    if grep -q '^AUTH_OK' <<<"$out"; then echo "websocket=ok players=? (dry-run: команда list не отправляется)"; else echo "websocket=FAIL players=?"; return 1; fi
-    return 0
-  fi
-  local out n
-  out="$(_pt_ws 20 "list" 0 'There are [0-9]+ (of a max of )?[0-9]+ players online|[0-9]+ of a max' "" 'players online|of a max')" || true
-  n="$(sed -n 's/.*There are \([0-9]\+\) .*players online.*/\1/p' <<<"$out" | head -n1)"
-  [[ -n "$n" ]] || n="$(sed -n 's/.* \([0-9]\+\) of a max.*/\1/p' <<<"$out" | head -n1)"
-  if [[ -n "$n" ]]; then echo "players=$n"; else echo "players=?"; return 1; fi
+# ---- Server List Ping (основной способ определения игроков; node:net без зависимостей, только чтение статуса) ----
+# Вход: PT_HOST, PT_PORT, PT_TIMEOUT_MS. Вывод: «players=<N> max=<M> version=<v>» (код 0) либо код 1 без вывода.
+_PT_SLP_JS='
+const net = require("node:net");
+const host = process.env.PT_HOST || "127.0.0.1";
+const port = parseInt(process.env.PT_PORT || "25565", 10);
+const timeoutMs = parseInt(process.env.PT_TIMEOUT_MS || "5000", 10);
+const vi = (n) => { const b = []; n = n >>> 0; do { let x = n & 127; n >>>= 7; if (n) x |= 128; b.push(x); } while (n); return Buffer.from(b); };
+const pkt = (body) => Buffer.concat([vi(body.length), body]);
+const rv = (buf, o) => { let r = 0, s = 0; for (let i = 0; i < 5; i++) { if (o + i >= buf.length) return null; const x = buf[o + i]; r |= (x & 127) << s; if (!(x & 128)) return [r >>> 0, i + 1]; s += 7; } return "bad"; };
+const hs = Buffer.concat([vi(0), vi(767), vi(Buffer.byteLength(host)), Buffer.from(host), Buffer.from([(port >> 8) & 255, port & 255]), vi(1)]);
+let acc = Buffer.alloc(0), done = false;
+const fail = () => { if (done) return; done = true; sock.destroy(); process.exit(1); };
+const sock = net.connect({ host, port });
+const timer = setTimeout(fail, timeoutMs);
+sock.on("connect", () => { sock.write(Buffer.concat([pkt(hs), pkt(vi(0))])); });
+sock.on("error", fail);
+sock.on("close", fail);
+sock.on("data", (d) => {
+  if (done) return;
+  acc = Buffer.concat([acc, d]);
+  if (acc.length > 1048576) return fail();
+  const l = rv(acc, 0); if (l === null) return; if (l === "bad") return fail();
+  if (l[0] < 2 || l[0] > 1048576) return fail();
+  if (acc.length < l[1] + l[0]) return;
+  const id = rv(acc, l[1]); if (!id || id === "bad" || id[0] !== 0) return fail();
+  const sl = rv(acc, l[1] + id[1]); if (!sl || sl === "bad") return fail();
+  const start = l[1] + id[1] + sl[1], end = start + sl[0];
+  if (end > l[1] + l[0] || end > acc.length) return fail();
+  let j; try { j = JSON.parse(acc.subarray(start, end).toString("utf8")); } catch (e) { return fail(); }
+  const p = j && j.players;
+  if (!p || !Number.isInteger(p.online) || p.online < 0 || p.online > 100000) return fail();
+  const max = Number.isInteger(p.max) && p.max >= 0 ? p.max : 0;
+  const ver = String((j.version && j.version.name) || "?").replace(/[^A-Za-z0-9._ -]/g, "").slice(0, 40).replace(/ /g, "_") || "?";
+  done = true; clearTimeout(timer); sock.destroy();
+  console.log("players=" + p.online + " max=" + max + " version=" + ver);
+  process.exit(0);
+});
+'
+
+# ptero_slp [хост порт]: без аргументов берёт основную аллокацию. Печатает «players=N max=M version=V», код 1 - ошибка (вывод пуст).
+# Только чтение: GET /network/allocations и TCP-запрос статуса на игровой порт. Сначала сеть bridge, затем host (hairpin).
+ptero_slp() {
+  local host="${1:-}" port="${2:-}" img out net
+  if [[ -z "$host" ]]; then read -r host port < <(ptero_allocation) || return 1; fi
+  [[ "$host" =~ ^[A-Za-z0-9.-]+$ && "$port" =~ ^[0-9]{2,5}$ ]] || return 1
+  img="$(_pt_node_image 2>/dev/null)" || return 1
+  for net in bridge host; do
+    out="$(timeout 20 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 64m --network "$net" \
+      -e PT_HOST="$host" -e PT_PORT="$port" -e PT_TIMEOUT_MS=5000 "$img" node -e "$_PT_SLP_JS" </dev/null 2>/dev/null)" || out=""
+    if [[ "$out" =~ ^players=[0-9]+\ max=[0-9]+\ version=[A-Za-z0-9._-]+$ ]]; then printf '%s\n' "$out"; return 0; fi
+  done
+  return 1
 }
 
+# ptero_players_ws: запасной способ - команда list через websocket консоли (только при PTERO_ALLOW_WRITE=1). Печатает число или пусто.
+# Ожидание до 30 с; ANSI/цветовые коды вычищаются; Paper 1.21: «There are N of a max of M players online».
+# При неуспехе в stderr: число полученных строк и только строки с players/online.
+ptero_players_ws() {
+  local out n re
+  re='There are [0-9]+ (of a max of|out of maximum|of maximum|out of a max of) [0-9]+ players online|[0-9]+ (of a max|out of max)'
+  out="$(_pt_ws 30 "list" 1 "$re" "" "")" || true
+  out="$(sed -e 's/\x1b\[[0-9;?]*[ -\/]*[@-~]//g' -e 's/\x1b[@-_]//g' -e 's/§[0-9a-fk-or]//gI' -e 's/\r//g' <<<"$out")"
+  n="$(sed -n 's/.*There are \([0-9][0-9]*\) \(of a max of\|out of maximum\|of maximum\|out of a max of\) [0-9][0-9]* players online.*/\1/p' <<<"$out" | head -n1)"
+  [[ -n "$n" ]] || n="$(sed -n 's/.* \([0-9][0-9]*\) \(of a max\|out of max\).*/\1/p' <<<"$out" | head -n1)"
+  if [[ -n "$n" ]]; then printf '%s\n' "$n"; return 0; fi
+  {
+    echo "ws list: получено строк консоли: $(grep -c '^L: ' <<<"$out")"
+    grep '^L: ' <<<"$out" | grep -i 'players\|online' | sed 's#https\?://[^ ]*#<url>#g; s/[0-9a-fA-F]\{32,\}/<hex>/g' | head -n 10
+  } >&2
+  return 1
+}
+
+# players_online: печатает «players=<N>» либо «players=?» (код 1). Порядок: SLP -> websocket list -> отказ (BLOCKER).
+# Dry-run (PTERO_ALLOW_WRITE!=1): команда list не отправляется; SLP только читает статус, при неудаче проверяется websocket (AUTH_OK).
+ptero_players_online() {
+  local s n
+  if s="$(ptero_slp)"; then n="${s#players=}"; echo "players=${n%% *}"; return 0; fi
+  if [[ "$PTERO_ALLOW_WRITE" != "1" ]]; then
+    local out; out="$(_pt_ws 0 "" 0 "" "" "")" || true
+    if grep -q '^AUTH_OK' <<<"$out"; then echo "websocket=ok players=? (dry-run: SLP недоступен, команда list не отправляется)"; else echo "websocket=FAIL players=?"; return 1; fi
+    return 0
+  fi
+  if n="$(ptero_players_ws)" && [[ "$n" =~ ^[0-9]+$ ]]; then echo "players=$n"; return 0; fi
+  echo "players=?"; return 1
+}
 # server_image: образ Docker сервера (docker_image из GET /servers/<UUID>), несекретно.
 ptero_server_image() {
   _pt_req GET "" || return 1
@@ -377,7 +448,7 @@ ptero_restart_guard() {
   local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pl n n2
   [[ "$why" =~ ^(install|rollback)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "restart_guard требует PTERO_ALLOW_WRITE=1"; return 1; }
-  pl="$(ptero_players_online 2>/dev/null)"; n="${pl#players=}"
+  pl="$(ptero_players_online)"; n="${pl#players=}"   # stderr (диагностика ws) виден
   [[ "$n" =~ ^[0-9]+$ ]] || { echo "не удалось определить число игроков (websocket или команда list)"; return 1; }
   echo "игроков онлайн: $n"
   (( n == 0 )) && return 0
