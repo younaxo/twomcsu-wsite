@@ -12,6 +12,7 @@ final class Protocol {
     static final String METHOD = "POST";
     static final String PATH_CLAIM = "/bridge/v1/delivery/claim";
     static final String PATH_ACK = "/bridge/v1/delivery/ack";
+    static final String PATH_EVENTS = "/bridge/v1/events";
 
     static final String HEADER_KEY_ID = "x-twomc-key-id";
     static final String HEADER_TIMESTAMP = "x-twomc-timestamp";
