@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/configure-app';
+import { AuditService } from '../src/modules/audit/audit.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
@@ -19,6 +20,10 @@ describe('Admin players view (e2e)', () => {
   const password = 'Sup3rSecretPassw0rd!';
   const userIds: string[] = [];
   const roleIds: string[] = [];
+  /// Тестовая константа (не секрет): включает admin-2FA, иначе кейс
+  /// admin_2fa_required не исполняется.
+  const TEST_TWO_FACTOR_KEY = 'e2e-admin-players-test-only-key-0123456789ab';
+  const previousTwoFactorKey = process.env.TWO_FACTOR_ENCRYPTION_KEY;
   const http = () => request(app.getHttpServer());
 
   async function createUser(label: string) {
@@ -37,7 +42,11 @@ describe('Admin players view (e2e)', () => {
     return { id: user.id, auth: `Bearer ${login.body.accessToken}` };
   }
 
-  async function giveRole(userId: string, keys: string[]) {
+  async function giveRole(
+    userId: string,
+    keys: string[],
+    withTwoFactor = true,
+  ) {
     const slug = `ap-${unique}-${roleIds.length}`;
     const role = await prisma.role.create({
       data: {
@@ -57,7 +66,7 @@ describe('Admin players view (e2e)', () => {
       data: records.map((p) => ({ roleId: role.id, permissionId: p.id })),
     });
     await prisma.userRole.create({ data: { userId, roleId: role.id } });
-    await markStaffTwoFactorEnabled(prisma, userId);
+    if (withTwoFactor) await markStaffTwoFactorEnabled(prisma, userId);
     await permissions.invalidateRole(role.id);
     await permissions.invalidateUser(userId);
   }
@@ -65,9 +74,11 @@ describe('Admin players view (e2e)', () => {
   let target: { id: string; auth: string };
   let admin: { id: string; auth: string };
   let moderator: { id: string; auth: string };
+  let no2fa: { id: string; auth: string };
   let plain: { id: string; auth: string };
 
   beforeAll(async () => {
+    process.env.TWO_FACTOR_ENCRYPTION_KEY = TEST_TWO_FACTOR_KEY;
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -90,13 +101,25 @@ describe('Admin players view (e2e)', () => {
     admin = await createUser('admin');
     moderator = await createUser('mod');
     plain = await createUser('plain');
+    no2fa = await createUser('no2fa');
     await giveRole(admin.id, ['players.inventory.view']);
     await giveRole(moderator.id, ['users.view']);
+    await giveRole(no2fa.id, ['players.inventory.view'], false);
   });
 
   afterAll(async () => {
+    if (previousTwoFactorKey === undefined) {
+      delete process.env.TWO_FACTOR_ENCRYPTION_KEY;
+    } else {
+      process.env.TWO_FACTOR_ENCRYPTION_KEY = previousTwoFactorKey;
+    }
     if (app) {
-      await prisma.auditLog.deleteMany({ where: { actorId: admin.id } });
+      await prisma.auditLog.deleteMany({
+        where: { actorId: { in: userIds } },
+      });
+      await prisma.playerInventory.deleteMany({
+        where: { userId: { in: userIds } },
+      });
       await prisma.playerStatistics.deleteMany({
         where: { userId: { in: userIds } },
       });
@@ -175,16 +198,88 @@ describe('Admin players view (e2e)', () => {
     expect(res.body.stats.userId).toBeUndefined();
   });
 
-  it('аудит: запись о просмотре без содержимого', async () => {
-    const rows = await prisma.auditLog.findMany({
-      where: { actorId: admin.id, targetId: target.id },
+  it('право есть, 2FA нет: 403 admin_2fa_required', async () => {
+    for (const path of paths(target.id)) {
+      const res = await http()
+        .get(path)
+        .set('Authorization', no2fa.auth)
+        .expect(403);
+      expect(JSON.stringify(res.body)).toContain('admin_2fa_required');
+    }
+  });
+
+  it('инвентарь со снимком: слоты в ответе, без служебных полей', async () => {
+    await prisma.playerInventory.create({
+      data: {
+        userId: target.id,
+        serverSlug: 'survival',
+        grp: 'main',
+        epoch: 'e1',
+        rev: 1,
+        slots: [
+          {
+            area: 'hotbar',
+            slot: 0,
+            item: { id: 'minecraft:diamond', count: 3 },
+          },
+        ],
+        slotCount: 1,
+        contentHash: 'a'.repeat(64),
+        capturedAt: new Date(),
+        lastSeenAt: new Date(),
+        playerOnline: true,
+      },
     });
-    const actions = rows.map((r) => r.action);
-    expect(actions).toContain('players.inventory.view');
-    expect(actions).toContain('players.stats.view');
+    const res = await http()
+      .get(`/admin/players/${target.id}/inventory`)
+      .set('Authorization', admin.auth)
+      .expect(200);
+    expect(res.body.state).toBe('ok');
+    expect(res.body.viewer).toEqual({ relation: 'admin' });
+    const srv = res.body.servers.find(
+      (x: { server: { slug: string } }) => x.server.slug === 'survival',
+    );
+    const main = srv.groups.find((g: { group: string }) => g.group === 'main');
+    expect(main.state).toBe('ok');
+    expect(main.slots).toHaveLength(1);
+    expect(main.slots[0]).toMatchObject({
+      area: 'hotbar',
+      slot: 0,
+      item: { id: 'minecraft:diamond', count: 3 },
+    });
+    expect(JSON.stringify(res.body)).not.toContain('contentHash');
+  });
+
+  it('аудит: запись о просмотре без содержимого (свои данные теста)', async () => {
+    const auditTarget = await createUser('audt');
+    for (const path of paths(auditTarget.id)) {
+      await http().get(path).set('Authorization', admin.auth).expect(200);
+    }
+    const rows = await prisma.auditLog.findMany({
+      where: { actorId: admin.id, targetId: auditTarget.id },
+    });
+    expect(rows.map((r) => r.action).sort()).toEqual([
+      'players.inventory.view',
+      'players.stats.view',
+    ]);
     for (const row of rows) {
       expect(row.targetType).toBe('user');
       expect(row.changes).toBeNull();
+    }
+  });
+
+  it('сбой записи аудита: данные не отдаются (5xx)', async () => {
+    const spy = jest
+      .spyOn(app.get(AuditService), 'log')
+      .mockRejectedValue(new Error('audit down'));
+    try {
+      for (const path of paths(target.id)) {
+        const res = await http().get(path).set('Authorization', admin.auth);
+        expect(res.status).toBeGreaterThanOrEqual(500);
+        expect(res.body.state).toBeUndefined();
+      }
+    } finally {
+      spy.mockRestore();
     }
   });
 

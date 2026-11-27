@@ -23,6 +23,8 @@ export interface AdminPlayerStatsDto {
 
 /// Админский просмотр инвентаря и статистики игрока (Q116). Только чтение;
 /// каждый просмотр пишет запись аудита (кто, чей userId) БЕЗ содержимого.
+/// Право на оба просмотра одно (`players.inventory.view`); действия аудита:
+/// `players.inventory.view` и `players.stats.view`.
 @Injectable()
 export class AdminPlayersService {
   constructor(

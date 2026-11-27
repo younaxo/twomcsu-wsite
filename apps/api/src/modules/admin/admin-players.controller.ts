@@ -12,6 +12,12 @@ import { AdminPlayersService } from './admin-players.service';
 
 /// Инвентарь и статистика игрока для админов (Q116). PermissionsGuard
 /// обеспечивает право и обязательную 2FA (Q22). Аудит пишет сервис.
+///
+/// Одно право `players.inventory.view` закрывает оба просмотра (инвентарь и
+/// статистику); в журнале они различаются действиями players.inventory.view и
+/// players.stats.view. Маршруты читают только БД и от `BRIDGE_ENABLED` не
+/// зависят: при выключенном приёме Bridge админ получает 200 с последним
+/// сохранённым снимком (или `no_data`, если снимков нет). Так задумано.
 @Controller('admin/players')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AdminPlayersController {
