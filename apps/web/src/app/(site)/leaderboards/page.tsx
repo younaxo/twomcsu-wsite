@@ -99,7 +99,10 @@ function LeaderboardsContent() {
           description={meta.empty}
           action={
             board === 'coins' ? (
-              <Link href="/vote" className="text-sm font-medium text-primary hover:underline">
+              <Link
+                href="/vote"
+                className="inline-flex text-sm font-medium text-primary hover:underline max-md:min-h-10 max-md:items-center"
+              >
                 Голосование
               </Link>
             ) : undefined

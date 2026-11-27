@@ -32,8 +32,8 @@ export const Checkbox = forwardRef<ElementRef<typeof RadixCheckbox.Root>, Checkb
       className={cn(
         'peer relative inline-flex size-4 shrink-0 cursor-pointer items-center justify-center border border-border-strong bg-surface',
         shape === 'round' ? 'rounded-full' : 'rounded-sm',
-        // Зона касания ≥ 32px без увеличения самого квадрата.
-        "before:absolute before:-inset-2 before:content-['']",
+        // Зона касания ≥ 32px (≥ 40px на мобильных) без увеличения самого квадрата.
+        "before:absolute before:-inset-2 before:content-[''] max-md:before:-inset-3",
         'transition-[background-color,border-color,box-shadow] duration-fast',
         'hover:border-foreground/40 hover:bg-surface-hover',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
