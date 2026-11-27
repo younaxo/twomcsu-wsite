@@ -165,8 +165,9 @@ export function useNotificationsRealtime() {
   useEffect(() => {
     const token = tokenStore.get();
     if (!authenticated || !token) return;
-    const socket = io(realtimeTarget('/notifications').url, {
-      path: realtimeTarget('/notifications').path,
+    const target = realtimeTarget('/notifications');
+    const socket = io(target.url, {
+      path: target.path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 5,

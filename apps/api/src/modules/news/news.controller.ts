@@ -115,10 +115,11 @@ export class NewsController {
   @Patch('news/:slug/comments/:commentId')
   async updateComment(
     @CurrentUser() user: AuthenticatedUser,
+    @Param('slug') slug: string,
     @Param('commentId') commentId: string,
     @Body() dto: UpdateNewsCommentDto,
   ) {
-    return this.news.updateComment(user.id, commentId, dto);
+    return this.news.updateComment(user.id, slug, commentId, dto);
   }
 
   @UseGuards(JwtAuthGuard)

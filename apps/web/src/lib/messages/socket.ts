@@ -28,8 +28,9 @@ export function useConversationSocket(conversationId: string) {
   useEffect(() => {
     const token = tokenStore.get();
     if (!authenticated || !token) return;
-    const connection = io(realtimeTarget('/messages').url, {
-      path: realtimeTarget('/messages').path,
+    const target = realtimeTarget('/messages');
+    const connection = io(target.url, {
+      path: target.path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 5,

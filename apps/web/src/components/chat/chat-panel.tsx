@@ -23,7 +23,7 @@ import { api } from '@/lib/api/client';
 import { tokenStore } from '@/lib/api/token-store';
 import { useAuthStore } from '@/lib/auth/store';
 import { cn } from '@/lib/cn';
-import { realtimeTarget } from '@/lib/realtime';
+import { isOfflineReason, realtimeTarget } from '@/lib/realtime';
 import { formatDateTime, formatNumber } from '@/lib/format';
 
 /// Общий чат (срез 2.5, ADR-0113): каналы, история «Загрузить раньше»,
@@ -56,8 +56,9 @@ function useChatSocket(channel: ChatChannelDto | null, onRestriction: (r: Restri
   useEffect(() => {
     const token = tokenStore.get();
     if (!channel || !authenticated || !token) return;
-    const connection = io(realtimeTarget('/chat').url, {
-      path: realtimeTarget('/chat').path,
+    const target = realtimeTarget('/chat');
+    const connection = io(target.url, {
+      path: target.path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 3,
@@ -70,7 +71,9 @@ function useChatSocket(channel: ChatChannelDto | null, onRestriction: (r: Restri
       setOffline(false);
       connection.emit('join_channel', { channelId: channel.id });
     });
-    connection.on('disconnect', () => setOffline(true));
+    connection.on('disconnect', (reason: string) => {
+      if (isOfflineReason(reason)) setOffline(true);
+    });
     connection.on('connect_error', (error: Error) => {
       setOffline(true);
       if (/Забанен/.test(error.message)) {

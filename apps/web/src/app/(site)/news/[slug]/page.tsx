@@ -3,7 +3,7 @@
 import { Eye, Heart, Link2, Newspaper, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { CATEGORY_LABEL } from '@/app/(site)/_components/news-section';
 import { ACTIVITY_REACTION_META } from '@/components/activity/activity-feed';
 import { ConfirmDialog } from '@/components/ui/alert-dialog';
@@ -40,6 +40,8 @@ function Comments({ article }: { article: NewsArticleDto }) {
   const [content, setContent] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editButtons = useRef(new Map<string, HTMLButtonElement>());
   const items = query.data?.pages.flatMap((page) => page.items ?? []) ?? [];
 
   const submit = (event: FormEvent) => {
@@ -52,19 +54,46 @@ function Comments({ article }: { article: NewsArticleDto }) {
     });
   };
 
+  const original = (id: string) => items.find((item) => item.id === id)?.content;
+
+  /// Закрывает редактор и возвращает фокус на кнопку «Изменить» этого комментария.
+  const closeEdit = (id: string) => {
+    setEditing(null);
+    setEditError(null);
+    requestAnimationFrame(() => editButtons.current.get(id)?.focus());
+  };
+
+  const startEdit = (id: string, text: string) => {
+    setEditError(null);
+    setEditing({ id, text });
+  };
+
   const saveEdit = (event: FormEvent) => {
     event.preventDefault();
     const text = editing?.text.trim();
     if (!editing || !text) return;
+    const { id } = editing;
+    // Текст не менялся — запрос не нужен, просто закрываем редактор.
+    if (text === original(id)?.trim()) {
+      closeEdit(id);
+      return;
+    }
+    setEditError(null);
     actions.edit.mutate(
-      { commentId: editing.id, content: text },
+      { commentId: id, content: text },
       {
-        onSuccess: () => setEditing(null),
-        onError: (error) => toast.error(publicErrorMessage(error)),
+        onSuccess: () => closeEdit(id),
+        onError: (error) => setEditError(publicErrorMessage(error)),
       },
     );
   };
 
+  const onEditKeyDown = (event: KeyboardEvent, id: string) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeEdit(id);
+  };
   return (
     <section
       className="flex flex-col gap-3 rounded-xl bg-surface p-5 shadow-sm"
@@ -139,7 +168,11 @@ function Comments({ article }: { article: NewsArticleDto }) {
                       <IconButton
                         size="sm"
                         aria-label="Изменить комментарий"
-                        onClick={() => setEditing({ id: item.id, text: item.content })}
+                        ref={(node) => {
+                          if (node) editButtons.current.set(item.id, node);
+                          else editButtons.current.delete(item.id);
+                        }}
+                        onClick={() => startEdit(item.id, item.content)}
                       >
                         <Pencil />
                       </IconButton>
@@ -156,21 +189,39 @@ function Comments({ article }: { article: NewsArticleDto }) {
                   </span>
                 </div>
                 {editing?.id === item.id ? (
-                  <form className="flex flex-col gap-2" onSubmit={saveEdit}>
+                  <form
+                    className="flex flex-col gap-2"
+                    onSubmit={saveEdit}
+                    onKeyDown={(event) => onEditKeyDown(event, item.id)}
+                  >
                     <Textarea
                       aria-label="Текст комментария"
+                      aria-invalid={editError ? true : undefined}
+                      aria-describedby={editError ? `comment-edit-error-${item.id}` : undefined}
                       value={editing.text}
                       maxLength={2000}
                       rows={2}
                       autoFocus
-                      onChange={(event) => setEditing({ id: item.id, text: event.target.value })}
+                      onChange={(event) => {
+                        setEditError(null);
+                        setEditing({ id: item.id, text: event.target.value });
+                      }}
                     />
+                    {editError ? (
+                      <p
+                        id={`comment-edit-error-${item.id}`}
+                        role="alert"
+                        className="text-sm text-destructive"
+                      >
+                        {editError}
+                      </p>
+                    ) : null}
                     <div className="flex justify-end gap-2">
                       <Button
                         size="sm"
                         type="button"
                         variant="ghost"
-                        onClick={() => setEditing(null)}
+                        onClick={() => closeEdit(item.id)}
                       >
                         Отмена
                       </Button>

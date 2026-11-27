@@ -184,9 +184,76 @@ describe('Новости (срез 3.3)', () => {
 
     mocks.patch.mockRejectedValueOnce(new ApiError(400, ['content must be shorter than 2000']));
     await user.click(within(comment).getByRole('button', { name: 'Изменить комментарий' }));
+    await user.type(within(comment).getByLabelText('Текст комментария'), '!');
     await user.click(within(comment).getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() =>
-      expect(mocks.toast.error).toHaveBeenCalledWith('Проверьте введённые данные и повторите.'),
+    const alert = await within(comment).findByRole('alert');
+    expect(alert).toHaveTextContent('Проверьте введённые данные и повторите.');
+    expect(alert).not.toHaveTextContent('content');
+    expect(within(comment).getByLabelText('Текст комментария')).toHaveAccessibleDescription(
+      'Проверьте введённые данные и повторите.',
     );
+  });
+
+  function mockWithComment() {
+    mocks.get.mockImplementation(async (path: string) =>
+      path.endsWith('/comments')
+        ? {
+            items: [
+              {
+                id: 'c1',
+                parentId: null,
+                content: 'Привет',
+                createdAt: '2026-10-01T11:00:00.000Z',
+                isEdited: false,
+                isPinned: false,
+                author: { id: 'me', username: 'Alex', avatar: null },
+                reactions: [],
+                myReaction: null,
+                canEdit: true,
+                canDelete: true,
+              },
+            ],
+            total: 1,
+            page: 1,
+            limit: 20,
+          }
+        : {
+            ...ITEM,
+            content: 'Текст',
+            likesCount: 0,
+            commentsCount: 1,
+            allowComments: true,
+            liked: false,
+            tags: [],
+            author: null,
+          },
+    );
+  }
+
+  it('правка комментария: Esc закрывает редактор и возвращает фокус на «Изменить»', async () => {
+    const user = userEvent.setup();
+    mockWithComment();
+    render(<NewsArticlePage />, { wrapper: Providers });
+    const comment = await screen.findByTestId('news-comment');
+    const edit = within(comment).getByRole('button', { name: 'Изменить комментарий' });
+    await user.click(edit);
+    await user.type(within(comment).getByLabelText('Текст комментария'), ' мир');
+    await user.keyboard('{Escape}');
+    expect(within(comment).queryByLabelText('Текст комментария')).toBeNull();
+    await waitFor(() => expect(edit).toHaveFocus());
+    expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it('правка комментария: текст не изменён — запроса нет, фокус возвращается', async () => {
+    const user = userEvent.setup();
+    mockWithComment();
+    render(<NewsArticlePage />, { wrapper: Providers });
+    const comment = await screen.findByTestId('news-comment');
+    const edit = within(comment).getByRole('button', { name: 'Изменить комментарий' });
+    await user.click(edit);
+    await user.click(within(comment).getByRole('button', { name: 'Сохранить' }));
+    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(within(comment).queryByLabelText('Текст комментария')).toBeNull();
+    await waitFor(() => expect(edit).toHaveFocus());
   });
 });
