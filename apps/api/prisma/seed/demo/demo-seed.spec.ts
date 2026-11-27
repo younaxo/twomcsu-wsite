@@ -22,6 +22,8 @@ import {
   demoPunishmentSourceId,
 } from './data';
 import {
+  DEMO_CHAT_CHANNEL,
+  DEMO_CHAT_MESSAGES,
   DEMO_CONVERSATIONS,
   DEMO_FRIENDSHIPS,
   DEMO_PLAYERS,
@@ -47,6 +49,14 @@ import {
   isLocalDatabaseUrl,
 } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
+import { AREA_SIZE } from '../../../src/modules/inventory/inventory-limits';
+import { parseItem } from '../../../src/modules/inventory/inventory-normalize';
+import {
+  DEMO_ORDERS,
+  DEMO_WALLET_OPS,
+  demoWalletTotal,
+  seedDemoWalletAndOrders,
+} from './wallet-orders-seed';
 
 const ok = {
   NODE_ENV: 'development',
@@ -286,7 +296,11 @@ describe('demo seed social data', () => {
       for (const g of ['main', 'ender'] as const) {
         const slots = buildDemoInventorySlots(p, g);
         for (const s of slots) {
-          expect(s.area).toBe(g === 'main' ? 'hotbar' : 'ender');
+          expect(
+            g === 'main'
+              ? ['hotbar', 'main', 'armor', 'offhand']
+              : ['ender'],
+          ).toContain(s.area);
           expect(s.slot).toBeGreaterThanOrEqual(0);
           expect(s.item.id).toMatch(/^[a-z0-9_.-]+:[a-z0-9_./-]+$/);
           expect(s.item.count).toBeGreaterThanOrEqual(1);
@@ -315,11 +329,11 @@ describe('demo seed social data', () => {
       if (c.parentId) expect(ids.has(c.parentId)).toBe(true);
     }
   });
-  it('беседы: один ЛС и одна группа, участники и тексты демо', () => {
+  it('беседы: два ЛС и одна группа, участники и тексты демо', () => {
     const names = new Set(DEMO_PLAYERS.map((p) => p.username));
     const typeCount = (t: string) =>
       DEMO_CONVERSATIONS.filter((c) => c.type === t).length;
-    expect(typeCount('DIRECT')).toBe(1);
+    expect(typeCount('DIRECT')).toBe(2);
     expect(typeCount('GROUP')).toBe(1);
     const msgIds = new Set<string>();
     for (const c of DEMO_CONVERSATIONS) {
@@ -413,7 +427,7 @@ describe('seedDemoSocial (in-memory Prisma)', () => {
     expect(size('playerStatistics')).toBe(DEMO_PLAYERS.length);
     expect(size('playerInventory')).toBe(DEMO_PLAYERS.length * 2);
     expect(size('friendship')).toBe(DEMO_FRIENDSHIPS.length);
-    expect(size('conversation')).toBe(2);
+    expect(size('conversation')).toBe(DEMO_CONVERSATIONS.length);
     expect(size('profileComment')).toBe(DEMO_PROFILE_COMMENTS.length);
     // Только upsert и чтение для проверки владения: ни delete/update.
     expect(new Set(calls.map((c) => c.split('.')[1]))).toEqual(
@@ -762,5 +776,295 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
       } as NodeJS.ProcessEnv),
     ).rejects.toThrow(/fail closed/);
     expect(f.calls).toEqual([]);
+  });
+});
+
+/// Подмена Prisma для сида кошелька/заказов: ведёт журнал и баланс так же, как
+/// WalletLedgerService ожидает от БД (строка кошелька, FOR UPDATE, aggregate).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function walletFakePrisma() {
+  const base = fakePrisma();
+  const users = new Map<
+    string,
+    { id: string; username: string; email: string }
+  >();
+  for (const p of DEMO_PLAYERS) {
+    users.set(p.username, {
+      id: `id-${p.username}`,
+      username: p.username,
+      email: demoPlayerEmail(p.username),
+    });
+  }
+  users.set(DEMO_AUTHOR.username, {
+    id: `id-${DEMO_AUTHOR.username}`,
+    username: DEMO_AUTHOR.username,
+    email: DEMO_AUTHOR.email,
+  });
+  const ledger: Array<Record<string, any>> = [];
+  const state: { balance?: bigint } = {};
+  const overrides: Record<string, any> = {
+    user: {
+      findUnique: ({ where }: any) =>
+        Promise.resolve(users.get(where.username) ?? null),
+    },
+    product: {
+      findUnique: ({ where }: any) =>
+        Promise.resolve({ id: `p-${where.slug}` }),
+    },
+    productVariant: {
+      findUnique: ({ where }: any) =>
+        Promise.resolve({
+          id: `v-${where.productId_duration.productId}`,
+          price: where.productId_duration.productId === 'p-rubies' ? 1 : 19,
+        }),
+    },
+    walletLedgerEntry: {
+      findUnique: ({ where }: any) =>
+        Promise.resolve(
+          ledger.find((e) => e.idempotencyKey === where.idempotencyKey) ??
+            null,
+        ),
+      create: ({ data }: any) => {
+        const row = { id: `le-${ledger.length + 1}`, ...data };
+        ledger.push(row);
+        return Promise.resolve(row);
+      },
+      aggregate: ({ where }: any) =>
+        Promise.resolve({
+          _sum: {
+            amount: ledger
+              .filter((e) => e.userId === where.userId)
+              .reduce((s, e) => s + e.amount, 0n),
+          },
+        }),
+    },
+    wallet: {
+      findUnique: () =>
+        Promise.resolve(
+          state.balance === undefined ? null : { balance: state.balance },
+        ),
+    },
+  };
+  const prisma: any = new Proxy(
+    {},
+    {
+      get: (_t, prop: string) => {
+        if (prop === 'then') return undefined;
+        if (prop === '$transaction') return (fn: any) => fn(prisma);
+        if (prop === '$executeRaw') {
+          return (strings: TemplateStringsArray, ...vals: unknown[]) => {
+            const text = strings.join('?');
+            if (text.includes('INSERT INTO wallets')) state.balance ??= 0n;
+            if (text.includes('UPDATE wallets'))
+              state.balance = vals[0] as bigint;
+            return Promise.resolve(1);
+          };
+        }
+        if (prop === '$queryRaw') {
+          return () =>
+            Promise.resolve(
+              state.balance === undefined ? [] : [{ balance: state.balance }],
+            );
+        }
+        if (prop in overrides) return overrides[prop];
+        return (base.prisma as any)[prop];
+      },
+    },
+  );
+  return { prisma, base, ledger, state, users };
+}
+
+describe('seedDemoWalletAndOrders (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    jest.restoreAllMocks();
+  });
+
+  it('баланс = сумма операций журнала, balanceAfter ведётся нарастающим итогом', async () => {
+    const f = walletFakePrisma();
+    await seedDemoWalletAndOrders(f.prisma);
+    expect(f.ledger).toHaveLength(DEMO_WALLET_OPS.length);
+    const sum = f.ledger.reduce((s, e) => s + e.amount, 0n);
+    expect(f.state.balance).toBe(sum);
+    expect(sum).toBe(demoWalletTotal());
+    expect(sum).toBeGreaterThan(0n);
+    let running = 0n;
+    for (const e of f.ledger) {
+      running += e.amount;
+      expect(e.balanceAfter).toBe(running);
+      expect(e.balanceAfter).toBeGreaterThanOrEqual(0n);
+    }
+  });
+
+  it('только пополнения и админская корректировка: трат и передач нет', async () => {
+    const f = walletFakePrisma();
+    await seedDemoWalletAndOrders(f.prisma);
+    for (const e of f.ledger) {
+      expect(['PURCHASE', 'ADMIN_ADJUST']).toContain(e.kind);
+      if (e.kind === 'PURCHASE') expect(e.amount).toBeGreaterThan(0n);
+    }
+    for (const op of DEMO_WALLET_OPS) {
+      expect(['PURCHASE', 'ADMIN_ADJUST']).toContain(op.kind);
+    }
+    expect(new Set(DEMO_WALLET_OPS.map((o) => o.key)).size).toBe(
+      DEMO_WALLET_OPS.length,
+    );
+  });
+
+  it('покупки рубинов согласованы с заказами (1 ₽ = 1 рубин, ключ по позиции)', () => {
+    for (const op of DEMO_WALLET_OPS.filter((o) => o.kind === 'PURCHASE')) {
+      expect(op.order?.productSlug).toBe('rubies');
+      expect(op.amount).toBe(BigInt(op.order!.quantity));
+      expect(op.key).toBe(`purchase:${op.order!.itemId}:1`);
+    }
+  });
+
+  it('идемпотентен: повтор не добавляет проводок, заказов и сообщений', async () => {
+    const f = walletFakePrisma();
+    await seedDemoWalletAndOrders(f.prisma);
+    const sizes1 = [...f.base.tables].map(([k, v]) => [k, v.size]);
+    const balance1 = f.state.balance;
+    const ledger1 = f.ledger.length;
+    const summary = await seedDemoWalletAndOrders(f.prisma);
+    expect(f.ledger.length).toBe(ledger1);
+    expect(f.state.balance).toBe(balance1);
+    expect([...f.base.tables].map(([k, v]) => [k, v.size])).toEqual(sizes1);
+    expect(summary).toContain('новых 0');
+    const size = (n: string) => f.base.tables.get(n)?.size;
+    expect(size('order')).toBe(DEMO_ORDERS.length);
+    expect(size('orderItem')).toBe(DEMO_ORDERS.length);
+    expect(size('deliveryTask')).toBe(DEMO_ORDERS.length);
+    expect(size('chatMessage')).toBe(DEMO_CHAT_MESSAGES.length);
+    expect(size('chatChannel')).toBe(1);
+  });
+
+  it('затрагивает только demo_*: заказы, проводки и чат принадлежат демо-пользователям', async () => {
+    const f = walletFakePrisma();
+    await seedDemoWalletAndOrders(f.prisma);
+    const demoIds = new Set([...f.users.values()].map((u) => u.id));
+    for (const e of f.ledger) {
+      expect(e.userId).toBe('id-demo_ember');
+      if (e.actorId) expect(demoIds.has(e.actorId)).toBe(true);
+    }
+    for (const o of f.base.tables.get('order')!.values()) {
+      expect(o.userId).toBe('id-demo_ember');
+      expect(o.status).toBe('COMPLETED');
+      expect(o.paymentProvider).toBe('test');
+      expect(o.paymentWebhookVerifiedAt).toBeUndefined();
+    }
+    for (const m of f.base.tables.get('chatMessage')!.values()) {
+      expect(demoIds.has(m.authorId as string)).toBe(true);
+    }
+    for (const t of f.base.tables.get('deliveryTask')!.values()) {
+      expect(['wallet', 'manual']).toContain(t.executor);
+    }
+  });
+
+  it('чужой пользователь demo_*: сид прерван до любой записи', async () => {
+    const f = walletFakePrisma();
+    f.users.set('demo_ember', {
+      id: 'real-1',
+      username: 'demo_ember',
+      email: 'real@mail.test',
+    });
+    await expect(seedDemoWalletAndOrders(f.prisma)).rejects.toThrow(
+      /demo_ember/,
+    );
+    expect(f.ledger).toEqual([]);
+    expect(f.state.balance).toBeUndefined();
+    expect(f.base.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+
+  it('баланс уже расходится с журналом: кошелёк не трогается', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = walletFakePrisma();
+    f.state.balance = 10n;
+    const summary = await seedDemoWalletAndOrders(f.prisma);
+    expect(f.ledger).toEqual([]);
+    expect(f.state.balance).toBe(10n);
+    expect(summary).toContain('расхождение');
+  });
+
+  it.each([
+    { ...ok, NODE_ENV: 'production' },
+    { ...ok, SEED_DEMO: '0' },
+    { ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com:5432/x' },
+  ])(
+    'без разрешённого окружения отклоняется, БД не трогается: %j',
+    async (env) => {
+      process.env = { ...savedEnv, ...env } as NodeJS.ProcessEnv;
+      const f = walletFakePrisma();
+      await expect(seedDemoWalletAndOrders(f.prisma)).rejects.toThrow(
+        /fail closed/,
+      );
+      expect(f.base.calls).toEqual([]);
+      expect(f.ledger).toEqual([]);
+    },
+  );
+});
+
+describe('демо-данные demo_ember: инвентарь, друзья, беседы', () => {
+  const ember = DEMO_PLAYERS.find((p) => p.username === 'demo_ember')!;
+
+  it('инвентарь проходит строгую проверку схемы API и разнообразен', () => {
+    for (const g of ['main', 'ender'] as const) {
+      const slots = buildDemoInventorySlots(ember, g);
+      const seen = new Set<string>();
+      for (const s of slots) {
+        const key = `${s.area}:${s.slot}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+        expect(s.slot).toBeLessThan(AREA_SIZE[s.area]);
+        expect(() => parseItem(s.item, key)).not.toThrow();
+      }
+    }
+    const main = buildDemoInventorySlots(ember, 'main');
+    const ender = buildDemoInventorySlots(ember, 'ender');
+    const all = [...main, ...ender].map((s) => s.item);
+    expect(new Set(all.map((i) => i.count)).size).toBeGreaterThan(5);
+    expect(all.some((i) => (i.enchants?.length ?? 0) > 0)).toBe(true);
+    expect(all.some((i) => i.name?.some((r) => r.color === 'gold'))).toBe(
+      true,
+    );
+    expect(
+      all.some((i) => i.name?.some((r) => r.color === 'light_purple')),
+    ).toBe(true);
+    expect(main.some((s) => s.area === 'armor')).toBe(true);
+    expect(main.some((s) => s.area === 'offhand')).toBe(true);
+  });
+
+  it('друзья: не меньше 3, входящих заявок не меньше 2; ЛС: 2 у demo_ember', () => {
+    const accepted = DEMO_FRIENDSHIPS.filter(
+      ([a, b, s]) =>
+        s === 'ACCEPTED' && (a === 'demo_ember' || b === 'demo_ember'),
+    );
+    const incoming = DEMO_FRIENDSHIPS.filter(
+      ([, b, s]) => s === 'PENDING' && b === 'demo_ember',
+    );
+    expect(accepted.length).toBeGreaterThanOrEqual(3);
+    expect(incoming.length).toBeGreaterThanOrEqual(2);
+    const directs = DEMO_CONVERSATIONS.filter(
+      (c) => c.type === 'DIRECT' && c.members.includes('demo_ember'),
+    );
+    expect(directs).toHaveLength(2);
+    for (const c of directs)
+      expect(c.messages.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('сообщения общего чата: только demo_*, тексты демо, id уникальны', () => {
+    const names = new Set(DEMO_PLAYERS.map((p) => p.username));
+    expect(DEMO_CHAT_MESSAGES.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(DEMO_CHAT_MESSAGES.map((m) => m.id)).size).toBe(
+      DEMO_CHAT_MESSAGES.length,
+    );
+    for (const m of DEMO_CHAT_MESSAGES) {
+      expect(names.has(m.author)).toBe(true);
+      expect(m.text.startsWith('[Демо]')).toBe(true);
+    }
+    expect(DEMO_CHAT_CHANNEL.slug.startsWith('demo-')).toBe(true);
   });
 });
