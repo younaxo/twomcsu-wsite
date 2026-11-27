@@ -34,6 +34,7 @@ import {
 import { seedDemoSocial } from './social-seed';
 import {
   assertDemoSeedAllowed,
+  assertDemoUserNotForeign,
   demoSeedRefusals,
   isLocalDatabaseUrl,
 } from './guard';
@@ -337,6 +338,12 @@ function fakePrisma() {
   let seq = 0;
   const calls: string[] = [];
   const model = (name: string) => ({
+    findUnique: (args: { where: Record<string, unknown> }) => {
+      calls.push(`${name}.findUnique`);
+      return Promise.resolve(
+        tables.get(name)?.get(JSON.stringify(args.where)) ?? null,
+      );
+    },
     upsert: (args: {
       where: Record<string, unknown>;
       create: Record<string, unknown>;
@@ -367,6 +374,13 @@ function fakePrisma() {
 }
 
 describe('seedDemoSocial (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
   it('идемпотентен: повтор не добавляет строк, трогает только demo_*', async () => {
     const { prisma, tables, calls } = fakePrisma();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -383,9 +397,9 @@ describe('seedDemoSocial (in-memory Prisma)', () => {
     expect(size('friendship')).toBe(DEMO_FRIENDSHIPS.length);
     expect(size('conversation')).toBe(2);
     expect(size('profileComment')).toBe(DEMO_PROFILE_COMMENTS.length);
-    // Только upsert: ни delete/update чужих строк.
+    // Только upsert и чтение для проверки владения: ни delete/update.
     expect(new Set(calls.map((c) => c.split('.')[1]))).toEqual(
-      new Set(['upsert']),
+      new Set(['upsert', 'findUnique']),
     );
     // Приватность инвентаря не создаётся (нет строки = приватно).
     expect(tables.has('inventoryPrivacy')).toBe(false);
@@ -396,5 +410,68 @@ describe('seedDemoSocial (in-memory Prisma)', () => {
       expect(String(u.password).startsWith('$2')).toBe(false);
     }
     expect(tables.has('userRole')).toBe(false);
+  });
+});
+
+describe('seedDemoSocial: защита и чужие пользователи', () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it.each([
+    { ...ok, NODE_ENV: 'production' },
+    { ...ok, NODE_ENV: undefined },
+    { ...ok, SEED_DEMO: undefined },
+    { ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com:5432/x' },
+  ])('прямой вызов без разрешённого окружения отклоняется, БД не трогается: %j', async (env) => {
+    process.env = { ...savedEnv, ...env } as NodeJS.ProcessEnv;
+    if (env.NODE_ENV === undefined) delete process.env.NODE_ENV;
+    if (env.SEED_DEMO === undefined) delete process.env.SEED_DEMO;
+    const { prisma, calls } = fakePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoSocial(prisma as any, 'pos-1')).rejects.toThrow(
+      /fail closed/,
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it('чужой пользователь с ником demo_*: сид прерван, ничего не записано', async () => {
+    Object.assign(process.env, ok);
+    const { prisma, tables, calls } = fakePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = prisma as any;
+    const foreign = DEMO_PLAYERS[2];
+    tables.set(
+      'user',
+      new Map([
+        [
+          JSON.stringify({ username: foreign.username }),
+          { id: 'real-1', username: foreign.username, email: 'real@mail.test' },
+        ],
+      ]),
+    );
+    await expect(seedDemoSocial(db, 'pos-1')).rejects.toThrow(
+      new RegExp(foreign.username),
+    );
+    expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(
+      tables.get('user')!.get(JSON.stringify({ username: foreign.username })),
+    ).toEqual({ id: 'real-1', username: foreign.username, email: 'real@mail.test' });
+  });
+
+  it('assertDemoUserNotForeign: нет пользователя или свой email — проходит; demo_system с чужим email — ошибка', async () => {
+    const mk = (email: string | null) => ({
+      user: { findUnique: async () => (email ? { email } : null) },
+    });
+    await expect(
+      assertDemoUserNotForeign(mk(null), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertDemoUserNotForeign(mk(DEMO_AUTHOR.email), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertDemoUserNotForeign(mk('x@y.z'), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).rejects.toThrow(/demo_system/);
   });
 });

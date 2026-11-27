@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { demoEscapeToHtml } from './data';
+import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import {
   DEMO_CONVERSATIONS,
   DEMO_FRIENDSHIPS,
@@ -19,11 +20,21 @@ const MINUTE = 60_000;
 const DAY = 86_400_000;
 
 /// Демо-соцданные. Затрагивает только пользователей `demo_*` из списка;
-/// существующих пользователей не читает и не меняет. Идемпотентно.
+/// чужого пользователя с таким ником не меняет, а прерывает сид. Идемпотентно.
 export async function seedDemoSocial(
   prisma: PrismaClient,
   defaultPositionId: string,
 ): Promise<string> {
+  // Прямой вызов не обходит защиту: проверка окружения первой строкой.
+  assertDemoSeedAllowed(process.env);
+  // Ни одной записи, пока все ники не проверены на чужих пользователей.
+  for (const p of DEMO_PLAYERS) {
+    await assertDemoUserNotForeign(
+      prisma,
+      p.username,
+      demoPlayerEmail(p.username),
+    );
+  }
   const now = new Date();
   const ids = new Map<string, string>();
 
@@ -40,6 +51,7 @@ export async function seedDemoSocial(
         positionId: defaultPositionId,
         ...profile,
       },
+      // email и пароль существующего пользователя не перезаписываются.
       update: profile,
     });
     ids.set(p.username, user.id);
