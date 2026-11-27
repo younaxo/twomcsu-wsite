@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
@@ -32,10 +33,17 @@ export class VotingController {
   }
 
   /// Вебхуки сайтов-рейтингов принимаются всегда — голоса не теряются.
+  /// Лимит по IP (трекер — IpSubnetThrottlerGuard) срабатывает до проверки
+  /// секрета; лимит по slug — в сервисе.
   @SkipSiteModule()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Post('webhook/:slug')
   @HttpCode(HttpStatus.OK)
-  async webhook(@Param('slug') slug: string, @Body() dto: VoteWebhookDto) {
-    return this.voting.processWebhook(slug, dto);
+  async webhook(
+    @Param('slug') slug: string,
+    @Body() dto: VoteWebhookDto,
+    @Req() req: Request,
+  ) {
+    return this.voting.processWebhook(slug, dto, req.ip ?? null);
   }
 }
