@@ -65,6 +65,8 @@ validate_params() {
   for v in OHA_IMAGE NODE_IMAGE DATASET_FILE; do   # L-2: значения не начинаются с "-" (не станут флагом)
     [[ "${!v:-}" != -* ]] || { echo "##### bench: $v не должен начинаться с минуса"; bad=1; }
   done
+  # NODE_IMAGE (BENCH_NODE_IMAGE): закреплён по digest, как и значение в DOCKER_BUILD_ARGS
+  [[ -z "${NODE_IMAGE:-}" || "$NODE_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,150}@sha256:[0-9a-f]{64}$ ]] || { echo "##### bench: NODE_IMAGE (BENCH_NODE_IMAGE) - только <образ>@sha256:<digest>"; bad=1; }
   [[ -z "${PROFILE:-}" || "$PROFILE" =~ ^(small|medium|large)$ ]] || { echo "##### bench: PROFILE должен быть small|medium|large"; bad=1; }
   [[ -z "${DB_LATENCY_MS:-}" ]] || in_range "$DB_LATENCY_MS" 0 10000 || { echo "##### bench: DB_LATENCY_MS - целое 0..10000"; bad=1; }
   [[ -z "${DURATION:-}" ]]  || in_range "$DURATION" 1 3600 || { echo "##### bench: DURATION - целое 1..3600 с"; bad=1; }

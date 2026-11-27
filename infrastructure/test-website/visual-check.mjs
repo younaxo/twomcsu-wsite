@@ -14,7 +14,12 @@ import { addSecret, mask, installMask, runMaskSelftest } from './mask.mjs';
 installMask();
 if (process.env.SMOKE_SELFTEST_MASK === '1') process.exit(runMaskSelftest());
 
+// BASE_URL приходит только из конфигурации (visual-check.sh); здесь повторная проверка: https, только origin
 const BASE = (process.env.BASE_URL || 'https://test-website.twomc.su').replace(/\/$/, '');
+if (!/^https:\/\/[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/.test(BASE)) {
+  console.error('BASE_URL должен быть https://хост[:порт] без пути');
+  process.exit(2);
+}
 const API = process.env.API_URL || 'http://127.0.0.1:4000';
 const OUT = process.env.OUT_DIR || '/out';
 const WIDTHS = (process.env.WIDTHS || '360,390,1280').split(',').map(Number);
@@ -25,7 +30,7 @@ const { chromium } = createRequire(PW_DIR + '/')('playwright-core');
 const acc = {};
 {
   let sec = '';
-  for (const l of readFileSync('/in/accounts', 'utf8').split('\n')) {
+  for (const l of readFileSync('/in/accounts', 'utf8').replace(/\r/g, '').split('\n')) {
     const h = l.match(/^\s*\[(.+)\]\s*$/);
     if (h) {
       sec = h[1].trim().toLowerCase();
@@ -127,7 +132,7 @@ const browser = await chromium.launch({ headless: true });
 async function newContext(w) {
   return browser.newContext({
     viewport: { width: w, height: 800 },
-    httpCredentials: { username: basic.login, password: basic.password },
+    httpCredentials: { username: basic.login, password: basic.password, origin: BASE }, // только для нашего origin: чужие хосты пароль не получают
     locale: 'ru-RU',
   });
 }

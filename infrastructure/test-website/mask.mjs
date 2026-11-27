@@ -19,11 +19,12 @@ export const addSecret = (v, minLen = 4) => {
 
 const KEYS = 'cookie|auth|pass|secret|token|key|otp|backup';
 // значение: "..." / '...' / \"...\" (JSON внутри строки) / без кавычек (до пробела, &, запятой, ;, закрывающей скобки)
-const VALUE = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\\"(?:(?!\\").)*\\"|[^\s&,;"'}\])]+`;
+const VALUE = String.raw`\[[^\]]*\]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\\"(?:(?!\\").)*\\"|[^\s&,;"'}\])]+`;
 const PAIR = new RegExp(String.raw`(?<![\w.-])(\\?["']?[\w.-]*(?:${KEYS})[\w.-]*\\?["']?\s*[=:]\s*)(${VALUE})`, 'gi');
 const HEADER = /((?:Proxy-Authorization|Authorization|Set-Cookie|Cookie)\s*:[ \t]*)[^\r\n]*/gi;
 
 const keepQuotes = (_m, head, val) => {
+  if (val.startsWith('[')) return `${head}[***]`;
   if (val.startsWith('\\"')) return `${head}\\"***\\"`;
   if (val.startsWith('"')) return `${head}"***"`;
   if (val.startsWith("'")) return `${head}'***'`;
@@ -36,6 +37,7 @@ export const mask = (s) => {
   return t
     .replace(HEADER, '$1***')
     .replace(PAIR, keepQuotes)
+    .replace(/\b((?:t?otp|2fa|backup)[\w -]{0,15}?[:=\s]\s*)\d{4,10}\b/gi, '$1***') // «otp 123456», «OTP code: 123456»: имя и число без разделителя пары
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
     .replace(/\b(Bearer|Basic|Digest|Negotiate|NTLM)\s+[^\s"',;]+/gi, '$1 ***')
     .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
@@ -98,6 +100,18 @@ export const runMaskSelftest = () => {
     `'token': '${u(20)}'`,
     `x-api-key: ${u(21)}`,
     `db.backup_token=${u(22)}`,
+    // массивы и числовые значения (числа собраны из частей, чтобы не было литералов)
+    `{"backupCodes":["${u(23)}","${u(24)}"]}`,
+    `password: ${'1234' + '5678'}`,
+    `{"token": ${'9876' + '54321'}}`,
+    `Cookie: ${'42' + '4242'}`,
+    `api_key=${'0.5' + 'e3'}`,
+    `{"passwordHash":-${'7' + '7777'}}`,
+    `totp_code=${'000' + '123'}`,
+    `{"codes":{"otp":${'777' + '888'}}}`,
+    `pass:\t${'9988' + '7766'} # note`,
+    'otp ' + '246' + '810',
+    'OTP code: ' + '135' + '791',
   ];
   const leaked = leakProbes
     .map((p) => mask(show(p)))
@@ -105,7 +119,7 @@ export const runMaskSelftest = () => {
       (o) =>
         fake.some((f) => o.includes(f)) ||
         o.includes(encodeURIComponent(fake[3])) ||
-        /unknown-|hunter2|eyJhbGci|abc.def|JBSWY|QUJDREVG|123456|654321/.test(o),
+        /unknown-|hunter2|eyJhbGci|abc.def|JBSWY|QUJDREVG|123456|654321|12345678|987654321|424242|0.5e3|77777|000123|777888|99887766|246810|135791/.test(o),
     );
   // Негативные пробы: обычный вывод проверок не должен искажаться
   const keep = ['РАБОТАЕТ | главная | 200 за 12 мс', 'ИТОГО: 20/20 работает, 0 нет', 'player 390 /shop -> 200 hscroll=false small=0 console=0'];

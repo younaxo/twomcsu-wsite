@@ -25,7 +25,7 @@ const env = Object.fromEntries(
 );
 // accounts: "player: <ник> <email> <пароль>", "admin: <ник> <email> <пароль> ...", "admin2fa: <TOTP-секрет> <резервные коды>".
 const acc = {};
-for (const l of read('/in/accounts').split('\n')) {
+for (const l of read('/in/accounts').replace(/\r/g, '').split('\n')) {
   const i = l.indexOf(':');
   if (i > 0 && !l.startsWith('Устарело')) acc[l.slice(0, i).trim()] = l.slice(i + 1).trim().split(/\s+/).map((t) => t.replace(/^[a-z_0-9]+=/i, ''));
 }

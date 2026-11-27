@@ -56,6 +56,8 @@ rr() { ( VDS_LOCK_DIR="$D/t4-lock" "$HERE/run-remote.sh" "$@" ) >/dev/null 2>&1;
 # --- T5: маскирование секретов в смоуке стенда (без сети; нужен node)
 if command -v node >/dev/null 2>&1; then
   SMOKE_SELFTEST_MASK=1 node "$HERE/../test-website/smoke.mjs" 2>&1 | grep -q 'mask-selftest: ok' && ok "T5 smoke.mjs маскирует пароли, TOTP, JWT, Bearer, пароли в URL, otpauth" || bad "T5 маскирование смоука"
+  SMOKE_SELFTEST_MASK=1 node "$HERE/../test-website/visual-check.mjs" 2>&1 | grep -q 'mask-selftest: ok' && ok "T5b visual-check.mjs использует ту же маску (в т.ч. числа, массивы, заголовки, YAML)" || bad "T5b маскирование visual-check"
+  mo="$(SMOKE_SELFTEST_MASK=1 node "$HERE/../test-website/smoke.mjs" 2>&1)"; echo "     $mo"
 else
   echo "skip T5 (нет node)"
 fi
@@ -80,6 +82,8 @@ DG=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 [[ "$(vp "DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=-evil@$DG")" == 1 ]] && ok "T6h5 NODE_IMAGE со значением на '-' отклонён" || bad "T6h5"
 [[ "$(vp OHA_IMAGE=-v)" == 1 ]] && ok "T6k OHA_IMAGE на '-' отклонён" || bad "T6k"
 [[ "$(vp OHA_IMAGE=ghcr.io/hatoo/oha:1.4.5)" == 0 ]] && ok "T6l обычный OHA_IMAGE допустим" || bad "T6l"
+[[ "$(vp "NODE_IMAGE=node:24-alpine@$DG")" == 0 ]] && ok "T6m NODE_IMAGE по digest допустим" || bad "T6m"
+[[ "$(vp NODE_IMAGE=node:24-alpine)" == 1 ]] && ok "T6n NODE_IMAGE без digest отклонён" || bad "T6n"
 [[ "$(vp MEM=512m HEAP=1g)" == 1 ]] && ok "T6i HEAP >= MEM отклонён" || bad "T6i"
 if grep -nE 'twomcr-\$\{?id\}?-(api|web|java)|-t "twomcr-\$id' "$HERE"/server/ops/jobs/*.sh | grep -v '^$' | grep -q .; then bad "T6j тег образа с id без нижнего регистра"; else ok "T6j теги образов строятся из \${id,,}"; fi
 
@@ -106,4 +110,18 @@ ed() { # ed <имя tar> -> "код REJECTED файлов-в-dest"
 [[ "$(ed garbage)" == "13 1 0" ]] && ok "T7e нечитаемый tar (ненулевой код tar -t) отклонён (код 13)" || bad "T7e: $(ed garbage)"
 if [[ -f "$T7/fifo.tar" ]]; then [[ "$(ed fifo)" == "13 1 0" ]] && ok "T7f fifo отклонён (код 13)" || bad "T7f: $(ed fifo)"; else echo "skip T7f (mkfifo недоступен)"; fi
 if [[ -f "$T7/sym.tar" ]]; then [[ "$(ed sym)" == "13 1 0" ]] && ok "T7g симлинк отклонён (код 13)" || bad "T7g: $(ed sym)"; else echo "skip T7g (ln -s недоступен)"; fi
+
+# --- T8: run-visual.sh / visual-check.sh / доставка mask.mjs (без сети: проверки аргументов идут до SSH)
+TW="$HERE/../test-website"
+rv() { ( VDS_LOCK_DIR="$D/t8-lock" "$TW/run-visual.sh" "$@" ) >/dev/null 2>&1; echo $?; }
+[[ "$(rv --fetch /srv/twomc-stand/qa/.. "$D/f1")" == 2 ]] && ok "T8a --fetch с '..' отклонён" || bad "T8a"
+[[ "$(rv --fetch /srv/twomc-stand/qa/. "$D/f2")" == 2 ]] && ok "T8b --fetch с '.' отклонён" || bad "T8b"
+[[ "$(rv --fetch /srv/twomc-stand/qa/a..b "$D/f3")" == 2 ]] && ok "T8c --fetch с '..' внутри имени отклонён" || bad "T8c"
+[[ "$(rv /srv/twomc-stand/qa/..)" == 2 ]] && ok "T8d папка результатов '..' отклонена" || bad "T8d"
+[[ ! -e "$D/f1" && ! -e "$D/f2" && ! -e "$D/f3" ]] && ok "T8e отклонённый --fetch не создаёт локальный каталог" || bad "T8e"
+grep -q 'mask.mjs' "$TW/run-smoke.sh" && grep -q 'mask.mjs' "$TW/run-visual.sh" && grep -q '/s/mask.mjs' "$TW/smoke.sh" && grep -q '/s/mask.mjs' "$TW/visual-check.sh" && ok "T8f mask.mjs доставляется и монтируется в оба контейнера" || bad "T8f"
+grep -q 'origin: BASE' "$TW/visual-check.mjs" && ok "T8g httpCredentials с origin: BASE" || bad "T8g"
+grep -qF 'replace(/\r/g,' "$TW/visual-check.mjs" && ok "T8h CR убирается при разборе учёток" || bad "T8h"
+grep -q 'umask 077; mkdir -p "\$OUT_DIR"' "$TW/visual-check.sh" && ok "T8i umask 077 перед созданием каталога результатов" || bad "T8i"
+grep -q 'BASE_URL_CFG' "$TW/visual-check.sh" && ! grep -q 'BASE_URL:-' "$TW/visual-check.sh" && ok "T8j BASE_URL только из конфигурации" || bad "T8j"
 exit "$fail"
