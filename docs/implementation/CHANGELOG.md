@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Отчёт готовности (27.11)
+
+- Отчёт готовности в процентах по фактам: docs/reports/2026-11-27-readiness-percentages.md.
+
 ### Production-минимум 0.10 — документы (28.11)
 
 - Обновлены docs/runbooks: production-env-checklist (все переменные с правилами production и fail-closed, в т. ч. PAYMENT_METHODS, Bridge-выдача, retention, stats), deploy (миграции слоя 0–1, что нельзя удалять, откат флагами), payments, acceptance-checklist (разделы M, N), smoke-test, monitoring (очереди выдачи, UNKNOWN, вебхуки, realtime, CDN). Новый go-live-plan.md.
