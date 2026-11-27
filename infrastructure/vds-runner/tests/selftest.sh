@@ -111,6 +111,20 @@ ed() { # ed <имя tar> -> "код REJECTED файлов-в-dest"
 if [[ -f "$T7/fifo.tar" ]]; then [[ "$(ed fifo)" == "13 1 0" ]] && ok "T7f fifo отклонён (код 13)" || bad "T7f: $(ed fifo)"; else echo "skip T7f (mkfifo недоступен)"; fi
 if [[ -f "$T7/sym.tar" ]]; then [[ "$(ed sym)" == "13 1 0" ]] && ok "T7g симлинк отклонён (код 13)" || bad "T7g: $(ed sym)"; else echo "skip T7g (ln -s недоступен)"; fi
 
+# T7h-k: диагностическая ветка (diag_collect): extract + проверка. docker подменён; report_* заменены маркерами (вызов = файл $T7/reported).
+{ echo 'valid_rel_path() { :; }'; sed -n '/^REJECTED=0/,/^report_tests() {/p' "$J" | sed '$d'; } > "$D/diag.sh"
+dg() { # dg <имя tar|FAIL> -> "код существует-ли-out/diag вызван-ли-report"
+  rm -rf "$T7/dout" "$T7/reported"; mkdir -p "$T7/dout"
+  ( dir="$T7"; out="$T7/dout"; id=T7; FAKE="$1"
+    docker() { case "$1" in image) echo /w;; create) [[ "$FAKE" == FAIL ]] && return 1; echo cid;; cp) cat "$T7/$FAKE.tar";; *) :;; esac; }
+    report_jars() { echo jars >> "$T7/reported"; }; report_tests() { echo tests >> "$T7/reported"; }
+    source "$D/diag.sh"; diag_collect img >/dev/null 2>&1; rc=$?
+    echo "$rc $([[ -e "$T7/dout/diag" ]] && echo diag || echo nodiag) $([[ -e "$T7/reported" ]] && echo reported || echo silent)" ); }
+[[ "$(dg plain)" == "0 diag reported" ]] && ok "T7h диагностика: обычный архив принят, report_* вызваны" || bad "T7h: $(dg plain)"
+[[ "$(dg hard)" == "13 nodiag silent" ]] && ok "T7i диагностика: отклонённый архив - код 13, out/diag удалён, report_* не вызваны" || bad "T7i: $(dg hard)"
+[[ "$(dg garbage)" == "13 nodiag silent" ]] && ok "T7j диагностика: нечитаемый tar - код 13, out/diag удалён, report_* не вызваны" || bad "T7j: $(dg garbage)"
+[[ "$(dg FAIL)" == "14 nodiag silent" ]] && ok "T7k диагностика: сбой docker create - код 14, out/diag нет, report_* не вызваны" || bad "T7k: $(dg FAIL)"
+
 # --- T8: run-visual.sh / visual-check.sh / доставка mask.mjs (без сети: проверки аргументов идут до SSH)
 TW="$HERE/../test-website"
 rv() { ( VDS_LOCK_DIR="$D/t8-lock" "$TW/run-visual.sh" "$@" ) >/dev/null 2>&1; echo $?; }
