@@ -2,9 +2,13 @@
 // ЛЮБОЙ вывод (console.*, необработанные ошибки, results.json) проходит через mask(). Слои:
 //   1) литеральные значения, зарегистрированные addSecret() (пароли, TOTP-секрет, токены) - в исходном, JSON-экранированном и URL-кодированном виде;
 //   2) заголовки Cookie / Set-Cookie / Authorization / Proxy-Authorization: вся остальная строка (любая схема: Bearer, Basic, Digest, свой формат);
-//   3) пары «имя значение» с именем, содержащим cookie|auth|pass|secret|token|key|otp|backup (без учёта регистра): JSON ("k":"v", "k":123456),
+//   3) пары «имя значение» с именем, содержащим cookie|auth|pass|pwd|secret|token|key|otp|backup|credential|session|sid (без учёта регистра): JSON ("k":"v", "k":123456),
 //      JSON внутри строки (\"k\":\"v\"), k=v, YAML (k: v), значения в кавычках (в т.ч. с экранированными кавычками) и без кавычек, числа (otp 123456);
+//      Формы со значением через пробел маскируются ДО КОНЦА СТРОКИ: YAML без кавычек (`password: my secret phrase`) и CLI-флаги `--password X`, `--token X ...`.
+//      Счётчики `passed: 12`, `keys: 3` (имя passed|passes|keys + число) не маскируются; `Basic auth ok` не режется (схема Basic/Digest/Negotiate/NTLM - токен от 8 знаков).
 //   4) JWT, Bearer/Basic/Digest/Negotiate/NTLM <токен>, пароль в URL (схема://user:пароль@), otpauth://.
+// ДОПУСТИМЫЕ ЛОЖНЫЕ СРАБАТЫВАНИЯ (подстроки имён): `sid` режет `inside: ...`, `side: ...`, `residue=...`; `session` - `Session: expired`, `--session-timeout 30 ...`;
+// `pwd` - `pwd: /srv/x`; `key` - `keyboard: ...`; YAML/CLI-форма съедает остаток строки. Взамен: скрыть лишнее лучше, чем показать секрет. Известный пропуск: Basic-токен короче 8 знаков вне заголовка Authorization.
 // Маска намеренно агрессивная: лучше скрыть лишнее, чем показать секрет. Самопроверка без сети: SMOKE_SELFTEST_MASK=1 node smoke.mjs | visual-check.mjs.
 // Файл ДОЛЖЕН лежать рядом со скриптами (run-smoke.sh/run-visual.sh везут его вместе, smoke.sh/visual-check.sh монтируют в /s/mask.mjs).
 
@@ -17,13 +21,20 @@ export const addSecret = (v, minLen = 4) => {
   SECRET_VALUES.add(encodeURIComponent(v));
 };
 
-const KEYS = 'cookie|auth|pass|secret|token|key|otp|backup';
+const KEYS = 'cookie|auth|pass|pwd|secret|token|key|otp|backup|credential|session|sid';
 // значение: "..." / '...' / \"...\" (JSON внутри строки) / без кавычек (до пробела, &, запятой, ;, закрывающей скобки)
 const VALUE = String.raw`\[[^\]]*\]|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\\"(?:(?!\\").)*\\"|[^\s&,;"'}\])]+`;
 const PAIR = new RegExp(String.raw`(?<![\w.-])(\\?["']?[\w.-]*(?:${KEYS})[\w.-]*\\?["']?\s*[=:]\s*)(${VALUE})`, 'gi');
+// YAML без кавычек: имя НЕ в кавычках, `: ` и значение без кавычек/скобки - до конца строки (значение с пробелами)
+const YAML = new RegExp(String.raw`(?<![\w."'\\-])([\w.-]*(?:${KEYS})[\w.-]*[ \t]*:[ \t]+)(?!["'\[\\])([^\r\n]+)`, 'gi');
+// CLI: `--password X`, `--api-token X --verbose` - флаг с двумя дефисами и значением через пробел, до конца строки
+const CLI = new RegExp(String.raw`(?<![\w-])(--[\w-]*(?:${KEYS})[\w-]*[ \t]+)(?!-)[^\r\n]+`, 'gi');
+const COUNTER_NAME = /^(?:passed|passes|keys)$/i; // счётчики тестов/ключей: `passed: 12 failed: 0`, `keys: 3`
+const isCounter = (head, val) => COUNTER_NAME.test(head.replace(/[\s:="'\\]+$/, '').replace(/^[\s"'\\]+/, '')) && /^\d+(?![\w.])/.test(val);
 const HEADER = /((?:Proxy-Authorization|Authorization|Set-Cookie|Cookie)\s*:[ \t]*)[^\r\n]*/gi;
 
-const keepQuotes = (_m, head, val) => {
+const keepQuotes = (m, head, val) => {
+  if (isCounter(head, val)) return m;
   if (val.startsWith('[')) return `${head}[***]`;
   if (val.startsWith('\\"')) return `${head}\\"***\\"`;
   if (val.startsWith('"')) return `${head}"***"`;
@@ -36,10 +47,13 @@ export const mask = (s) => {
   for (const v of [...SECRET_VALUES].sort((a, b) => b.length - a.length)) t = t.split(v).join('***');
   return t
     .replace(HEADER, '$1***')
+    .replace(YAML, keepQuotes)
+    .replace(CLI, '$1***')
     .replace(PAIR, keepQuotes)
     .replace(/\b((?:t?otp|2fa|backup)[\w -]{0,15}?[:=\s]\s*)\d{4,10}\b/gi, '$1***') // «otp 123456», «OTP code: 123456»: имя и число без разделителя пары
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
-    .replace(/\b(Bearer|Basic|Digest|Negotiate|NTLM)\s+[^\s"',;]+/gi, '$1 ***')
+    .replace(/\b(Bearer)\s+[^\s"',;]+/gi, '$1 ***')
+    .replace(/\b(Basic|Digest|Negotiate|NTLM)\s+(?=[^\s"',;]{8})[^\s"',;]+/gi, '$1 ***')
     .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
     .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
 };
@@ -112,6 +126,14 @@ export const runMaskSelftest = () => {
     `pass:\t${'9988' + '7766'} # note`,
     'otp ' + '246' + '810',
     'OTP code: ' + '135' + '791',
+    // формы со значением через пробел (до конца строки) и новые имена
+    `password: ${u(40)} ${u(41)} ${u(42)}`,
+    `  db_credential: ${u(43)} tail ${u(44)}`,
+    `--password ${u(45)}`,
+    `run --api-token ${u(46)} --verbose ${u(47)}`,
+    `pwd=${u(48)}&sid=${u(49)}`,
+    `session_id: ${u(50)}`,
+    `{"credentials":"${u(51)}","sessionToken":"${u(52)}"}`,
   ];
   const leaked = leakProbes
     .map((p) => mask(show(p)))
@@ -122,7 +144,7 @@ export const runMaskSelftest = () => {
         /unknown-|hunter2|eyJhbGci|abc.def|JBSWY|QUJDREVG|123456|654321|12345678|987654321|424242|0.5e3|77777|000123|777888|99887766|246810|135791/.test(o),
     );
   // Негативные пробы: обычный вывод проверок не должен искажаться
-  const keep = ['РАБОТАЕТ | главная | 200 за 12 мс', 'ИТОГО: 20/20 работает, 0 нет', 'player 390 /shop -> 200 hscroll=false small=0 console=0'];
+  const keep = ['passed: 12 failed: 0', 'keys: 3', 'Basic auth ok', 'РАБОТАЕТ | главная | 200 за 12 мс', 'ИТОГО: 20/20 работает, 0 нет', 'player 390 /shop -> 200 hscroll=false small=0 console=0'];
   const damaged = keep.filter((k) => mask(k) !== k);
   // Результат маски остаётся валидным JSON для JSON с кавычками
   const jsonOk = (() => {
