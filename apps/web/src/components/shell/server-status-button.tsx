@@ -63,7 +63,7 @@ export function ServerStatusButton({ className }: { className?: string }) {
           data-testid="server-status-soon"
           onClick={(event) => event.preventDefault()}
           className={cn(
-            'inline-flex h-control-sm cursor-not-allowed items-center gap-2 rounded border bg-surface px-3 text-sm text-muted-foreground/70',
+            'inline-flex h-control-sm cursor-not-allowed max-md:h-10 items-center gap-2 rounded border bg-surface px-3 text-sm text-muted-foreground/70',
             className,
           )}
         >
@@ -76,7 +76,7 @@ export function ServerStatusButton({ className }: { className?: string }) {
     );
   }
   const classes = cn(
-    'inline-flex h-control-sm items-center gap-2 rounded border bg-surface px-3 text-sm hover:bg-muted',
+    'inline-flex h-control-sm items-center gap-2 rounded border bg-surface px-3 text-sm hover:bg-muted max-md:h-10',
     className,
   );
   return (

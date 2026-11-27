@@ -67,7 +67,7 @@ export function ProductCard({
             <Link
               href={`/shop/${product.slug}`}
               className={
-                "rounded-sm outline-none after:absolute after:inset-0 after:rounded-lg after:content-[''] " +
+                "block rounded-sm outline-none max-md:min-h-10 after:absolute after:inset-0 after:rounded-lg after:content-[''] " +
                 'focus-visible:after:ring-2 focus-visible:after:ring-primary focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-background'
               }
             >
