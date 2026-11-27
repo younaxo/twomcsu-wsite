@@ -106,9 +106,33 @@ export function getErrorMessage(error: unknown): string {
   return 'Неизвестная ошибка';
 }
 
-/// Безопасный общий текст для пользователя: НЕ содержит сообщений API
+/// Единая таблица безопасных текстов по HTTP-статусу. Не содержит сообщений API
 /// (они могут быть техническими: тексты валидации, имена полей, SQL/стек).
-/// Подбирается по классу ошибки; детали — в коде ошибки (`getErrorCode`).
+/// Используется в getSafeErrorMessage и safeErrorMessage (safe-error.ts).
+export const STATUS_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'Проверьте введённые данные и повторите.',
+  401: 'Войдите в аккаунт, чтобы продолжить.',
+  403: 'Это действие вам недоступно.',
+  404: 'Не найдено: возможно, это уже удалено.',
+  409: 'Данные изменились. Обновите страницу и повторите.',
+  422: 'Проверьте введённые данные и повторите.',
+  429: 'Слишком много запросов. Попробуйте чуть позже.',
+  503: 'Раздел сейчас недоступен. Попробуйте позже.',
+};
+
+export const SERVER_ERROR_MESSAGE = 'Сервер временно недоступен. Попробуйте позже.';
+export const NETWORK_ERROR_MESSAGE = 'Нет соединения с сервером. Проверьте интернет.';
+
+/// Безопасный текст по статусу ответа или undefined, если статус не из таблицы
+/// и не 5xx (вызывающий подставит свой запасной текст).
+export function statusMessage(status: number): string | undefined {
+  const known = STATUS_MESSAGES[status];
+  if (known) return known;
+  return status >= 500 ? SERVER_ERROR_MESSAGE : undefined;
+}
+
+/// Безопасный общий текст для пользователя: НЕ содержит сообщений API.
+/// Подбирается по классу ошибки; детали — в коде ошибки (getErrorCode).
 export function getSafeErrorMessage(error: unknown): string {
   if (error instanceof NetworkError) {
     return error.message;
@@ -117,22 +141,7 @@ export function getSafeErrorMessage(error: unknown): string {
     if (error.code === 'admin_2fa_required') {
       return 'Для этого действия включите двухфакторную аутентификацию в настройках безопасности.';
     }
-    switch (error.status) {
-      case 401:
-        return 'Сессия закончилась. Войдите в аккаунт и повторите.';
-      case 403:
-        return 'У вашего аккаунта нет доступа к этому разделу.';
-      case 404:
-        return 'Такой записи нет или она была удалена.';
-      case 429:
-        return 'Слишком много запросов. Подождите немного и повторите.';
-      case 503:
-        return 'Раздел сейчас недоступен. Попробуйте позже.';
-      default:
-        return error.status >= 500
-          ? 'На сервере что-то пошло не так. Попробуйте ещё раз чуть позже.'
-          : 'Не удалось выполнить запрос. Попробуйте ещё раз.';
-    }
+    return statusMessage(error.status) ?? 'Не удалось выполнить запрос. Попробуйте ещё раз.';
   }
   return 'Не удалось загрузить данные. Попробуйте обновить страницу.';
 }
