@@ -308,8 +308,10 @@ describe('demo seed social data', () => {
   });
   it('беседы: один ЛС и одна группа, участники и тексты демо', () => {
     const names = new Set(DEMO_PLAYERS.map((p) => p.username));
-    expect(DEMO_CONVERSATIONS.filter((c) => c.type === 'DIRECT')).toHaveLength(1);
-    expect(DEMO_CONVERSATIONS.filter((c) => c.type === 'GROUP')).toHaveLength(1);
+    const typeCount = (t: string) =>
+      DEMO_CONVERSATIONS.filter((c) => c.type === t).length;
+    expect(typeCount('DIRECT')).toBe(1);
+    expect(typeCount('GROUP')).toBe(1);
     const msgIds = new Set<string>();
     for (const c of DEMO_CONVERSATIONS) {
       if (c.type === 'DIRECT') expect(c.members).toHaveLength(2);

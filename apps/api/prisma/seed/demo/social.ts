@@ -121,11 +121,12 @@ export function buildDemoStatsRow(p: DemoPlayer) {
   };
 }
 
-export interface DemoSlot {
+/// type, а не interface: значение кладётся в Json-колонку Prisma.
+export type DemoSlot = {
   area: 'hotbar' | 'ender';
   slot: number;
   item: { id: string; count: number };
-}
+};
 
 export function buildDemoInventorySlots(
   p: DemoPlayer,
