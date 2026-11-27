@@ -374,3 +374,64 @@ export function parseOverflow(
     },
   };
 }
+
+/// Белый список метрик `player.stats.snapshot` и верхние границы (ADR-0195,
+/// Q68). Только поля, которые уже есть в `PlayerStatistics`; монеты сайта
+/// (`coins`), покупки и любые экономические значения сюда не входят.
+export const STATS_METRIC_LIMITS = {
+  playTimeMinutes: 5_000_000,
+  kills: 100_000_000,
+  deaths: 100_000_000,
+  hits: 1_000_000_000,
+} as const;
+
+export type StatsMetricKey = keyof typeof STATS_METRIC_LIMITS;
+
+export interface StatsSnapshotData {
+  /// UUID игрока в каноническом виде (нижний регистр, с дефисами).
+  uuid: string;
+  /// Ник из события только информационный: не хранится и не используется.
+  metrics: Partial<Record<StatsMetricKey, number>>;
+}
+
+/// `data` события `player.stats.snapshot` (3.3 контракта): строгий набор
+/// ключей `uuid`, `name`, `metrics`; в `metrics` - непустое подмножество
+/// белого списка, неотрицательные целые не выше предела. Лишние поля
+/// (включая `serverId`, `coins`, `ip`) отклоняются.
+export function parseStatsSnapshot(
+  data: Record<string, unknown>,
+): Parsed<StatsSnapshotData> {
+  try {
+    checkKeys(data, ['uuid', 'metrics'], ['name']);
+    const u = uuid(data.uuid);
+    if (u === null) fail();
+    if (data.name !== undefined && data.name !== null) {
+      str(data.name, 1, 32);
+    }
+    const rawMetrics = data.metrics;
+    if (!isPlainObject(rawMetrics)) fail();
+    const keys = Object.keys(rawMetrics);
+    if (keys.length === 0) fail();
+    const metrics: Partial<Record<StatsMetricKey, number>> = {};
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(STATS_METRIC_LIMITS, key)) {
+        fail();
+      }
+      const limit = STATS_METRIC_LIMITS[key as StatsMetricKey];
+      const value = rawMetrics[key];
+      if (
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        value > limit
+      ) {
+        fail();
+      }
+      metrics[key as StatsMetricKey] = value;
+    }
+    return { ok: true, value: { uuid: u, metrics } };
+  } catch (e) {
+    if (e instanceof Invalid) return { ok: false };
+    throw e;
+  }
+}

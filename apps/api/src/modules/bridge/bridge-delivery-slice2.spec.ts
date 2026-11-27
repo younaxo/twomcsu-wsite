@@ -48,6 +48,7 @@ describe('BridgeDeliveryService.ack: токен в верхнем регистр
         enabled: true,
         masterSecret: 'x',
         deliveryEnabled: true,
+        statsEnabled: false,
       } as unknown as BridgeConfig,
     );
     const res = await svc.ack('survival', {
