@@ -78,7 +78,6 @@ check "с cookie /api/health 200" "200" "$(printf 'header = "Cookie: %s"\n' "$CO
 check "с токеном X-Stand-Gate страница 200" "200" "$(authed -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
 check "с неверным X-Stand-Gate -> 302" "302" "$(printf 'header = "X-Stand-Gate: %s"\n' "$(openssl rand -hex 24)" | curl -K - -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
 check "с токеном X-Robots-Tag" "*noindex*nofollow*" "$(authed -sI "https://$STAND_DOMAIN/" | tr -d '\r' | grep -i '^x-robots-tag' || echo none)"
-check "выход очищает cookie" "*Max-Age=0*" "$(curl -sI "https://$STAND_DOMAIN/__stand/logout" | tr -d '\r' | grep -i '^set-cookie: __Host-stand_gate' || echo none)"
 # L6: форма входа не просит Basic Auth; подделка заголовков снаружи; методы; выход; картинки (секреты не печатаются).
 # Не проверяется живьём: что cookie пропуска не доходит до приложения (нужен эхо-эндпоинт); это покрыто тестом шаблона в stand-gate.test.mjs.
 check "нет WWW-Authenticate (страница)" "0" "$(curl -sI "https://$STAND_DOMAIN/" | grep -ci '^www-authenticate')"

@@ -18,7 +18,7 @@ IMAGE="twomc-stand-tools:${SHA:0:12}"
 # в ps/истории процессов). Файл удаляется trap-ом.
 envval() { grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-; }  # env-файл не source-им: в DATABASE_URL есть '&'
 cred_player_login() {  # логин из секции [игрок]; пусто, если секции/строки нет
-  awk 'BEGIN{s=0} /^[[:space:]]*\[/{s=($0 ~ /^[[:space:]]*\[(и|И)грок\][[:space:]]*\r?$/)} s && /^[[:space:]]*login[[:space:]]*:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); sub(/[[:space:]]+$/,""); print; exit}' "$CREDENTIALS_FILE" 2>/dev/null || true
+  awk 'BEGIN{s=0} /^[[:space:]]*\[/{s=($0 ~ /^[[:space:]]*\[(и|И)(г|Г)(р|Р)(о|О)(к|К)\][[:space:]]*\r?$/)} s && /^[[:space:]]*login[[:space:]]*:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); sub(/[[:space:]]+$/,""); print; exit}' "$CREDENTIALS_FILE" 2>/dev/null || true
 }
 umask 077
 TMP_ENV="$(mktemp "$STAND_ROOT/.seed-env.XXXXXX")"

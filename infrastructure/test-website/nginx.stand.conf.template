@@ -179,6 +179,72 @@ server {
         proxy_read_timeout 20s;
     }
 
+    # Приём Bridge: тот же auth_request (gate пропускает ровно эти 4 маршрута и методы), но лимит тела 300k вместо 20m
+    # (приложение режет 256k). Точное совпадение по нормализованному $uri; остальная схема /api/ без изменений.
+    location = /api/bridge/v1/handshake {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/handshake;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/events {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/events;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/delivery/claim {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/claim;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/delivery/ack {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/ack;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
     location /api/ {
         auth_request /__stand/auth;
         error_page 401 = @stand_api_401;

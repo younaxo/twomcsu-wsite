@@ -95,6 +95,7 @@ test('bypass Bridge: ровно 4 маршрута и методы, вариац
   assert.equal(isBypass('/api/bridge/v1/handshake', 'HEAD'), true);
   assert.equal(isBypass('/api/bridge/v1/handshake?a=1', 'GET'), true);
   assert.equal(isBypass('/api/bridge/v1/events', 'POST'), true);
+  assert.equal(isBypass('/api/bridge/v1/events?x=1', 'POST'), true);
   assert.equal(isBypass('/api/bridge/v1/delivery/claim', 'POST'), true);
   assert.equal(isBypass('/api/bridge/v1/delivery/ack', 'POST'), true);
   for (const [p, m] of [
@@ -108,6 +109,15 @@ test('bypass Bridge: ровно 4 маршрута и методы, вариац
     ['/api/bridge/V1/events', 'POST'], ['/api/bridge/v1/EVENTS', 'POST'], ['/api/bridge/v1/delivery/Claim', 'POST'],
     ['/api/bridge/v1/events;x', 'POST'], ['/api/bridge/v1/events\n', 'POST'], ['/bridge/v1/events', 'POST'],
     ['/api/bridge/v1/delivery/claim/ack', 'POST'], ['/x/api/bridge/v1/events', 'POST'],
+    // вариации обхода: слеш в конце, «;», %3f (не «?»), HEAD/PUT/DELETE на POST-маршрутах, методы handshake
+    ['/api/bridge/v1/events/', 'POST'], ['/api/bridge/v1/events/?x=1', 'POST'], ['/api/bridge/v1/handshake/', 'GET'],
+    ['/api/bridge/v1/delivery/claim/', 'POST'], ['/api/bridge/v1/delivery/ack/', 'POST'],
+    ['/api/bridge/v1/events;', 'POST'], ['/api/bridge/v1/events;a=b', 'POST'], ['/api/bridge/v1/delivery/claim;x', 'POST'],
+    ['/api/bridge/v1/handshake;x', 'GET'], ['/api/bridge/v1/events%3f', 'POST'], ['/api/bridge/v1/events%3fx=1', 'POST'],
+    ['/api/bridge/v1/events%3F', 'POST'], ['/api/bridge/v1/events', 'HEAD'], ['/api/bridge/v1/delivery/claim', 'HEAD'],
+    ['/api/bridge/v1/delivery/ack', 'HEAD'], ['/api/bridge/v1/delivery/claim', 'PUT'], ['/api/bridge/v1/delivery/claim', 'DELETE'],
+    ['/api/bridge/v1/delivery/ack', 'PUT'], ['/api/bridge/v1/delivery/ack', 'DELETE'], ['/api/bridge/v1/handshake', 'PUT'],
+    ['/api/bridge/v1/handshake', 'DELETE'], ['/api/bridge/v1/events', 'PATCH'], ['/api/bridge/v1/events', 'OPTIONS'],
   ]) assert.equal(isBypass(p, m), false, `${m} ${JSON.stringify(p)}`);
   assert.equal(isBypass(undefined, 'POST'), false);
   assert.equal(isBypass('/api/bridge/v1/events', undefined), false);
