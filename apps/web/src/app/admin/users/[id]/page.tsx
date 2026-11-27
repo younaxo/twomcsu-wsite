@@ -72,6 +72,7 @@ import { pickPrimaryRole } from '@/lib/roles/primary-role';
 import { AssignRoleDialog } from '../_components/assign-role-dialog';
 import { BanDialog } from '../_components/ban-dialog';
 import { TEAM_TAB_REQUIREMENT, TeamTab } from '../_components/team-tab';
+import { INVENTORY_TAB_REQUIREMENT, InventoryTab } from '../_components/inventory-tab';
 import { WALLET_TAB_REQUIREMENT, WalletTab } from '../_components/wallet-tab';
 
 const BADGE_LABEL: Record<UserBadgeType, string> = {
@@ -696,6 +697,9 @@ function UserDetails({ user }: { user: AdminUserFull }) {
             <TabsTrigger value="sessions">Сессии</TabsTrigger>
           ) : null}
           {can(WALLET_TAB_REQUIREMENT) ? <TabsTrigger value="wallet">Кошелёк</TabsTrigger> : null}
+          {can(INVENTORY_TAB_REQUIREMENT) ? (
+            <TabsTrigger value="inventory">Инвентарь и статистика</TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="overview">
           <OverviewTab user={user} />
@@ -714,6 +718,9 @@ function UserDetails({ user }: { user: AdminUserFull }) {
         </TabsContent>
         <TabsContent value="sessions">
           <SessionsTab user={user} />
+        </TabsContent>
+        <TabsContent value="inventory">
+          <InventoryTab user={user} />
         </TabsContent>
         <TabsContent value="wallet">
           <WalletTab user={user} />
