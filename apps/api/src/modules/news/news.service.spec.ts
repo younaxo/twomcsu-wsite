@@ -31,7 +31,9 @@ function build(overrides: {
       update: jest.fn().mockResolvedValue({ id: 'c1', isEdited: true }),
     },
     user: { findUnique: jest.fn().mockResolvedValue(user) },
+    $transaction: jest.fn().mockResolvedValue([]),
   };
+  (prisma.news as Record<string, unknown>).update = jest.fn();
   const service = new NewsService(prisma as never, {} as never);
   return { service, prisma };
 }
@@ -103,6 +105,47 @@ describe('NewsService.updateComment', () => {
     });
     await expect(
       deleted.service.updateComment('u1', 'patch', 'c1', dto),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('NewsService.removeComment', () => {
+  it('удаляет свой комментарий этой новости', async () => {
+    const { service, prisma } = build({});
+    await expect(
+      service.removeComment('u1', 'patch', 'c1'),
+    ).resolves.toBeUndefined();
+    expect(prisma.$transaction as Mock).toHaveBeenCalledTimes(1);
+  });
+
+  it('комментарий другой новости: 404, удаления нет', async () => {
+    const { service, prisma } = build({
+      comment: { id: 'c1', newsId: 'other', authorId: 'u1', isDeleted: false },
+    });
+    await expect(
+      service.removeComment('u1', 'patch', 'c1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.$transaction as Mock).not.toHaveBeenCalled();
+  });
+
+  it('неизвестный slug: 404', async () => {
+    const { service, prisma } = build({ news: null });
+    await expect(
+      service.removeComment('u1', 'patch', 'c1'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.$transaction as Mock).not.toHaveBeenCalled();
+  });
+
+  it('чужой комментарий: 403; удалённый: 404', async () => {
+    const other = build({});
+    await expect(
+      other.service.removeComment('u2', 'patch', 'c1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    const deleted = build({
+      comment: { id: 'c1', newsId: 'n1', authorId: 'u1', isDeleted: true },
+    });
+    await expect(
+      deleted.service.removeComment('u1', 'patch', 'c1'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

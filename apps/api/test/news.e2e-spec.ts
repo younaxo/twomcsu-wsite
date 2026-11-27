@@ -565,6 +565,50 @@ describe('News (e2e)', () => {
       .expect(200);
   });
 
+  it('удаление комментария: чужой slug и несуществующий slug дают 404, свой slug 200', async () => {
+    const otherSlug = `${slug}-del-other`;
+    await request(app.getHttpServer())
+      .post('/admin/news')
+      .set('Authorization', auth(editor))
+      .send({
+        slug: otherSlug,
+        title: 'Другая новость для удаления',
+        content: 'Содержимое другой новости',
+        category: 'ANNOUNCEMENT',
+        status: 'PUBLISHED',
+      })
+      .expect(201);
+    const created = await request(app.getHttpServer())
+      .post(`/news/${slug}/comments`)
+      .set('Authorization', auth(alice))
+      .send({ content: 'Комментарий для проверки удаления' })
+      .expect(201);
+    const ownId: string = created.body.id;
+    const delUrl = (s: string) => `/news/${s}/comments/${ownId}`;
+
+    await request(app.getHttpServer())
+      .delete(delUrl(otherSlug))
+      .set('Authorization', auth(alice))
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(delUrl(`${slug}-missing`))
+      .set('Authorization', auth(alice))
+      .expect(404);
+    expect(
+      (await prisma.newsComment.findUniqueOrThrow({ where: { id: ownId } }))
+        .isDeleted,
+    ).toBe(false);
+
+    await request(app.getHttpServer())
+      .delete(delUrl(slug))
+      .set('Authorization', auth(alice))
+      .expect(200);
+    expect(
+      (await prisma.newsComment.findUniqueOrThrow({ where: { id: ownId } }))
+        .isDeleted,
+    ).toBe(true);
+  });
+
   it('admin: список с фильтрами, статистика, архивация скрывает из публичного списка', async () => {
     const filtered = await request(app.getHttpServer())
       .get('/admin/news')
