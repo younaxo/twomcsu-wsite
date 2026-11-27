@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 /// (на островах `bg-surface` поле читается без контрастной обводки), радиус
 /// меньше, чем у островов; фокус — оранжевый акцент.
 export const inputClassName = cn(
-  'flex w-full min-w-0 rounded border border-border-subtle bg-background-subtle px-3.5 text-sm text-foreground',
+  'flex w-full min-w-0 rounded border border-border-subtle bg-background-subtle px-3.5 text-sm text-foreground max-md:min-h-10',
   'placeholder:text-subtle-foreground',
   'transition-[border-color,box-shadow,background-color] duration-fast',
   'hover:border-border',

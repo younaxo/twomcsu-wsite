@@ -72,7 +72,7 @@ export function OnlineCounter({ compact = false }: { compact?: boolean }) {
         data-testid="online-counter"
         className={cn(
           'flex flex-col items-center gap-0.5 rounded px-1 py-2 text-foreground hover:bg-muted',
-          compact && 'flex-row gap-2 px-2 py-1',
+          compact && 'min-h-10 min-w-10 flex-row justify-center gap-2 px-2 py-1',
         )}
       >
         <span

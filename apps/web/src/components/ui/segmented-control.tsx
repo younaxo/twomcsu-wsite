@@ -30,8 +30,8 @@ export interface SegmentedControlProps extends Omit<
 }
 
 const sizeClass: Record<NonNullable<SegmentedControlProps['size']>, string> = {
-  sm: 'h-7 px-2.5 text-xs',
-  md: 'h-control-sm px-3 text-sm',
+  sm: 'h-7 px-2.5 text-xs max-md:h-10',
+  md: 'h-control-sm px-3 text-sm max-md:h-10',
 };
 
 export const SegmentedControl = forwardRef<HTMLDivElement, SegmentedControlProps>(

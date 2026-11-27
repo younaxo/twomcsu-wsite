@@ -28,7 +28,7 @@ export function Breadcrumbs({ items, className, ...props }: BreadcrumbsProps) {
               {item.href && !last ? (
                 <Link
                   href={item.href}
-                  className="truncate rounded-sm px-0.5 hover:text-foreground hover:underline underline-offset-4"
+                  className="truncate rounded-sm px-0.5 hover:text-foreground hover:underline underline-offset-4 max-md:py-2.5"
                 >
                   {item.label}
                 </Link>

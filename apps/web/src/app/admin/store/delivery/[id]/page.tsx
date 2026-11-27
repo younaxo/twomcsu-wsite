@@ -136,7 +136,7 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
           <DescriptionItem term="Заказ">
             <Link
               href={`/admin/store/orders/${encodeURIComponent(orderNumber)}`}
-              className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline"
+              className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline max-md:inline-flex max-md:min-h-10 max-md:items-center"
             >
               {orderNumber}
             </Link>

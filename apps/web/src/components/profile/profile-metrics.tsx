@@ -24,7 +24,8 @@ const REACTIONS: Record<Reaction, { icon: LucideIcon; label: string; active: str
   DISLIKE: { icon: ThumbsDown, label: 'Не нравится', active: 'text-destructive' },
 };
 
-const cell = 'inline-flex h-7 items-center gap-1 rounded-sm px-1.5 tabular-nums';
+const cell =
+  'inline-flex h-7 items-center gap-1 rounded-sm px-1.5 tabular-nums max-md:h-10 max-md:min-w-10 max-md:justify-center';
 
 export function ProfileMetrics({
   handle,
