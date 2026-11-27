@@ -4,8 +4,11 @@ import {
   DEMO_EVENT_DISCLAIMER,
   DEMO_EVENTS,
   DEMO_FORMS,
+  DEMO_APPEALS,
   DEMO_NEWS,
+  DEMO_PUNISHMENT_ACCOUNT,
   DEMO_PUNISHMENTS,
+  DEMO_SETTINGS,
   DEMO_SERVERS,
   DEMO_TOPICS,
   buildDemoEventDates,
@@ -31,7 +34,7 @@ import {
   demoPlayerTag,
   demoSlotsHash,
 } from './social';
-import { seedDemoSocial } from './social-seed';
+import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
 import {
   assertDemoSeedAllowed,
   assertDemoUserNotForeign,
@@ -333,6 +336,9 @@ describe('demo seed social data', () => {
 });
 
 /// Простая in-memory подмена Prisma: upsert по сериализованному `where`.
+const keyOf = (w: unknown): string =>
+  JSON.stringify(w, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+
 function fakePrisma() {
   const tables = new Map<string, Map<string, Record<string, unknown>>>();
   let seq = 0;
@@ -341,7 +347,7 @@ function fakePrisma() {
     findUnique: (args: { where: Record<string, unknown> }) => {
       calls.push(`${name}.findUnique`);
       return Promise.resolve(
-        tables.get(name)?.get(JSON.stringify(args.where)) ?? null,
+        tables.get(name)?.get(keyOf(args.where)) ?? null,
       );
     },
     upsert: (args: {
@@ -352,7 +358,7 @@ function fakePrisma() {
       calls.push(`${name}.upsert`);
       const t = tables.get(name) ?? new Map();
       tables.set(name, t);
-      const key = JSON.stringify(args.where);
+      const key = keyOf(args.where);
       const prev = t.get(key);
       const row = prev
         ? { ...prev, ...args.update }
@@ -473,5 +479,130 @@ describe('seedDemoSocial: защита и чужие пользователи', 
     await expect(
       assertDemoUserNotForeign(mk('x@y.z'), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
     ).rejects.toThrow(/demo_system/);
+  });
+});
+
+describe('demo: настройки, «Мои наказания», обжалования', () => {
+  it('настройки: статистика и магазин включены, исполнители выдачи выключены', () => {
+    expect(DEMO_SETTINGS['stats.public.enabled']).toBe('true');
+    expect(DEMO_SETTINGS['store.delivery.enabled']).toBe('true');
+    expect(DEMO_SETTINGS['store.delivery.executor.command.enabled']).toBe('false');
+    expect(DEMO_SETTINGS['store.delivery.executor.bridge.enabled']).toBe('false');
+    expect(DEMO_SETTINGS).not.toHaveProperty('punishments.paidRemoval');
+  });
+  it('аккаунт: валидный uuid версии 4 (не офлайн), демо-игрок из списка', () => {
+    const { uuid, name, username } = DEMO_PUNISHMENT_ACCOUNT;
+    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(uuid.charAt(14)).not.toBe('3');
+    expect(name.length).toBeLessThanOrEqual(16);
+    expect(DEMO_PLAYERS.map((p) => p.username)).toContain(username);
+  });
+  it('subjectUuid у BAN активного, MUTE истёкшего и WARN; в строке зеркала', () => {
+    const mine = DEMO_PUNISHMENTS.filter((p) => p.subjectUuid);
+    expect(mine.map((p) => [p.kind, p.status]).sort()).toEqual([
+      ['BAN', 'ACTIVE'],
+      ['MUTE', 'EXPIRED'],
+      ['WARN', 'EXPIRED'],
+    ]);
+    const row = buildDemoPunishmentRow(mine[0], new Date());
+    expect(row.subjectUuid).toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+    const other = DEMO_PUNISHMENTS.find((p) => !p.subjectUuid)!;
+    expect(buildDemoPunishmentRow(other, new Date()).subjectUuid).toBeNull();
+    const ids = DEMO_PUNISHMENTS.map((p) => `${p.kind}:${p.sourceId}`);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it('обжалования: одно на рассмотрении, одно отклонённое, ссылаются на существующее наказание', () => {
+    expect(DEMO_APPEALS.map((a) => a.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+    for (const a of DEMO_APPEALS) {
+      const p = DEMO_PUNISHMENTS.find((x) => x.sourceId === a.punishmentSourceId);
+      expect(p?.kind).toBe(a.punishmentKind);
+      expect(p?.subjectUuid).toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+      expect(a.description.startsWith('[Демо]')).toBe(true);
+    }
+    expect(DEMO_APPEALS.filter((a) => a.status === 'IN_REVIEW')).toHaveLength(1);
+  });
+});
+
+describe('seedDemoPunishmentLinks (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+  const prepare = () => {
+    const f = fakePrisma();
+    f.tables.set(
+      'user',
+      new Map([
+        [
+          JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }),
+          {
+            id: 'u-ember',
+            username: DEMO_PUNISHMENT_ACCOUNT.username,
+            email: demoPlayerEmail(DEMO_PUNISHMENT_ACCOUNT.username),
+          },
+        ],
+      ]),
+    );
+    const mp = new Map<string, Record<string, unknown>>();
+    for (const a of DEMO_APPEALS) {
+      const key = JSON.stringify({
+        source_sourceScope_kind_sourceId: {
+          source: 'litebans',
+          sourceScope: 'default',
+          kind: a.punishmentKind,
+          sourceId: demoPunishmentSourceId(a.punishmentSourceId),
+        },
+      }, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+      mp.set(key, { id: `mp-${a.punishmentSourceId}` });
+    }
+    f.tables.set('minecraftPunishment', mp);
+    return f;
+  };
+
+  it('создаёт аккаунт и обращения, повтор не дублирует', async () => {
+    const { prisma, tables } = prepare();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = prisma as any;
+    await seedDemoPunishmentLinks(db);
+    await seedDemoPunishmentLinks(db);
+    expect(tables.get('minecraftAccount')!.size).toBe(1);
+    const acc = [...tables.get('minecraftAccount')!.values()][0];
+    expect(acc).toMatchObject({
+      userId: 'u-ember',
+      uuid: DEMO_PUNISHMENT_ACCOUNT.uuid,
+      name: DEMO_PUNISHMENT_ACCOUNT.name,
+    });
+    const reports = [...tables.get('report')!.values()];
+    expect(reports).toHaveLength(DEMO_APPEALS.length);
+    for (const r of reports) {
+      expect(r).toMatchObject({
+        type: 'PUNISHMENT_APPEAL',
+        authorId: 'u-ember',
+        appealedMinecraftPunishmentId: 'mp-9001',
+      });
+    }
+    expect(reports.map((r) => r.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+  });
+
+  it('без разрешённого окружения отклоняется до обращения к БД', async () => {
+    process.env.NODE_ENV = 'production';
+    const { prisma, calls } = prepare();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/fail closed/);
+    expect(calls).toEqual([]);
+  });
+
+  it('чужой пользователь demo_ember: ничего не записано', async () => {
+    const { prisma, tables, calls } = prepare();
+    tables.get('user')!.set(
+      JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }),
+      { id: 'real', username: DEMO_PUNISHMENT_ACCOUNT.username, email: 'real@mail.test' },
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/demo_ember/);
+    expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
   });
 });

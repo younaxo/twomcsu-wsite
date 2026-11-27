@@ -1,5 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
-import { demoEscapeToHtml } from './data';
+import {
+  DEMO_APPEALS,
+  DEMO_PUNISHMENT_ACCOUNT,
+  DEMO_PUNISHMENT_SCOPE,
+  DEMO_PUNISHMENT_SOURCE,
+  demoEscapeToHtml,
+  demoPunishmentSourceId,
+} from './data';
 import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import {
   DEMO_CONVERSATIONS,
@@ -189,4 +196,69 @@ export async function seedDemoSocial(
   }
 
   return `игроков ${DEMO_PLAYERS.length}, дружб ${DEMO_FRIENDSHIPS.length}, бесед ${DEMO_CONVERSATIONS.length}, комментариев профиля ${DEMO_PROFILE_COMMENTS.length}`;
+}
+
+/// «Мои наказания» и обжалования демо-игрока: фиктивный (не офлайн) Minecraft-
+/// аккаунт и Report PUNISHMENT_APPEAL. Вызывать ПОСЛЕ сида наказаний и соцданных.
+/// Только upsert по уникальным ключам (повтор не дублирует); затрагивает
+/// лишь demo_ember и его демо-записи.
+export async function seedDemoPunishmentLinks(
+  prisma: PrismaClient,
+): Promise<string> {
+  assertDemoSeedAllowed(process.env);
+  const { username, uuid, name } = DEMO_PUNISHMENT_ACCOUNT;
+  await assertDemoUserNotForeign(prisma, username, demoPlayerEmail(username));
+  const user = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true },
+  });
+  if (!user) {
+    throw new Error(`Демо-пользователь не найден: ${username} (сначала сид соцданных)`);
+  }
+  await prisma.minecraftAccount.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id, uuid, name },
+    update: { uuid, name },
+  });
+  const now = Date.now();
+  for (const a of DEMO_APPEALS) {
+    const punishment = await prisma.minecraftPunishment.findUnique({
+      where: {
+        source_sourceScope_kind_sourceId: {
+          source: DEMO_PUNISHMENT_SOURCE,
+          sourceScope: DEMO_PUNISHMENT_SCOPE,
+          kind: a.punishmentKind,
+          sourceId: demoPunishmentSourceId(a.punishmentSourceId),
+        },
+      },
+      select: { id: true },
+    });
+    if (!punishment) {
+      throw new Error(
+        `Демо-наказание ${a.punishmentSourceId} не найдено (сначала сид наказаний)`,
+      );
+    }
+    const data = {
+      type: PUNISHMENT_APPEAL as const,
+      status: a.status,
+      authorId: user.id,
+      description: a.description,
+      appealedMinecraftPunishmentId: punishment.id,
+      verdict: a.verdict,
+      resolvedAt:
+        a.resolvedDaysAgo === null
+          ? null
+          : new Date(now - a.resolvedDaysAgo * DAY),
+    };
+    await prisma.report.upsert({
+      where: { reportNumber: a.reportNumber },
+      create: {
+        reportNumber: a.reportNumber,
+        ...data,
+        createdAt: new Date(now - a.daysAgo * DAY),
+      },
+      update: data,
+    });
+  }
+  return `аккаунт ${name}, обжалований ${DEMO_APPEALS.length}`;
 }
