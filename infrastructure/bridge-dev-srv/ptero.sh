@@ -43,7 +43,7 @@ twomc_secure_file() {
   return 0
 }
 PTERO_NODE_IMAGE="${PTERO_NODE_IMAGE:-node:24.18.0-alpine}"   # уже есть на VDS; нужен node 22+ со встроенным WebSocket
-PTERO_NODE_IMAGE_MIRROR="${PTERO_NODE_IMAGE_MIRROR:-node:22-alpine}"
+PTERO_NODE_IMAGE_MIRROR="${PTERO_NODE_IMAGE_MIRROR:-node:22.21.1-alpine}"
 PTERO_ALLOW_WRITE="${PTERO_ALLOW_WRITE:-0}"
 PTERO_HTTP=""   # код последнего HTTP-ответа
 PTERO_BODY=""   # временный файл с телом последнего ответа (создаётся с umask 077, удаляется ptero_cleanup)
@@ -427,7 +427,8 @@ ptero_players_ws() {
   if [[ -n "$n" ]]; then printf '%s\n' "$n"; return 0; fi
   {
     echo "ws list: получено строк консоли: $(grep -c '^L: ' <<<"$out")"
-    grep '^L: ' <<<"$out" | grep -i 'players\|online' | sed 's#https\?://[^ ]*#<url>#g; s/[0-9a-fA-F]\{32,\}/<hex>/g' | head -n 10
+    grep '^L: ' <<<"$out" | grep -i 'players\|online' | sed -E -e 's#https?://[^ ]*#<url>#g' -e 's/[0-9a-fA-F]{32,}/<hex>/g' \
+      -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]+)?/<ip>/g' -e 's/([Oo]nline:?).*/\1 <nick>/' -e 's/[A-Za-z0-9_]{3,16}(\[| joined| left| lost)/<nick>\1/g' | head -n 10
   } >&2
   return 1
 }
@@ -453,23 +454,42 @@ ptero_server_image() {
   printf '%s\n' "$img"
 }
 
-# ptero_restart_guard <install|rollback>: перед restart. Игроки онлайн -> `say`-предупреждение и ожидание 60 с; затем игроки проверяются ЕЩЁ РАЗ:
-# если их стало больше (зашли новые) - второе предупреждение и ещё 30 с. Число игроков определить нельзя -> отказ (код 1).
-# Только при PTERO_ALLOW_WRITE=1 (команда list и say). Ожидания можно сократить только для сухих прогонов: PTERO_GUARD_WAIT1/PTERO_GUARD_WAIT2.
+# _pt_guard_probe: печатает «<SLP> <list>» (число либо «?»). Список list запрашивается всегда, когда SLP не показал игроков.
+_pt_guard_probe() {
+  local s l="?" sv="?"
+  if s="$(ptero_slp)"; then s="${s#players=}"; sv="${s%% *}"; fi
+  if [[ "$sv" == "?" || "$sv" == "0" ]]; then
+    if l="$(ptero_players_ws)" && [[ "$l" =~ ^[0-9]+$ ]]; then :; else l="?"; fi
+  fi
+  echo "$sv $l"
+}
+
+# ptero_restart_guard <install|rollback>: перед restart. SLP>0 или list>0 -> `say`-предупреждение, ожидание 60 с, повторная проверка (если игроков стало больше -
+# второе предупреждение и ещё 30 с). SLP=0 -> перекрёстная проверка list: 0 -> можно; >0 -> предупреждение; list недоступен -> консервативно: предупреждение
+# и 60 с, затем restart. SLP и list недоступны -> отказ (код 1). Только при PTERO_ALLOW_WRITE=1. Ожидания для сухих прогонов: PTERO_GUARD_WAIT1/PTERO_GUARD_WAIT2.
 ptero_restart_guard() {
-  local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pl n n2
+  local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pr s l n n2 s2 l2 blind=0
   [[ "$why" =~ ^(install|rollback)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "restart_guard требует PTERO_ALLOW_WRITE=1"; return 1; }
-  pl="$(ptero_players_online)"; n="${pl#players=}"   # stderr (диагностика ws) виден
-  [[ "$n" =~ ^[0-9]+$ ]] || { echo "не удалось определить число игроков (websocket или команда list)"; return 1; }
-  echo "игроков онлайн: $n"
-  (( n == 0 )) && return 0
+  pr="$(_pt_guard_probe)"; s="${pr% *}"; l="${pr#* }"   # stderr (диагностика ws) виден
+  if [[ "$s" == "?" && "$l" == "?" ]]; then echo "BLOCKER: не удалось определить число игроков (SLP и websocket list недоступны)"; return 1; fi
+  echo "игроков онлайн: SLP=$s list=$l"
+  n=0; [[ "$s" =~ ^[0-9]+$ ]] && n="$s"; [[ "$l" =~ ^[0-9]+$ ]] && (( l > n )) && n="$l"
+  if (( n == 0 )); then
+    if [[ "$s" == "0" && "$l" == "?" ]]; then
+      blind=1; echo "SLP=0, list недоступен — предупреждение отправлено на всякий случай"
+    else
+      return 0
+    fi
+  fi
   echo "предупреждение в чат и ожидание $w1 с"
   ptero_command "say TwoMC: server restart in 60 seconds for plugin $why" || { echo "не удалось отправить предупреждение"; return 1; }
   sleep "$w1"
-  pl="$(ptero_players_online 2>/dev/null)"; n2="${pl#players=}"
-  [[ "$n2" =~ ^[0-9]+$ ]] || { echo "не удалось повторно определить число игроков"; return 1; }
-  echo "игроков онлайн после ожидания: $n2"
+  (( blind == 1 )) && return 0
+  pr="$(_pt_guard_probe 2>/dev/null)"; s2="${pr% *}"; l2="${pr#* }"
+  [[ "$s2" =~ ^[0-9]+$ || "$l2" =~ ^[0-9]+$ ]] || { echo "не удалось повторно определить число игроков"; return 1; }
+  n2=0; [[ "$s2" =~ ^[0-9]+$ ]] && n2="$s2"; [[ "$l2" =~ ^[0-9]+$ ]] && (( l2 > n2 )) && n2="$l2"
+  echo "игроков онлайн после ожидания: SLP=$s2 list=$l2"
   if (( n2 > n )); then
     echo "зашли новые игроки: второе предупреждение и ожидание $w2 с"
     ptero_command "say TwoMC: server restart in 30 seconds for plugin $why" || { echo "не удалось отправить второе предупреждение"; return 1; }
