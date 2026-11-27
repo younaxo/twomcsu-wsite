@@ -90,7 +90,7 @@ export function SiteHeader({ className }: { className?: string }) {
     >
       <div
         data-testid="site-header-surface"
-        className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-3 rounded-xl bg-surface px-3 shadow-lg md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
+        className="relative mx-auto flex h-16 max-w-[1440px] items-center gap-2 md:gap-3 rounded-xl bg-surface px-3 shadow-lg md:px-5 [&>*:not([data-testid=seasonal-decoration])]:relative [&>*:not([data-testid=seasonal-decoration])]:z-[1]"
       >
         <SeasonalHeaderDecoration />
         {mainSiteUrl === null ? (
@@ -105,8 +105,8 @@ export function SiteHeader({ className }: { className?: string }) {
         ) : null}
         <SiteLogo />
         {mainSiteUrl === null ? <HeaderNav className="mx-auto hidden lg:block" /> : null}
-        <div className="ml-auto flex items-center gap-1 lg:ml-0">
-          {/* На самых узких телефонах (360 px) счётчик онлайна не помещается рядом
+        <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
+          {/* На телефонах уже 440 px счётчик онлайна не помещается рядом
               с логотипом и действиями — скрываем его, а не сжимаем логотип. */}
           {mainSiteUrl !== null ? (
             // Сайт розыгрыша: онлайн, уведомления и профиль требуют API основного
@@ -128,7 +128,7 @@ export function SiteHeader({ className }: { className?: string }) {
             </Tooltip>
           ) : (
             <>
-              <div className="lg:hidden max-[379px]:hidden">
+              <div className="max-[439px]:hidden lg:hidden">
                 <OnlineCounter compact />
               </div>
               <Button asChild variant="ghost" size="icon">

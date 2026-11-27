@@ -28,7 +28,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   const sections = SECTIONS.filter((section) => !('module' in section) || !store.reason);
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-3 py-6 md:px-6">
-      <nav aria-label="Разделы настроек" className="flex gap-1 overflow-x-auto">
+      <nav
+        aria-label="Разделы настроек"
+        className="flex max-w-full gap-1 overflow-x-auto pb-1 scrollbar-thin"
+      >
         {sections.map((section) => {
           const active = pathname === section.href;
           return (
