@@ -9,44 +9,10 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-const SECRET_VALUES = new Set();
-const addSecret = (v) => {
-  if (typeof v === 'string' && v.length >= 4) SECRET_VALUES.add(v);
-};
-const mask = (s) => {
-  let t = String(s);
-  for (const v of SECRET_VALUES) t = t.split(v).join('***');
-  return t
-    .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
-    .replace(/(Bearer\s+)\S+/gi, '$1***')
-    .replace(/(Basic\s+)[A-Za-z0-9+/=]{4,}/gi, '$1***')
-    .replace(/("[^"]*(?:pass|secret|token|key|otp)[^"]*"\s*:\s*")[^"]{4,}(")/gi, '$1***$2')
-    .replace(/\b([\w-]*(?:pass|secret|token|key|otp)[\w-]*\s*=\s*)[^\s&"',;]{4,}/gi, '$1***')
-    .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
-    .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
-};
-const show = (x) => (typeof x === 'string' ? x : x instanceof Error ? (x.stack ?? x.message) : JSON.stringify(x));
-for (const m of ['log', 'info', 'warn', 'error']) {
-  const orig = console[m].bind(console);
-  console[m] = (...a) => orig(...a.map((x) => mask(show(x))));
-}
-process.on('uncaughtException', (e) => {
-  console.error('НЕОБРАБОТАННАЯ ОШИБКА:', e?.message ?? e);
-  process.exit(2);
-});
-process.on('unhandledRejection', (e) => {
-  console.error('НЕОБРАБОТАННЫЙ ОТКАЗ:', e?.message ?? e);
-  process.exit(2);
-});
-if (process.env.SMOKE_SELFTEST_MASK === '1') {
-  const fake = ['fake-' + 'pw-value-1', 'fake-' + 'totp-value-2'];
-  fake.forEach(addSecret);
-  const leaked = [`пароль ${fake[0]}`, `x=${fake[1]}`, new Error(`boom ${fake[0]}`), 'Authorization: Bearer abc.def.ghi', `{"userPassword":"${'zz' + 'unknown-pw-1'}"}`]
-    .map((p) => mask(show(p)))
-    .filter((o) => fake.some((f) => o.includes(f)) || /abc\.def|unknown-pw/.test(o));
-  console.log(leaked.length ? `mask-selftest: УТЕЧКА ${leaked.length}` : 'mask-selftest: ok');
-  process.exit(leaked.length ? 1 : 0);
-}
+// Маска секретов - общий модуль mask.mjs (рядом с этим файлом; тот же, что у smoke.mjs). addSecret регистрирует значения от 4 символов.
+import { addSecret, mask, installMask, runMaskSelftest } from './mask.mjs';
+installMask();
+if (process.env.SMOKE_SELFTEST_MASK === '1') process.exit(runMaskSelftest());
 
 const BASE = (process.env.BASE_URL || 'https://test-website.twomc.su').replace(/\/$/, '');
 const API = process.env.API_URL || 'http://127.0.0.1:4000';

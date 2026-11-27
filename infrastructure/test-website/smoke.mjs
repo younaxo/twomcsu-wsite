@@ -5,63 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 
-// ---- маскирование секретов: ЛЮБОЙ вывод (console.*, необработанные ошибки) проходит через mask(). Значения паролей, ключей, токенов и TOTP-секрета
-// регистрируются при чтении stand.env/accounts и при получении accessToken; дополнительно режутся JWT, Bearer, пароли в URL и otpauth://.
+// ---- маскирование секретов: общий модуль mask.mjs (рядом с этим файлом; его же использует visual-check.mjs). Значения паролей, ключей, токенов и TOTP-секрета
+// регистрируются при чтении stand.env/accounts и при получении accessToken (addSecret, значения короче 6 символов не регистрируются).
 // Самопроверка без сети и файлов: SMOKE_SELFTEST_MASK=1 node smoke.mjs
-const SECRET_VALUES = new Set();
-const addSecret = (v) => {
-  if (typeof v === 'string' && v.length >= 6) SECRET_VALUES.add(v);
-};
+import { addSecret as addSecretRaw, installMask, runMaskSelftest } from './mask.mjs';
+const addSecret = (v) => addSecretRaw(v, 6);
 const SECRET_KEY = /SECRET|PASSWORD|PASS|TOKEN|KEY|PEPPER|SALT|CREDENTIAL|DATABASE_URL|REDIS_URL|DSN/i;
-const mask = (s) => {
-  let t = String(s);
-  for (const v of SECRET_VALUES) t = t.split(v).join('***');
-  return t
-    .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
-    .replace(/(Bearer\s+)\S+/gi, '$1***')
-    .replace(/(Basic\s+)[A-Za-z0-9+/=]{4,}/gi, '$1***')
-    // Маска по подстрокам ИМЁН полей (pass|secret|token|key|otp, без учёта регистра): userPassword, apiKey, otpCode, refresh_token и т.п.
-    .replace(/("[^"]*(?:pass|secret|token|key|otp)[^"]*"\s*:\s*")[^"]{4,}(")/gi, '$1***$2')
-    .replace(/\b([\w-]*(?:pass|secret|token|key|otp)[\w-]*\s*=\s*)[^\s&"',;]{4,}/gi, '$1***')
-    .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
-    .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
-};
-const show = (x) => (typeof x === 'string' ? x : x instanceof Error ? (x.stack ?? x.message) : JSON.stringify(x));
-for (const m of ['log', 'info', 'warn', 'error']) {
-  const orig = console[m].bind(console);
-  console[m] = (...a) => orig(...a.map((x) => mask(show(x))));
-}
-process.on('uncaughtException', (e) => {
-  console.error('НЕОБРАБОТАННАЯ ОШИБКА:', e?.message ?? e);
-  process.exit(2);
-});
-process.on('unhandledRejection', (e) => {
-  console.error('НЕОБРАБОТАННЫЙ ОТКАЗ:', e?.message ?? e);
-  process.exit(2);
-});
-if (process.env.SMOKE_SELFTEST_MASK === '1') {
-  const fake = ['fake-' + 'pw-value-1', 'fake-' + 'totp-value-2', 'fake-' + 'backup-value-3'];
-  fake.forEach(addSecret);
-  const probes = [
-    `пароль ${fake[0]}`,
-    `totp=${fake[1]} backup=${fake[2]}`,
-    new Error(`boom ${fake[0]}`),
-    'Authorization: Bearer abc.def.ghi',
-    'jwt ' + ['eyJhbGci' + 'OiJIUzI1NiJ9', 'eyJzdWIi' + 'OiIxIn0', 'sig'].join('.'),
-    'postgresql://user:' + 'hunter2'.repeat(2) + '@db:5432/x',
-    'otpauth://totp/x?secret=' + 'JBSWY3DP' + 'EHPK3PXP',
-    `{"password":"${'zz' + 'unknown-pw-1'}","login":"x"}`,
-    `password=${'zz' + 'unknown-pw-2'}&x=1`,
-    `Authorization: Basic ${'QUJD' + 'REVGR0g='}`,
-    `{"userPassword":"${'zz' + 'unknown-pw-3'}","apiKey":"${'zz' + 'unknown-pw-4'}","OTP_Code":"${'zz' + 'unknown-pw-5'}"}`,
-    `refresh_token=${'zz' + 'unknown-pw-6'}&Api-Key=${'zz' + 'unknown-pw-7'}`,
-  ];
-  const leaked = probes
-    .map((p) => mask(show(p)))
-    .filter((o) => fake.some((f) => o.includes(f)) || /hunter2|eyJhbGci|abc\.def|secret=JBSW|unknown-pw|QUJDREVG/.test(o));
-  console.log(leaked.length ? `mask-selftest: УТЕЧКА ${leaked.length}` : `mask-selftest: ok (${probes.length} проб)`);
-  process.exit(leaked.length ? 1 : 0);
-}
+installMask();
+if (process.env.SMOKE_SELFTEST_MASK === '1') process.exit(runMaskSelftest());
 
 const API = process.env.API_URL || 'http://127.0.0.1:4000';
 const WEB = process.env.WEB_URL || 'http://127.0.0.1:3000';
