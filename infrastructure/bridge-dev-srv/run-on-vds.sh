@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ЛОКАЛЬНО: запустить скрипт из этого каталога на VDS (ptero.sh подключается автоматически), через общий lock и ssh-обёртку раннера.
 #   run-on-vds.sh stage <локальный-jar>          положить JAR и шаблон config.yml в ~/.twomc-inbox на VDS (панель и стенд не трогает)
-#   run-on-vds.sh install [--dry-run|--yes]      install-bridge.sh на VDS (без флагов ничего не меняет)
-#   run-on-vds.sh script <имя.sh> [арг...]       любой скрипт этого каталога (для диагностики, только чтение)
+#   run-on-vds.sh install [--dry-run|--yes] [--sha256=<hex>]   install-bridge.sh на VDS (без флагов ничего не меняет; sha256 JAR сверяется до загрузки)
+#   run-on-vds.sh script <имя.sh> [арг...]       скрипт этого каталога (verify-bridge.sh, rollback-bridge.sh, bot-join.sh, live-sigcheck.sh, register-dev-srv.sh, link-account.sh);
+#                                                 rollback-bridge.sh и verify-bridge.sh работают ТОЛЬКО в таком пакете
 # Код 255 = сбой SSH: НЕ повторять подряд. Аргументы проверяет vds_ssh_script ([A-Za-z0-9._:/=,@+-]).
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -11,6 +11,18 @@
 #  - Не-GET методы разрешены только при PTERO_ALLOW_WRITE=1 (его выставляет install-bridge.sh с флагом --yes);
 #    без него функции записи (file_write, upload, power, command) отказывают. Порядок: dry-run и status/files_list/file_read/
 #    console_tail - только чтение.
+#  - БЕЛЫЕ СПИСКИ (всё остальное - отказ, код 2/1, даже при PTERO_ALLOW_WRITE=1):
+#      эндпоинты: "", /resources, /websocket, /startup, /network/allocations, /files/{list,contents,upload,write,create-folder,chmod,rename},
+#        /power (только restart), /command;
+#      list: только /, /plugins;
+#      read (stdout): /server.properties, /version_history.json, /logs/latest.log, /plugins/TwoMCBridge/config.yml;
+#      fetch (в локальный файл 600, для бэкапа): /plugins/TwoMCBridge/config.yml и bridge-key.txt (ключ в stdout не выводится никогда);
+#      write: /plugins/TwoMCBridge/{config.yml,bridge-key.txt}[.bak-<UTC-время>|.disabled-<UTC-время>]; upload: только /plugins/TwoMCBridge-0.1.0.jar;
+#      rename: /plugins TwoMCBridge-0.1.0.jar -> TwoMCBridge-0.1.0.jar.disabled-<время> и config.yml|bridge-key.txt -> <имя>.disabled-<время> в /plugins/TwoMCBridge;
+#      mkdir: только /plugins + TwoMCBridge; chmod: только /plugins/TwoMCBridge bridge-key.txt[.bak-<время>] 600;
+#      консольные команды: `say TwoMC: <текст [A-Za-z0-9 .,:!?-]>`, `list`, `twomcbridge events`.
+#    <UTC-время> = YYYYMMDDTHHMMSSZ.
+#  - Тело последнего ответа (PTERO_BODY) очищается сразу после использования (_pt_wipe).
 #  - Ключ API передаётся в curl через конфиг из process substitution (не попадает в argv/ps), signed URL загрузки - так же.
 #    Ключ, websocket-токен, signed URL, тела ответов с ними не печатаются; stderr curl отбрасывается (в нём бывает URL).
 #  - Ничего не читает из stdin (все curl/docker с </dev/null), чтобы не съесть скрипт, поданный через `bash -s`.
@@ -32,6 +44,8 @@ ptero_cleanup() {
   for f in "${PTERO_TMPS[@]:-}"; do [[ -n "$f" ]] && rm -f -- "$f"; done
   PTERO_TMPS=()
 }
+
+_pt_wipe() { [[ -n "${PTERO_BODY:-}" && -f "$PTERO_BODY" ]] && : > "$PTERO_BODY"; return 0; }
 
 _pt_mktemp() { _PT_LAST="$(umask 077; mktemp "${TMPDIR:-/tmp}/ptero.XXXXXX")" || return 1; PTERO_TMPS+=("$_PT_LAST"); }
 
@@ -63,11 +77,37 @@ _pt_check_suffix() {
   [[ "$1" =~ ^/[A-Za-z0-9._/?=\&%-]*$ && "$1" != *..* ]] || { ptero_die "недопустимый суффикс запроса"; return 1; }
 }
 
+# Белый список эндпоинтов (по части суффикса до «?»).
+_pt_check_endpoint() {
+  case "${1%%\?*}" in
+    ""|/resources|/websocket|/startup|/network/allocations|/files/list|/files/contents|/files/upload|/files/write|/files/create-folder|/files/chmod|/files/rename|/power|/command) return 0 ;;
+    *) ptero_die "эндпоинт не разрешён: ${1%%\?*}"; return 1 ;;
+  esac
+}
+
+# Белые списки путей (см. шапку). _pt_path_allowed <list|read|fetch|write> <путь>.
+_PT_TS_RE='[0-9]{8}T[0-9]{6}Z'
+_pt_path_allowed() {
+  local op="$1" p="$2"
+  [[ "$p" == "/" ]] || p="${p%/}"
+  [[ -n "$p" ]] || p="/"
+  local re
+  case "$op" in
+    list) case "$p" in /|/plugins) return 0 ;; esac ;;
+    read) case "$p" in /server.properties|/version_history.json|/logs/latest.log|/plugins/TwoMCBridge/config.yml) return 0 ;; esac ;;
+    fetch) case "$p" in /plugins/TwoMCBridge/config.yml|/plugins/TwoMCBridge/bridge-key.txt) return 0 ;; esac ;;
+    write) re="^/plugins/TwoMCBridge/(config\.yml|bridge-key\.txt)(\.bak-$_PT_TS_RE|\.disabled-$_PT_TS_RE)?\$"; [[ "$p" =~ $re ]] && return 0 ;;
+  esac
+  ptero_die "путь не в белом списке ($op): $p"; return 1
+}
+
 # _pt_req <METHOD> <суффикс> [аргументы curl...]: PTERO_HTTP и PTERO_BODY. Всегда 0, если запрос ушёл; смотрите PTERO_HTTP.
+# Тело ответа не-GET запросов (записи) сразу очищается: нужен только код.
 _pt_req() {
   local method="$1" suffix="$2"; shift 2
   [[ -n "${PTERO_SRV:-}" ]] || { ptero_die "не вызван ptero_init"; return 1; }
   _pt_check_suffix "$suffix" || return 1
+  _pt_check_endpoint "$suffix" || return 1
   case "$method" in
     GET) ;;
     POST) [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "запись запрещена (PTERO_ALLOW_WRITE!=1): $method $suffix"; return 1; } ;;
@@ -76,6 +116,7 @@ _pt_req() {
   : > "$PTERO_BODY"
   PTERO_HTTP="$(curl -sS --max-time "${PTERO_TIMEOUT:-60}" -o "$PTERO_BODY" -w '%{http_code}' -X "$method" \
     -K <(_pt_auth_cfg) "$@" "$PTERO_SRV$suffix" </dev/null 2>/dev/null)" || PTERO_HTTP="000"
+  [[ "$method" == GET ]] || _pt_wipe
   return 0
 }
 
@@ -90,33 +131,55 @@ _pt_check_path() { [[ "$1" =~ ^/[A-Za-z0-9._/-]*$ && "$1" != *..* ]] || { ptero_
 # status: печатает «HTTP <код> state=<current_state>».
 ptero_status() {
   _pt_req GET /resources || return 1
-  local st; st="$(ptero_json_str "$PTERO_BODY" current_state)"
+  local st; st="$(ptero_json_str "$PTERO_BODY" current_state)"; _pt_wipe
   echo "HTTP $PTERO_HTTP state=${st:-?}"
   [[ "$PTERO_HTTP" == "200" ]]
 }
 
 # state: только current_state на stdout (для ожидания).
-ptero_state() { _pt_req GET /resources || return 1; [[ "$PTERO_HTTP" == "200" ]] && ptero_json_str "$PTERO_BODY" current_state; }
+ptero_state() {
+  _pt_req GET /resources || return 1
+  local st=""; [[ "$PTERO_HTTP" == "200" ]] && st="$(ptero_json_str "$PTERO_BODY" current_state)"
+  _pt_wipe
+  [[ "$PTERO_HTTP" == "200" ]] || return 1
+  printf '%s\n' "$st"
+}
 
-# files_list <каталог>: имена и признак каталога («d name» / «- name»); только имена.
+# files_list <каталог>: имена и признак каталога («d name» / «- name»); только имена. Каталог - из белого списка (/, /plugins).
 ptero_files_list() {
   local dir="${1:-/}"; _pt_check_path "$dir" || return 2
+  _pt_path_allowed list "$dir" || return 2
   _pt_req GET "/files/list?directory=$(_pt_urlenc_path "$dir")" || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP"; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP"; return 1; }
   # Разбор по записям: attributes содержит name и is_file; порядок полей у Wings: name, mode, mode_bits, size, is_file, ...
   grep -o '"name":"[^"]*"\|"is_file":\(true\|false\)' "$PTERO_BODY" | paste -sd' ' - | sed 's/"name":"/\n/g' \
     | sed -n 's/^\([^"]*\)" "is_file":true.*/- \1/p; s/^\([^"]*\)" "is_file":false.*/d \1/p'
+  _pt_wipe
 }
 
-# file_read <путь>: содержимое файла в stdout (осторожно с секретами: вызывать только для несекретных файлов).
+# file_read <путь>: содержимое файла в stdout. Только белый список read (bridge-key.txt сюда не входит никогда).
 ptero_file_read() {
   _pt_check_path "$1" || return 2
+  _pt_path_allowed read "$1" || return 2
   _pt_req GET "/files/contents?file=$(_pt_urlenc_path "$1")" || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP" >&2; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP" >&2; return 1; }
   cat "$PTERO_BODY"
+  _pt_wipe
 }
 
-# file_exists <путь>: 0 если файл есть в каталоге (по списку).
+# file_fetch <путь> <локальный-файл>: содержимое в локальный файл с правами 600 (для бэкапа config.yml и bridge-key.txt); в stdout ничего.
+ptero_file_fetch() {
+  _pt_check_path "$1" || return 2
+  _pt_path_allowed fetch "$1" || return 2
+  [[ -n "$2" ]] || return 2
+  _pt_req GET "/files/contents?file=$(_pt_urlenc_path "$1")" || return 1
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP" >&2; return 1; }
+  ( umask 077; cat "$PTERO_BODY" > "$2" ) || { _pt_wipe; return 1; }
+  chmod 600 "$2" 2>/dev/null
+  _pt_wipe
+}
+
+# file_exists <путь>: 0 если файл есть в каталоге (по списку; каталог - из белого списка list).
 ptero_file_exists() {
   local dir; dir="$(dirname "$1")"; [[ "$dir" == "." ]] && dir="/"
   ptero_files_list "$dir" 2>/dev/null | grep -qxF -- "- $(basename "$1")"
@@ -125,7 +188,7 @@ ptero_file_exists() {
 # startup_vars: имена переменных запуска; значения - только для белого списка несекретных.
 ptero_startup_vars() {
   _pt_req GET /startup || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP"; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP"; return 1; }
   local pairs name val
   pairs="$(grep -o '"env_variable":"[^"]*"\|"server_value":"[^"]*"' "$PTERO_BODY" | paste -sd' ' - | sed 's/"env_variable":"/\n/g' | sed -n 's/^\([^"]*\)" "server_value":"\([^"]*\)".*/\1=\2/p')"
   while IFS='=' read -r name val; do
@@ -135,32 +198,36 @@ ptero_startup_vars() {
       *) echo "var $name=<скрыто>" ;;
     esac
   done <<<"$pairs"
+  pairs=""
   local img; img="$(ptero_json_str "$PTERO_BODY" docker_image)"; [[ -n "$img" ]] && echo "docker_image=$img"
   grep -o '"docker_images":{[^}]*}' "$PTERO_BODY" | head -n1 | sed 's/^/images: /'
+  _pt_wipe
 }
 
-# ---- запись (только при PTERO_ALLOW_WRITE=1) ----
+# ---- запись (только при PTERO_ALLOW_WRITE=1 и только по белым спискам) ----
 
 # file_write <путь-на-сервере> <локальный-файл>: POST /files/write?file=... (тело = содержимое файла, без вывода).
 ptero_file_write() {
   _pt_check_path "$1" || return 2
+  _pt_path_allowed write "$1" || return 2
   [[ -f "$2" ]] || { ptero_die "нет локального файла для записи"; return 2; }
   _pt_req POST "/files/write?file=$(_pt_urlenc_path "$1")" --data-binary "@$2" -H 'Content-Type: text/plain' || return 1
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]] || { echo "file_write: HTTP $PTERO_HTTP" >&2; return 1; }
 }
 
 # upload <локальный-файл> <каталог-на-сервере> <имя-на-сервере>: GET /files/upload -> signed URL (не печатается), multipart.
+# Разрешено только /plugins + TwoMCBridge-0.1.0.jar.
 ptero_upload() {
   local local_file="$1" dir="$2" name="$3"
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "запись запрещена (PTERO_ALLOW_WRITE!=1): upload"; return 1; }
+  [[ "${dir%/}" == "/plugins" && "$name" == "TwoMCBridge-0.1.0.jar" ]] || { ptero_die "upload: разрешён только /plugins/TwoMCBridge-0.1.0.jar"; return 2; }
   [[ -f "$local_file" ]] || { ptero_die "нет локального файла для загрузки"; return 2; }
   _pt_check_path "$dir" || return 2
-  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || { ptero_die "недопустимое имя файла"; return 2; }
   _pt_req GET /files/upload || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "upload: получение URL, HTTP $PTERO_HTTP" >&2; return 1; }
-  local url; url="$(ptero_json_str "$PTERO_BODY" url)"
-  url="${url//\\\//\/}"; url="${url//\\u0026/&}"
-  [[ "$url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/upload/file\?[A-Za-z0-9._=\&%~+-]+$ ]] || { ptero_die "signed URL неожиданного формата"; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "upload: получение URL, HTTP $PTERO_HTTP" >&2; return 1; }
+  local url; url="$(ptero_json_str "$PTERO_BODY" url)"; _pt_wipe
+  url="${url//\\//\/}"; url="${url//\u0026/&}"
+  [[ "$url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/upload/file\?[A-Za-z0-9._=\&%~+-]+$ ]] || { url=""; ptero_die "signed URL неожиданного формата"; return 1; }
   # Каталог и имя - наши проверенные константы; недоверенных значений в форме нет. Имя файла задаётся --form-string-стилем: filename= в -F.
   local code
   code="$(curl -sS --max-time 300 -o /dev/null -w '%{http_code}' -K <(printf 'url = "%s&directory=%s"\n' "$url" "$(_pt_urlenc_path "$dir")") \
@@ -176,9 +243,19 @@ ptero_power() {
   [[ "$PTERO_HTTP" == "204" ]] || { echo "power: HTTP $PTERO_HTTP" >&2; return 1; }
 }
 
-# command <строка>: POST /command. Допустимы только простые символы (без кавычек и обратной косой): JSON собирается вручную.
+# Белый список консольных команд: `say TwoMC: <текст [A-Za-z0-9 .,:!?-]>`, `list`, `twomcbridge events`. Остальное (op, stop, ...) - отказ.
+_pt_cmd_allowed() {
+  local c="$1" re='^say TwoMC: [A-Za-z0-9 .,:!?-]{1,120}$'
+  case "$c" in
+    "list"|"twomcbridge events") return 0 ;;
+  esac
+  [[ "$c" != *$'\n'* && "$c" =~ $re ]] && return 0
+  ptero_die "консольная команда не в белом списке"; return 1
+}
+
+# command <строка>: POST /command. Только белый список (_pt_cmd_allowed); JSON безопасен: символы без кавычек и обратной косой.
 ptero_command() {
-  [[ "$1" =~ ^[A-Za-z0-9\ _.,:/@+=!-]{1,200}$ ]] || { ptero_die "недопустимая команда"; return 2; }
+  _pt_cmd_allowed "$1" || return 2
   _pt_req POST /command -H 'Content-Type: application/json' --data-raw "{\"command\":\"$1\"}" || return 1
   [[ "$PTERO_HTTP" == "204" ]] || { echo "command: HTTP $PTERO_HTTP" >&2; return 1; }
 }
@@ -235,12 +312,12 @@ _pt_node_image() {
 _pt_ws() {
   local secs="$1" send="$2" logs="$3" until="$4" fail="$5" filter="$6" img
   [[ "$secs" =~ ^[0-9]{1,4}$ ]] || { ptero_die "секунды: число"; return 2; }
-  [[ -z "$send" || "$send" =~ ^[A-Za-z0-9\ _.,:/@+=!-]{1,200}$ ]] || { ptero_die "недопустимая команда"; return 2; }
+  [[ -z "$send" ]] || _pt_cmd_allowed "$send" || return 2
   [[ -z "$send" || "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "отправка команды в консоль запрещена (PTERO_ALLOW_WRITE!=1)"; return 1; }
   img="$(_pt_node_image)" || return 1
   _pt_req GET /websocket || return 1
   if [[ "$PTERO_HTTP" == "429" ]]; then sleep 45; _pt_req GET /websocket || return 1; fi   # панель ограничивает частоту выдачи токенов
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "websocket: HTTP $PTERO_HTTP" >&2; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "websocket: HTTP $PTERO_HTTP" >&2; return 1; }
   local tok sock
   tok="$(ptero_json_str "$PTERO_BODY" token)"; sock="$(ptero_json_str "$PTERO_BODY" socket)"
   sock="${sock//\\\//\/}"   # JSON экранирует «/» как «\/»
@@ -277,16 +354,43 @@ ptero_players_online() {
 # server_image: образ Docker сервера (docker_image из GET /servers/<UUID>), несекретно.
 ptero_server_image() {
   _pt_req GET "" || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP" >&2; return 1; }
-  ptero_json_str "$PTERO_BODY" docker_image | tr -d "\\"
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP" >&2; return 1; }
+  local img; img="$(ptero_json_str "$PTERO_BODY" docker_image | tr -d "\\")"; _pt_wipe
+  printf '%s\n' "$img"
 }
 
-# ---- файловые операции малого объёма (только при PTERO_ALLOW_WRITE=1; имена проверяются, JSON собирается из проверенных строк) ----
+# ptero_restart_guard <install|rollback>: перед restart. Игроки онлайн -> `say`-предупреждение и ожидание 60 с; затем игроки проверяются ЕЩЁ РАЗ:
+# если их стало больше (зашли новые) - второе предупреждение и ещё 30 с. Число игроков определить нельзя -> отказ (код 1).
+# Только при PTERO_ALLOW_WRITE=1 (команда list и say). Ожидания можно сократить только для сухих прогонов: PTERO_GUARD_WAIT1/PTERO_GUARD_WAIT2.
+ptero_restart_guard() {
+  local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pl n n2
+  [[ "$why" =~ ^(install|rollback)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
+  [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "restart_guard требует PTERO_ALLOW_WRITE=1"; return 1; }
+  pl="$(ptero_players_online 2>/dev/null)"; n="${pl#players=}"
+  [[ "$n" =~ ^[0-9]+$ ]] || { echo "не удалось определить число игроков (websocket или команда list)"; return 1; }
+  echo "игроков онлайн: $n"
+  (( n == 0 )) && return 0
+  echo "предупреждение в чат и ожидание $w1 с"
+  ptero_command "say TwoMC: server restart in 60 seconds for plugin $why" || { echo "не удалось отправить предупреждение"; return 1; }
+  sleep "$w1"
+  pl="$(ptero_players_online 2>/dev/null)"; n2="${pl#players=}"
+  [[ "$n2" =~ ^[0-9]+$ ]] || { echo "не удалось повторно определить число игроков"; return 1; }
+  echo "игроков онлайн после ожидания: $n2"
+  if (( n2 > n )); then
+    echo "зашли новые игроки: второе предупреждение и ожидание $w2 с"
+    ptero_command "say TwoMC: server restart in 30 seconds for plugin $why" || { echo "не удалось отправить второе предупреждение"; return 1; }
+    sleep "$w2"
+  fi
+  return 0
+}
+
+# ---- файловые операции малого объёма (только при PTERO_ALLOW_WRITE=1 и только по белым спискам; JSON собирается из проверенных строк) ----
 _pt_name_ok() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; }
 
-# mkdir <корень> <имя>: POST /files/create-folder (ошибка «уже существует» не критична, смотрите код возврата 0/1).
+# mkdir <корень> <имя>: POST /files/create-folder; разрешено только «/plugins» + «TwoMCBridge» (ошибка «уже существует» не критична, код 0/1).
 ptero_mkdir() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || { ptero_die "недопустимое имя каталога"; return 2; }
+  [[ "${1%/}" == "/plugins" && "$2" == "TwoMCBridge" ]] || { ptero_die "mkdir: разрешён только /plugins/TwoMCBridge"; return 2; }
   _pt_req POST /files/create-folder -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"name\":\"$2\"}" || return 1
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
@@ -294,6 +398,8 @@ ptero_mkdir() {
 # chmod <корень> <файл> <режим 3 цифры>: POST /files/chmod (на части версий панели может отсутствовать: вызывающий трактует как предупреждение).
 ptero_chmod() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || return 2; [[ "$3" =~ ^[0-7]{3}$ ]] || return 2
+  local re="^bridge-key\.txt(\.bak-$_PT_TS_RE)?\$"
+  [[ "${1%/}" == "/plugins/TwoMCBridge" && "$2" =~ $re && "$3" == "600" ]] || { ptero_die "chmod: разрешён только 600 для bridge-key.txt[.bak-<время>] в /plugins/TwoMCBridge"; return 2; }
   _pt_req POST /files/chmod -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"file\":\"$2\",\"mode\":\"$3\"}]}" || return 1
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
@@ -301,6 +407,10 @@ ptero_chmod() {
 # rename <корень> <от> <к>: POST /files/rename (откат без удаления: jar переименовывается в *.disabled-*).
 ptero_rename() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || return 2; _pt_name_ok "$3" || return 2
+  local root="${1%/}" ok=0 re="^\.disabled-$_PT_TS_RE\$"
+  if [[ "$root" == "/plugins" && "$2" == "TwoMCBridge-0.1.0.jar" && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
+  if [[ "$root" == "/plugins/TwoMCBridge" && ( "$2" == "config.yml" || "$2" == "bridge-key.txt" ) && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
+  [[ "$ok" == 1 ]] || { ptero_die "rename: разрешено только <файл Bridge> -> <файл>.disabled-<время>"; return 2; }
   _pt_req POST /files/rename -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"from\":\"$2\",\"to\":\"$3\"}]}" || return 1
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
@@ -312,9 +422,9 @@ ptero_command_capture() { _pt_ws "$2" "$1" 0 "$3" "" "$4"; }
 # Только чтение. Значения несекретны (адрес игрового сервера). Код 1 - HTTP не 200 или формат неожиданный.
 ptero_allocation() {
   _pt_req GET /network/allocations || return 1
-  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP" >&2; return 1; }
+  [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "HTTP $PTERO_HTTP" >&2; return 1; }
   local rec ip alias port host
-  rec="$(sed 's/{"object":"allocation"/\n&/g' "$PTERO_BODY" | grep '"is_default":true' | head -n1)"
+  rec="$(sed 's/{"object":"allocation"/\n&/g' "$PTERO_BODY" | grep '"is_default":true' | head -n1)"; _pt_wipe
   [[ -n "$rec" ]] || { ptero_die "в ответе нет основной аллокации"; return 1; }
   ip="$(sed -n 's/.*"ip":"\([^"]*\)".*/\1/p' <<<"$rec")"
   alias="$(sed -n 's/.*"ip_alias":"\([^"]*\)".*/\1/p' <<<"$rec")"

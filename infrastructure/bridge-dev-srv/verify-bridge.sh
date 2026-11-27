@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Проверка работы Bridge после установки: состояние плагина и счётчики отправки. Запуск: run-on-vds.sh script verify-bridge.sh
-# Отправляет в консоль ТОЛЬКО команду `twomcbridge events` (только чтение состояния плагина); больше ничего не пишет.
+# Проверка работы Bridge после установки: состояние плагина и счётчики отправки.
+# ЗАПУСК ТОЛЬКО через пакет: bash run-on-vds.sh script verify-bridge.sh (прямой запуск файла отказывает: нужны функции ptero.sh).
+# Отправляет в консоль ТОЛЬКО команду `twomcbridge events` (только чтение состояния плагина; белый список ptero.sh); больше ничего не пишет.
 # Коды: 0 сайт принял события, 3 принятых пока нет (нужен игрок онлайн), 1 плагин не отвечает.
 set -uo pipefail
+declare -F ptero_init >/dev/null 2>&1 || { echo "Запускать только через: bash run-on-vds.sh script verify-bridge.sh" >&2; exit 2; }
 trap ptero_cleanup EXIT
-PTERO_ALLOW_WRITE=1   # нужен только для отправки команды в консоль; функции записи файлов здесь не вызываются
+PTERO_ALLOW_WRITE=0   # по умолчанию только чтение; запись включается точечно ТОЛЬКО для отправки команды в консоль (ниже)
 ptero_init || exit 1
 ptero_status || exit 1
-resp="$(ptero_command_capture "twomcbridge events" 20 'TwoMC Bridge: ' 'TwoMC Bridge|Unknown command|Unknown or incomplete' 2>/dev/null)"
+resp="$(PTERO_ALLOW_WRITE=1 ptero_command_capture "twomcbridge events" 20 'TwoMC Bridge: ' 'TwoMC Bridge|Unknown command|Unknown or incomplete' 2>/dev/null)"
 grep -E '^L: ' <<<"$resp" | head -n 5
 grep -q 'TwoMC Bridge: ' <<<"$resp" || { echo "плагин не отвечает (не загружен?)"; exit 1; }
 echo "--- последние строки журнала по Bridge ---"

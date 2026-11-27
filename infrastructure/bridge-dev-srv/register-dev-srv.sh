@@ -11,7 +11,10 @@
 # Коды: 0 готово, 1 отказ/ошибка, 2 аргументы, 5 lock занят.
 set -uo pipefail
 if ! declare -F stand_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/stand-lib.sh"; fi
-trap stand_cleanup EXIT
+# trap: временный файл рядом с secret.env (содержит ключ) затирается и удаляется при ЛЮБОМ выходе, если не был перемещён на место
+TMP_ENV=""
+reg_cleanup() { if [[ -n "${TMP_ENV:-}" && -f "$TMP_ENV" ]]; then : > "$TMP_ENV"; rm -f -- "$TMP_ENV"; fi; stand_cleanup; }
+trap reg_cleanup EXIT
 
 SLUG="${BRIDGE_SERVER_SLUG:-dev-srv}"
 GEN="${BRIDGE_KEY_GEN:-1}"
@@ -90,9 +93,10 @@ chmod 600 "$TMP_ENV"
 printf 'KEY_ID=%s\nKEY=%s\nSITE_URL=%s\n' "$KEY_ID" "$KEY_VAL" "$SITE_URL" > "$TMP_ENV"
 KEY_VAL=""
 if mv -f "$TMP_ENV" "$SECRET_ENV"; then
+  TMP_ENV=""
   chmod 600 "$SECRET_ENV"
   echo "secret.env записан, права $(stat -c %a "$SECRET_ENV" 2>/dev/null || echo 600)"
 else
-  echo "ОШИБКА: не удалось записать secret.env; временный файл: $TMP_ENV (содержит ключ, 600)"; exit 1
+  echo "ОШИБКА: не удалось записать secret.env; временный файл с ключом удалён (trap), secret.env не изменён"; exit 1
 fi
 exit 0

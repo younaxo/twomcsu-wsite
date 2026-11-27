@@ -3,6 +3,10 @@
 #   --dry-run  только чтение (GET): проверки версии/Java, наличие файлов, подписанный handshake сайта; ничего не меняет
 #   --yes      выполнить установку (запись на панель: файлы, restart, команды консоли)
 #   без флага  usage, ничего не делается
+#   --sha256=<64 hex>  ожидаемый sha256 JAR (или переменная EXPECTED_SHA256); по умолчанию sha сборки 0.1.0:
+#              6aa484549a3bf7408b41893c1b5ab0f78caf2839a13e4be8a032343297d7a7a8. Несовпадение - BLOCKER, JAR не загружается.
+# Запускать через `run-on-vds.sh install ...` (пакет с ptero.sh); плагин ходит на SITE_URL/bridge/v1/* (без /api): на nginx стенда
+# /bridge/v1/* должен идти мимо входа стенда (настраивается в другой цепочке, infrastructure/test-website/).
 # Порядок (runbook docs/runbooks/bridge-dev-srv.md): stand-bridge-secret -> stand-flags -> register-dev-srv --yes -> link-account --yes ->
 #   stage JAR -> install --dry-run -> install --yes -> bot-join -> проверка на стенде -> live-sigcheck. Этот скрипт - шаги install.
 # Вход вне репозитория: /home/twomc/bridge-dev-srv.secret.env (права 600), его пишет register-dev-srv.sh (ключ только в файл, не в вывод):
@@ -20,14 +24,18 @@ trap ptero_cleanup EXIT
 SECRET_ENV="${BRIDGE_SECRET_ENV:-/home/twomc/bridge-dev-srv.secret.env}"
 INBOX="$HOME/.twomc-inbox"
 JAR_SRV_NAME="TwoMCBridge-0.1.0.jar"
+EXPECTED_SHA256="${EXPECTED_SHA256:-6aa484549a3bf7408b41893c1b5ab0f78caf2839a13e4be8a032343297d7a7a8}"
 MODE=""
 for a in "$@"; do
   case "$a" in
     --dry-run) MODE=dry ;;
     --yes) MODE=yes ;;
-    *) echo "Неизвестный аргумент: $a (допустимо --dry-run | --yes)" >&2; exit 2 ;;
+    --sha256=*) EXPECTED_SHA256="${a#--sha256=}" ;;
+    *) echo "Неизвестный аргумент: $a (допустимо --dry-run | --yes | --sha256=<64 hex>)" >&2; exit 2 ;;
   esac
 done
+EXPECTED_SHA256="${EXPECTED_SHA256,,}"
+[[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "EXPECTED_SHA256: нужно 64 hex" >&2; exit 2; }
 [[ -n "$MODE" ]] || { echo "Укажите --dry-run (только чтение) или --yes (установка). Без флагов ничего не выполняется."; exit 2; }
 if [[ "$MODE" == yes ]]; then PTERO_ALLOW_WRITE=1; else PTERO_ALLOW_WRITE=0; fi
 export PTERO_ALLOW_WRITE
@@ -94,22 +102,36 @@ unset props
 
 # ---- 2. уже установленное
 step 2 "наличие плагина"
-lst="$(ptero_files_list /plugins 2>/dev/null)"
-if grep -qiE '^- TwoMCBridge' <<<"$lst"; then
-  block "в /plugins уже есть TwoMCBridge*.jar (повторная установка поверх запрещена; сначала rollback-bridge.sh)"
+lst="$(ptero_files_list /plugins 2>/dev/null)"; lrc=$?
+[[ $lrc -eq 0 ]] || block "не удалось получить список /plugins (проверить установленный плагин нельзя)"
+# Установленным считается ТОЧНОЕ имя TwoMCBridge-0.1.0.jar; TwoMCBridge-0.1.0.jar.disabled-<время> (после отката) установкой не считается.
+if grep -qxF -- "- $JAR_SRV_NAME" <<<"$lst"; then
+  block "в /plugins уже есть $JAR_SRV_NAME (повторная установка поверх запрещена; сначала rollback-bridge.sh)"
 else
-  say "TwoMCBridge*.jar в /plugins нет: ок"
+  say "$JAR_SRV_NAME в /plugins нет: ок"
+  other="$(grep -E '^- TwoMCBridge' <<<"$lst" | grep -vE '\.disabled-[0-9]{8}T[0-9]{6}Z$' | sed 's/^- //' | paste -sd' ' -)"
+  [[ -z "$other" ]] || say "WARN: в /plugins есть другие файлы TwoMCBridge* (не .disabled-): $other (возможен двойной плагин; проверьте вручную)"
+  dis="$(grep -cE '^- TwoMCBridge.*\.disabled-[0-9]{8}T[0-9]{6}Z$' <<<"$lst" || true)"
+  [[ "${dis:-0}" == 0 ]] || say "NOTE: найдено отключённых jar (.disabled-*): $dis (установке не мешают)"
 fi
-HAVE_DIR=0; ptero_files_list /plugins/TwoMCBridge >/dev/null 2>&1 && HAVE_DIR=1
-cfg_exists=0
-if [[ "$HAVE_DIR" == 1 ]] && ptero_files_list /plugins/TwoMCBridge 2>/dev/null | grep -qxF -- '- config.yml'; then cfg_exists=1; fi
-say "plugins/TwoMCBridge: каталог=$HAVE_DIR config.yml=$cfg_exists"
+# list разрешён только для / и /plugins: наличие config.yml и bridge-key.txt проверяется пробным GET содержимого в локальный файл 600
+# (200 = есть, иначе нет; значения не печатаются, файл затирается). Каталог TwoMCBridge: mkdir на шаге 6 (повторное создание не критично).
+HAVE_DIR=0
+cfg_exists=0; key_exists=0
+_pt_mktemp || exit 1; probe="$_PT_LAST"
+ptero_file_fetch /plugins/TwoMCBridge/config.yml "$probe" >/dev/null 2>&1 && cfg_exists=1
+ptero_file_fetch /plugins/TwoMCBridge/bridge-key.txt "$probe" >/dev/null 2>&1 && key_exists=1
+: > "$probe"
+[[ "$cfg_exists" == 1 || "$key_exists" == 1 ]] && HAVE_DIR=1
+say "plugins/TwoMCBridge: каталог=$HAVE_DIR config.yml=$cfg_exists bridge-key.txt=$key_exists"
 
 # ---- 3. подготовленные файлы на VDS
 step 3 "JAR и шаблон на VDS"
 if [[ -f "$INBOX/TwoMCBridge.jar" && -f "$INBOX/bridge-config.yml.tpl" ]]; then
   sz="$(stat -c %s "$INBOX/TwoMCBridge.jar")"
-  say "TwoMCBridge.jar: $sz байт sha256=$(sha256sum "$INBOX/TwoMCBridge.jar" | cut -d' ' -f1)"
+  jar_sha="$(sha256sum "$INBOX/TwoMCBridge.jar" | cut -d' ' -f1)"
+  say "TwoMCBridge.jar: $sz байт sha256=$jar_sha"
+  [[ "$jar_sha" == "$EXPECTED_SHA256" ]] || block "sha256 JAR не совпадает с ожидаемым ($EXPECTED_SHA256): JAR не будет загружен (другая сборка? тогда укажите --sha256=<hex> осознанно)"
   { [[ "$(head -c2 "$INBOX/TwoMCBridge.jar")" == "PK" ]] && (( sz > 50000 )); } || block "JAR не похож на архив (PK, больше 50 КБ)"
   { grep -q '__SITE_URL__' "$INBOX/bridge-config.yml.tpl" && grep -q '__KEY_ID__' "$INBOX/bridge-config.yml.tpl"; } || block "шаблон без __SITE_URL__ или __KEY_ID__"
 else
@@ -145,15 +167,11 @@ fi
 
 # ---- 5. игроки онлайн
 step 5 "игроки онлайн"
-pl="$(ptero_players_online 2>/dev/null)"; say "$pl"
 if [[ "$MODE" == yes ]]; then
-  n="${pl#players=}"; [[ "$n" =~ ^[0-9]+$ ]] || block "не удалось определить число игроков (websocket или команда list)"
-  if (( n > 0 )); then
-    say "игроков онлайн: $n; предупреждение в чат и ожидание 60 с"
-    ptero_command "say TwoMC: server restart in 60 seconds for plugin install" || block "не удалось отправить предупреждение"
-    sleep 60
-  fi
+  # ptero_restart_guard: list -> при игроках say-предупреждение, 60 с, повторная проверка (новые игроки -> ещё предупреждение и 30 с)
+  ptero_restart_guard install || block "проверка игроков перед restart не пройдена"
 else
+  pl="$(ptero_players_online 2>/dev/null)"; say "$pl"
   say "dry-run: число игроков не запрашивается (команда list не отправляется)"
 fi
 
@@ -165,15 +183,27 @@ fi
 # ---- 6. запись файлов (config и ключ, затем jar: jar подхватывается только при restart)
 step 6 "запись config.yml, ключа и JAR"
 _pt_mktemp || exit 1; tmp="$_PT_LAST"
+TS_NOW="$(date -u +%Y%m%dT%H%M%SZ)"
 if [[ "$HAVE_DIR" == 0 ]]; then
   ptero_mkdir /plugins TwoMCBridge || say "WARN: create-folder не удался (HTTP $PTERO_HTTP), рассчитываем на автосоздание при записи"
 fi
 if [[ "$cfg_exists" == 1 ]]; then
-  if ptero_file_read /plugins/TwoMCBridge/config.yml > "$tmp" 2>/dev/null \
-     && ptero_file_write "/plugins/TwoMCBridge/config.yml.bak-$(date -u +%Y%m%dT%H%M%SZ)" "$tmp"; then
-    say "прежний config.yml сохранён копией"
+  if ptero_file_fetch /plugins/TwoMCBridge/config.yml "$tmp" 2>/dev/null \
+     && ptero_file_write "/plugins/TwoMCBridge/config.yml.bak-$TS_NOW" "$tmp"; then
+    say "прежний config.yml сохранён копией (config.yml.bak-$TS_NOW)"
   else
-    block "не удалось сохранить копию существующего config.yml"
+    : > "$tmp"; block "не удалось сохранить копию существующего config.yml"
+  fi
+fi
+if [[ "$key_exists" == 1 ]]; then
+  # бэкап прежнего ключа ДО перезаписи: локальная копия 600 -> bridge-key.txt.bak-<время> (права 600), значение не печатается
+  if ptero_file_fetch /plugins/TwoMCBridge/bridge-key.txt "$tmp" 2>/dev/null \
+     && ptero_file_write "/plugins/TwoMCBridge/bridge-key.txt.bak-$TS_NOW" "$tmp"; then
+    : > "$tmp"
+    ptero_chmod /plugins/TwoMCBridge "bridge-key.txt.bak-$TS_NOW" 600 || say "WARN: chmod 600 для копии ключа не выполнен (HTTP $PTERO_HTTP)"
+    say "прежний bridge-key.txt сохранён копией (bridge-key.txt.bak-$TS_NOW, значение не печатается)"
+  else
+    : > "$tmp"; block "не удалось сохранить копию существующего bridge-key.txt (перезапись отменена)"
   fi
 fi
 tpl="$(cat "$INBOX/bridge-config.yml.tpl")"; tpl="${tpl//__SITE_URL__/$BRIDGE_SITE_URL}"; tpl="${tpl//__KEY_ID__/$KEY_ID}"
@@ -181,15 +211,20 @@ printf '%s\n' "$tpl" > "$tmp"
 ptero_file_write /plugins/TwoMCBridge/config.yml "$tmp" || block "запись config.yml не удалась (HTTP $PTERO_HTTP)"
 say "config.yml записан (без секрета)"
 printf '%s\n' "$BRIDGE_KEY_HEX" > "$tmp"
-ptero_file_write /plugins/TwoMCBridge/bridge-key.txt "$tmp" || block "запись bridge-key.txt не удалась (HTTP $PTERO_HTTP)"
+ptero_file_write /plugins/TwoMCBridge/bridge-key.txt "$tmp" || { : > "$tmp"; block "запись bridge-key.txt не удалась (HTTP $PTERO_HTTP)"; }
 : > "$tmp"
 if ptero_chmod /plugins/TwoMCBridge bridge-key.txt 600; then
   say "bridge-key.txt: права 600"
 else
   say "WARN: chmod 600 не выполнен (HTTP $PTERO_HTTP): плагин предупредит о правах файла"
 fi
-ptero_upload "$INBOX/TwoMCBridge.jar" /plugins "$JAR_SRV_NAME" || block "загрузка JAR не удалась"
-if ptero_files_list /plugins | grep -qxF -- "- $JAR_SRV_NAME"; then say "JAR на месте: /plugins/$JAR_SRV_NAME"; else block "после загрузки JAR не виден в /plugins"; fi
+# JAR: приватная копия (umask 077) и повторная сверка sha256 прямо перед загрузкой (между шагом 3 и загрузкой файл в INBOX могли подменить)
+_pt_mktemp || exit 1; jar_copy="$_PT_LAST"
+cp -- "$INBOX/TwoMCBridge.jar" "$jar_copy" || block "не удалось скопировать JAR"
+copy_sha="$(sha256sum "$jar_copy" | cut -d' ' -f1)"
+[[ "$copy_sha" == "$EXPECTED_SHA256" ]] || block "sha256 JAR изменился перед загрузкой (ожидалось $EXPECTED_SHA256, получено $copy_sha): загрузка отменена"
+ptero_upload "$jar_copy" /plugins "$JAR_SRV_NAME" || block "загрузка JAR не удалась"
+if ptero_files_list /plugins | grep -qxF -- "- $JAR_SRV_NAME"; then say "JAR на месте: /plugins/$JAR_SRV_NAME (sha256 проверен до загрузки)"; else block "после загрузки JAR не виден в /plugins"; fi
 
 # ---- 7. restart
 step 7 "restart сервера"

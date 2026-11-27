@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Живая проверка подписей на сайте стенда: POST /api/bridge/v1/events и POST /api/webhooks/payments/test, без cookie входа стенда.
-# Запускается НА VDS: run-on-vds.sh script live-sigcheck.sh [--loopback] [--no-payments]
+# Живая проверка подписей на сайте стенда: POST https://test-website.twomc.su/bridge/v1/events (как ходит плагин: siteUrl без /api) и
+# POST /api/webhooks/payments/test, без cookie входа стенда. Адрес стенда зафиксирован: SITE_URL из secret.env обязан быть https://test-website.twomc.su.
+# Запускается НА VDS: run-on-vds.sh script live-sigcheck.sh [--loopback] [--no-payments] [--api-prefix]
+#   --api-prefix   Bridge бьёт в /api/bridge/v1/events вместо /bridge/v1/events (если на стенде отдельного location /bridge/v1/ нет). Подписанный путь
+#                  в обоих случаях /bridge/v1/events (nginx срезает /api). Webhook всегда под /api.
+#                  Стенд будет маршрутизировать /bridge/v1/* мимо формы входа (настраивает другая цепочка, infrastructure/test-website/).
 #   --loopback     запросы идут с хоста стенда ЧЕРЕЗ docker0 (--add-host <домен>:host-gateway): nginx видит адрес 172.16.0.0/12 и пропускает вход
 #                  стенда; проверяется цепочка nginx -> API, но НЕ доступность снаружи. Без флага запрос идёт с VDS по публичному адресу:
 #                  если на /api/bridge/v1/* нет обхода входа стенда, придёт basic auth (401 с WWW-Authenticate) - случай помечается FAIL (GATE),
@@ -9,7 +13,7 @@
 # Подпись Bridge ровно как bridge-signature.guard.ts и Signer плагина:
 #   canonical = "twomc-bridge-v1" LF key-id LF timestamp LF nonce LF METHOD LF path LF sha256hex(сырое тело); signature = hex(HMAC-SHA256(ключ_сервера, canonical))
 #   ключ_сервера - 32 байта из KEY (hex) в secret.env; заголовки x-twomc-key-id, x-twomc-timestamp (секунды, 10 цифр), x-twomc-nonce (base64url, 22 символа),
-#   x-twomc-protocol: 1, x-twomc-signature, Content-Type: application/json. path - как его видит API: /bridge/v1/events (nginx срезает /api).
+#   x-twomc-protocol: 1, x-twomc-signature, Content-Type: application/json. path - как его видит API: /bridge/v1/events (с --api-prefix nginx срезает /api).
 #   окно времени 60 с (BRIDGE_TIMESTAMP_WINDOW_S), нонс одноразовый (повтор того же запроса -> 401).
 # Webhook (webhook-signature.ts): signature = hex(HMAC-SHA256(PAYMENT_WEBHOOK_SECRET, "<timestamp>." + сырое тело)), заголовки x-twomc-signature, x-twomc-timestamp;
 #   окно 300 с (поэтому случай 3 использует ts на 400 с старше), нонса нет.
@@ -23,14 +27,14 @@ set -uo pipefail
 if ! declare -F _pt_node_image >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 PTERO_ALLOW_WRITE=0
 
-LOOP=0; PAY=1
+LOOP=0; PAY=1; BPFX=""
 for a in "$@"; do
-  case "$a" in --loopback) LOOP=1 ;; --no-payments) PAY=0 ;; *) echo "Неизвестный аргумент: $a (допустимо --loopback | --no-payments)" >&2; exit 2 ;; esac
+  case "$a" in --loopback) LOOP=1 ;; --no-payments) PAY=0 ;; --api-prefix) BPFX="/api" ;; *) echo "Неизвестный аргумент: $a (допустимо --loopback | --no-payments | --api-prefix)" >&2; exit 2 ;; esac
 done
 SECRET_ENV="${BRIDGE_SECRET_ENV:-/home/twomc/bridge-dev-srv.secret.env}"
 STAND_ENV="${SIGCHECK_STAND_ENV:-/srv/twomc-stand/stand.env}"
-PFX="${SIGCHECK_API_PREFIX:-/api}"
-[[ "$PFX" =~ ^(/[A-Za-z0-9._-]+)?$ ]] || { echo "SIGCHECK_API_PREFIX: неверный формат" >&2; exit 2; }
+EXPECTED_SITE="https://test-website.twomc.su"   # единственный допустимый адрес; переопределения нет
+
 
 [[ -f "$SECRET_ENV" ]] || { echo "Нет $SECRET_ENV (сначала register-dev-srv.sh --yes)"; exit 1; }
 KEY_ID=""; KEY=""; SITE_URL=""
@@ -38,6 +42,7 @@ KEY_ID=""; KEY=""; SITE_URL=""
 . "$SECRET_ENV"
 [[ "$KEY_ID" =~ ^[a-z0-9][a-z0-9-]{1,31}\.[0-9]{1,6}$ && "$KEY" =~ ^[0-9a-f]{64}$ && "$SITE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] \
   || { echo "secret.env: неверны KEY_ID, KEY или SITE_URL (значения не печатаются)"; exit 1; }
+[[ "$SITE_URL" == "$EXPECTED_SITE" ]] || { echo "ОТКАЗ: SITE_URL в secret.env не совпадает с $EXPECTED_SITE (проверка идёт только на стенде; значение не печатается)"; exit 1; }
 HOSTNAME_ONLY="${SITE_URL#https://}"; HOSTNAME_ONLY="${HOSTNAME_ONLY%%:*}"
 PAYSECRET=""
 if [[ "$PAY" == 1 ]]; then
@@ -53,7 +58,7 @@ img="$(_pt_node_image 2>/dev/null)" || { echo "ОШИБКА: нет локаль
 
 JS='
 const c=require("node:crypto");const e=process.env;
-const SITE=e.SITE,PFX=e.PFX||"",KEYID=e.KEYID,KEY=Buffer.from(e.KEYHEX,"hex");
+const SITE=e.SITE,BPFX=e.BPFX||"",KEYID=e.KEYID,KEY=Buffer.from(e.KEYHEX,"hex");
 const rnd=(n)=>c.randomBytes(n).toString("base64url");
 const sha=(b)=>c.createHash("sha256").update(b).digest("hex");
 const hm=(k,s)=>c.createHmac("sha256",k).update(s).digest("hex");
@@ -72,7 +77,7 @@ const is2=(r)=>!r.gate&&r.status>=200&&r.status<300;
 const is401=(r)=>!r.gate&&r.status===401;
 
 async function bridge(){
-  const P="/bridge/v1/events";const url=SITE+PFX+P;
+  const P="/bridge/v1/events";const url=SITE+BPFX+P;
   const mkBody=()=>{const now=new Date().toISOString();return JSON.stringify({schema:"twomc.bridge.v1",sentAt:now,events:[{eventId:"sigcheck-"+c.randomBytes(12).toString("hex"),type:"bridge.hello",serverId:"sigcheck-probe",streamId:"sigcheck",seq:1,occurredAt:now,data:{}}]});};
   const sign=(body,tsOff)=>{const ts=String(Math.floor(Date.now()/1000)+tsOff);const nonce=rnd(16);
     const canon=["twomc-bridge-v1",KEYID,ts,nonce,"POST",P,sha(body)].join("\n");
@@ -92,7 +97,7 @@ async function bridge(){
   r=await post(url,h,body);row("bridge 3 верная подпись, ts -120 с","401",show(r),is401(r));
 }
 async function payments(){
-  const P="/webhooks/payments/test";const url=SITE+PFX+P;const S=e.PAYSECRET;
+  const P="/webhooks/payments/test";const url=SITE+"/api"+P;const S=e.PAYSECRET;
   const mkBody=()=>JSON.stringify({orderNumber:"SIGCHECK-NOORDER",paymentId:"sigcheck-"+c.randomBytes(8).toString("hex"),currency:"RUB",status:"failed",amount:"1.00"});
   const sign=(body,tsOff)=>{const ts=String(Math.floor(Date.now()/1000)+tsOff);return {"x-twomc-timestamp":ts,"x-twomc-signature":hm(Buffer.from(S,"utf8"),ts+"."+body)};};
   const safe=(r)=>is2(r)&&/order_not_found|already_processed/.test(r.text);
@@ -110,9 +115,9 @@ async function payments(){
 '
 
 addhost=(); [[ "$LOOP" == 1 ]] && addhost=(--add-host "$HOSTNAME_ONLY:host-gateway")
-echo "режим: $([[ "$LOOP" == 1 ]] && echo 'loopback (с хоста через docker0)' || echo 'публичный адрес') ; webhook: $([[ "$PAY" == 1 ]] && echo да || echo пропущен)"
+echo "режим: $([[ "$LOOP" == 1 ]] && echo 'loopback (с хоста через docker0)' || echo 'публичный адрес'); bridge: ${EXPECTED_SITE}${BPFX}/bridge/v1/events; webhook: $([[ "$PAY" == 1 ]] && echo да || echo пропущен)"
 timeout 120 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m ${addhost[@]+"${addhost[@]}"} \
-  --env-file <(printf 'SITE=%s\nPFX=%s\nKEYID=%s\nKEYHEX=%s\nPAYSECRET=%s\n' "$SITE_URL" "$PFX" "$KEY_ID" "$KEY" "$PAYSECRET") \
+  --env-file <(printf 'SITE=%s\nBPFX=%s\nKEYID=%s\nKEYHEX=%s\nPAYSECRET=%s\n' "$SITE_URL" "$BPFX" "$KEY_ID" "$KEY" "$PAYSECRET") \
   "$img" node -e "$JS" </dev/null 2>/dev/null
 rc=$?
 KEY=""; PAYSECRET=""
