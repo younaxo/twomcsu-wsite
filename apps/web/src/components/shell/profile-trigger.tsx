@@ -37,7 +37,7 @@ export const ProfileTrigger = forwardRef<HTMLButtonElement, ProfileTriggerProps>
       </span>
       <ChevronDown
         aria-hidden
-        className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out group-aria-expanded/profile:rotate-180 motion-reduce:transition-none"
+        className="size-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out group-aria-expanded/profile:rotate-180 max-[379px]:hidden motion-reduce:transition-none"
       />
     </button>
   ),

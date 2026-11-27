@@ -52,7 +52,9 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
   // Q74: «Список наказаний» активен только при включённом разделе.
   const bansOff = link.href === '/bans' && !shell && !bansEnabled;
   if (!link.available || bansOff || (shell && SHELL_SOON_HREFS.has(link.href))) {
-    return <SoonItem className="inline-flex items-center gap-1">{link.label}</SoonItem>;
+    return (
+      <SoonItem className="inline-flex items-center gap-1 max-md:min-h-10">{link.label}</SoonItem>
+    );
   }
   if (link.external) {
     return (
@@ -60,7 +62,7 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
         href={link.href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground max-md:min-h-10"
       >
         {link.label}
         <ExternalLink aria-hidden className="size-3.5" />
@@ -73,14 +75,17 @@ function FooterLinkItem({ link }: { link: FooterLink }) {
         href={
           SHELL_ROOT_HREFS.has(link.href) ? mainSiteUrl : resolveShellHref(mainSiteUrl, link.href)
         }
-        className="text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground max-md:flex max-md:min-h-10 max-md:items-center"
       >
         {link.label}
       </a>
     );
   }
   return (
-    <Link href={link.href} className="text-muted-foreground hover:text-foreground">
+    <Link
+      href={link.href}
+      className="text-muted-foreground hover:text-foreground max-md:flex max-md:min-h-10 max-md:items-center"
+    >
       {link.label}
     </Link>
   );
@@ -215,7 +220,7 @@ export function SiteFooter({ className }: { className?: string }) {
               <li>
                 <a
                   href={`mailto:${email}`}
-                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground max-md:min-h-10"
                 >
                   <Mail aria-hidden className="size-4" />
                   {email}
@@ -225,7 +230,7 @@ export function SiteFooter({ className }: { className?: string }) {
                 <a
                   href={`mailto:${SUPPORT.adminEmail}`}
                   aria-label={`Администрация: ${SUPPORT.adminEmail}`}
-                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground max-md:min-h-10"
                 >
                   <Mail aria-hidden className="size-4" />
                   {SUPPORT.adminEmail}
@@ -237,7 +242,7 @@ export function SiteFooter({ className }: { className?: string }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Telegram поддержки: ${SUPPORT.telegram.handle}`}
-                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground max-md:min-h-10"
                 >
                   <BrandIcon id="telegram" className="size-4" />
                   {SUPPORT.telegram.handle}

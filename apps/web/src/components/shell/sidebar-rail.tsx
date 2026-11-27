@@ -54,7 +54,14 @@ const activeClassName = cn(
 
 /// Общий онлайн всех серверов — реальный ping (GET /servers/overview).
 /// Пока данных нет — скелетон; при ошибке — «—» без выдуманных чисел.
-export function OnlineCounter({ compact = false }: { compact?: boolean }) {
+export function OnlineCounter({
+  compact = false,
+  withLabel = false,
+}: {
+  compact?: boolean;
+  /// Видимая подпись справа от числа (мобильное меню, где места хватает).
+  withLabel?: boolean;
+}) {
   const overview = useServersOverview();
   const players = overview.data?.totalPlayers;
   const online = (overview.data?.onlineServers ?? 0) > 0;
@@ -72,7 +79,8 @@ export function OnlineCounter({ compact = false }: { compact?: boolean }) {
         data-testid="online-counter"
         className={cn(
           'flex flex-col items-center gap-0.5 rounded px-1 py-2 text-foreground hover:bg-muted',
-          compact && 'flex-row gap-2 px-2 py-1',
+          compact && 'min-h-10 min-w-10 flex-row justify-center gap-2 px-2 py-1',
+          withLabel && 'justify-start',
         )}
       >
         <span
@@ -89,6 +97,7 @@ export function OnlineCounter({ compact = false }: { compact?: boolean }) {
             {players === undefined ? '—' : formatNumber(players)}
           </span>
         )}
+        {withLabel ? <span className="text-sm text-muted-foreground">игроков онлайн</span> : null}
       </Link>
     </Tooltip>
   );

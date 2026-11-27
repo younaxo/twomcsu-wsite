@@ -187,7 +187,7 @@ function OrdersTab({ kind }: { kind: 'transactions' | 'refunds' }) {
         can('orders.view') ? (
           <Link
             href={`/admin/store/orders/${encodeURIComponent(o.orderNumber)}`}
-            className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+            className="font-mono text-xs text-primary underline-offset-2 hover:underline max-md:inline-flex max-md:min-h-10 max-md:items-center"
             onClick={(event) => event.stopPropagation()}
           >
             {o.orderNumber}

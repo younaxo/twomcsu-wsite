@@ -2,7 +2,7 @@
 
 import type { NewsCategory, NewsListItem } from '@twomc/shared';
 import { Newspaper } from 'lucide-react';
-import Image from 'next/image';
+import { FallbackImage } from '@/components/ui/fallback-image';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +58,7 @@ export function NewsCard({ item, large }: { item: NewsListItem; large: boolean }
           )}
         >
           {item.coverImage ? (
-            <Image
+            <FallbackImage
               src={item.coverImage}
               alt=""
               fill

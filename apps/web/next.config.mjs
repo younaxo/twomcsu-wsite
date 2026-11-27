@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { buildRemotePatterns } from './image-hosts.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
@@ -52,11 +53,9 @@ const nextConfig = {
     ];
   },
   images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'cdn-files.twomc.su' },
-      { protocol: 'https', hostname: 'mc-heads.net' },
-      { protocol: 'https', hostname: 'minotar.net' },
-    ],
+    // Хосты из NEXT_PUBLIC_CDN_BASE_URL / NEXT_PUBLIC_API_URL / NEXT_PUBLIC_SITE_URL
+    // (после loadRootPublicEnv); произвольные хосты не разрешаются.
+    remotePatterns: buildRemotePatterns(process.env),
   },
 };
 

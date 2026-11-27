@@ -20,7 +20,7 @@ export function SiteLogo({
   wordmarkSize?: BrandWordmarkSize;
 }) {
   const { mainSiteUrl } = useShellMode();
-  const classes = cn('inline-flex items-center gap-2 rounded-sm', className);
+  const classes = cn('inline-flex items-center gap-2 rounded-sm max-md:min-h-10', className);
   const label = `${SITE_NAME} — на главную`;
   const content = (
     <>

@@ -33,14 +33,14 @@ const COLUMNS: DataGridColumn<AdminRefund>[] = [
       r.order ? (
         <Link
           href={`/admin/store/orders/${encodeURIComponent(r.order.orderNumber)}`}
-          className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline"
+          className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline max-md:inline-flex max-md:min-h-10 max-md:items-center"
         >
           {r.order.orderNumber}
         </Link>
       ) : (
         <Link
           href={`/admin/store/orders/${encodeURIComponent(r.orderId)}`}
-          className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline"
+          className="font-mono text-xs font-medium text-primary underline-offset-2 hover:underline max-md:inline-flex max-md:min-h-10 max-md:items-center"
         >
           Открыть заказ
         </Link>

@@ -1,7 +1,7 @@
 'use client';
 
 import { Clapperboard, Dices, Sparkles, Swords, type LucideIcon } from 'lucide-react';
-import Image from 'next/image';
+import { FallbackImage } from '@/components/ui/fallback-image';
 import { cn } from '@/lib/cn';
 import { useState } from 'react';
 import { ScreenshotPicture } from '@/components/site/screenshot-picture';
@@ -41,7 +41,7 @@ function FeatureCard({ feature }: { feature: HomeFeature }) {
             className="absolute inset-0 size-full transition-transform duration-slow group-hover:scale-[1.02] motion-reduce:transition-none"
           />
         ) : feature.image ? (
-          <Image
+          <FallbackImage
             src={feature.image}
             alt={feature.title}
             fill

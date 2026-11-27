@@ -10,9 +10,11 @@ import { cn } from '@/lib/cn';
 
 /// Поле «Полдня»: слегка утопленная solid-поверхность с тонкой рамкой
 /// (на островах `bg-surface` поле читается без контрастной обводки), радиус
-/// меньше, чем у островов; фокус — оранжевый акцент.
+/// меньше, чем у островов; фокус — оранжевый акцент. На мобильных высота не
+/// ниже 40 px (`--input-min-h`); админка задаёт `0px` для 640–767 px, чтобы
+/// компактные фильтры не росли (ниже 640 px её `--control-h*` уже равны 40 px).
 export const inputClassName = cn(
-  'flex w-full min-w-0 rounded border border-border-subtle bg-background-subtle px-3.5 text-sm text-foreground',
+  'flex w-full min-w-0 rounded border border-border-subtle bg-background-subtle px-3.5 text-sm text-foreground max-md:min-h-[var(--input-min-h,2.5rem)]',
   'placeholder:text-subtle-foreground',
   'transition-[border-color,box-shadow,background-color] duration-fast',
   'hover:border-border',

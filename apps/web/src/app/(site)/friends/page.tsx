@@ -69,7 +69,7 @@ function FriendsTabs() {
       }
       className="flex flex-col gap-4"
     >
-      <TabsList aria-label="Разделы друзей" className="max-w-full overflow-x-auto scrollbar-none">
+      <TabsList aria-label="Разделы друзей" className="max-w-full overflow-x-auto scrollbar-thin">
         <TabsTrigger value="friends">Друзья</TabsTrigger>
         <TabsTrigger value="incoming">
           Входящие
