@@ -4,7 +4,7 @@
 # Песочница: --cap-drop ALL, no-new-privileges, --read-only (+ tmpfs /tmp), лимиты памяти/CPU/процессов, жёсткий тайм-аут;
 # монтируются: visual-check.mjs и файл учёток (:ro) и каталог результатов (rw). Секреты не печатаются.
 # Переменные: STAND_ROOT, ACCOUNTS_FILE, OUT_DIR (по умолчанию /srv/twomc-stand/qa/visual-<дата>), WIDTHS,
-# BASE_URL из окружения ИГНОРИРУЕТСЯ: адрес берётся только из конфигурации $STAND_ROOT/qa/visual.conf (строка BASE_URL=https://хост) или по умолчанию https://test-website.twomc.su; пароль basic auth уходит только на этот origin.
+# BASE_URL из окружения ИГНОРИРУЕТСЯ: адрес берётся только из конфигурации $STAND_ROOT/qa/visual.conf (строка BASE_URL=https://хост) или по умолчанию https://test-website.twomc.su; пароль формы входа уходит только на этот origin.
 # PW_VERSION (образ mcr.microsoft.com/playwright:v<версия>-jammy должен быть на сервере или доступен для pull), VISUAL_TIMEOUT_SEC.
 # Коды: 0 выполнено, 2 нет входного файла, 124 тайм-аут, иначе код visual-check.mjs.
 set -euo pipefail

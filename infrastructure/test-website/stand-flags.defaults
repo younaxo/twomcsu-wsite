@@ -1,0 +1,11 @@
+# Флаги тестового стенда (allowlist): единственный источник значений для stand-flags.sh (существующий стенд) и gen-env.sh (новый).
+# Формат: ИМЯ=ЗНАЧЕНИЕ, значение только из [A-Za-z0-9_:,.-] (без секретов и пробелов). Другие имена stand-flags.sh не трогает.
+# Не входят и не меняются: BRIDGE_MASTER_SECRET (stand-bridge-secret.sh), BRIDGE_DELIVERY_ENABLED (остаётся false), LITEBANS_ENABLED, GIVEAWAY_ENABLED,
+# STORE_DELIVERY_ENABLED, TURNSTILE_DISABLED, SMTP/VAPID, реальный платёжный провайдер, UNPUNISH_ENABLED (в development по умолчанию true).
+PAYMENT_METHODS=SBP:mock-ru,CARD_RU:mock-ru,SBERPAY:mock-ru,CRYPTO:mock-crypto,CARD_FOREIGN:mock-foreign
+QUICK_BUY_ENABLED=true
+STORE_REFUNDS_ENABLED=true
+WALLET_LEDGER_ENABLED=true
+BRIDGE_ENABLED=true
+BRIDGE_STATS_ENABLED=true
+BRIDGE_INVENTORY_ENABLED=true
