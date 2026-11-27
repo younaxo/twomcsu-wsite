@@ -95,7 +95,7 @@ test("команды: JSON-экранирование кавычек и обра
 
 test("денайлист: плагины, reload, мир, данные игроков, обёртки; op и deop разрешены", () => {
   const d = mk();
-  const denied = ["plugman load Evil", "plugman unload Foo", "pm disable X", "plugin delete X", "reload", "reload confirm", "bukkit:reload", "rl", "minecraft:execute as @a run say hi",
+  const denied = ["plugman load Evil", "plugman unload Foo", "plugins unload Foo", "pl load Evil", "bukkit:plugins disable X", "pm disable X", "plugin delete X", "reload", "reload confirm", "bukkit:reload", "rl", "minecraft:execute as @a run say hi",
     "execute run op me", "function evil:run", "//set stone", "/we", "mv delete world", "mvremove world", "fill 0 0 0 9 9 9 air", "clear Nick", "authme register Nick pass pass",
     "register pass pass", "lp bulkupdate users delete all", "lp deletegroup admin", "datapack enable evil", "sudo Nick op Nick", "worldedit:we"];
   const allowed = ["op Nick", "deop Nick", "whitelist add Nick", "whitelist remove Nick", "kick Nick bye", "say TwoMC: hello", "twomcbridge events", "maintenance off", "maintenance reload", "lp user Nick info", "ban Nick", "list", "save-all"];
