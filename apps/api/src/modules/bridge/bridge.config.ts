@@ -27,6 +27,9 @@ export interface BridgeConfig {
   /// `BRIDGE_STATS_ENABLED=true`: приём `player.stats.snapshot` (ADR-0195,
   /// Q68). По умолчанию выключен; нужна ещё возможность `player-events`.
   statsEnabled: boolean;
+  /// `BRIDGE_INVENTORY_ENABLED=true`: приём `inventory.snapshot` (раздел 16
+  /// контракта). По умолчанию выключен; нужна ещё возможность `inventory-sync`.
+  inventoryEnabled: boolean;
 }
 
 export interface EnvReader {
@@ -72,6 +75,7 @@ export function readBridgeConfig(env: EnvReader): BridgeConfig {
     ),
     deliveryEnabled: toBoolean(env.get('BRIDGE_DELIVERY_ENABLED')),
     statsEnabled: toBoolean(env.get('BRIDGE_STATS_ENABLED')),
+    inventoryEnabled: toBoolean(env.get('BRIDGE_INVENTORY_ENABLED')),
   };
 }
 

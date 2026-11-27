@@ -5,6 +5,7 @@ import {
   BridgePunishmentSource,
   BridgeSourceEvent,
 } from './bridge-punishment.source';
+import { BridgeInventoryService } from './bridge-inventory.service';
 import { BridgeStatsService } from './bridge-stats.service';
 import { BridgeRedisService } from './bridge-redis.service';
 import {
@@ -12,6 +13,7 @@ import {
   BridgeEventEnvelope,
   PunishmentEventType,
   parseHello,
+  parseInventorySnapshot,
   parseOverflow,
   parseStatsSnapshot,
   parsePunishmentData,
@@ -63,6 +65,8 @@ export class BridgeIngestService {
     /// Без сервиса статистики (тесты старых срезов) `player.stats.snapshot`
     /// отвечает `unsupported_type`, а бан не сбрасывает кэш рейтингов.
     @Optional() private readonly stats?: BridgeStatsService,
+    /// Без сервиса инвентаря `inventory.snapshot` отвечает `unsupported_type`.
+    @Optional() private readonly inventory?: BridgeInventoryService,
   ) {}
 
   async ingest(
@@ -146,6 +150,17 @@ export class BridgeIngestService {
         return reject('unsupported_type');
       }
       return this.handleStatsSnapshot(ctx, ev, nowMs, this.stats);
+    }
+    if (ev.type === 'inventory.snapshot') {
+      // Выключено флагом или нет возможности `inventory-sync` - как неизвестный тип.
+      if (
+        this.inventory === undefined ||
+        !this.config.inventoryEnabled ||
+        !ctx.capabilities.has('inventory-sync')
+      ) {
+        return reject('unsupported_type');
+      }
+      return this.handleInventorySnapshot(ctx, ev, nowMs, this.inventory);
     }
     // player.join/quit (срез 1 - выключено), будущие и неизвестные типы.
     return reject('unsupported_type');
@@ -338,6 +353,58 @@ export class BridgeIngestService {
       return {
         eventId: ev.eventId,
         status: result === 'stale' ? 'stale' : 'accepted',
+      };
+    } catch (err) {
+      this.logger.error(
+        `bridge apply failed key=${ctx.keyId} id=${ev.eventId} type=${ev.type} error=${err instanceof Error ? err.name : 'unknown'}`,
+      );
+      throw err;
+    }
+  }
+
+  /// `inventory.snapshot` (раздел 16): те же границы `occurredAt`, строгая
+  /// схема до Redis, дедупликация в Redis по `eventId` (TTL 24 ч). Порядок
+  /// свежести задаёт `(epoch, rev)` в модуле инвентаря. Игрок без привязки:
+  /// `accepted`, данные НЕ сохраняются.
+  private async handleInventorySnapshot(
+    ctx: BridgeAuthContext,
+    ev: BridgeEventEnvelope,
+    nowMs: number,
+    inventory: BridgeInventoryService,
+  ): Promise<EventResult> {
+    const reject = (code: EventCode): EventResult => ({
+      eventId: ev.eventId,
+      status: 'rejected',
+      code,
+    });
+    const occurredMs = ev.occurredAt.getTime();
+    if (
+      occurredMs < nowMs - OCCURRED_MAX_AGE_MS ||
+      occurredMs > nowMs + OCCURRED_MAX_FUTURE_MS
+    ) {
+      return reject('invalid_data');
+    }
+    const now = new Date(nowMs);
+    if (!parseInventorySnapshot(ev.data, now).ok) return reject('invalid_data');
+    const hash = payloadHash(ev.data);
+    try {
+      const claim = await this.redis.claimPlayerEvent(
+        ctx.slug,
+        ev.eventId,
+        hash,
+      );
+      if (claim === 'conflict') return reject('conflict');
+      if (claim === 'duplicate') {
+        return { eventId: ev.eventId, status: 'duplicate' };
+      }
+      const outcome = await inventory.applySnapshot(ctx.slug, ev.data, now);
+      // Отказ по данным не закрепляется: `epoch` зависит от времени сайта,
+      // повтор применится заново.
+      if (outcome === 'invalid') return reject('invalid_data');
+      await this.redis.markPlayerEventApplied(ctx.slug, ev.eventId, hash);
+      return {
+        eventId: ev.eventId,
+        status: outcome === 'stale' ? 'stale' : 'accepted',
       };
     } catch (err) {
       this.logger.error(
