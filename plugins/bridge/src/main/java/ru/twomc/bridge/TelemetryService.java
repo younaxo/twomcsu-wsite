@@ -126,16 +126,11 @@ final class TelemetryService implements Listener {
             boolean statsOn = cfg.statsEnabled && !pipeline.isBlocked(EventsProtocol.TYPE_STATS);
             boolean invOn = cfg.inventoryEnabled && !core.safeMode() && !pipeline.isBlocked(EventsProtocol.TYPE_INVENTORY);
             if (statsOn || invOn) {
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    if (budget <= 0) break;
-                    String id = p.getUniqueId().toString();
-                    boolean s = statsOn && core.statsDue(id, now);
-                    boolean i = invOn && core.inventoryDue(id, now);
-                    if (!s && !i) continue;
-                    budget--;
-                    if (s) core.requestStats(BukkitCollector.stats(p, cfg), now, false);
-                    if (i) core.requestInventory(id, BukkitCollector.mainGroup(p), BukkitCollector.enderGroup(p), true, now, false);
-                }
+                core.<Player>runTick(Bukkit.getOnlinePlayers(), p -> p.getUniqueId().toString(), now, statsOn, invOn, budget,
+                        (p, id, s, i) -> {
+                            if (s) core.requestStats(BukkitCollector.stats(p, cfg), now, false);
+                            if (i) core.requestInventory(id, BukkitCollector.mainGroup(p), BukkitCollector.enderGroup(p), true, now, false);
+                        });
             }
             if (now - lastHousekeeping >= 10_000L) {
                 lastHousekeeping = now;
@@ -172,12 +167,13 @@ final class TelemetryService implements Listener {
     void shutdown() {
         if (task != null) task.cancel();
         org.bukkit.event.HandlerList.unregisterAll(this);
+        long now = System.currentTimeMillis();
         guard(() -> {
-            long now = System.currentTimeMillis();
             for (Player p : Bukkit.getOnlinePlayers()) {
-                snapshot(p, now, false, true);
+                guard(() -> snapshot(p, now, false, true)); // ошибка одного игрока не мешает остальным
             }
         });
+        core.drain(SHUTDOWN_FLUSH_MS); // сборки (в порядке постановки) и их события - в очередь до финальной отправки
         pipeline.flushOnce(SHUTDOWN_FLUSH_MS);
         pipeline.stop();
         io.shutdown();

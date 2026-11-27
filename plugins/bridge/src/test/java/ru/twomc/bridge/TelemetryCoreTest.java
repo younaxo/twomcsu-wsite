@@ -310,17 +310,122 @@ class TelemetryCoreTest {
         assertFalse(h.core.safeMode());
     }
 
+    static EventPipeline.Pending invPending(String uuid, String group) {
+        String key = "inventory:" + uuid + ":" + group;
+        return new EventPipeline.Pending(EventsProtocol.TYPE_INVENTORY, key, 1L, "{}", new TelemetryCore.Meta(key, "h"));
+    }
+
     @Test
-    void repeatedInvalidDataEntersSafeModeButAcceptedResetsCounter() {
+    void invalidDataFromOnePlayerNeverEntersSafeMode() {
         Harness h = new Harness();
-        h.inv(group("main", 1), group("ender", 1), true);
-        EventPipeline.Pending p = h.inventoryEvents().get(0);
-        for (int i = 0; i < TelemetryCore.INVALID_LIMIT - 1; i++) h.core.onResult(p, "rejected", "invalid_data");
-        h.core.onResult(p, "accepted", null);
-        for (int i = 0; i < TelemetryCore.INVALID_LIMIT - 1; i++) h.core.onResult(p, "rejected", "invalid_data");
+        EventPipeline.Pending bad = invPending(UUID1, "main");
+        for (int i = 0; i < TelemetryCore.INVALID_LIMIT * 4; i++) h.core.onResult(bad, "rejected", "invalid_data");
+        assertFalse(h.core.safeMode(), "один плохой игрок не останавливает сервер");
+        assertTrue(h.logs.text.toString().contains("безопасный режим сервера не включается"));
+    }
+
+    @Test
+    void invalidDataFromDifferentPlayersEntersSafeModeButAcceptedInBetweenResets() {
+        Harness h = new Harness();
+        String a = "00000000-0000-4000-8000-00000000000a";
+        String b = "00000000-0000-4000-8000-00000000000b";
+        String c = "00000000-0000-4000-8000-00000000000c";
+        h.core.onResult(invPending(a, "main"), "rejected", "invalid_data");
+        h.core.onResult(invPending(b, "main"), "rejected", "invalid_data");
+        h.core.onResult(invPending(UUID1, "main"), "accepted", null); // успех другого игрока прерывает ряд
+        h.core.onResult(invPending(c, "main"), "rejected", "invalid_data");
         assertFalse(h.core.safeMode());
-        h.core.onResult(p, "rejected", "invalid_data");
-        assertTrue(h.core.safeMode());
+        h.core.onResult(invPending(a, "ender"), "rejected", "invalid_data");
+        assertFalse(h.core.safeMode());
+        h.core.onResult(invPending(b, "ender"), "rejected", "invalid_data");
+        assertTrue(h.core.safeMode(), TelemetryCore.INVALID_PLAYERS_LIMIT + " разных игрока подряд");
+    }
+
+    @Test
+    void resumeUsesAtLeastSavedEpochPlusOneWhenHostClockIsBehind() {
+        TestScheduler sch = new TestScheduler();
+        long ahead = sch.now.get() + 3_600_000L;
+        Logger logger = Logger.getLogger("resume-test-" + System.nanoTime());
+        logger.setUseParentHandlers(false);
+        TelemetryCore core = new TelemetryCore(enabled(), sch, sch.now::get, logger, ahead, null);
+        core.attach(new TelemetryCore.Sink() {
+            @Override
+            public void submit(EventPipeline.Pending p) { }
+
+            @Override
+            public boolean blocked(String type) {
+                return false;
+            }
+        });
+        core.onResult(invPending(UUID1, "main"), "rejected", "epoch_out_of_range");
+        assertTrue(core.safeMode());
+        core.resumeInventory(sch.now.get());
+        assertEquals(ahead + 1, core.status().epoch(), "epoch строго больше прежней");
+    }
+
+    @Test
+    void finalSnapshotGetsHigherRevThanEarlierQueuedBuild() {
+        Harness h = new Harness();
+        // Обычный снимок поставлен в очередь, но не собран; затем принудительный (остановка сервера).
+        assertTrue(h.core.requestInventory(UUID1, group("main", 1), group("ender", 1), true, h.now(), false));
+        assertTrue(h.core.requestInventory(UUID1, group("main", 2), group("ender", 1), false, h.now(), true));
+        assertTrue(h.sent.isEmpty(), "сборка идёт на потоке ввода-вывода, не сразу");
+        h.sch.runDue();
+        List<EventPipeline.Pending> mains = h.inventoryEvents().stream().filter(p -> p.key.endsWith(":main")).toList();
+        assertEquals(2, mains.size());
+        assertEquals(Boolean.TRUE, data(mains.get(0)).get("playerOnline"));
+        assertEquals(Boolean.FALSE, data(mains.get(1)).get("playerOnline"));
+        assertTrue(((Number) data(mains.get(1)).get("rev")).longValue() > ((Number) data(mains.get(0)).get("rev")).longValue(),
+                "финальный снимок получает больший rev");
+    }
+
+    @Test
+    void failureOnOnePlayerDoesNotStopTickAndIsLoggedOnce() {
+        Harness h = new Harness();
+        String bad = "00000000-0000-4000-8000-00000000000a";
+        List<String> ids = List.of(bad, UUID1);
+        h.core.onJoin(bad, h.now(), 0);
+        h.core.onJoin(UUID1, h.now(), 0);
+        h.sch.advance(10 * 60_000L);
+        List<String> processed = new ArrayList<>();
+        for (int round = 0; round < 2; round++) {
+            h.core.<String>runTick(ids, x -> x, h.now(), true, false, 10, (p, id, s, i) -> {
+                if (id.equals(bad)) throw new IllegalStateException("boom");
+                processed.add(id);
+            });
+            if (round == 0) assertFalse(h.core.statsDue(bad, h.now()), "срок упавшего игрока сдвинут");
+            h.sch.advance(10 * 60_000L);
+        }
+        assertEquals(List.of(UUID1, UUID1), processed, "второй игрок обработан несмотря на ошибку первого");
+        long logged = h.logs.text.toString().lines().filter(l -> l.contains("ошибка чтения данных игрока")).count();
+        assertEquals(1, logged, "ошибка по игроку логируется один раз");
+    }
+
+    @Test
+    void drainWaitsTwiceOnIoThread() {
+        int[] calls = new int[1];
+        Scheduler counting = new Scheduler() {
+            @Override
+            public void execute(Runnable r) { }
+
+            @Override
+            public Cancellable schedule(long delayMs, Runnable r) {
+                return () -> { };
+            }
+
+            @Override
+            public void runAndAwait(Runnable r, long timeoutMs) {
+                calls[0]++;
+                r.run();
+            }
+
+            @Override
+            public void shutdown() { }
+        };
+        Logger logger = Logger.getLogger("drain-test-" + System.nanoTime());
+        logger.setUseParentHandlers(false);
+        new TelemetryCore(enabled(), counting, () -> 1L, logger, 1L, null).drain(100);
+        assertEquals(2, calls[0]);
     }
 
     @Test

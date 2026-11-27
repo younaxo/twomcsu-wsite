@@ -2,6 +2,7 @@ package ru.twomc.bridge;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -34,7 +35,11 @@ final class EpochStore {
         try {
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(tmp, Long.toString(epoch), StandardCharsets.UTF_8);
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            try {
+                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException | RuntimeException e) {
             log.warning("Эпоха инвентаря не сохранена (" + e.getClass().getSimpleName() + "): после перезапуска возьмётся время старта.");
         }

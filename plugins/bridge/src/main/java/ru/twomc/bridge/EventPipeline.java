@@ -110,18 +110,22 @@ final class EventPipeline {
             return;
         }
         scheduler.execute(() -> {
-            if (stopped) return;
-            queue.remove(p.key); // новый снимок заменяет ещё не отправленный и встаёт в конец
-            queue.put(p.key, p);
-            while (queue.size() > MAX_QUEUED) {
-                Iterator<Pending> it = queue.values().iterator();
-                it.next();
-                it.remove();
-                dropped++;
-                warnLimited("overflow", "очередь снимков переполнена (" + MAX_QUEUED + "), самый старый отброшен");
+            try {
+                if (stopped) return;
+                queue.remove(p.key); // новый снимок заменяет ещё не отправленный и встаёт в конец
+                queue.put(p.key, p);
+                while (queue.size() > MAX_QUEUED) {
+                    Iterator<Pending> it = queue.values().iterator();
+                    it.next();
+                    it.remove();
+                    dropped++;
+                    warnLimited("overflow", "очередь снимков переполнена (" + MAX_QUEUED + "), самый старый отброшен");
+                }
+                queuedView = queue.size();
+                schedulePump(0);
+            } catch (RuntimeException e) {
+                warnLimited("submit-error", "ошибка постановки в очередь (" + e.getClass().getSimpleName() + ")");
             }
-            queuedView = queue.size();
-            schedulePump(0);
         });
     }
 
@@ -150,7 +154,16 @@ final class EventPipeline {
         pumpScheduled = true;
         scheduler.schedule(delayMs, () -> {
             pumpScheduled = false;
-            pumpOnce(true);
+            try {
+                pumpOnce(true);
+            } catch (RuntimeException e) {
+                // Исключение не должно молча остановить отправку: пачка (inFlight) остаётся, повтор с backoff.
+                attempt++;
+                long delay = Backoff.delayMs(attempt, null, random);
+                pausedUntil = clock.getAsLong() + delay;
+                warnLimited("pump-error", "ошибка отправки (" + e.getClass().getSimpleName() + "), повтор через " + (delay / 1000) + " с");
+                if (inFlight != null || !queue.isEmpty()) schedulePump(delay);
+            }
         });
     }
 
@@ -172,6 +185,8 @@ final class EventPipeline {
         if (inFlight == null || inFlight.isEmpty()) {
             inFlight = null;
             inFlightView = 0;
+            // Пачка целиком устарела и отброшена, а в очереди есть новое: без этого оно ждало бы следующего submit.
+            if (allowReschedule && !queue.isEmpty()) schedulePump(BATCH_GAP_MS);
             return;
         }
         List<EventsProtocol.OutEvent> out = new ArrayList<>();
@@ -229,7 +244,7 @@ final class EventPipeline {
             }
             case AUTH -> {
                 authAttempts++;
-                warnLimited("auth", "сайт отклонил подпись событий (401, расхождение часов: Date сайта=" + res.dateHeader()
+                warnLimited("auth", "сайт отклонил подпись событий (401, расхождение часов: Date сайта=" + safeHeader(res.dateHeader())
                         + "); попытка " + authAttempts + " из " + AUTH_RETRIES);
                 last = "401";
                 long delay;
@@ -312,6 +327,13 @@ final class EventPipeline {
                     + " (размер данных " + p.dataJson.length() + " симв.)");
             default -> warnLimited("rej:" + c + p.type, "сайт отклонил " + p.type + ": " + c + ", повтора нет");
         }
+    }
+
+    /** Заголовок из чужого ответа в лог: без управляющих символов (CR/LF не подделывают строки лога), не длиннее 64. */
+    static String safeHeader(String v) {
+        if (v == null) return "нет";
+        String s = v.replaceAll("[\\p{Cntrl}]", "?");
+        return s.length() > 64 ? s.substring(0, 64) + "..." : s;
     }
 
     /** Не чаще раза в минуту на ключ сообщения: поток отказов не должен заливать лог. */

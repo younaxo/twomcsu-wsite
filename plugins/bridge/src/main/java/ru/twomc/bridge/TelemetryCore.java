@@ -41,7 +41,10 @@ final class TelemetryCore implements EventPipeline.Listener {
     static final long STATS_MIN_GAP_MS = 30_000L;
     static final long JOIN_INVENTORY_DELAY_MS = 60_000L;
     static final int STALE_LIMIT = 3;
+    /** invalid_data подряд по одному ключу «игрок+группа»: только предупреждение. */
     static final int INVALID_LIMIT = 5;
+    /** Столько разных игроков подряд с invalid_data без успехов между ними: безопасный режим сервера. */
+    static final int INVALID_PLAYERS_LIMIT = 3;
     static final long REMIND_MS = 60 * 60_000L;
     static final long MAX_REV = 2_147_483_647L;
 
@@ -58,7 +61,9 @@ final class TelemetryCore implements EventPipeline.Listener {
     private final Map<String, Long> warnedAt = new HashMap<>();
     private long epoch;
     private long rev = 0;
-    private int invalidStreak = 0;
+    private final Map<String, Integer> invalidByKey = new HashMap<>();
+    private final java.util.Set<String> invalidPlayers = new java.util.HashSet<>();
+    private final java.util.Set<String> failedLogged = new java.util.HashSet<>();
     private boolean safeMode = false;
     private String safeReason = "";
     private long lastRemind = 0;
@@ -138,12 +143,61 @@ final class TelemetryCore implements EventPipeline.Listener {
             st.lastSeen = now;
         }
         InventoryData[] groups = {main, ender};
-        if (force) {
-            buildInventory(uuid, groups, online, now); // остановка сервера: сразу, поток ввода-вывода будет сброшен следом
-        } else {
-            io.execute(() -> buildInventory(uuid, groups, online, now));
-        }
+        // Всегда через очередь потока ввода-вывода (в том числе при остановке): rev назначается в порядке постановки,
+        // поэтому более старая сборка не получит rev больше, чем финальный снимок. Перед финальной отправкой
+        // вызывается drain().
+        io.execute(() -> buildInventory(uuid, groups, online, now));
         return true;
+    }
+
+    /**
+     * Дождаться (не дольше timeoutMs на шаг), пока все поставленные сборки отработают и их события попадут в очередь
+     * отправки. Два барьера: сборки кладут события в очередь уже после первого.
+     */
+    void drain(long timeoutMs) {
+        io.runAndAwait(() -> { }, timeoutMs);
+        io.runAndAwait(() -> { }, timeoutMs);
+    }
+
+    /** Задача обработки одного игрока в обходе. */
+    interface PlayerTask<P> {
+        void run(P player, String uuid, boolean stats, boolean inventory);
+    }
+
+    /**
+     * Обход онлайн-игроков главным потоком: не больше budget игроков, ошибка чтения одного игрока не прерывает
+     * обход (его сроки сдвигаются на интервал, ошибка логируется один раз на игрока и тип ошибки).
+     *
+     * @return сколько игроков обработано (с учётом упавших)
+     */
+    <P> int runTick(Iterable<? extends P> online, java.util.function.Function<P, String> idOf, long now, boolean statsOn,
+                    boolean invOn, int budget, PlayerTask<P> task) {
+        int done = 0;
+        for (P p : online) {
+            if (budget <= 0) break;
+            String id = idOf.apply(p);
+            boolean s = statsOn && statsDue(id, now);
+            boolean i = invOn && inventoryDue(id, now);
+            if (!s && !i) continue;
+            budget--;
+            done++;
+            try {
+                task.run(p, id, s, i);
+            } catch (RuntimeException | LinkageError e) {
+                deferAfterFailure(id, now, e);
+            }
+        }
+        return done;
+    }
+
+    private synchronized void deferAfterFailure(String uuid, long now, Throwable e) {
+        PlayerState st = players.computeIfAbsent(uuid, k -> new PlayerState());
+        st.nextStatsDue = now + cfg.statsIntervalMs;
+        st.nextInvDue = now + cfg.inventoryIntervalMs;
+        if (failedLogged.add(uuid + ":" + e.getClass().getName())) {
+            log.warning("Снимки: ошибка чтения данных игрока " + shortId(uuid) + " (" + e.getClass().getSimpleName()
+                    + "); игрок пропущен до следующего срока, остальные не затронуты. Такая ошибка по этому игроку больше не логируется.");
+        }
     }
 
     // ---- поток ввода-вывода ----
@@ -185,7 +239,8 @@ final class TelemetryCore implements EventPipeline.Listener {
             case "accepted", "duplicate" -> {
                 accepted.put(m.key(), new Accepted(m.hash(), now));
                 staleStreak.remove(m.key());
-                invalidStreak = 0;
+                invalidByKey.remove(m.key());
+                invalidPlayers.clear(); // успех любого игрока: ряд отказов прерван
             }
             case "stale" -> {
                 int n = staleStreak.merge(m.key(), 1, Integer::sum);
@@ -197,9 +252,21 @@ final class TelemetryCore implements EventPipeline.Listener {
             default -> {
                 if ("epoch_out_of_range".equals(code)) {
                     enterSafeMode("сайт отклонил epoch (epoch_out_of_range): проверьте часы хоста");
-                } else if ("invalid_data".equals(code) && ++invalidStreak >= INVALID_LIMIT) {
-                    // Сайт отдаёт epoch_out_of_range как invalid_data (16.4), отличить нельзя: серия отказов = безопасный режим.
-                    enterSafeMode(INVALID_LIMIT + " отказов invalid_data подряд (возможна неверная epoch из-за часов хоста)");
+                } else if ("invalid_data".equals(code)) {
+                    // Один плохой игрок (например, битый предмет) не должен останавливать весь сервер: счёт по «игрок+группа».
+                    int n = invalidByKey.merge(m.key(), 1, Integer::sum);
+                    if (n == INVALID_LIMIT) {
+                        warnLimited("invalid:" + m.key(), clock.getAsLong(), "сайт " + INVALID_LIMIT + " раз подряд отклонил "
+                                + m.key().replaceFirst("^inventory:", "").replaceFirst("^(.{8})[^:]*", "$1")
+                                + " как invalid_data; безопасный режим сервера не включается (отказывает один игрок).");
+                    }
+                    // Сайт отдаёт epoch_out_of_range как invalid_data (16.4), отличить нельзя: серия отказов у РАЗНЫХ
+                    // игроков подряд (без единого успеха между ними) = неверная epoch, безопасный режим.
+                    invalidPlayers.add(playerOf(m.key()));
+                    if (invalidPlayers.size() >= INVALID_PLAYERS_LIMIT) {
+                        enterSafeMode("invalid_data у " + INVALID_PLAYERS_LIMIT + " разных игроков подряд без успехов "
+                                + "(возможна неверная epoch из-за часов хоста)");
+                    }
                 }
             }
         }
@@ -220,15 +287,17 @@ final class TelemetryCore implements EventPipeline.Listener {
             if (now - it.next().getValue().at() > 2 * cfg.inventoryHeartbeatMs) it.remove();
         }
         warnedAt.values().removeIf(t -> now - t > 10 * 60_000L);
+        if (failedLogged.size() > 500) failedLogged.clear();
     }
 
     /** Подтверждение оператора после исправления часов (контракт 6.1, правило плагина, г): новая эпоха = сейчас. */
     synchronized String resumeInventory(long now) {
         if (!safeMode) return "Безопасный режим инвентаря не включён.";
         long saved = epoch;
-        epoch = Math.max(now, 1);
+        epoch = Math.max(saved + 1, Math.max(now, 1)); // строго больше прежней, даже если часы хоста позади
         rev = 0;
-        invalidStreak = 0;
+        invalidByKey.clear();
+        invalidPlayers.clear();
         staleStreak.clear();
         accepted.clear();
         safeMode = false;
@@ -260,6 +329,12 @@ final class TelemetryCore implements EventPipeline.Listener {
         if (prev != null && now - prev < 10 * 60_000L) return;
         warnedAt.put(key, now);
         log.warning("Инвентарь: " + message);
+    }
+
+    /** Ключ снимка имеет вид inventory:uuid:group. */
+    private static String playerOf(String key) {
+        String[] parts = key.split(":");
+        return parts.length >= 2 ? parts[1] : key;
     }
 
     static String shortId(String uuid) {

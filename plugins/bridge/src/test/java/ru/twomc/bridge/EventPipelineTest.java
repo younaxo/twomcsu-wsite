@@ -285,6 +285,59 @@ class EventPipelineTest {
     }
 
     @Test
+    void queuedEventIsSentAfterExpiredBatchIsDropped() {
+        Harness h = new Harness();
+        // События с uuid "a" всегда получают 503, остальные принимаются.
+        for (int i = 0; i < 400; i++) {
+            h.transport.then(req -> {
+                if (req.body().contains("\"uuid\":\"a\"")) return new Transport.Response(503, null, null, "{\"error\":\"unavailable\"}");
+                StringBuilder sb = new StringBuilder("{\"results\":[");
+                List<Map<String, Object>> evs = events(req);
+                for (int k = 0; k < evs.size(); k++) {
+                    if (k > 0) sb.append(',');
+                    sb.append("{\"eventId\":\"").append(evs.get(k).get("eventId")).append("\",\"status\":\"accepted\"}");
+                }
+                return new Transport.Response(200, null, null, sb.append("],\"serverTime\":\"x\"}").toString());
+            });
+        }
+        h.send(h.stats("a"));
+        h.sch.advance(EventPipeline.MAX_RETRY_AGE_MS - 120_000L);
+        h.send(h.stats("b")); // встаёт в очередь за пачкой "a", которая ещё повторяется
+        h.sch.advance(10 * 60_000L); // "a" устарела и отброшена
+        assertEquals(1, h.pipeline.status().dropped());
+        assertTrue(h.transport.requests.stream().anyMatch(r -> r.body().contains("\"uuid\":\"b\"")),
+                "событие из очереди отправлено без нового submit");
+        assertEquals(0, h.pipeline.status().queued());
+    }
+
+    @Test
+    void runtimeExceptionInPumpDoesNotStopSending() {
+        Harness h = new Harness();
+        h.transport.then(req -> {
+            throw new IllegalStateException("boom");
+        });
+        h.answerAll("accepted", null);
+        h.send(h.stats("a"));
+        assertEquals(1, h.transport.requests.size());
+        h.sch.advance(120_000L);
+        assertEquals(2, h.transport.requests.size(), "после исключения отправка продолжилась той же пачкой");
+        assertEquals(1, h.results.size());
+        assertTrue(h.logs.text.toString().contains("IllegalStateException"));
+    }
+
+    @Test
+    void authLogDoesNotContainControlCharactersFromDateHeader() {
+        Harness h = new Harness();
+        h.transport.thenResponse(new Transport.Response(401, null, "Fri\r\nFAKE: forged log line\u0007", "{\"error\":\"unauthorized\"}"));
+        h.send(h.stats("a"));
+        String all = h.logs.text.toString();
+        assertFalse(all.contains("\r"));
+        assertFalse(all.contains("\nFAKE"), "заголовок не может начать новую строку лога");
+        assertFalse(all.contains("\u0007"));
+        assertTrue(all.contains("Fri"));
+    }
+
+    @Test
     void queueIsBounded() {
         Harness h = new Harness();
         h.transport.thenResponse(new Transport.Response(503, "300", null, "{}"));
