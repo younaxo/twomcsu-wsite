@@ -1,0 +1,414 @@
+{
+  "meta": {
+    "run": "20261127T024428Z-bench-6053ab",
+    "impls": "ts-current ts-batch rust java",
+    "server_ncpu": 2,
+    "loadgen_ncpu": 2,
+    "mem": "512m",
+    "heap_java": "256m",
+    "java_gc": "-XX:+UseG1GC",
+    "java_opts": "-Xms256m -Xmx256m -XX:+UseG1GC",
+    "levels": "1 50 500",
+    "duration_s": 60,
+    "warmup_s": 60,
+    "repeats": 3,
+    "order": "round-robin по повторам, порядок вариантов сдвигается на 1",
+    "profile": "medium",
+    "db_latency_ms": 0,
+    "dataset": "fixtures/dataset.json",
+    "oha_image": "ghcr.io/hatoo/oha:1.17.0@sha256:9e8cd7468794d692acda410de42738aa1d2fa0268a5c56d1d58581874ee2b0eb"
+  },
+  "rows": [
+    {
+      "impl": "java",
+      "concurrency": 1,
+      "repeats": 3,
+      "rps": 4464.496294215582,
+      "p50_ms": 0.208051,
+      "p95_ms": 0.301085,
+      "p99_ms": 0.454242,
+      "err_pct": 0,
+      "cpu_pct_avg": 61.57066666666667,
+      "rss_peak_mib": 216.8,
+      "cold_start_ms": 613,
+      "image_mib_measured": 272.75887393951416,
+      "loadgen_cpu_pct_avg": 28.06066666666667,
+      "loadgen_rss_peak_mib": 40.66,
+      "loadgen_saturated": false,
+      "conn_errors": 3,
+      "error_distribution": {
+        "aborted due to deadline": 3
+      }
+    },
+    {
+      "impl": "java",
+      "concurrency": 50,
+      "repeats": 3,
+      "rps": 18274.07315645334,
+      "p50_ms": 2.5845569999999998,
+      "p95_ms": 4.609794000000001,
+      "p99_ms": 6.228509,
+      "err_pct": 0,
+      "cpu_pct_avg": 171.4313333333333,
+      "rss_peak_mib": 199.8,
+      "cold_start_ms": 613,
+      "image_mib_measured": 272.75887393951416,
+      "loadgen_cpu_pct_avg": 92.61866666666667,
+      "loadgen_rss_peak_mib": 191.3,
+      "loadgen_saturated": false,
+      "conn_errors": 148,
+      "error_distribution": {
+        "aborted due to deadline": 148
+      }
+    },
+    {
+      "impl": "java",
+      "concurrency": 500,
+      "repeats": 3,
+      "rps": 19281.45694271836,
+      "p50_ms": 25.427681,
+      "p95_ms": 32.886997,
+      "p99_ms": 39.620022,
+      "err_pct": 0,
+      "cpu_pct_avg": 195.8853333333333,
+      "rss_peak_mib": 240.4,
+      "cold_start_ms": 613,
+      "image_mib_measured": 272.75887393951416,
+      "loadgen_cpu_pct_avg": 97.02,
+      "loadgen_rss_peak_mib": 266.5,
+      "loadgen_saturated": false,
+      "conn_errors": 3286,
+      "error_distribution": {
+        "aborted due to deadline": 1455,
+        "connection closed before message completed": 1641,
+        "operation was canceled": 190
+      }
+    },
+    {
+      "impl": "rust",
+      "concurrency": 1,
+      "repeats": 3,
+      "rps": 5039.147487501838,
+      "p50_ms": 0.189315,
+      "p95_ms": 0.25936600000000004,
+      "p99_ms": 0.351068,
+      "err_pct": 0,
+      "cpu_pct_avg": 61.72933333333334,
+      "rss_peak_mib": 2.766,
+      "cold_start_ms": 228,
+      "image_mib_measured": 110.0298023223877,
+      "loadgen_cpu_pct_avg": 24.48733333333333,
+      "loadgen_rss_peak_mib": 44.55,
+      "loadgen_saturated": false,
+      "conn_errors": 3,
+      "error_distribution": {
+        "aborted due to deadline": 3
+      }
+    },
+    {
+      "impl": "rust",
+      "concurrency": 50,
+      "repeats": 3,
+      "rps": 22447.95286792574,
+      "p50_ms": 2.185588,
+      "p95_ms": 3.780369,
+      "p99_ms": 4.806402,
+      "err_pct": 0,
+      "cpu_pct_avg": 202.88400000000001,
+      "rss_peak_mib": 3.258,
+      "cold_start_ms": 228,
+      "image_mib_measured": 110.0298023223877,
+      "loadgen_cpu_pct_avg": 90.98599999999998,
+      "loadgen_rss_peak_mib": 190.3,
+      "loadgen_saturated": false,
+      "conn_errors": 150,
+      "error_distribution": {
+        "aborted due to deadline": 150
+      }
+    },
+    {
+      "impl": "rust",
+      "concurrency": 500,
+      "repeats": 3,
+      "rps": 22136.375285340804,
+      "p50_ms": 22.133554,
+      "p95_ms": 28.264190000000003,
+      "p99_ms": 33.119073,
+      "err_pct": 0,
+      "cpu_pct_avg": 204.56266666666667,
+      "rss_peak_mib": 18.26,
+      "cold_start_ms": 228,
+      "image_mib_measured": 110.0298023223877,
+      "loadgen_cpu_pct_avg": 93.84999999999998,
+      "loadgen_rss_peak_mib": 253.2,
+      "loadgen_saturated": false,
+      "conn_errors": 1473,
+      "error_distribution": {
+        "aborted due to deadline": 1473
+      }
+    },
+    {
+      "impl": "ts-batch",
+      "concurrency": 1,
+      "repeats": 3,
+      "rps": 3581.3575088869297,
+      "p50_ms": 0.251291,
+      "p95_ms": 0.428433,
+      "p99_ms": 0.637927,
+      "err_pct": 0,
+      "cpu_pct_avg": 65.24133333333333,
+      "rss_peak_mib": 98.3,
+      "cold_start_ms": 528,
+      "image_mib_measured": 220.47306442260742,
+      "loadgen_cpu_pct_avg": 20.818,
+      "loadgen_rss_peak_mib": 34.54,
+      "loadgen_saturated": false,
+      "conn_errors": 3,
+      "error_distribution": {
+        "aborted due to deadline": 3
+      }
+    },
+    {
+      "impl": "ts-batch",
+      "concurrency": 50,
+      "repeats": 3,
+      "rps": 6357.727084383617,
+      "p50_ms": 7.709454999999999,
+      "p95_ms": 9.991245,
+      "p99_ms": 15.530121,
+      "err_pct": 0,
+      "cpu_pct_avg": 109.29666666666667,
+      "rss_peak_mib": 41.37,
+      "cold_start_ms": 528,
+      "image_mib_measured": 220.47306442260742,
+      "loadgen_cpu_pct_avg": 36.34066666666668,
+      "loadgen_rss_peak_mib": 53.91,
+      "loadgen_saturated": false,
+      "conn_errors": 150,
+      "error_distribution": {
+        "aborted due to deadline": 150
+      }
+    },
+    {
+      "impl": "ts-batch",
+      "concurrency": 500,
+      "repeats": 3,
+      "rps": 6167.697184636766,
+      "p50_ms": 77.749091,
+      "p95_ms": 92.34266600000001,
+      "p99_ms": 99.647745,
+      "err_pct": 0,
+      "cpu_pct_avg": 109.26133333333334,
+      "rss_peak_mib": 62.77,
+      "cold_start_ms": 528,
+      "image_mib_measured": 220.47306442260742,
+      "loadgen_cpu_pct_avg": 34.55333333333333,
+      "loadgen_rss_peak_mib": 76.92,
+      "loadgen_saturated": false,
+      "conn_errors": 1499,
+      "error_distribution": {
+        "aborted due to deadline": 1499
+      }
+    },
+    {
+      "impl": "ts-current",
+      "concurrency": 1,
+      "repeats": 3,
+      "rps": 3496.7346696588525,
+      "p50_ms": 0.256361,
+      "p95_ms": 0.43992499999999995,
+      "p99_ms": 0.6760069999999999,
+      "err_pct": 0,
+      "cpu_pct_avg": 64.51866666666666,
+      "rss_peak_mib": 105.2,
+      "cold_start_ms": 482,
+      "image_mib_measured": 220.47278785705566,
+      "loadgen_cpu_pct_avg": 20.886,
+      "loadgen_rss_peak_mib": 33.96,
+      "loadgen_saturated": false,
+      "conn_errors": 3,
+      "error_distribution": {
+        "aborted due to deadline": 3
+      }
+    },
+    {
+      "impl": "ts-current",
+      "concurrency": 50,
+      "repeats": 3,
+      "rps": 6037.717699867023,
+      "p50_ms": 8.117091,
+      "p95_ms": 11.409866,
+      "p99_ms": 16.897114000000002,
+      "err_pct": 0,
+      "cpu_pct_avg": 109.42399999999998,
+      "rss_peak_mib": 44.22,
+      "cold_start_ms": 482,
+      "image_mib_measured": 220.47278785705566,
+      "loadgen_cpu_pct_avg": 36.05133333333333,
+      "loadgen_rss_peak_mib": 53.12,
+      "loadgen_saturated": false,
+      "conn_errors": 150,
+      "error_distribution": {
+        "aborted due to deadline": 150
+      }
+    },
+    {
+      "impl": "ts-current",
+      "concurrency": 500,
+      "repeats": 3,
+      "rps": 5980.964250345653,
+      "p50_ms": 79.208999,
+      "p95_ms": 95.013825,
+      "p99_ms": 106.111414,
+      "err_pct": 0,
+      "cpu_pct_avg": 109.56533333333336,
+      "rss_peak_mib": 63.8,
+      "cold_start_ms": 482,
+      "image_mib_measured": 220.47278785705566,
+      "loadgen_cpu_pct_avg": 34.763999999999996,
+      "loadgen_rss_peak_mib": 75.05,
+      "loadgen_saturated": false,
+      "conn_errors": 1497,
+      "error_distribution": {
+        "aborted due to deadline": 1497
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "impl": "java",
+      "base": "ts-current",
+      "concurrency": 1,
+      "p95_gain": 0.4611322384044372,
+      "rps_gain": 0.27676152639031826,
+      "class_by_p95": "серая зона (30 % - 2x)",
+      "decisive": false
+    },
+    {
+      "impl": "java",
+      "base": "ts-batch",
+      "concurrency": 1,
+      "p95_gain": 0.42296361492601764,
+      "rps_gain": 0.24659330523054313,
+      "class_by_p95": "серая зона (30 % - 2x)",
+      "decisive": true
+    },
+    {
+      "impl": "java",
+      "base": "ts-current",
+      "concurrency": 50,
+      "p95_gain": 1.4751357652858235,
+      "rps_gain": 2.026652464532387,
+      "class_by_p95": "2x и более",
+      "decisive": false
+    },
+    {
+      "impl": "java",
+      "base": "ts-batch",
+      "concurrency": 50,
+      "p95_gain": 1.167395115703651,
+      "rps_gain": 1.8743091538703593,
+      "class_by_p95": "2x и более",
+      "decisive": true
+    },
+    {
+      "impl": "java",
+      "base": "ts-current",
+      "concurrency": 500,
+      "p95_gain": 1.8891000598199947,
+      "rps_gain": 2.223804078348076,
+      "class_by_p95": "2x и более",
+      "decisive": false
+    },
+    {
+      "impl": "java",
+      "base": "ts-batch",
+      "concurrency": 500,
+      "p95_gain": 1.8078777153170904,
+      "rps_gain": 2.126200324936008,
+      "class_by_p95": "2x и более",
+      "decisive": true
+    },
+    {
+      "impl": "rust",
+      "base": "ts-current",
+      "concurrency": 1,
+      "p95_gain": 0.6961552400854387,
+      "rps_gain": 0.44110090228649423,
+      "class_by_p95": "серая зона (30 % - 2x)",
+      "decisive": false
+    },
+    {
+      "impl": "rust",
+      "base": "ts-batch",
+      "concurrency": 1,
+      "p95_gain": 0.6518471966256176,
+      "rps_gain": 0.40704955453274017,
+      "class_by_p95": "серая зона (30 % - 2x)",
+      "decisive": true
+    },
+    {
+      "impl": "rust",
+      "base": "ts-current",
+      "concurrency": 50,
+      "p95_gain": 2.0181884361024016,
+      "rps_gain": 2.7179533697675433,
+      "class_by_p95": "2x и более",
+      "decisive": false
+    },
+    {
+      "impl": "rust",
+      "base": "ts-batch",
+      "concurrency": 50,
+      "p95_gain": 1.6429285077726536,
+      "rps_gain": 2.5308141683313656,
+      "class_by_p95": "2x и более",
+      "decisive": true
+    },
+    {
+      "impl": "rust",
+      "base": "ts-current",
+      "concurrency": 500,
+      "p95_gain": 2.3616326878640423,
+      "rps_gain": 2.7011382042722447,
+      "class_by_p95": "2x и более",
+      "decisive": false
+    },
+    {
+      "impl": "rust",
+      "base": "ts-batch",
+      "concurrency": 500,
+      "p95_gain": 2.267125857843441,
+      "rps_gain": 2.5890827034246624,
+      "class_by_p95": "2x и более",
+      "decisive": true
+    },
+    {
+      "impl": "ts-batch",
+      "base": "ts-current",
+      "concurrency": 1,
+      "p95_gain": 0.026823330602451234,
+      "rps_gain": 0.024200531988414653,
+      "class_by_p95": "менее 30 %",
+      "decisive": false
+    },
+    {
+      "impl": "ts-batch",
+      "base": "ts-current",
+      "concurrency": 50,
+      "p95_gain": 0.141986409101168,
+      "rps_gain": 0.053001713631566805,
+      "class_by_p95": "менее 30 %",
+      "decisive": false
+    },
+    {
+      "impl": "ts-batch",
+      "base": "ts-current",
+      "concurrency": 500,
+      "p95_gain": 0.02892659607640069,
+      "rps_gain": 0.03122120890127711,
+      "class_by_p95": "менее 30 %",
+      "decisive": false
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{"run":"20261127T024428Z-bench-6053ab","impls":"ts-current ts-batch rust java","server_ncpu":2,"loadgen_ncpu":2,"mem":"512m","heap_java":"256m",
+"java_gc":"-XX:+UseG1GC","java_opts":"-Xms256m -Xmx256m -XX:+UseG1GC","levels":"1 50 500",
+"duration_s":60,"warmup_s":60,"repeats":3,"order":"round-robin по повторам, порядок вариантов сдвигается на 1",
+"profile":"medium","db_latency_ms":0,"dataset":"fixtures/dataset.json","oha_image":"ghcr.io/hatoo/oha:1.17.0@sha256:9e8cd7468794d692acda410de42738aa1d2fa0268a5c56d1d58581874ee2b0eb"}

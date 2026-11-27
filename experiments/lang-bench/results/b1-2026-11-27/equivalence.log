@@ -1,0 +1,6 @@
+golden http:ts-current: 58/58
+golden http:ts-batch: 58/58
+golden http:rust: 58/58
+golden http:java: 58/58
+сгенерированных корзин: 2072 (200: 1952, 400: 120); сравнений с эталоном http:ts-current: 6216
+ИТОГ: расхождений 0
