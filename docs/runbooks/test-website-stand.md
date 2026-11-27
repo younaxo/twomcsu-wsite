@@ -167,5 +167,13 @@ infrastructure/test-website/run-smoke.sh      # один SSH-сеанс под �
 Песочница контейнера смоука: `--cap-drop ALL`, `--security-opt no-new-privileges`, `--read-only` (+ tmpfs `/tmp`), `--memory 256m`, `--cpus 1`, `--pids-limit 128`, тайм-аут 300 с (`SMOKE_TIMEOUT_SEC`); монтируются только `smoke.mjs`, `stand.env` и файл учёток (все `:ro`).
 Файл учёток по умолчанию - окончательный `/home/twomc/test-website-credentials.txt` (раздел 9; `ACCOUNTS_FILE` переопределяет); перед запуском `smoke.sh` проверяет `[[ -f ]]` для `stand.env` и файла учёток (иначе `docker -v` создал бы на их месте каталог) и завершается кодом 2.
 Побочный эффект: смоук делает `DELETE /store/cart` для тестового игрока (очищает его корзину перед проверкой), включает флаги `stats.public.enabled` и `punishments.public.enabled` и создаёт заказ тестового игрока.
-Маска вывода дополнительно режет `"password":"..."`, `password=...`, `Authorization: Basic ...` (значения от 4 символов).
+Маска вывода режет значения полей по подстрокам ИМЁН (`pass|secret|token|key|otp`, без учёта регистра): `"userPassword":"..."`, `"apiKey":"..."`, `refresh_token=...`, `Api-Key=...`, а также `Authorization: Basic ...` (значения от 4 символов). Селфтест: `SMOKE_SELFTEST_MASK=1 node infrastructure/test-website/smoke.mjs` (12 проб).
+
+## Визуальная проверка в браузере
+
+```bash
+infrastructure/test-website/run-visual.sh /srv/twomc-stand/qa/visual-<дата>          # прогон на VDS (около 6 мин)
+infrastructure/test-website/run-visual.sh --fetch /srv/twomc-stand/qa/visual-<дата> <локальный-каталог>   # забрать скриншоты и results.json
+```
+Одноразовый контейнер `mcr.microsoft.com/playwright:v1.49.1-jammy` (`PW_VERSION`), headless Chromium, `--cap-drop ALL`, `--read-only`, 3 ГБ, 1500 с. Вход игрока и админа (с TOTP) через форму `/login`; учётки читаются из окончательного файла (только `:ro`), в вывод не попадают (`mask()`). Ширины 360, 390, 1280; для каждой пары страница x ширина: статус, горизонтальный скролл, цели < 40x40 (на мобильных, первые 10), ошибки консоли, неудачные ответы, полноэкранный скриншот. Побочный эффект: корзина игрока очищается и в неё кладётся первый товар. Откат: ничего не меняет в коде и данных стенда, кроме корзины и ещё двух входов; каталог результатов можно удалить вручную.
 Откат: смоук ничего не меняет в коде стенда; он включает флаги `stats.public.enabled` и `punishments.public.enabled` и создаёт заказ тестового игрока (одноразовая проверка на тестовых данных).

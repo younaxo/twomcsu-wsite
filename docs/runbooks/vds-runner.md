@@ -25,7 +25,7 @@ infrastructure/vds-runner/run-remote.sh --attach <id>            # дождат�
 | `unit` | `pnpm install --frozen-lockfile`, `pnpm -r typecheck` (tsc), jest api, vitest web | 4 CPU, 7 ГБ |
 | `api-e2e` | одноразовые postgres 16 + redis 7 (уникальные имена, своя docker-сеть, tmpfs, без публикации портов), prisma validate, `migrate deploy`, seed, `test:e2e` api как в CI | node 4 CPU / 7 ГБ, pg 1 CPU / 1 ГБ, redis 0.5 CPU / 256 МБ |
 | `web-build` | `pnpm --filter "@twomc/web..." build` (next build с зависимостями) | 4 CPU, 8 ГБ |
-| `docker-build` | сборка образов api и web по `infrastructure/*.Dockerfile` (образы после сборки удаляются; тег `twomcr-<id в нижнем регистре>-api|web`) | лимиты `--memory`/`--cpu-shares` передаются, но BuildKit их НЕ применяет (ограничивает только `nice 15`, таймаут worker-а и диск) |
+| `docker-build` | сборка образов api и web по `infrastructure/*.Dockerfile` (образы после сборки удаляются; тег `twomcr-<id в нижнем регистре>-api|web`); для web передаётся allowlist build-arg (см. ниже) | лимиты `--memory`/`--cpu-shares` передаются, но BuildKit их НЕ применяет (ограничивает только `nice 15`, таймаут worker-а и диск) |
 | `java-build` | сборка по Dockerfile из `--path` (цель `build`: gradle build + JUnit), извлечение jar и отчёта тестов в `out/` | BuildKit не применяет `--memory`/`--cpu-quota`/`--cpu-shares` к RUN-шагам: реальные ограничения - `nice 15`, таймаут 2700 с и заметка ниже |
 | `bench` | `experiments/lang-bench/bench/run-bench.sh` (план `docs/reports/lang-bench-plan.md`), результаты целиком в `out/` | контейнеры бенчмарка: cpuset сервер 0-1 + нагрузчик 2-3 (стенду остаётся >= 2 ядер), `--memory` по `MEM`; таймаут не менее 7200 с (по умолчанию 7500) |
 
@@ -35,6 +35,14 @@ Denylist (`lib/wt-filter.sh`): `.env*` (кроме шаблонов `.env.exampl
 `service-account*.json`, `*credentials*`, имена на `secret(s)`, `*.sql` (кроме `prisma/migrations/**/migration.sql`), `*.dump`, `*.sqlite*`, `*.db`, `*.tsbuildinfo`, каталоги `node_modules`, `.next`, `.turbo`, `dist`, `coverage`, `secret(s)`.
 Проверка: `infrastructure/vds-runner/tests/selftest.sh`. Бандлы на VDS кладутся в приватный `~/.twomc-inbox` (700), а не в `/tmp`.
 Секреты на сервер не уходят; пароли БД, JWT и ключ 2FA для e2e генерируются на сервере на каждый запуск и живут только в одноразовых контейнерах.
+
+## Задание `docker-build`: build-arg для web
+
+`web.Dockerfile` останавливает сборку без `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, поэтому `jobs/docker-build.sh` передаёт для web allowlist: `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (публичный тестовый ключ Cloudflare `1x00000000000000000000AA`, не секрет), `NEXT_PUBLIC_API_URL` (`https://runner-build.invalid/api`), `NEXT_PUBLIC_SITE_URL` (`https://runner-build.invalid`).
+- Аргумент передаётся только если объявлен в Dockerfile строкой `ARG <имя>` (на 2026-11-27 `NEXT_PUBLIC_SITE_URL` не объявлен, поэтому пропускается без предупреждения docker).
+- Значение можно переопределить переменной окружения worker-а с тем же именем; формат `[A-Za-z0-9._:/@+-]{1,200}`, иначе задание завершается кодом 2. Других имён нет: боевые ключи в образ раннера не попадают.
+- Проверено 2026-11-27: `run-remote.sh docker-build --worktree <путь>`, код 0, 221 с, api 980 МБ, web 265 МБ.
+- Откат: `git revert` коммита с `docker-build.sh` (вернётся сборка без build-arg; web снова упадёт на проверке ключа).
 
 ## Задание `java-build` (сборка по Dockerfile, например плагин Bridge)
 
