@@ -10,7 +10,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button, IconButton } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { ErrorState } from '@/components/ui/error-state';
-import { Textarea } from '@/components/ui/input';
+import { MentionTextarea } from '@/components/mentions';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ApiError, getErrorMessage } from '@/lib/api/errors';
@@ -88,7 +88,7 @@ function Comments({ id }: { id: string }) {
       )}
       {signedIn ? (
         <form className="flex flex-col gap-2" onSubmit={submit}>
-          <Textarea
+          <MentionTextarea
             aria-label="Новый комментарий"
             placeholder="Напишите комментарий…"
             value={content}

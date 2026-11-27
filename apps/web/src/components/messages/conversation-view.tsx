@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ErrorState } from '@/components/ui/error-state';
-import { Textarea } from '@/components/ui/input';
+import { MentionTextarea } from '@/components/mentions';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -119,7 +119,7 @@ function MessageBubble({
               );
             }}
           >
-            <Textarea
+            <MentionTextarea
               aria-label="Текст сообщения"
               value={draft}
               maxLength={CONTENT_MAX}
@@ -431,8 +431,9 @@ export function ConversationView({ conversationId }: { conversationId: string })
           send();
         }}
       >
-        <Textarea
+        <MentionTextarea
           aria-label="Сообщение"
+          wrapperClassName="flex-1"
           placeholder="Сообщение…"
           value={content}
           maxLength={CONTENT_MAX}
