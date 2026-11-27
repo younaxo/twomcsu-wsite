@@ -4,7 +4,7 @@
 # (забирает run-remote.sh в --out/out). Исходный Dockerfile НЕ меняется; при отсутствии тега gradle на реестре используется копия Dockerfile.runner
 # с ближайшим существующим тегом (Docker Hub, затем зеркало ECR), отметка пишется в сводку.
 # Если официальная сборка упала, запускается диагностическая (`gradle build --continue || true`), чтобы получить отчёт тестов и число упавших;
-# её jar НЕ годится для выпуска (лежит в out/diag/, код возврата задания остаётся ненулевым).
+# её jar НЕ годится для выпуска (лежит в out/diag/, код возврата задания остаётся ненулевым). Отклонённый архив диагностики удаляется так же (код 13).
 # Коды: 0 успех, 10 нет/недопустим --path или Dockerfile, 11 официальная сборка упала, 12 сборка успешна, но jar не найден.
 #       13 архив из контейнера ОТКЛОНЁН проверкой (симлинк, жёсткая ссылка, спецфайл, `..`, абсолютный путь, нечитаемый tar-листинг) - артефактам не доверять (M-3).
 # Песочница: docker build не умеет --cap-drop/no-new-privileges (RUN-шаги идут с набором прав по умолчанию); лимиты --memory/--cpu-shares/--cpu-quota
@@ -95,12 +95,30 @@ extract() { # extract <image> <dest>: libs, test-results, reports из рабо�
   local img="$1" dest="$2" cid wd rc=0
   mkdir -p "$dest"
   wd="$(docker image inspect -f '{{.Config.WorkingDir}}' "$img" 2>/dev/null)"; wd="${wd:-/home/gradle/src}"
-  cid="$(docker create --cap-drop ALL --security-opt no-new-privileges --network none --label "twomc-runner-job=$id" "$img" true 2>/dev/null)" || return 1
+  cid="$(docker create --cap-drop ALL --security-opt no-new-privileges --network none --label "twomc-runner-job=$id" "$img" true 2>/dev/null)" || { rmdir "$dest" 2>/dev/null; return 14; }   # 14: контейнер не создан, ничего не извлечено
   extract_dir "$cid" "$wd/build/libs/." "$dest/libs" || rc=1
   extract_dir "$cid" "$wd/build/test-results/test/." "$dest/test-results" || rc=1
   extract_dir "$cid" "$wd/build/reports/tests/test/." "$dest/reports" || rc=1
   docker rm -f "$cid" >/dev/null 2>&1 || true
   return $rc
+}
+
+# diag_collect <image>: извлечение и отчёт диагностической сборки. Коды: 0 готово, 13 архив ОТКЛОНЁН (out/diag удалён, report_* не вызываются),
+# 14 docker create не удался (out/diag удалён, ничего не читается; код задания остаётся 11).
+diag_collect() {
+  local erc=0
+  extract "$1" "$out/diag" || erc=$?
+  if (( REJECTED )); then
+    echo "##### java-build: архив диагностической сборки ОТКЛОНЁН проверкой - out/diag удалён, артефактам не доверять (код 13)"
+    rm -rf "$out/diag"; return 13
+  fi
+  if (( erc == 14 )); then
+    echo "##### java-build: диагностическая сборка: docker create не удался, отчёт тестов недоступен (код 14)"
+    rm -rf "$out/diag"; return 14
+  fi
+  report_jars "$out/diag/libs"
+  report_tests "$out/diag/test-results"
+  return 0
 }
 
 report_tests() { # report_tests <каталог test-results>: суммы и перечень упавших
@@ -157,7 +175,7 @@ if (( brc == 0 )); then
     compgen -G "$out/libs/*.jar" >/dev/null || { echo "##### java-build: jar не найден в build/libs"; rc=12; }
   fi
 else
-  rc=11
+  rc=11; dcr=0
   report_javac "$out/build.log"
   if grep -qE '^RUN gradle ' "$dockerfile"; then
     echo "##### java-build: ДИАГНОСТИЧЕСКАЯ сборка (gradle build --continue || true), jar из неё не годится для выпуска"
@@ -166,9 +184,8 @@ else
     build_image "$ctx/Dockerfile.runner-diag" "$tag-diag" "$out/build-diag.log"; drc=$?
     echo "##### java-build: диагностическая сборка rc=$drc"
     if (( drc == 0 )); then
-      extract "$tag-diag" "$out/diag"
-      report_jars "$out/diag/libs"
-      report_tests "$out/diag/test-results"
+      diag_collect "$tag-diag"; dcr=$?
+      (( dcr == 13 )) && rc=13   # как в ветке успеха: отклонение архива меняет код задания на 13
     fi
     docker rmi -f "$tag-diag" >/dev/null 2>&1 || true
   fi
