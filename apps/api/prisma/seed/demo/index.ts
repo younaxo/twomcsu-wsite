@@ -24,6 +24,7 @@ import {
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
+import { seedDemoSocial } from './social-seed';
 
 const DAY = 86_400_000;
 const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
@@ -308,8 +309,10 @@ async function main(): Promise<void> {
       });
     }
 
+    const socialSummary = await seedDemoSocial(prisma, defaultPosition.id);
+
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}`,
     );
   } finally {
     await prisma.$disconnect();
