@@ -1,6 +1,6 @@
 # Runbook: чек-лист production-переменных
 
-Решение: ADR-0161 (Proposed), ранее ADR-0156 (cookie, 2FA), ADR-0154 (Turnstile). Деплой: `docs/runbooks/deploy.md`.
+Решение: ADR-0161 (Proposed), ранее ADR-0156 (cookie, 2FA), ADR-0154 (Turnstile). Деплой: `docs/runbooks/deploy.md`. Актуализировано 2026-11-28 (подэтап 0.10, повтор): добавлены способы оплаты, Bridge-выдача, кошелёк, настройки сайта, realtime, полный перечень миграций; общий порядок первого запуска - `docs/runbooks/go-live-plan.md`.
 В документе только имена переменных и требования. Реальные значения в репозиторий, чаты, тикеты и логи не попадают.
 Правку `.env` на сервере и деплой выполняет владелец или назначенный им человек; агенты их не запускают.
 2FA персонала обязательна всегда (ADR-0169): аварийный доступ при потере устройства и резервных кодов — `docs/runbooks/owner-emergency-access.md`.
@@ -29,7 +29,7 @@
 
 | Переменная                                  | Назначение                                                                                                                                                                  | По умолчанию в production                         | Кто задаёт |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ---------- |
-| `PAYMENT_PROVIDER`                          | Имя платёжного провайдера. Пусто = оплаты нет: оформление отвечает 503 `payment_unavailable`, вебхуки отклоняются. Сейчас в production допустимо ТОЛЬКО пустое значение (0.8b) | пусто                                             | владелец   |
+| `PAYMENT_PROVIDER`                          | Имя платёжного провайдера. Пусто = оплаты нет: оформление отвечает 503 `payment_unavailable`, вебхуки отклоняются. Сейчас в production допустимо ТОЛЬКО пустое значение (0.8b); то же для `PAYMENT_METHODS` (ADR-0193, раздел «Способы оплаты» ниже) | пусто                                             | владелец   |
 | `PAYMENT_API_KEY`                           | Боевой ключ API провайдера (когда появится адаптер 0.8b)                                                                                                                    | пусто                                             | владелец   |
 | `PAYMENT_WEBHOOK_SECRET`                    | Ключ HMAC-SHA256 подписи вебхука; непустой не короче 32 символов. Пустой = все вебхуки 401                                                                                  | пусто                                             | владелец   |
 | `PAYMENT_WEBHOOK_SECRET_PREVIOUS`           | Прежний секрет на время ротации (принимаются подписи обоих); не короче 32 символов; после перехода провайдера очистить                                                      | пусто                                             | владелец   |
@@ -50,26 +50,125 @@
 | `STORE_REFUNDS_RECONCILE_MIN_AGE_MINUTES`   | Сверять заказы старше N минут, 1-1440                                                                                                                                       | 15                                                | владелец   |
 | `STORE_REFUNDS_RECONCILE_WINDOW_HOURS`      | Заказы старше N часов не опрашиваются, 1-720                                                                                                                                | 72                                                | владелец   |
 | `STORE_REFUNDS_RECONCILE_BATCH`             | Размер пачки одного прохода сверки (раз в 5 минут), 1-500                                                                                                                   | 50                                                | владелец   |
-| `STORE_REFUNDS_PENDING_TIMEOUT_HOURS`       | Сколько ждать ответа провайдера по `REFUND_PENDING`, затем возврат -> `REFUND_FAILED` (`provider_timeout`), 1-720. Читается кодом (`refunds-config.ts`), в Joi-схеме нет (см. «Расхождения») | 72                                                | владелец   |
+| `STORE_REFUNDS_PENDING_TIMEOUT_HOURS`       | Сколько ждать ответа провайдера по `REFUND_PENDING`, затем возврат -> `REFUND_FAILED` (`provider_timeout`), 1-720. Joi: целое 1-720, вне границ старт отклоняется (`refunds-config.ts` читает то же значение) | 72                                                | владелец   |
 
 Флаги модулей и интеграций (все выключены, пока не заданы явно; секреты задаёт только владелец):
 
 | Переменная                                   | Назначение                                                                                           | По умолчанию |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------ |
-| `BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET`     | Приёмник Bridge (`/bridge/v1/*`); без обоих отвечает 503. Секрет не короче 32 байт                  | `false`, пусто |
+| `BRIDGE_ENABLED`, `BRIDGE_MASTER_SECRET`     | Приёмник Bridge (`/bridge/v1/*`); без обоих отвечает 503. Он же включает раздел инвентаря; выдача - раздел «Выдача на игровой сервер через Bridge» ниже. Секрет не короче 32 байт                  | `false`, пусто |
 | `LITEBANS_ENABLED` и `LITEBANS_DB_*`         | Зеркало наказаний LiteBans; в production при включении обязателен `LITEBANS_DB_SSL_CA_FILE`, `LITEBANS_DB_SSL=disabled` запрещён | `false`      |
 | `GIVEAWAY_ENABLED`, `GIVEAWAY_MASTER_SECRET` | Розыгрыш; без обоих приёмник 503                                                                     | `false`, пусто |
 | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | Опрос стримов; пусто - опрос не выполняется                                         | пусто        |
 
 Модуль магазина целиком выключается правом `system.modules.protected` (настройка в админке, не переменная окружения).
 
-Минимальный профиль первого запуска без оплаты: `PAYMENT_PROVIDER` пусто, `PAYMENT_WEBHOOK_SECRET` пусто, `STORE_REFUNDS_ENABLED=false`, `QUICK_BUY_ENABLED=false`. Включение оплаты - по `docs/runbooks/acceptance-checklist.md`.
+Минимальный профиль первого запуска без оплаты: `PAYMENT_PROVIDER` и `PAYMENT_METHODS` пусто, `BRIDGE_DELIVERY_ENABLED` не задано (`false`), `WALLET_LEDGER_ENABLED=false`, `UNPUNISH_ENABLED=false`, `PAYMENT_WEBHOOK_SECRET` пусто, `STORE_REFUNDS_ENABLED=false`, `QUICK_BUY_ENABLED=false`. Включение оплаты - по `docs/runbooks/acceptance-checklist.md`.
 
-### Расхождения кода и документов (на 2026-11-23)
+### Расхождения кода и документов (на 2026-11-28)
 
-- `STORE_REFUNDS_PENDING_TIMEOUT_HOURS` читается в `refunds-config.ts` (значение вне 1-720 зажимается, нечисло даёт 72), но не описана в Joi-схеме `env.validation.ts`: опечатка в значении старт не уронит.
-- `PAYMENT_PROVIDER` в production сейчас принимает только пустое значение (`env.validation.ts`): включить реального провайдера нельзя, пока не выйдет адаптер 0.8b.
-- Таблица выше про `QUICK_BUY_*`: в коде существует одна переменная `QUICK_BUY_ENABLED`; лимит 10/мин задан в коде, не переменной.
+- Закрыто: `STORE_REFUNDS_PENDING_TIMEOUT_HOURS` теперь описана и в Joi-схеме (1-720, по умолчанию 72); прежнее замечание «в Joi нет» (23.11) устарело.
+- `BRIDGE_DELIVERY_ENABLED`, `BRIDGE_DELIVERY_JOB_RETENTION_DAYS`, `BRIDGE_DELIVERY_JOB_CLEANUP_ENABLED`, `STORE_DELIVERY_ENABLED`, `DELIVERY_RECONCILE_ENABLED` читаются кодом, но в Joi-схеме не описаны: опечатка в булевом значении молча даёт значение по умолчанию (выкл. для первых двух и `STORE_DELIVERY_ENABLED` не задано), только `BRIDGE_DELIVERY_JOB_RETENTION_DAYS` вне границ роняет старт кодом. Это допущенная особенность, не ошибка конфигурации.
+- `PAYMENT_PROVIDER` и `PAYMENT_METHODS` в production принимают только пустое значение (`env.validation.ts`): включить реальный провайдер нельзя, пока не выйдет адаптер 0.8b и не будет снято ограничение Joi.
+- В коде одна переменная `QUICK_BUY_ENABLED`; лимит 10/мин задан в коде, не переменной.
+- `WEB_ORIGIN`, `FRONTEND_URL`, `CDN_BASE_URL`, `DISCORD_REDIRECT_URI`, `TELEGRAM_REDIRECT_URI` имеют по умолчанию адреса localhost, и схема в production их не отвергает (в отличие от `COOKIE_DOMAIN`): забытая переменная даст рабочий старт и неверные ссылки/CORS. Проверять вручную по таблице ниже (предложение: ужесточить схему отдельным PR, не в этом срезе).
+- `docker-compose.prod.yml` и `.env.example` сверены только по именам build args web; полный состав `.env.example` с этим перечнем не сверялся (файл `.env*` агентам читать запрещено).
+
+## Способы оплаты, Bridge-выдача и прочие флаги (актуально на 2026-11-28)
+
+Источник истины: `apps/api/src/config/env.validation.ts` (Joi), а также чтение через `ConfigService` в коде. Все значения задаёт владелец; агенты `.env` не читают и не правят. Смена переменной требует перезапуска api.
+
+### Способы оплаты (ADR-0193, 0.8b)
+
+| Переменная | Обяз. | По умолчанию в production | Fail-closed поведение |
+| --- | --- | --- | --- |
+| `PAYMENT_METHODS` (формат `SBP:mock-ru,CRYPTO:mock-crypto`) | нет | пусто | В production (и при пустом или незаданном `NODE_ENV`) Joi допускает ТОЛЬКО пустое значение: иначе старт отклоняется («PAYMENT_METHODS в production пока допускает только пустое значение (0.8b)»). Пусто = способов нет, оформление отвечает 503 `payment_unavailable` |
+| `PAYMENT_PROVIDER` | нет | пусто | Как и `PAYMENT_METHODS`: в production только пустое значение. Устаревший путь, действует, только если `PAYMENT_METHODS` пуст |
+
+Моки `mock-ru`, `mock-crypto`, `mock-foreign` регистрируются только при явных `NODE_ENV=development|test`; в production реестр без моков. Реальных адаптеров нет: включить боевую оплату значением `.env` нельзя, пока не выйдет адаптер и не будет снято ограничение Joi (отдельный PR после решения владельца о провайдере). Ошибки оформления: 400 `payment_method_required`, `payment_method_invalid`, `payment_method_unavailable` (до записи в БД), 503 `payment_unavailable`.
+
+### Выдача на игровой сервер через Bridge (ADR-0194, ADR-0184, 0.13)
+
+Выдача работает только при выполнении ВСЕХ условий. Любое невыполненное = заказы остаются на исполнителях `command`/`manual`, запросы плагина получают 503/403.
+
+| Условие | Где задаётся | По умолчанию | Примечание |
+| --- | --- | --- | --- |
+| `BRIDGE_ENABLED=true` | `.env` | `false` | Он же включает раздел инвентаря (ниже) |
+| `BRIDGE_MASTER_SECRET` | `.env` | пусто | Не короче 32 байт и не менее 16 различных байт; слабое значение роняет старт (значение в сообщении не печатается). Создаёт только владелец |
+| `BRIDGE_DELIVERY_ENABLED=true` | `.env` | `false` | Читается в `bridge.config.ts`, в Joi-схеме нет (опечатка в значении даёт `false`, старт не падает) |
+| `store.delivery.enabled` и `STORE_DELIVERY_ENABLED` | настройка сайта и `.env` | настройка выкл.; `.env` не задано | Явный `STORE_DELIVERY_ENABLED=false` выключает выдачу независимо от настройки |
+| `store.delivery.executor.bridge.enabled` | настройка сайта (админка) | выкл. | Исполнитель `bridge` |
+| `store.delivery.bridge.serverSlug` | настройка сайта (админка) | пусто | slug игрового сервера, на который идут задания |
+| `capabilities.delivery` у сервера | регистрация сервера (`bridge:register -- --capabilities ...`, только владелец) | у сервера по умолчанию только `punishments` | Без `delivery` claim и ack отвечают отказом |
+| Ключ сервера (`keyId` вида `<slug>.<поколение>`) | выдаёт владелец (`bridge-print-key`), кладёт в плагин | - | `docs/runbooks/bridge-server-registration.md` |
+
+УСЛОВИЕ ВКЛЮЧЕНИЯ В PRODUCTION (R167, ревью M2 ADR-0194): до `BRIDGE_DELIVERY_ENABLED=true` и `delivery` у сервера на игровом сервере должен работать плагин `plugins/bridge` с персистентным журналом выполненных ключей идемпотентности (jar собирается на раннере VDS: `run-remote.sh java-build --path plugins/bridge`, см. `plugins/bridge/README.md`). Админский повтор после `UNKNOWN` переиспользует ключ `orderItemId:step`, защита от двойной выдачи держится на плагине. Без развёрнутого плагина держать `BRIDGE_DELIVERY_ENABLED=false` и `delivery: false`. На 2026-11-28 плагин не проверялся на живом игровом сервере (только сборка и 86 тестов JUnit на раннере).
+
+Срок хранения и очистка:
+
+| Переменная | Обяз. | По умолчанию | Правила и fail-closed |
+| --- | --- | --- | --- |
+| `BRIDGE_DELIVERY_JOB_RETENTION_DAYS` | нет | 30 | Целое не меньше 14 (нужно для разбора спорных выдач); иное значение (нечисло, дробь, меньше 14) = ошибка старта. Читается кодом `bridge-delivery-retention.ts`, в Joi-схеме нет |
+| `BRIDGE_DELIVERY_JOB_CLEANUP_ENABLED` | нет | включена | Только явный `false` выключает таймер очистки закрытых заданий |
+| `BRIDGE_LOG_RETENTION_DAYS` | нет | 7 | Журнал дедупликации приёмника; 7-365, меньше 7 = старт отклоняется |
+| `BRIDGE_LOG_CLEANUP_ENABLED` | нет | включена | Явный `false` выключает очистку журнала |
+| `BRIDGE_TIMESTAMP_WINDOW_S` (5-300, 60), `BRIDGE_MAX_BODY_BYTES` (1024-1048576), `BRIDGE_KEY_OVERLAP_DAYS` (1-30, 7), `BRIDGE_APPLY_LATENCY_LIMIT_MS` (100-30000), `BRIDGE_BODY_READ_TIMEOUT_MS` (1000-30000, 10000) | нет | значения кода | Рекомендация: не задавать. Значение вне границ роняет старт |
+
+### Инвентарь при выключенном Bridge (ADR-0168)
+
+Раздел «Мой инвентарь» (`/settings/inventory`) защищён только `BRIDGE_ENABLED`: без `true` весь API инвентаря отвечает 503 `inventory_unavailable`, веб показывает «Инвентарь скоро появится» (ожидаемое состояние, не ошибка). `BRIDGE_DELIVERY_ENABLED` инвентарь не включает и не выключает.
+
+### Прочие флаги и лимиты
+
+| Переменная | Обяз. | По умолчанию в production | Назначение и fail-closed |
+| --- | --- | --- | --- |
+| `UNPUNISH_ENABLED` | нет | `false` (в dev/test `true`) | Платное снятие бана и мута (ADR-0190); вместе с настройкой `punishments.paidRemoval` (пустые правила = товар не оформляется). Включает только владелец |
+| `WALLET_LEDGER_ENABLED` | нет | `false` | Журнал рубинов (ADR-0191). Выкл.: `GET /wallet/history` и админ-API отвечают 503 `wallet_disabled`, исполнитель `wallet` не зачисляет. Перед включением - сведение балансов по `wallet-ledger.md` |
+| `WALLET_ADJUST_MAX` | нет | 100000 | Потолок одной корректировки, 1-10000000 |
+| `WALLET_ADJUST_DAILY_MAX` | нет | 500000 | Сумма модулей корректировок одного администратора за 24 ч, 1-1000000000 |
+| `GIVEAWAY_ONLY` | нет | `false` | Режим только розыгрыша (мини-выкладка); для основного сайта не задавать. При `true` обязательны `GIVEAWAY_ENABLED=true` и `GIVEAWAY_MASTER_SECRET`, а auth/JWT/2FA/cookie не требуются |
+| `AUDIT_RETENTION_DAYS` | нет | 90 | 1-3650, очистка ежедневно в 04:00 |
+| `MINECRAFT_PLUGIN_SECRET` | нет | пусто | Секрет подписи `/minecraft/plugin/*` (ADR-0072), не короче 32 символов; пусто = интеграция выключена |
+| `LEGAL_DOCS_VERSION` | нет | `draft` | Версия юридических документов в согласиях; после публикации документов владелец ставит реальную версию |
+| `WEB_ORIGIN`, `WEB_ORIGINS`, `FRONTEND_URL` | нет (но в production задать) | `http://localhost:3000` | CORS и ссылки в письмах; схема localhost в production не отвергает |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | нет | `localhost`, 6379, пусто | В `docker-compose.prod.yml` хост и пароль задаёт compose; пароль Redis задаёт владелец |
+| `SMTP_*`, `MAIL_FROM` | нет | пусто | Без SMTP письма (в том числе коды регистрации) не уходят: задать до запуска |
+| `STORAGE_DRIVER`, `UPLOADS_DIR`, `STORAGE_*`, `CDN_BASE_URL` | нет | `local`, `./uploads`, `http://localhost:4000/uploads` | При `s3` бакет и ключи обязательны. `CDN_BASE_URL` по умолчанию localhost: в production задать боевой адрес |
+| `DISCORD_*`, `TELEGRAM_*` | нет | пусто | Вход через соцсети; пусто = провайдер выключен |
+| `VAPID_*` | нет | пусто | Без пары push выключен (R7) |
+| `STATUS_PAGE_URL` | нет | `https://status.twomc.su` | - |
+
+Переменные сборки web (build args в `docker-compose.prod.yml`, меняются только пересборкой): `NEXT_PUBLIC_API_URL` (обязательна), `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (обязательна), `NEXT_PUBLIC_CDN_BASE_URL` (по умолчанию `https://cdn-files.twomc.su`), `NEXT_PUBLIC_VAPID_PUBLIC_KEY`.
+
+### Realtime (чат, ЛС, уведомления)
+
+Клиент подключается через `realtimeTarget` (PR #241): origin в URL, префикс в `path`. API на поддомене (`api.twomc.su`, как в `infrastructure/nginx.twomc.su.conf.example`, есть `location /socket.io/`): путь `/socket.io`. API под префиксом `/api` на том же хосте (как на стенде): путь `/api/socket.io`, nginx срезает `/api` и обязан пропускать `Upgrade`. Какой вариант выбран, определяет `NEXT_PUBLIC_API_URL` (build-time). Проверка - `smoke-test.md`, раздел 2.
+
+### Настройки сайта (админка, не переменные окружения)
+
+| Ключ | По умолчанию | Назначение |
+| --- | --- | --- |
+| `stats.public.enabled` | выкл. (`'true'` включает) | Публичная статистика и `GET /leaderboards` (ADR-0195); выкл. = пустые списки и «Скоро» |
+| `punishments.public.enabled` | выкл. | Публичный список наказаний `/bans` |
+| `punishments.paidRemoval` | пусто | Правила платного снятия (вместе с `UNPUNISH_ENABLED`) |
+| `store.delivery.enabled`, `store.delivery.executor.command.enabled`, `store.delivery.executor.bridge.enabled`, `store.delivery.bridge.serverSlug`, `store.delivery.maxAttempts` (5) | выкл. / пусто | Выдача (см. выше) |
+| `store.offerVersion` | - | Версия оферты; смена инвалидирует открытые оформления (R163) |
+
+## Миграции к применению владельцем (полный перечень на 2026-11-28)
+
+Применяет только владелец (Q28, Q43): на production через `infrastructure/deploy.sh` (шаг `prisma migrate deploy` после снимка) и ДО кода. Все expand-only. Порядок - по имени каталога в `apps/api/prisma/migrations`. Кроме описанных в разделах ниже (`20261017000000`..`20261117010000`) и ранних (`punishments_mirror`, `inventory_core`, `punishments_public_indexes`, `bridge_core`, `order_offer_acceptance`, `delivery_tasks`, `giveaway_*`), добавились:
+
+| Миграция | Что делает | Особенности |
+| --- | --- | --- |
+| `20261122100000_store_refunds` | возвраты и сверка (0.9) | до включения `STORE_REFUNDS_ENABLED` |
+| `20261123100000_delivery_command_templates` | шаблоны игровых команд (0.11) | - |
+| `20261123110000_quickbuy_guest_token_paid_removal` | гостевой токен quick-buy, платное снятие | - |
+| `20261124100000_wallet_ledger` | журнал рубинов, триггер запрета UPDATE/DELETE | порядок и сведение балансов - `wallet-ledger.md` |
+| `20261124110000_wallet_ledger_hardening` | значение `OPENING_BALANCE`, триггер `BEFORE TRUNCATE` | ложное срабатывание скана, см. ниже |
+| `20261124120000_bridge_delivery_jobs` | очередь заданий выдачи Bridge | PostgreSQL 13+ |
+| `20261124130000_report_appealed_mc_punishment` | обжалование наказаний LiteBans (ADR-0196): колонка, FK `ON DELETE SET NULL`, CHECK `reports_one_appealed_punishment`, частичный уникальный индекс `reports_open_mc_appeal_uniq` | CHECK и индекс Prisma не выражает: при `prisma migrate dev` их НЕЛЬЗЯ удалять (дрейф ожидаемый); применена на стенде 2026-11-28 |
+
+Ложное срабатывание скана `deploy.sh`: слово `TRUNCATE` в строке `CREATE TRIGGER ... BEFORE TRUNCATE ON "wallet_ledger_entries"` (не комментарий) попадает под шаблон `TRUNCATE`. Миграция не разрушительна (триггер запрещает TRUNCATE журнала, данные не меняются). На ПЕРВОМ деплое скан пропускается, срабатывания не будет. Если миграция окажется «новой между `.release` и `HEAD`», деплой остановится кодом 1 до снимка: владелец читает файл и, убедившись, что он безвреден, запускает с `ALLOW_DESTRUCTIVE_MIGRATION=1` только после свежего снимка (`deploy.md`). Остальные миграции из таблицы слов DROP, RENAME, SET NOT NULL, TRUNCATE вне строчных комментариев не содержат (сверено поиском по файлам).
 
 ## Пул соединений Prisma и таймауты транзакций (ADR-0183, R138-R140)
 
