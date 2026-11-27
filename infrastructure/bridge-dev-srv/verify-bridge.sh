@@ -3,6 +3,7 @@
 # ЗАПУСК ТОЛЬКО через пакет: bash run-on-vds.sh script verify-bridge.sh (прямой запуск файла отказывает: нужны функции ptero.sh).
 # Отправляет в консоль ТОЛЬКО команду `twomcbridge events` (только чтение состояния плагина; белый список ptero.sh); больше ничего не пишет.
 # Коды: 0 сайт принял события, 3 принятых пока нет (нужен игрок онлайн), 1 плагин не отвечает.
+export LC_ALL=C
 set -uo pipefail
 declare -F ptero_init >/dev/null 2>&1 || { echo "Запускать только через: bash run-on-vds.sh script verify-bridge.sh" >&2; exit 2; }
 trap ptero_cleanup EXIT

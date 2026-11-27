@@ -4,6 +4,7 @@
 # ЗАПУСК ТОЛЬКО через пакет: bash run-on-vds.sh script rollback-bridge.sh --dry-run|--yes
 # (run-on-vds.sh bundle добавляет ptero.sh и stand-lib.sh; прямой запуск файла отказывает).
 # Перед restart (--yes): проверка игроков; при игроках - say-предупреждение, 60 с, повторная проверка (новые игроки - ещё предупреждение и 30 с).
+export LC_ALL=C
 set -uo pipefail
 declare -F ptero_init >/dev/null 2>&1 || { echo "Запускать только через: bash run-on-vds.sh script rollback-bridge.sh [--dry-run|--yes]" >&2; exit 2; }
 trap ptero_cleanup EXIT

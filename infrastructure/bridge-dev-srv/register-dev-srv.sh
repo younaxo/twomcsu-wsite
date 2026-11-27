@@ -9,6 +9,7 @@
 # ротация ключа - отдельное решение владельца (раздел 2.4 docs/stage-03/BRIDGE-CONTRACT.md).
 # Окружение: BRIDGE_SERVER_SLUG (dev-srv), BRIDGE_KEY_GEN (1), BRIDGE_SITE_URL (https://test-website.twomc.su), BRIDGE_SECRET_ENV.
 # Коды: 0 готово, 1 отказ/ошибка, 2 аргументы, 5 lock занят.
+export LC_ALL=C
 set -uo pipefail
 if ! declare -F stand_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/stand-lib.sh"; fi
 # trap: временный файл рядом с secret.env (содержит ключ) затирается и удаляется при ЛЮБОМ выходе, если не был перемещён на место
@@ -19,7 +20,9 @@ trap reg_cleanup EXIT
 SLUG="${BRIDGE_SERVER_SLUG:-dev-srv}"
 GEN="${BRIDGE_KEY_GEN:-1}"
 SITE_URL="${BRIDGE_SITE_URL:-https://test-website.twomc.su}"
-SECRET_ENV="${BRIDGE_SECRET_ENV:-/home/twomc/bridge-dev-srv.secret.env}"
+# Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
+SECRET_ENV=/home/twomc/bridge-dev-srv.secret.env
+[[ "${STAND_TEST:-0}" == 1 ]] && SECRET_ENV="${BRIDGE_SECRET_ENV:-$SECRET_ENV}"
 CAPS="player-events,inventory-sync"
 MODE=""
 for a in "$@"; do
@@ -47,6 +50,7 @@ echo "BRIDGE_MASTER_SECRET: задан (значение не печатаетс
 # secret.env: уже готов?
 HAVE_KEY=0
 if [[ -f "$SECRET_ENV" ]]; then
+  twomc_secure_file "$SECRET_ENV" || exit 1
   if grep -qxF "KEY_ID=$KEY_ID" "$SECRET_ENV" && grep -qE '^KEY=[0-9a-f]{64}$' "$SECRET_ENV" && grep -qE '^SITE_URL=https://' "$SECRET_ENV"; then
     HAVE_KEY=1; echo "secret.env уже есть (KEY_ID=$KEY_ID, формат верен; значение ключа не печатается)"
   else

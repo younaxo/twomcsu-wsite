@@ -17,11 +17,14 @@
 # Файлы на VDS (кладёт `run-on-vds.sh stage <jar>`): ~/.twomc-inbox/TwoMCBridge.jar и bridge-config.yml.tpl.
 # Секреты нигде не печатаются. Коды: 0 установлено и первый успешный запрос подтверждён, 3 установлено, подтверждение ждёт игрока
 # онлайн (см. verify-bridge.sh), 1 блокер или ошибка, 2 неверные аргументы.
+export LC_ALL=C
 set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 trap ptero_cleanup EXIT
 
-SECRET_ENV="${BRIDGE_SECRET_ENV:-/home/twomc/bridge-dev-srv.secret.env}"
+# Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
+SECRET_ENV=/home/twomc/bridge-dev-srv.secret.env
+[[ "${STAND_TEST:-0}" == 1 ]] && SECRET_ENV="${BRIDGE_SECRET_ENV:-$SECRET_ENV}"
 INBOX="$HOME/.twomc-inbox"
 JAR_SRV_NAME="TwoMCBridge-0.1.0.jar"
 EXPECTED_SHA256="${EXPECTED_SHA256:-6aa484549a3bf7408b41893c1b5ab0f78caf2839a13e4be8a032343297d7a7a8}"
@@ -56,8 +59,7 @@ HAVE_SECRET=0; BRIDGE_SITE_URL=""; BRIDGE_SERVER_SLUG=""; BRIDGE_KEY_GEN=""; BRI
 KEY_ID=""; KEY=""; SITE_URL=""
 step 0 "входной файл ключа"
 if [[ -f "$SECRET_ENV" ]]; then
-  perm="$(stat -c %a "$SECRET_ENV" 2>/dev/null || echo '?')"
-  [[ "$perm" == 600 ]] || say "WARN: права secret.env: $perm (ожидается 600)"
+  twomc_secure_file "$SECRET_ENV" || { say "BLOCKER: secret.env отвергнут (права ровно 600, владелец - текущий пользователь)"; exit 1; }
   # shellcheck disable=SC1090
   . "$SECRET_ENV"
   # Формат register-dev-srv.sh: KEY_ID=<slug>.<gen>, KEY=<64 hex>, SITE_URL=...; прежний формат BRIDGE_* тоже принимается.
@@ -200,7 +202,12 @@ if [[ "$key_exists" == 1 ]]; then
   if ptero_file_fetch /plugins/TwoMCBridge/bridge-key.txt "$tmp" 2>/dev/null \
      && ptero_file_write "/plugins/TwoMCBridge/bridge-key.txt.bak-$TS_NOW" "$tmp"; then
     : > "$tmp"
-    ptero_chmod /plugins/TwoMCBridge "bridge-key.txt.bak-$TS_NOW" 600 || say "WARN: chmod 600 для копии ключа не выполнен (HTTP $PTERO_HTTP)"
+    if ! ptero_chmod /plugins/TwoMCBridge "bridge-key.txt.bak-$TS_NOW" 600; then
+      chmod_http="$PTERO_HTTP"; : > "$tmp"
+      # откат: на панели нет удаления, поэтому копия обнуляется (незащищённая копия ключа не остаётся)
+      ptero_file_write "/plugins/TwoMCBridge/bridge-key.txt.bak-$TS_NOW" "$tmp" >/dev/null 2>&1 || say "WARN: не удалось обнулить копию ключа на панели: сделайте это вручную (bridge-key.txt.bak-$TS_NOW)"
+      block "chmod 600 для копии ключа не выполнен (HTTP $chmod_http): копия обнулена, перезапись ключа отменена (откат)"
+    fi
     say "прежний bridge-key.txt сохранён копией (bridge-key.txt.bak-$TS_NOW, значение не печатается)"
   else
     : > "$tmp"; block "не удалось сохранить копию существующего bridge-key.txt (перезапись отменена)"
@@ -216,7 +223,10 @@ ptero_file_write /plugins/TwoMCBridge/bridge-key.txt "$tmp" || { : > "$tmp"; blo
 if ptero_chmod /plugins/TwoMCBridge bridge-key.txt 600; then
   say "bridge-key.txt: права 600"
 else
-  say "WARN: chmod 600 не выполнен (HTTP $PTERO_HTTP): плагин предупредит о правах файла"
+  chmod_http="$PTERO_HTTP"; : > "$tmp"
+  # откат загрузки ключа: на панели нет удаления, поэтому файл обнуляется (значение ключа с панели исчезает); прежний ключ - в bridge-key.txt.bak-<время>
+  ptero_file_write /plugins/TwoMCBridge/bridge-key.txt "$tmp" >/dev/null 2>&1 || say "WARN: не удалось обнулить bridge-key.txt на панели: сделайте это вручную"
+  block "chmod 600 для bridge-key.txt не выполнен (HTTP $chmod_http): загрузка ключа откатана (файл обнулён), установка остановлена"
 fi
 # JAR: приватная копия (umask 077) и повторная сверка sha256 прямо перед загрузкой (между шагом 3 и загрузкой файл в INBOX могли подменить)
 _pt_mktemp || exit 1; jar_copy="$_PT_LAST"

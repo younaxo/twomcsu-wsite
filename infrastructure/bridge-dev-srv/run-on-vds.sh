@@ -5,6 +5,7 @@
 #   run-on-vds.sh script <имя.sh> [арг...]       скрипт этого каталога (verify-bridge.sh, rollback-bridge.sh, bot-join.sh, live-sigcheck.sh, register-dev-srv.sh, link-account.sh);
 #                                                 rollback-bridge.sh и verify-bridge.sh работают ТОЛЬКО в таком пакете
 # Код 255 = сбой SSH: НЕ повторять подряд. Аргументы проверяет vds_ssh_script ([A-Za-z0-9._:/=,@+-]).
+export LC_ALL=C
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNNER="$(cd "$HERE/../vds-runner" && pwd)"

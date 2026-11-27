@@ -2,6 +2,7 @@
 # UUID игрока на сервере с online-mode=false: UUID v3 от "OfflinePlayer:<ник>" (как делает Bukkit/Paper).
 # На dev-srv online-mode=false, поэтому MinecraftAccount.uuid на стенде должен быть именно этим значением для тестового ника.
 #   offline-uuid.sh <ник>        -> xxxxxxxx-xxxx-3xxx-yxxx-xxxxxxxxxxxx
+export LC_ALL=C
 set -euo pipefail
 nick="${1:?укажите ник}"
 [[ "$nick" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "ник: 3-16 символов [A-Za-z0-9_]" >&2; exit 2; }

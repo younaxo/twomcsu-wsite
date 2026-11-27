@@ -23,6 +23,7 @@
 # substitution и не печатаются; печатаются только строки «проверка | ожидалось | получено | PASS/FAIL».
 # Вход: /home/twomc/bridge-dev-srv.secret.env (KEY_ID, KEY, SITE_URL), PAYMENT_WEBHOOK_SECRET - из /srv/twomc-stand/stand.env (строка читается grep-ом).
 # Коды: 0 все PASS, 1 есть FAIL или ошибка, 2 аргументы.
+export LC_ALL=C
 set -uo pipefail
 if ! declare -F _pt_node_image >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 PTERO_ALLOW_WRITE=0
@@ -31,12 +32,15 @@ LOOP=0; PAY=1; BPFX=""
 for a in "$@"; do
   case "$a" in --loopback) LOOP=1 ;; --no-payments) PAY=0 ;; --api-prefix) BPFX="/api" ;; *) echo "Неизвестный аргумент: $a (допустимо --loopback | --no-payments | --api-prefix)" >&2; exit 2 ;; esac
 done
-SECRET_ENV="${BRIDGE_SECRET_ENV:-/home/twomc/bridge-dev-srv.secret.env}"
+# Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
+SECRET_ENV=/home/twomc/bridge-dev-srv.secret.env
+[[ "${STAND_TEST:-0}" == 1 ]] && SECRET_ENV="${BRIDGE_SECRET_ENV:-$SECRET_ENV}"
 STAND_ENV="${SIGCHECK_STAND_ENV:-/srv/twomc-stand/stand.env}"
 EXPECTED_SITE="https://test-website.twomc.su"   # единственный допустимый адрес; переопределения нет
 
 
 [[ -f "$SECRET_ENV" ]] || { echo "Нет $SECRET_ENV (сначала register-dev-srv.sh --yes)"; exit 1; }
+twomc_secure_file "$SECRET_ENV" || exit 1
 KEY_ID=""; KEY=""; SITE_URL=""
 # shellcheck disable=SC1090
 . "$SECRET_ENV"

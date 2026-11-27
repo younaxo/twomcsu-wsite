@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export LC_ALL=C   # проверки [A-Za-z] и регэкспы не зависят от локали
 # Библиотека доступа к Client API Pterodactyl для ОДНОГО сервера dev-srv (подключать через `source`; запускается ТОЛЬКО на VDS).
 #
 # Учётные данные: файл PTERO_CRED_FILE (по умолчанию /home/twomc/pterodactyl-credentials.txt, права 600, KEY=VALUE:
@@ -29,7 +30,18 @@
 # Зависимости на VDS: bash, curl, sed, grep, mktemp; для players_online/console_tail - docker и образ node:22 (встроенный WebSocket).
 # Печатаемые функции пишут только несекретное. Коды возврата: 0 успех, 1 отказ/ошибка API, 2 неверные аргументы.
 
-PTERO_CRED_FILE="${PTERO_CRED_FILE:-/home/twomc/pterodactyl-credentials.txt}"
+# Путь фиксирован и НЕ переопределяется окружением; исключение - тестовый режим STAND_TEST=1 (сухие прогоны на фиктивных файлах).
+if [[ "${STAND_TEST:-0}" == 1 ]]; then PTERO_CRED_FILE="${PTERO_CRED_FILE:-/home/twomc/pterodactyl-credentials.txt}"; else PTERO_CRED_FILE=/home/twomc/pterodactyl-credentials.txt; fi
+
+# Проверка файла с секретами перед подключением: обычный файл (не ссылка), права РОВНО 600, владелец - текущий пользователь; иначе отказ.
+twomc_secure_file() {
+  local f="$1" perm own
+  [[ -f "$f" && ! -L "$f" ]] || { echo "ОТКАЗ: $f не обычный файл (или ссылка)" >&2; return 1; }
+  perm="$(stat -c %a -- "$f" 2>/dev/null || echo ?)"; own="$(stat -c %u -- "$f" 2>/dev/null || echo ?)"
+  [[ "$perm" == 600 ]] || { echo "ОТКАЗ: права $f: $perm (нужно ровно 600; chmod 600)" >&2; return 1; }
+  [[ "$own" == "$(id -u)" ]] || { echo "ОТКАЗ: владелец $f не текущий пользователь" >&2; return 1; }
+  return 0
+}
 PTERO_NODE_IMAGE="${PTERO_NODE_IMAGE:-node:24.18.0-alpine}"   # уже есть на VDS; нужен node 22+ со встроенным WebSocket
 PTERO_NODE_IMAGE_MIRROR="${PTERO_NODE_IMAGE_MIRROR:-node:22-alpine}"
 PTERO_ALLOW_WRITE="${PTERO_ALLOW_WRITE:-0}"
@@ -51,8 +63,7 @@ _pt_mktemp() { _PT_LAST="$(umask 077; mktemp "${TMPDIR:-/tmp}/ptero.XXXXXX")" ||
 
 ptero_init() {
   [[ -r "$PTERO_CRED_FILE" ]] || { ptero_die "нет файла учётных данных (PTERO_CRED_FILE)"; return 1; }
-  local perm; perm="$(stat -c %a "$PTERO_CRED_FILE" 2>/dev/null || echo '?')"
-  [[ "$perm" == "600" ]] || echo "ptero: предупреждение: права файла учётных данных $perm (ожидается 600)" >&2
+  twomc_secure_file "$PTERO_CRED_FILE" || { ptero_die "файл учётных данных отвергнут (нужны права 600 и владелец - текущий пользователь)"; return 1; }
   PANEL_URL=""; SERVER_UUID=""; CLIENT_API_KEY=""
   # shellcheck disable=SC1090
   . "$PTERO_CRED_FILE"

@@ -5,15 +5,16 @@
 #   секунды    10..600 (по умолчанию 90)
 #   --check    только чтение: GET аллокации и GET списка /plugins (поиск плагинов авторизации); бот не запускается
 # Панель: ТОЛЬКО чтение (PTERO_ALLOW_WRITE=0): аллокация (адрес и порт) и список /plugins сервера из SERVER_UUID.
-# Бот: временный контейнер (образ node как в ptero.sh), `npm i --ignore-scripts mineflayer@<закреплённая версия>` ВНУТРИ контейнера (в репозиторий и на хост
+# Бот: временный контейнер (образ node как в ptero.sh), `npm i --ignore-scripts --no-audit --no-fund mineflayer@<закреплённая версия>` + `npm ls --all` в лог (lock не используется; контейнер видит пароль только до его первого чтения ботом, затем файл удаляется) ВНУТРИ контейнера (в репозиторий и на хост
 # ничего не ставится, install-скрипты зависимостей не выполняются). Версия закреплена: BOT_MINEFLAYER_VERSION, по умолчанию 4.27.0 (testedVersions включает 1.21.4).
 # --read-only + tmpfs, cap-drop ALL, память 384 МБ. Команды: только /register и /login (если найден плагин авторизации); команд оператора нет.
 # Пароль бота: случайный, файл /home/twomc/bridge-dev-bot.pass (600, создаётся при первом запуске, чтобы повторные входы совпадали);
-# в контейнер НЕ передаётся через env (не виден в docker inspect): копия в файл 600 внутри tmpfs (/dev/shm; запасной вариант - TMPDIR) монтируется ro как /bot/pass,
+# в контейнер НЕ передаётся через env (не виден в docker inspect): копия в файл 600 внутри tmpfs (/dev/shm; запасной вариант - TMPDIR) монтируется как /botpass/pass (бот читает и сразу удаляет),
 # удаляется при выходе; нигде не печатается (вывод бота и хоста редактируется по самому паролю и по любым hex длиной от 20).
 # Плагины авторизации: AuthMe/nLogin/LoginSecurity/FastLogin... -> бот делает /register и /login; незнакомый плагин с «auth/login» в имени ->
 # бот пробует те же команды и сообщает «РУЧНОЙ ВХОД», если сервер его кикнул с просьбой войти.
 # Печатаются только этапы: connected, spawned, auth-sent, activity, leaving, left и ошибки (без секретов). Коды: 0 вышел штатно, 1 ошибка, 2 аргументы, 3 нужен ручной вход.
+export LC_ALL=C
 set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 trap ptero_cleanup EXIT
@@ -32,7 +33,9 @@ BOT_VERSION="${BOT_MC_VERSION:-1.21.4}"
 MF_VERSION="${BOT_MINEFLAYER_VERSION:-4.27.0}"
 [[ "$MF_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "BOT_MINEFLAYER_VERSION: нужна точная версия X.Y.Z" >&2; exit 2; }
 [[ "$BOT_VERSION" =~ ^1\.[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || { echo "BOT_MC_VERSION: неверный формат" >&2; exit 2; }
-PASS_FILE="${BOT_PASS_FILE:-/home/twomc/bridge-dev-bot.pass}"
+# Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
+PASS_FILE=/home/twomc/bridge-dev-bot.pass
+[[ "${STAND_TEST:-0}" == 1 ]] && PASS_FILE="${BOT_PASS_FILE:-$PASS_FILE}"
 
 export PTERO_ALLOW_WRITE=0
 ptero_init || exit 1
@@ -66,8 +69,9 @@ img="$(_pt_node_image 2>/dev/null)" || { echo "ОШИБКА: нет локаль
 if [[ "$AUTH_KIND" != none ]]; then
   if [[ ! -s "$PASS_FILE" ]]; then
     ( umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 20 > "$PASS_FILE" ) || { echo "ОШИБКА: не создан файл пароля бота"; exit 1; }
-    chmod 600 "$PASS_FILE"
+    chmod 600 "$PASS_FILE" || { echo "ОШИБКА: chmod 600 файла пароля бота не выполнен"; exit 1; }
   fi
+  twomc_secure_file "$PASS_FILE" || { echo "ОШИБКА: файл пароля бота отвергнут (права ровно 600, владелец - текущий пользователь)"; exit 1; }
   [[ "$(cat "$PASS_FILE")" =~ ^[0-9a-f]{20}$ ]] || { echo "ОШИБКА: файл пароля бота неверного формата (скрипт его не перезаписывает)"; exit 1; }
 fi
 
@@ -75,14 +79,16 @@ fi
 SHM=""; [[ -d /dev/shm && -w /dev/shm ]] && SHM=/dev/shm
 BOTDIR="$(umask 077; mktemp -d "${SHM:-${TMPDIR:-/tmp}}/dev-srv-bot.XXXXXX")" || exit 1
 [[ -n "$SHM" ]] || echo "WARN: /dev/shm недоступен: файл пароля во временном каталоге на диске (затирается и удаляется при выходе)"
-bot_cleanup() { [[ -n "${BOTDIR:-}" && -f "$BOTDIR/pass" ]] && : > "$BOTDIR/pass"; [[ -n "${BOTDIR:-}" ]] && rm -rf -- "$BOTDIR"; ptero_cleanup; }
+bot_cleanup() { [[ -n "${BOTDIR:-}" && -f "$BOTDIR/p/pass" ]] && : > "$BOTDIR/p/pass"; [[ -n "${BOTDIR:-}" ]] && rm -rf -- "$BOTDIR"; ptero_cleanup; }
 trap bot_cleanup EXIT
 cat > "$BOTDIR/bot.js" <<'BOT_JS_EOF'
 'use strict';
 // Временный бот (только внутри контейнера). Значения читает из env; секрет в вывод не попадает.
 const mineflayer = require('mineflayer');
 const E = process.env;
-const PASS = E.BOT_AUTH === '1' ? String(require('fs').readFileSync('/bot/pass', 'utf8')).trim() : '';
+// пароль читается один раз и сразу удаляется из контейнера (каталог /botpass доступен на запись только для удаления файла)
+let PASS = '';
+if (E.BOT_AUTH === '1') { const fs = require('fs'); PASS = String(fs.readFileSync('/botpass/pass', 'utf8')).trim(); try { fs.unlinkSync('/botpass/pass'); } catch (e) { fs.writeFileSync('/botpass/pass', ''); } }
 const SECS = Number(E.BOT_SECS) || 90;
 const clean = (v) => {
   let s = String(v == null ? '' : v);
@@ -157,22 +163,23 @@ if [[ "$AUTH_KIND" == none ]]; then BAUTH=0; else BAUTH=1; fi
 echo "[3] запуск бота $NICK на $SECS с (контейнер, npm i --ignore-scripts mineflayer@$MF_VERSION внутри)"
 PASS_PLAIN=""
 if [[ "$BAUTH" == 1 ]]; then
-  ( umask 077; cat "$PASS_FILE" > "$BOTDIR/pass" ) || { echo "ОШИБКА: не создана копия пароля в рабочем каталоге"; exit 1; }
-  chmod 600 "$BOTDIR/pass"
+  ( umask 077; mkdir -p "$BOTDIR/p" && cat "$PASS_FILE" > "$BOTDIR/p/pass" ) || { echo "ОШИБКА: не создана копия пароля в рабочем каталоге"; exit 1; }
+  chmod 700 "$BOTDIR/p" && chmod 600 "$BOTDIR/p/pass" || { echo "ОШИБКА: chmod копии пароля не выполнен"; exit 1; }
   PASS_PLAIN="$(cat "$PASS_FILE")"
 fi
 # редакция вывода: сам пароль (если есть) и любые hex-строки от 20 символов
 redact() { if [[ -n "$PASS_PLAIN" ]]; then sed -E -e "s/$PASS_PLAIN/***/g" -e 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; else sed -E 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; fi; }
 out="$BOTDIR/bot.out"
 timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs /tmp:rw,exec,size=300m --cap-drop ALL --security-opt no-new-privileges --memory 384m \
-  --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
   --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION") \
-  -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund --silent "mineflayer@$BOT_MF" >/dev/null 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
+  -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
   </dev/null > "$out" 2>/dev/null
 rc=$?
-: > "$BOTDIR/pass" 2>/dev/null
+: > "$BOTDIR/p/pass" 2>/dev/null
 # в вывод - только строки-этапы нашего бота (фильтр по префиксам), с редакцией пароля
 grep -E '^(STAGE |ERROR |MANUAL_LOGIN_NEEDED)' "$out" | head -n 40 | redact
+grep -E '^NPMLS ' "$out" | head -n 400 | redact   # дерево зависимостей (npm ls --all) в лог, без секретов
 if grep -q '^MANUAL_LOGIN_NEEDED' "$out"; then
   echo "РУЧНОЙ ВХОД: сервер просит авторизацию, которую бот не прошёл. Владелец заходит сам ником $NICK (и вводит /register или /login), затем повторить."; exit 3
 fi

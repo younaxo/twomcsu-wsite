@@ -13,6 +13,7 @@
 #   uuid занят ДРУГИМ пользователем                     -> отказ (код 4)
 # Запись в БД стенда - в tools-образе (код TS ниже, пишется во временный каталог 700 и монтируется ro); production не затрагивается.
 # Коды: 0 готово/уже есть, 1 ошибка, 2 аргументы, 3 админ не найден, 4 uuid занят, 5 lock занят, 6 у админа другой аккаунт, 7 пользователь не админ, 8 NODE_ENV не development.
+export LC_ALL=C
 set -uo pipefail
 if ! declare -F stand_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/stand-lib.sh"; fi
 if ! declare -F offline_uuid >/dev/null 2>&1; then
@@ -44,6 +45,7 @@ if [[ "$(stand_env_get NODE_ENV)" != development ]]; then
   echo "ОТКАЗ: NODE_ENV стенда не development (значение не печатается); привязка только на стенде в режиме development."; exit 8
 fi
 [[ -r "$STAND_CRED_FILE" ]] || { echo "Нет файла учёток $STAND_CRED_FILE" >&2; exit 1; }
+twomc_secure_file "$STAND_CRED_FILE" || exit 1
 # логин админа: секция [админ], строка login: (регистр секции и ключа не важен); без вывода
 ADMIN_LOGIN="$(awk '
   { sub(/\r$/, "") }

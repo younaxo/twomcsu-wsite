@@ -6,6 +6,9 @@
 
 - `/home/twomc/pterodactyl-credentials.txt` (VDS, права 600): `PANEL_URL`, `SERVER_UUID`, `CLIENT_API_KEY`.
 - `/home/twomc/bridge-dev-srv.secret.env` (VDS, права 600, пишет `register-dev-srv.sh`): `KEY_ID`, `KEY`, `SITE_URL` (прежний формат `BRIDGE_*` тоже принимается). Ключ выводит `bridge:print-key` внутри скрипта, в вывод он не попадает.
+- Проверка файлов секретов: перед чтением `pterodactyl-credentials.txt`, `secret.env`, `test-website-credentials.txt` и `bridge-dev-bot.pass` скрипты требуют: обычный файл (не ссылка), права РОВНО 600, владелец - текущий пользователь; иначе отказ (код 1). Пути зафиксированы в скриптах и НЕ переопределяются переменными окружения; единственное исключение - тестовый режим `STAND_TEST=1` (сухие прогоны на фиктивных файлах: `BRIDGE_SECRET_ENV`, `PTERO_CRED_FILE`, `BOT_PASS_FILE`, `STAND_CRED_FILE`). Во всех скриптах `LC_ALL=C`.
+- Сбой `chmod 600` на `bridge-key.txt` или `bridge-key.txt.bak-*` на панели - БЛОКЕР, не предупреждение: файл обнуляется (на панели нет удаления), установка останавливается; прежний ключ при необходимости перевыпускается владельцем.
+- Бот: `npm i --ignore-scripts --no-audit --no-fund mineflayer@4.27.0` внутри контейнера, `npm ls --all` печатается в лог (строки `NPMLS`); файл пароля бота читается ботом один раз и сразу удаляется из контейнера.
 - На сервере ключ лежит в `plugins/TwoMCBridge/bridge-key.txt` (права 600); `config.yml` секретов не содержит.
 
 ## Предусловия на сайте стенда (выполняет владелец или Chief)
