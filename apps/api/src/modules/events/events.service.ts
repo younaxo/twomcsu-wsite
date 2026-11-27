@@ -172,24 +172,49 @@ export class EventsService {
       throw new ForbiddenException('Событие уже прошло');
     }
 
-    if (event.maxParticipants && dto.status === 'GOING') {
-      const existing = await this.prisma.eventParticipant.findUnique({
+    const write = (db: Prisma.TransactionClient | PrismaService) =>
+      db.eventParticipant.upsert({
         where: { eventId_userId: { eventId, userId } },
+        create: { eventId, userId, status: dto.status },
+        update: { status: dto.status },
       });
-      if (!existing || existing.status !== 'GOING') {
-        const goingCount = await this.prisma.eventParticipant.count({
-          where: { eventId, status: 'GOING' },
-        });
-        if (goingCount >= event.maxParticipants) {
-          throw new ConflictException('Достигнут лимит участников события');
-        }
-      }
+
+    if (!event.maxParticipants || dto.status !== 'GOING') {
+      return write(this.prisma);
     }
 
-    return this.prisma.eventParticipant.upsert({
-      where: { eventId_userId: { eventId, userId } },
-      create: { eventId, userId, status: dto.status },
-      update: { status: dto.status },
+    // Лимит без гонки (J-09-2): строка события блокируется на время
+    // транзакции, параллельные записи на то же событие идут по очереди, и
+    // подсчёт GOING всегда видит результат предыдущей записи.
+    // Лимит, статус и дедлайн берутся из заблокированной строки, а не из
+    // объекта, прочитанного до транзакции: админ мог изменить их в промежутке.
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        {
+          status: CalendarEventStatus;
+          maxParticipants: number | null;
+          registrationDeadline: Date | null;
+        }[]
+      >`SELECT status, "maxParticipants", "registrationDeadline" FROM calendar_events WHERE id = ${eventId} FOR UPDATE`;
+      const row = locked[0];
+      if (!row || row.status !== CalendarEventStatus.PUBLISHED) {
+        throw new NotFoundException('Событие не найдено');
+      }
+      if (row.registrationDeadline && row.registrationDeadline < new Date()) {
+        throw new ForbiddenException('Регистрация на событие закрыта');
+      }
+      const max = row.maxParticipants;
+      const existing = await tx.eventParticipant.findUnique({
+        where: { eventId_userId: { eventId, userId } },
+      });
+      if (existing?.status === 'GOING') return existing; // идемпотентно
+      const goingCount = await tx.eventParticipant.count({
+        where: { eventId, status: 'GOING' },
+      });
+      if (max !== null && goingCount >= max) {
+        throw new ConflictException('Достигнут лимит участников события');
+      }
+      return write(tx);
     });
   }
 

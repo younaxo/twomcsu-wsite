@@ -19,7 +19,22 @@ import {
   demoPunishmentSourceId,
 } from './data';
 import {
+  DEMO_CONVERSATIONS,
+  DEMO_FRIENDSHIPS,
+  DEMO_PLAYERS,
+  DEMO_PROFILE_COMMENTS,
+  buildDemoInventorySlots,
+  buildDemoInventoryRow,
+  buildDemoStatsRow,
+  demoDirectKey,
+  demoPlayerEmail,
+  demoPlayerTag,
+  demoSlotsHash,
+} from './social';
+import { seedDemoSocial } from './social-seed';
+import {
   assertDemoSeedAllowed,
+  assertDemoUserNotForeign,
   demoSeedRefusals,
   isLocalDatabaseUrl,
 } from './guard';
@@ -236,5 +251,227 @@ describe('demo seed author', () => {
     expect(DEMO_AUTHOR.email).toBe('demo-system@example.invalid');
     expect(DEMO_AUTHOR.password.startsWith('$2')).toBe(false);
     expect(demoAuthorTag()).toBe('demo_system#0000');
+  });
+});
+
+describe('demo seed social data', () => {
+  it('вымышленные ники, почта .invalid, уникальность, длина', () => {
+    const names = DEMO_PLAYERS.map((p) => p.username);
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) {
+      expect(n).toMatch(/^demo_[a-z]+$/);
+      expect(n.length).toBeLessThanOrEqual(16);
+      expect(demoPlayerEmail(n)).toMatch(/^demo-[a-z]+@example\.invalid$/);
+      expect(demoPlayerTag(n)).toBe(`${n}#0000`);
+    }
+  });
+  it('статистика непустая, K/D согласован', () => {
+    for (const p of DEMO_PLAYERS) {
+      const row = buildDemoStatsRow(p);
+      expect(row.playTime).toBeGreaterThan(0);
+      expect(row.kills + row.deaths).toBeGreaterThan(0);
+      expect(row.killDeathRatio).toBeCloseTo(row.kills / row.deaths, 2);
+    }
+  });
+  it('инвентарь: допустимые области/id, хеш стабилен, без приватных полей', () => {
+    for (const p of DEMO_PLAYERS) {
+      for (const g of ['main', 'ender'] as const) {
+        const slots = buildDemoInventorySlots(p, g);
+        for (const s of slots) {
+          expect(s.area).toBe(g === 'main' ? 'hotbar' : 'ender');
+          expect(s.slot).toBeGreaterThanOrEqual(0);
+          expect(s.item.id).toMatch(/^[a-z0-9_.-]+:[a-z0-9_./-]+$/);
+          expect(s.item.count).toBeGreaterThanOrEqual(1);
+          expect(s.item.count).toBeLessThanOrEqual(99);
+        }
+        const row = buildDemoInventoryRow(p, g, new Date(0));
+        expect(row.slotCount).toBe(slots.length);
+        expect(row.contentHash).toBe(demoSlotsHash(slots));
+        expect(row.contentHash).toMatch(/^[0-9a-f]{64}$/);
+      }
+    }
+  });
+  it('дружбы и комментарии ссылаются на демо-игроков', () => {
+    const names = new Set(DEMO_PLAYERS.map((p) => p.username));
+    const pairs = new Set<string>();
+    for (const [a, b] of DEMO_FRIENDSHIPS) {
+      expect(names.has(a) && names.has(b) && a !== b).toBe(true);
+      pairs.add([a, b].sort().join(':'));
+    }
+    expect(pairs.size).toBe(DEMO_FRIENDSHIPS.length);
+    const ids = new Set(DEMO_PROFILE_COMMENTS.map((c) => c.id));
+    expect(ids.size).toBe(DEMO_PROFILE_COMMENTS.length);
+    for (const c of DEMO_PROFILE_COMMENTS) {
+      expect(names.has(c.profile) && names.has(c.author)).toBe(true);
+      expect(c.text.startsWith('[Демо]')).toBe(true);
+      if (c.parentId) expect(ids.has(c.parentId)).toBe(true);
+    }
+  });
+  it('беседы: один ЛС и одна группа, участники и тексты демо', () => {
+    const names = new Set(DEMO_PLAYERS.map((p) => p.username));
+    const typeCount = (t: string) =>
+      DEMO_CONVERSATIONS.filter((c) => c.type === t).length;
+    expect(typeCount('DIRECT')).toBe(1);
+    expect(typeCount('GROUP')).toBe(1);
+    const msgIds = new Set<string>();
+    for (const c of DEMO_CONVERSATIONS) {
+      if (c.type === 'DIRECT') expect(c.members).toHaveLength(2);
+      else expect(c.members.length).toBeGreaterThan(2);
+      expect(c.members).toContain(c.owner);
+      for (const m of c.messages) {
+        expect(c.members).toContain(m.sender);
+        expect(names.has(m.sender)).toBe(true);
+        expect(m.text.startsWith('[Демо]')).toBe(true);
+        msgIds.add(m.id);
+      }
+    }
+    expect(msgIds.size).toBe(
+      DEMO_CONVERSATIONS.reduce((n, c) => n + c.messages.length, 0),
+    );
+    expect(demoDirectKey('b', 'a')).toBe('a:b');
+  });
+});
+
+/// Простая in-memory подмена Prisma: upsert по сериализованному `where`.
+function fakePrisma() {
+  const tables = new Map<string, Map<string, Record<string, unknown>>>();
+  let seq = 0;
+  const calls: string[] = [];
+  const model = (name: string) => ({
+    findUnique: (args: { where: Record<string, unknown> }) => {
+      calls.push(`${name}.findUnique`);
+      return Promise.resolve(
+        tables.get(name)?.get(JSON.stringify(args.where)) ?? null,
+      );
+    },
+    upsert: (args: {
+      where: Record<string, unknown>;
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }) => {
+      calls.push(`${name}.upsert`);
+      const t = tables.get(name) ?? new Map();
+      tables.set(name, t);
+      const key = JSON.stringify(args.where);
+      const prev = t.get(key);
+      const row = prev
+        ? { ...prev, ...args.update }
+        : { id: (args.create.id as string) ?? `gen-${++seq}`, ...args.create };
+      t.set(key, row);
+      return Promise.resolve(row);
+    },
+  });
+  const prisma = new Proxy(
+    {},
+    {
+      get: (_t, prop: string) => {
+        if (prop === 'then') return undefined;
+        return model(prop);
+      },
+    },
+  );
+  return { prisma, tables, calls };
+}
+
+describe('seedDemoSocial (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+  it('идемпотентен: повтор не добавляет строк, трогает только demo_*', async () => {
+    const { prisma, tables, calls } = fakePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = prisma as any;
+    await seedDemoSocial(db, 'pos-1');
+    const sizes1 = [...tables].map(([k, v]) => [k, v.size]);
+    await seedDemoSocial(db, 'pos-1');
+    const sizes2 = [...tables].map(([k, v]) => [k, v.size]);
+    expect(sizes2).toEqual(sizes1);
+    const size = (n: string) => tables.get(n)?.size;
+    expect(size('user')).toBe(DEMO_PLAYERS.length);
+    expect(size('playerStatistics')).toBe(DEMO_PLAYERS.length);
+    expect(size('playerInventory')).toBe(DEMO_PLAYERS.length * 2);
+    expect(size('friendship')).toBe(DEMO_FRIENDSHIPS.length);
+    expect(size('conversation')).toBe(2);
+    expect(size('profileComment')).toBe(DEMO_PROFILE_COMMENTS.length);
+    // Только upsert и чтение для проверки владения: ни delete/update.
+    expect(new Set(calls.map((c) => c.split('.')[1]))).toEqual(
+      new Set(['upsert', 'findUnique']),
+    );
+    // Приватность инвентаря не создаётся (нет строки = приватно).
+    expect(tables.has('inventoryPrivacy')).toBe(false);
+    // Админов/ролей/2FA нет.
+    for (const u of tables.get('user')!.values()) {
+      expect(String(u.username)).toMatch(/^demo_/);
+      expect(u.twoFactorEnabled).toBeUndefined();
+      expect(String(u.password).startsWith('$2')).toBe(false);
+    }
+    expect(tables.has('userRole')).toBe(false);
+  });
+});
+
+describe('seedDemoSocial: защита и чужие пользователи', () => {
+  const savedEnv = { ...process.env };
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it.each([
+    { ...ok, NODE_ENV: 'production' },
+    { ...ok, NODE_ENV: undefined },
+    { ...ok, SEED_DEMO: undefined },
+    { ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com:5432/x' },
+  ])('прямой вызов без разрешённого окружения отклоняется, БД не трогается: %j', async (env) => {
+    process.env = { ...savedEnv, ...env } as NodeJS.ProcessEnv;
+    if (env.NODE_ENV === undefined) delete process.env.NODE_ENV;
+    if (env.SEED_DEMO === undefined) delete process.env.SEED_DEMO;
+    const { prisma, calls } = fakePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(seedDemoSocial(prisma as any, 'pos-1')).rejects.toThrow(
+      /fail closed/,
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it('чужой пользователь с ником demo_*: сид прерван, ничего не записано', async () => {
+    Object.assign(process.env, ok);
+    const { prisma, tables, calls } = fakePrisma();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = prisma as any;
+    const foreign = DEMO_PLAYERS[2];
+    tables.set(
+      'user',
+      new Map([
+        [
+          JSON.stringify({ username: foreign.username }),
+          { id: 'real-1', username: foreign.username, email: 'real@mail.test' },
+        ],
+      ]),
+    );
+    await expect(seedDemoSocial(db, 'pos-1')).rejects.toThrow(
+      new RegExp(foreign.username),
+    );
+    expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(
+      tables.get('user')!.get(JSON.stringify({ username: foreign.username })),
+    ).toEqual({ id: 'real-1', username: foreign.username, email: 'real@mail.test' });
+  });
+
+  it('assertDemoUserNotForeign: нет пользователя или свой email — проходит; demo_system с чужим email — ошибка', async () => {
+    const mk = (email: string | null) => ({
+      user: { findUnique: async () => (email ? { email } : null) },
+    });
+    await expect(
+      assertDemoUserNotForeign(mk(null), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertDemoUserNotForeign(mk(DEMO_AUTHOR.email), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertDemoUserNotForeign(mk('x@y.z'), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+    ).rejects.toThrow(/demo_system/);
   });
 });

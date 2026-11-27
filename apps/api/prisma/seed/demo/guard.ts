@@ -52,3 +52,31 @@ export function assertDemoSeedAllowed(env: DemoGuardInput): void {
     );
   }
 }
+
+/// Минимальный срез Prisma для проверки владения: только чтение email.
+export interface DemoUserLookup {
+  user: {
+    findUnique(args: {
+      where: { username: string };
+      select: { email: true };
+    }): Promise<{ email: string } | null>;
+  };
+}
+
+/// Прерывает сид, если пользователь с таким username уже есть и его email не
+/// демо-шный: чужого пользователя сид не трогает (ни email, ни пароль).
+export async function assertDemoUserNotForeign(
+  prisma: DemoUserLookup,
+  username: string,
+  expectedEmail: string,
+): Promise<void> {
+  const existing = await prisma.user.findUnique({
+    where: { username },
+    select: { email: true },
+  });
+  if (existing && existing.email !== expectedEmail) {
+    throw new Error(
+      `Демо-сид прерван: пользователь "${username}" уже существует и не является демо-пользователем (email отличается от ${expectedEmail}). Ничего не изменено; освободите ник или запустите сид на чистой одноразовой БД.`,
+    );
+  }
+}
