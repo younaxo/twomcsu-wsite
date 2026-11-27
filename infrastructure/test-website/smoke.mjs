@@ -20,8 +20,9 @@ const mask = (s) => {
     .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]*/g, '***jwt***')
     .replace(/(Bearer\s+)\S+/gi, '$1***')
     .replace(/(Basic\s+)[A-Za-z0-9+/=]{4,}/gi, '$1***')
-    .replace(/("(?:password|passwd|pass|pwd|secret|token|accessToken|refreshToken|totp|backupCode|backupCodes)"\s*:\s*")[^"]{4,}(")/gi, '$1***$2')
-    .replace(/\b((?:password|passwd|pass|pwd|secret|token)\s*=\s*)[^\s&"',;]{4,}/gi, '$1***')
+    // Маска по подстрокам ИМЁН полей (pass|secret|token|key|otp, без учёта регистра): userPassword, apiKey, otpCode, refresh_token и т.п.
+    .replace(/("[^"]*(?:pass|secret|token|key|otp)[^"]*"\s*:\s*")[^"]{4,}(")/gi, '$1***$2')
+    .replace(/\b([\w-]*(?:pass|secret|token|key|otp)[\w-]*\s*=\s*)[^\s&"',;]{4,}/gi, '$1***')
     .replace(/(:\/\/[^\s:@/]+:)[^\s@/]+@/g, '$1***@')
     .replace(/otpauth:\/\/\S+/gi, 'otpauth://***');
 };
@@ -52,6 +53,8 @@ if (process.env.SMOKE_SELFTEST_MASK === '1') {
     `{"password":"${'zz' + 'unknown-pw-1'}","login":"x"}`,
     `password=${'zz' + 'unknown-pw-2'}&x=1`,
     `Authorization: Basic ${'QUJD' + 'REVGR0g='}`,
+    `{"userPassword":"${'zz' + 'unknown-pw-3'}","apiKey":"${'zz' + 'unknown-pw-4'}","OTP_Code":"${'zz' + 'unknown-pw-5'}"}`,
+    `refresh_token=${'zz' + 'unknown-pw-6'}&Api-Key=${'zz' + 'unknown-pw-7'}`,
   ];
   const leaked = probes
     .map((p) => mask(show(p)))
