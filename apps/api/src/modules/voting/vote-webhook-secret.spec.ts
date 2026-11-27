@@ -42,10 +42,10 @@ describe('verifyWebhookSecret', () => {
     await expect(verifyWebhookSecret('nope', stored)).resolves.toBe(false);
   });
 
-  it('нет хеша (неизвестный slug): фиктивное bcrypt-сравнение, всегда false', async () => {
+  it('нет хеша (неизвестный slug): тот же sha256-путь, bcrypt не вызывается, всегда false', async () => {
     const spy = jest.spyOn(bcrypt, 'compare');
-    await expect(verifyWebhookSecret(secret, null, 4)).resolves.toBe(false);
-    expect(spy).toHaveBeenCalledTimes(1);
+    await expect(verifyWebhookSecret(secret, null)).resolves.toBe(false);
+    expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
   });
 

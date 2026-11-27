@@ -334,6 +334,38 @@ describe('Voting (e2e)', () => {
     expect(withNewSecret.body.accepted).toBe(true);
   });
 
+  it('webhook: выключенный slug — тот же 401, голос не засчитан', async () => {
+    const offSlug = `e2e-${unique}-off`;
+    const created = await request(app.getHttpServer())
+      .post('/admin/voting/sites')
+      .set('Authorization', auth(admin))
+      .send({
+        slug: offSlug,
+        name: 'Off',
+        url: 'https://example.com/off',
+        rewardCoins: 1,
+        cooldownHours: 1,
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/admin/voting/sites/${created.body.site.id}`)
+      .set('Authorization', auth(admin))
+      .send({ isActive: false })
+      .expect(200);
+    const offSecret = created.body.secret as string;
+    const off = await request(app.getHttpServer())
+      .post(`/voting/webhook/${offSlug}`)
+      .send({ secret: offSecret, username: alice.username })
+      .expect(401);
+    const unknown = await request(app.getHttpServer())
+      .post(`/voting/webhook/e2e-${unique}-no-such-site`)
+      .send({ secret: offSecret, username: alice.username })
+      .expect(401);
+    expect(off.body).toEqual(unknown.body);
+    expect(off.headers['content-type']).toBe(unknown.headers['content-type']);
+    await prisma.voteSite.deleteMany({ where: { slug: offSlug } });
+  });
+
   it('admin: список, обновление, удаление', async () => {
     const list = await request(app.getHttpServer())
       .get('/admin/voting/sites')

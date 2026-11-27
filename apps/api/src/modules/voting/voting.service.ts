@@ -16,6 +16,7 @@ import {
   sha256Hash,
   verifyWebhookSecret,
 } from './vote-webhook-secret';
+import { normalizeIp, parseAllowedIps } from './vote-webhook-ip';
 
 @Injectable()
 export class VotingService {
@@ -93,7 +94,6 @@ export class VotingService {
     const validSecret = await verifyWebhookSecret(
       secret,
       site ? site.webhookSecretHash : null,
-      this.config.get<number>('BCRYPT_ROUNDS', 12),
     );
     if (!site || !validSecret) {
       throw new UnauthorizedException();
@@ -186,14 +186,12 @@ export class VotingService {
     }
   }
 
-  /// Белый список выключен (пусто) — пропускает всех. Точное совпадение IP.
+  /// Белый список выключен (пусто) — пропускает всех. Точное совпадение IP;
+  /// IPv4-mapped IPv6 (::ffff:a.b.c.d) нормализуется к a.b.c.d с обеих сторон.
   private ipAllowed(clientIp: string | null): boolean {
     const raw = this.config.get<string>('VOTING_WEBHOOK_ALLOWED_IPS', '');
-    const allowed = raw
-      .split(',')
-      .map((v) => v.trim())
-      .filter((v) => v !== '');
-    if (allowed.length === 0) return true;
-    return clientIp !== null && allowed.includes(clientIp);
+    const { ips } = parseAllowedIps(raw);
+    if (ips.length === 0) return true;
+    return clientIp !== null && ips.includes(normalizeIp(clientIp));
   }
 }

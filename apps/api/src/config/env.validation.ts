@@ -6,6 +6,7 @@ import {
 import { PAYMENT_METHODS_PATTERN } from '../modules/store/payment/payment-methods';
 import { RELAXED_NODE_ENVS } from './node-env';
 import { resolveTrustProxy } from './trust-proxy';
+import { parseAllowedIps } from '../modules/voting/vote-webhook-ip';
 
 /// Валидируются только переменные, которые реально читает существующий код
 /// (ADR-0015) — расширяется вместе с кодом, использующим новую переменную,
@@ -162,7 +163,19 @@ const envBaseKeys: Joi.PartialSchemaMap = {
   /// CIDR). По умолчанию пусто = выключен: опубликованные IP сервисов в
   /// репозитории не подтверждены (Q121). Адрес берётся из req.ip с учётом
   /// TRUST_PROXY. Чужой адрес получает тот же 401, что и неверный секрет.
-  VOTING_WEBHOOK_ALLOWED_IPS: Joi.string().allow('').default(''),
+  VOTING_WEBHOOK_ALLOWED_IPS: Joi.string()
+    .allow('')
+    .default('')
+    .custom((value: string, helpers) => {
+      const { invalid } = parseAllowedIps(value);
+      return invalid.length > 0
+        ? helpers.error('votingips.invalid', { item: invalid[0] })
+        : value;
+    })
+    .messages({
+      'votingips.invalid':
+        'VOTING_WEBHOOK_ALLOWED_IPS: список IP через запятую, некорректный элемент ({{#item}})',
+    }),
 
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgresql', 'postgres'] })

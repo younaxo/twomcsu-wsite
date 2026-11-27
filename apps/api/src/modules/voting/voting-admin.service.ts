@@ -4,12 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVoteSiteDto } from './dto/create-vote-site.dto';
 import { UpdateVoteSiteDto } from './dto/update-vote-site.dto';
+import { sha256Hash } from './vote-webhook-secret';
 
 @Injectable()
 export class VotingAdminService {
@@ -18,10 +18,8 @@ export class VotingAdminService {
     private readonly config: ConfigService,
   ) {}
 
-  private get bcryptRounds(): number {
-    return this.config.get<number>('BCRYPT_ROUNDS', 12);
-  }
-
+  /// F1: секрет всегда генерируется сервером (256 бит), ручного ввода нет —
+  /// поэтому достаточно sha256 без pepper (см. ADR-0121, поправка 28.11.2026).
   private generateSecret(): string {
     return randomBytes(32).toString('hex');
   }
@@ -47,7 +45,7 @@ export class VotingAdminService {
   }
 
   /// Сырой секрет возвращается только один раз, при создании/rotate —
-  /// сохраняется исключительно bcrypt-хеш (webhookSecretHash), как и пароли.
+  /// сохраняется исключительно sha256-хеш (`sha256$<hex>`, webhookSecretHash).
   async create(
     dto: CreateVoteSiteDto,
   ): Promise<{ site: unknown; secret: string }> {
@@ -58,7 +56,7 @@ export class VotingAdminService {
       throw new ConflictException('Vote-сайт с таким slug уже существует');
     }
     const secret = this.generateSecret();
-    const webhookSecretHash = await bcrypt.hash(secret, this.bcryptRounds);
+    const webhookSecretHash = sha256Hash(secret);
     const site = await this.prisma.voteSite
       .create({ data: { ...dto, webhookSecretHash } })
       .catch((error: unknown) => {
@@ -102,7 +100,7 @@ export class VotingAdminService {
       throw new NotFoundException('Vote-сайт не найден');
     }
     const secret = this.generateSecret();
-    const webhookSecretHash = await bcrypt.hash(secret, this.bcryptRounds);
+    const webhookSecretHash = sha256Hash(secret);
     await this.prisma.voteSite.update({
       where: { id },
       data: { webhookSecretHash },

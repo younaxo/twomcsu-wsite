@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { VotingService } from './voting.service';
 import { sha256Hash } from './vote-webhook-secret';
+import * as secretModule from './vote-webhook-secret';
 
 describe('VotingService.processWebhook (контракт 401)', () => {
   const secret = 's'.repeat(64);
@@ -96,12 +97,23 @@ describe('VotingService.processWebhook (контракт 401)', () => {
     spy.mockRestore();
   });
 
-  it('неизвестный slug выполняет фиктивное bcrypt-сравнение', async () => {
+  it('неизвестный slug идёт тем же путём verifyWebhookSecret (sha256), без bcrypt', async () => {
     prisma.voteSite.findUnique.mockResolvedValue(null);
-    const spy = jest.spyOn(bcrypt, 'compare');
+    const bc = jest.spyOn(bcrypt, 'compare');
+    const verify = jest.spyOn(secretModule, 'verifyWebhookSecret');
     await failure(make().processWebhook('nope', { secret, username: 'u' }));
-    expect(spy).toHaveBeenCalledTimes(1);
-    spy.mockRestore();
+    expect(verify).toHaveBeenCalledWith(secret, null);
+    verify.mockClear();
+    prisma.voteSite.findUnique.mockResolvedValue({
+      id: 's1',
+      isActive: true,
+      webhookSecretHash: sha256Hash(secret),
+    });
+    await failure(make().processWebhook('x', { secret: 'bad', username: 'u' }));
+    expect(verify).toHaveBeenCalledWith('bad', sha256Hash(secret));
+    expect(bc).not.toHaveBeenCalled();
+    bc.mockRestore();
+    verify.mockRestore();
   });
 
   it('user_not_found только после валидного секрета; bcrypt-хеш лениво становится sha256', async () => {
@@ -142,6 +154,38 @@ describe('VotingService.processWebhook (контракт 401)', () => {
     await expect(
       service.processWebhook('x', { secret, username: 'u' }, '203.0.113.6'),
     ).resolves.toEqual({ accepted: false, reason: 'user_not_found' });
+  });
+
+  it('белый список IP: ::ffff:a.b.c.d нормализуется', async () => {
+    const service = make({ VOTING_WEBHOOK_ALLOWED_IPS: '203.0.113.5' });
+    await expect(
+      service.processWebhook(
+        'x',
+        { secret, username: 'u' },
+        '::ffff:203.0.113.5',
+      ),
+    ).resolves.toEqual({ accepted: false, reason: 'user_not_found' });
+    const mapped = make({ VOTING_WEBHOOK_ALLOWED_IPS: '::ffff:203.0.113.5' });
+    await expect(
+      mapped.processWebhook('x', { secret, username: 'u' }, '203.0.113.5'),
+    ).resolves.toEqual({ accepted: false, reason: 'user_not_found' });
+  });
+
+  it('все 401 имеют одинаковые заголовки и тело', async () => {
+    const service = make({ VOTING_WEBHOOK_ALLOWED_IPS: '203.0.113.5' });
+    const wrongIp = await failure(
+      service.processWebhook('x', { secret, username: 'u' }, '198.51.100.1'),
+    );
+    const open = make();
+    const noSecret = await failure(open.processWebhook('x', { username: 'u' }));
+    const wrong = await failure(
+      open.processWebhook('x', { secret: 'bad', username: 'u' }),
+    );
+    for (const e of [wrongIp, wrong]) {
+      expect(e.getStatus()).toBe(noSecret.getStatus());
+      expect(e.getResponse()).toEqual(noSecret.getResponse());
+      expect(e.message).toBe(noSecret.message);
+    }
   });
 
   it('лимит по slug: после исчерпания - 429', async () => {
