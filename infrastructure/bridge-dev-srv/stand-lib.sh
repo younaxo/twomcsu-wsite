@@ -23,7 +23,10 @@ stand_init() {
   umask 077
   STAND_REAL_ROOT=/srv/twomc-stand
   if [[ "${STAND_TEST:-0}" == 1 ]]; then
+    # тестовый режим - только если ptero.sh его подтвердил (_PT_TEST=1) и пути лежат внутри PTERO_TEST_ROOT
+    [[ "${_PT_TEST:-0}" == 1 ]] || { stand_die "STAND_TEST=1 не подтверждён (нужен PTERO_TEST_ROOT с маркером .ptero-test-root)"; return 1; }
     STAND_ROOT="${STAND_ROOT:?STAND_TEST=1 требует STAND_ROOT}"; STAND_CRED_FILE="${STAND_CRED_FILE:?STAND_TEST=1 требует STAND_CRED_FILE}"
+    [[ "$STAND_ROOT" == "$PTERO_TEST_ROOT"/* && "$STAND_CRED_FILE" == "$PTERO_TEST_ROOT"/* && "$STAND_ROOT$STAND_CRED_FILE" != *..* ]] || { stand_die "STAND_ROOT и STAND_CRED_FILE должны лежать внутри PTERO_TEST_ROOT"; return 1; }
   else
     STAND_ROOT="$STAND_REAL_ROOT"; STAND_CRED_FILE=/home/twomc/test-website-credentials.txt
     [[ "$(id -un)" == "${STAND_USER:-twomc}" ]] || { stand_die "запуск только от пользователя ${STAND_USER:-twomc}"; return 1; }

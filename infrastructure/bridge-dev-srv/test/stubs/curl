@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# ЗАГЛУШКА Pterodactyl Client API для сухих прогонов (только тесты, в проде не используется). Нужны FAKE (корень) и FAKE_UUID.
+# Файловая система сервера - $FAKE/fs; журнал вызовов - $FAKE/calls.log; команды консоли - $FAKE/commands.log; питание - $FAKE/power.log.
+# Эффекты команд: whitelist add|remove <ник> правит fs/whitelist.json; maintenance on|off правит fs/plugins/Maintenance/config.yml.
+set -u
+out=/dev/null; method=GET; url=""; data=""; dfile=""; kf=""
+while (( $# )); do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|--max-time|-H|--form) shift 2 ;;
+    -X) method="$2"; shift 2 ;;
+    -K) kf="$2"; shift 2 ;;
+    --data-raw) data="$2"; shift 2 ;;
+    --data-binary) dfile="${2#@}"; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+[[ -n "$kf" ]] && cat "$kf" >/dev/null 2>&1
+urldecode() { local s="${1//+/ }"; printf '%b' "${s//%/\\x}"; }
+wl_names() { [[ -f "$FAKE/fs/whitelist.json" ]] && grep -o '"name": "[^"]*"' "$FAKE/fs/whitelist.json" | sed 's/.*: "//; s/"$//'; return 0; }
+wl_write() { local n first=1; { echo '['; while read -r n; do [[ -n "$n" ]] || continue; (( first )) || echo ','; first=0; printf '  {"uuid": "u-%s", "name": "%s"}' "$n" "$n"; done; echo; echo ']'; } > "$FAKE/fs/whitelist.json.new"; mv -f "$FAKE/fs/whitelist.json.new" "$FAKE/fs/whitelist.json"; }
+if [[ -z "$url" ]]; then printf '204'; exit 0; fi   # загрузка по signed URL
+suffix="${url#*/servers/$FAKE_UUID}"
+echo "$method $suffix" >> "$FAKE/calls.log"
+code=200; body='{}'
+case "${suffix%%\?*}" in
+  "") body="{\"object\":\"server\",\"attributes\":{\"server_owner\":true,\"identifier\":\"11111111\",\"uuid\":\"$FAKE_UUID\",\"name\":\"${FAKE_NAME-dev-srv}\",\"node\":\"n1\"}}" ;;
+  /resources) body="{\"object\":\"stats\",\"attributes\":{\"current_state\":\"$(cat "$FAKE/state")\"}}" ;;
+  /network/allocations) body='{"object":"list","data":[{"object":"allocation","attributes":{"id":1,"ip":"127.0.0.1","ip_alias":"127.0.0.1","port":25565,"is_default":true}}]}' ;;
+  /websocket) body='{"data":{"token":"abc.def-1","socket":"wss:\/\/node.test\/api\/servers\/x\/ws"}}' ;;
+  /files/list)
+    d="$(urldecode "${suffix#*directory=}")"; [[ "$d" == "/" ]] && p="$FAKE/fs" || p="$FAKE/fs$d"
+    if [[ -d "$p" ]]; then
+      body='{"object":"list","data":['; first=1
+      for e in "$p"/*; do
+        [[ -e "$e" ]] || continue; (( first )) || body+=','; first=0
+        [[ -d "$e" ]] && isf=false || isf=true; sl=false; [[ -f "$FAKE/symlinks" ]] && grep -qxF "$(basename "$e")" "$FAKE/symlinks" && sl=true
+        body+="{\"object\":\"file_object\",\"attributes\":{\"name\":\"$(basename "$e")\",\"mode\":\"-rw-r--r--\",\"size\":1,\"is_file\":$isf,\"symlink\":$sl}}"
+      done
+      body+=']}'
+    else code=404; fi ;;
+  /files/contents)
+    f="$(urldecode "${suffix#*file=}")"
+    if [[ -f "$FAKE/fs$f" ]]; then cp "$FAKE/fs$f" "$out"; printf '%s' "$code"; exit 0; else code=404; fi ;;
+  /files/write)
+    f="$(urldecode "${suffix#*file=}")"
+    echo "WRITE $f" >> "$FAKE/writes.log"
+    if [[ -e "$FAKE/fail_write" ]]; then code=500; else mkdir -p "$(dirname "$FAKE/fs$f")"; cp "$dfile" "$FAKE/fs$f"; code=204; fi ;;
+  /command)
+    cmd="${data#\{\"command\":\"}"; cmd="${cmd%\"\}}"
+    echo "$cmd" >> "$FAKE/commands.log"
+    case "$cmd" in
+      "whitelist add "*) n="${cmd#whitelist add }"; cur="$(wl_names)"; { printf '%s
+' "$cur"; echo "$n"; } | wl_write ;;
+      "whitelist remove "*) n="${cmd#whitelist remove }"; cur="$(wl_names)"; printf '%s
+' "$cur" | grep -vixF -- "$n" | wl_write ;;
+      "maintenance on") sed -i 's/^maintenance-enabled:.*/maintenance-enabled: true/' "$FAKE/fs/plugins/Maintenance/config.yml" ;;
+      "maintenance off") sed -i 's/^maintenance-enabled:.*/maintenance-enabled: false/' "$FAKE/fs/plugins/Maintenance/config.yml" ;;
+    esac
+    code=204 ;;
+  /power) echo "$data" >> "$FAKE/power.log"; code=204 ;;
+  /files/chmod|/files/create-folder|/files/rename) echo "$suffix $data" >> "$FAKE/misc.log"; code=204 ;;
+  *) code=404 ;;
+esac
+printf '%s' "$body" > "$out"
+printf '%s' "$code"
