@@ -1068,3 +1068,152 @@ describe('демо-данные demo_ember: инвентарь, друзья, б
     expect(DEMO_CHAT_CHANNEL.slug.startsWith('demo-')).toBe(true);
   });
 });
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/// Стенд с прошлыми демо-данными: сид не падает и не дублирует записи.
+describe('демо-сид на стенде с прошлыми данными', () => {
+  const savedEnv = { ...process.env };
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    jest.restoreAllMocks();
+  });
+
+  /// Подмена с одной сломанной моделью/методом.
+  const breaking = (prisma: any, model: string, method: string): any =>
+    new Proxy(prisma, {
+      get: (t, prop: string) =>
+        prop === model
+          ? { ...t[prop], [method]: () => Promise.reject(new Error('boom')) }
+          : t[prop],
+    });
+
+  const socialFixture = () => {
+    const f = fakePrisma();
+    const users = new Map<string, Record<string, unknown>>();
+    for (const p of DEMO_PLAYERS) {
+      users.set(JSON.stringify({ username: p.username }), {
+        id: `u-${p.username}`,
+        username: p.username,
+        email: demoPlayerEmail(p.username),
+      });
+    }
+    f.tables.set('user', users);
+    return f;
+  };
+
+  it('ЛС: существующая беседа по directKey используется, дубля и падения нет', async () => {
+    const f = socialFixture();
+    const direct = DEMO_CONVERSATIONS.find((c) => c.type === 'DIRECT')!;
+    const key = demoDirectKey(`u-${direct.members[0]}`, `u-${direct.members[1]}`);
+    f.tables.set(
+      'conversation',
+      new Map([
+        [JSON.stringify({ directKey: key }), { id: 'legacy-conv', directKey: key }],
+      ]),
+    );
+    await seedDemoSocial(f.prisma as any, 'pos-1');
+    const convs = [...f.tables.get('conversation')!.values()];
+    expect(convs.filter((c) => c.directKey === key)).toHaveLength(1);
+    expect(convs.some((c) => c.id === direct.id)).toBe(false);
+    const msgs = [...f.tables.get('directMessage')!.values()].filter((m) =>
+      direct.messages.some((x) => x.id === m.id),
+    );
+    expect(msgs).toHaveLength(direct.messages.length);
+    for (const m of msgs) expect(m.conversationId).toBe('legacy-conv');
+  });
+
+  it('дружба: пара уже есть в обратную сторону — вторая запись не создаётся', async () => {
+    const f = socialFixture();
+    const [a, b] = DEMO_FRIENDSHIPS[0];
+    const rev = {
+      requesterId_addresseeId: { requesterId: `u-${b}`, addresseeId: `u-${a}` },
+    };
+    f.tables.set(
+      'friendship',
+      new Map([[JSON.stringify(rev), { id: 'f-old', status: 'ACCEPTED' }]]),
+    );
+    await seedDemoSocial(f.prisma as any, 'pos-1');
+    const fwd = JSON.stringify({
+      requesterId_addresseeId: { requesterId: `u-${a}`, addresseeId: `u-${b}` },
+    });
+    expect(f.tables.get('friendship')!.has(fwd)).toBe(false);
+    expect(f.tables.get('friendship')!.size).toBe(DEMO_FRIENDSHIPS.length);
+  });
+
+  it('сбой блока инвентаря: предупреждение, остальные блоки применены, итог в логе', async () => {
+    const f = socialFixture();
+    const summary = await seedDemoSocial(
+      breaking(f.prisma, 'playerInventory', 'upsert'),
+      'pos-1',
+    );
+    expect(summary).toContain('пропущено: инвентарь');
+    expect(summary).toContain('применено: дружбы, беседы, комментарии профиля');
+    expect(f.tables.get('conversation')!.size).toBe(DEMO_CONVERSATIONS.length);
+    expect(String(warn.mock.calls[0][0])).toContain('инвентарь');
+  });
+
+  it('чат: канал demo-general создан не сидом — не изменён, сообщений нет, остальное применено', async () => {
+    const f = walletFakePrisma();
+    const foreign = { id: 'c1', name: 'Общий', description: 'чужое описание' };
+    f.base.tables.set(
+      'chatChannel',
+      new Map([[JSON.stringify({ slug: DEMO_CHAT_CHANNEL.slug }), foreign]]),
+    );
+    const summary = await seedDemoWalletAndOrders(f.prisma);
+    expect([...f.base.tables.get('chatChannel')!.values()]).toEqual([foreign]);
+    expect(f.base.tables.has('chatMessage')).toBe(false);
+    expect(summary).toContain('пропущено: чат');
+    expect(f.base.tables.get('order')!.size).toBe(DEMO_ORDERS.length);
+    expect(f.ledger).toHaveLength(DEMO_WALLET_OPS.length);
+  });
+
+  it('чат: демо-канал с изменённым именем не переименовывается (update пуст)', async () => {
+    const f = walletFakePrisma();
+    const mine = {
+      id: 'c1',
+      name: '[Демо] Переименован',
+      description: DEMO_CHAT_CHANNEL.description,
+    };
+    f.base.tables.set(
+      'chatChannel',
+      new Map([[JSON.stringify({ slug: DEMO_CHAT_CHANNEL.slug }), mine]]),
+    );
+    await seedDemoWalletAndOrders(f.prisma);
+    expect([...f.base.tables.get('chatChannel')!.values()][0].name).toBe(
+      '[Демо] Переименован',
+    );
+    expect(f.base.tables.get('chatMessage')!.size).toBe(DEMO_CHAT_MESSAGES.length);
+  });
+
+  it('заказы: номер занят чужим заказом — блок пропущен целиком, кошелёк не тронут', async () => {
+    const f = walletFakePrisma();
+    const other = { id: 'x-1', orderNumber: DEMO_ORDERS[1].orderNumber, userId: 'someone-else' };
+    f.base.tables.set(
+      'order',
+      new Map([[JSON.stringify({ orderNumber: other.orderNumber }), other]]),
+    );
+    const summary = await seedDemoWalletAndOrders(f.prisma);
+    expect([...f.base.tables.get('order')!.values()]).toEqual([other]);
+    expect(f.base.tables.has('orderItem')).toBe(false);
+    expect(f.base.tables.has('deliveryTask')).toBe(false);
+    expect(f.ledger).toEqual([]);
+    expect(summary).toContain('пропущено: заказы, кошелёк');
+    expect(summary).toContain('применено: чат');
+    expect(f.base.tables.get('chatMessage')!.size).toBe(DEMO_CHAT_MESSAGES.length);
+  });
+
+  it('сбой записи чата не мешает заказам и кошельку', async () => {
+    const f = walletFakePrisma();
+    const summary = await seedDemoWalletAndOrders(
+      breaking(f.prisma, 'chatMessage', 'upsert'),
+    );
+    expect(summary).toContain('пропущено: чат');
+    expect(summary).toContain('применено: заказы, кошелёк');
+    expect(f.ledger).toHaveLength(DEMO_WALLET_OPS.length);
+  });
+});
