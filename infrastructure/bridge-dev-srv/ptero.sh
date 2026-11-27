@@ -6,23 +6,31 @@ export LC_ALL=C   # проверки [A-Za-z] и регэкспы не зави�
 # PANEL_URL, SERVER_UUID, CLIENT_API_KEY). Файл подключается через `.` внутри ptero_init; значения никуда не печатаются.
 # PANEL_URL указывает на /account/api; база Client API = PANEL_URL без «/account/api» + «/api/client».
 #
-# Защита:
+# Защита (решение владельца, master prompt v3: на dev-srv - только SERVER_UUID - разрешены консольные команды, замена конфигов,
+# перезапуск и смена режима техработ; запрещено удалять мир и данные игроков, ставить/удалять сторонние плагины, трогать другие серверы):
 #  - Любой запрос строится как $PTERO_SRV$суффикс, где PTERO_SRV = <база>/servers/<SERVER_UUID>: другой сервер и корневой
-#    список серверов (GET /api/client) недостижимы. Суффикс проверяется по белому списку символов, «..» запрещены.
-#  - Не-GET методы разрешены только при PTERO_ALLOW_WRITE=1 (его выставляет install-bridge.sh с флагом --yes);
-#    без него функции записи (file_write, upload, power, command) отказывают. Порядок: dry-run и status/files_list/file_read/
-#    console_tail - только чтение.
-#  - БЕЛЫЕ СПИСКИ (всё остальное - отказ, код 2/1, даже при PTERO_ALLOW_WRITE=1):
-#      эндпоинты: "", /resources, /websocket, /startup, /network/allocations, /files/{list,contents,upload,write,create-folder,chmod,rename},
-#        /power (только restart), /command;
-#      list: только /, /plugins;
-#      read (stdout): /server.properties, /version_history.json, /logs/latest.log, /plugins/TwoMCBridge/config.yml;
-#      fetch (в локальный файл 600, для бэкапа): /plugins/TwoMCBridge/config.yml и bridge-key.txt (ключ в stdout не выводится никогда);
-#      write: /plugins/TwoMCBridge/{config.yml,bridge-key.txt}[.bak-<UTC-время>|.disabled-<UTC-время>]; upload: только /plugins/TwoMCBridge-0.1.0.jar;
-#      rename: /plugins TwoMCBridge-0.1.0.jar -> TwoMCBridge-0.1.0.jar.disabled-<время> и config.yml|bridge-key.txt -> <имя>.disabled-<время> в /plugins/TwoMCBridge;
-#      mkdir: только /plugins + TwoMCBridge; chmod: только /plugins/TwoMCBridge bridge-key.txt[.bak-<время>] 600;
-#      консольные команды: `say TwoMC: <текст [A-Za-z0-9 .,:!?-]>`, `list`, `twomcbridge events`.
-#    <UTC-время> = YYYYMMDDTHHMMSSZ.
+#    список серверов (GET /api/client) недостижимы. Суффикс проверяется по белому списку символов, «..» запрещены. Это ЖЁСТКИЙ guard.
+#  - Не-GET методы разрешены только при PTERO_ALLOW_WRITE=1; без него функции записи (file_write, upload, power, command) отказывают.
+#  - ЭНДПОИНТЫ (белый список): "", /resources, /websocket, /startup, /network/allocations, /files/{list,contents,upload,write,create-folder,
+#    chmod,rename}, /power, /command. Эндпоинтов удаления файлов (/files/delete), копирования, архивов и распаковки НЕТ: мир и данные игроков
+#    нельзя удалить через эти функции в принципе.
+#  - ПУТИ (всё остальное - отказ, даже при PTERO_ALLOW_WRITE=1; сначала явный запрет, потом белый список):
+#      запрет (запись, загрузка, переименование): world*/ (любой регистр, любой уровень), playerdata, stats, advancements, region, level.dat,
+#        session.lock в корне; plugins/*.jar, кроме TwoMCBridge*;
+#      write: /server.properties, /whitelist.json, /ops.json, /plugins/<каталог>/config.yml (только config.yml), /plugins/TwoMCBridge/bridge-key.txt;
+#        каждый вариант - и с суффиксом .bak-<UTC> (копия); для Bridge ещё .disabled-<UTC>;
+#      upload: только /plugins/TwoMCBridge*.jar; rename: только TwoMCBridge*.jar -> *.jar.disabled-<UTC> и файлы Bridge -> *.disabled-<UTC>;
+#      mkdir: только /plugins + TwoMCBridge; chmod: только 600 для bridge-key.txt[.bak-<UTC>];
+#      list: /, /plugins, /plugins/<каталог>; read: критичные файлы выше (кроме bridge-key.txt), version_history.json, logs/latest.log;
+#      fetch (в локальный файл 600, для бэкапа): критичные файлы выше, включая bridge-key.txt (в stdout не выводится никогда).
+#    БЭКАП: первая запись в критичный файл за запуск требует копии <файл>.bak-<UTC> на панели (ptero_backup; делается автоматически; нет копии - нет записи).
+#  - ПИТАНИЕ: restart, stop, start, kill. restart/stop/kill (и консольные stop/restart) - только после успешного ptero_restart_guard
+#    (игроки, say, 60 с) в этом же процессе; осознанное исключение - PTERO_POWER_NOGUARD=1 (пишется в журнал).
+#  - КОНСОЛЬ: санитизация вместо белого списка команд (_pt_cmd_allowed): одна строка, печатный ASCII (0x20-0x7E, без управляющих символов и
+#    переводов строк), длина <= 256, JSON-экранирование; плюс явный ДЕНАЙЛИСТ (_pt_cmd_denied, с причинами; deop и op НЕ запрещены).
+#  - ЖУРНАЛ: каждая изменяющая операция дописывает строку в /home/twomc/bridge-dev-srv.changes.log (600):
+#    время UTC | файл/команда | параметр | было | стало. Без секретов (содержимое ключа не пишется, длинные hex/токены и ключ панели вычищаются).
+#    Не удалось записать журнал - изменяющая операция не выполняется.
 #  - Тело последнего ответа (PTERO_BODY) очищается сразу после использования (_pt_wipe).
 #  - Ключ API передаётся в curl через конфиг из process substitution (не попадает в argv/ps), signed URL загрузки - так же.
 #    Ключ, websocket-токен, signed URL, тела ответов с ними не печатаются; stderr curl отбрасывается (в нём бывает URL).
@@ -96,18 +104,52 @@ _pt_check_endpoint() {
   esac
 }
 
-# Белые списки путей (см. шапку). _pt_path_allowed <list|read|fetch|write> <путь>.
+# Политика путей (см. шапку). _pt_path_allowed <list|read|fetch|backup|write|upload> <путь>: сначала явный запрет, затем белый список.
 _PT_TS_RE='[0-9]{8}T[0-9]{6}Z'
+_PT_PLUGDIR_RE='[A-Za-z0-9][A-Za-z0-9._-]{0,63}'
+
+# Явный запрет: мир, данные игроков, чужие jar. Печатает причину и возвращает 0, если путь запрещён.
+_pt_path_denied() {
+  local lp="${1,,}"
+  if [[ "$lp" =~ (^|/)world[^/]*(/|$) ]]; then echo "мир (world*): мир удалять и менять нельзя"; return 0; fi
+  if [[ "$lp" =~ ^/(playerdata|stats|advancements|region|level\.dat[^/]*|session\.lock)(/|$) ]]; then echo "данные игроков или мира"; return 0; fi
+  if [[ "$lp" =~ ^/plugins/[^/]+\.jar($|\.) && ! "$lp" =~ ^/plugins/twomcbridge[a-z0-9._-]*\.jar ]]; then echo "сторонний плагин (jar): ставить, менять и убирать нельзя"; return 0; fi
+  return 1
+}
+
+# Критичный файл: обычный (не .bak/.disabled) путь, разрешённый для записи; для него обязателен бэкап перед записью.
+_pt_critical_path() {
+  local p="$1" re
+  case "$p" in /server.properties|/whitelist.json|/ops.json|/plugins/TwoMCBridge/bridge-key.txt) return 0 ;; esac
+  re="^/plugins/$_PT_PLUGDIR_RE/config\.yml\$"
+  [[ "$p" =~ $re && "$p" != /plugins/*.jar/* ]] && return 0
+  return 1
+}
+
 _pt_path_allowed() {
-  local op="$1" p="$2"
+  local op="$1" p="$2" re reason base
   [[ "$p" == "/" ]] || p="${p%/}"
   [[ -n "$p" ]] || p="/"
-  local re
+  if [[ "$p" == *//* || "$p" =~ /\. ]]; then ptero_die "путь не в белом списке ($op): пустой или скрытый сегмент"; return 1; fi
   case "$op" in
-    list) case "$p" in /|/plugins) return 0 ;; esac ;;
-    read) case "$p" in /server.properties|/version_history.json|/logs/latest.log|/plugins/TwoMCBridge/config.yml) return 0 ;; esac ;;
-    fetch) case "$p" in /plugins/TwoMCBridge/config.yml|/plugins/TwoMCBridge/bridge-key.txt) return 0 ;; esac ;;
-    write) re="^/plugins/TwoMCBridge/(config\.yml|bridge-key\.txt)(\.bak-$_PT_TS_RE|\.disabled-$_PT_TS_RE)?\$"; [[ "$p" =~ $re ]] && return 0 ;;
+    write|upload|backup)
+      if reason="$(_pt_path_denied "$p")"; then ptero_die "путь запрещён ($op): $p - $reason"; return 1; fi ;;
+  esac
+  case "$op" in
+    list)
+      [[ "$p" == / || "$p" == /plugins ]] && return 0
+      re="^/plugins/$_PT_PLUGDIR_RE\$"; [[ "$p" =~ $re && "$p" != *.jar ]] && return 0 ;;
+    read)
+      case "$p" in /version_history.json|/logs/latest.log|/plugins/TwoMCBridge/config.yml) return 0 ;; esac
+      [[ "$p" != */bridge-key.txt ]] && _pt_critical_path "$p" && return 0 ;;
+    fetch|backup) _pt_critical_path "$p" && return 0 ;;
+    upload)
+      re="^/plugins/TwoMCBridge[A-Za-z0-9._-]*\.jar\$"; [[ "$p" =~ $re ]] && return 0 ;;
+    write)
+      _pt_critical_path "$p" && return 0
+      re="^(/.+)\.bak-$_PT_TS_RE\$"
+      if [[ "$p" =~ $re ]]; then base="${BASH_REMATCH[1]}"; _pt_critical_path "$base" && return 0; fi
+      re="^/plugins/TwoMCBridge/(config\.yml|bridge-key\.txt)\.disabled-$_PT_TS_RE\$"; [[ "$p" =~ $re ]] && return 0 ;;
   esac
   ptero_die "путь не в белом списке ($op): $p"; return 1
 }
@@ -215,25 +257,113 @@ ptero_startup_vars() {
   _pt_wipe
 }
 
-# ---- запись (только при PTERO_ALLOW_WRITE=1 и только по белым спискам) ----
+# ---- журнал изменений (VDS, 600): время UTC | файл/команда | параметр | было | стало ----
+if [[ "${STAND_TEST:-0}" == 1 ]]; then PTERO_CHANGES_LOG="${PTERO_CHANGES_LOG:-/home/twomc/bridge-dev-srv.changes.log}"; else PTERO_CHANGES_LOG=/home/twomc/bridge-dev-srv.changes.log; fi
+declare -A _PT_BACKED=()   # путь -> 1: бэкап этого файла в текущем процессе уже сделан
+declare -A _PT_PREV=()     # путь -> sha256:<12> прежнего содержимого | absent (для столбца «было»)
+_PT_GUARD_OK=0             # 1 после успешного ptero_restart_guard; сбрасывается после restart/stop/kill
+
+# _pt_jclean: одна строка без управляющих символов и «|», без длинных hex/токенов и ключа панели, не длиннее 160 символов.
+_pt_jclean() {
+  local s="$1"
+  s="$(printf '%s' "$s" | tr -d '[:cntrl:]' | tr '|' '/' | sed -E -e 's/[0-9A-Fa-f]{32,}/<hex>/g' -e 's/[A-Za-z0-9_-]{40,}/<redacted>/g')"
+  [[ -n "${CLIENT_API_KEY:-}" ]] && s="${s//"$CLIENT_API_KEY"/<key>}"
+  printf '%s' "${s:0:160}"
+}
+
+# _pt_journal_ready: журнал можно дописывать (создаётся с правами 600). Без этого изменяющие операции отказывают.
+_pt_journal_ready() {
+  local d; d="$(dirname "$PTERO_CHANGES_LOG")"
+  [[ -d "$d" && ! -L "$PTERO_CHANGES_LOG" ]] || { ptero_die "журнал изменений недоступен (нет каталога или это ссылка): изменяющая операция отменена"; return 1; }
+  { ( umask 077; : >> "$PTERO_CHANGES_LOG" ) 2>/dev/null && chmod 600 "$PTERO_CHANGES_LOG" 2>/dev/null; } \
+    || { ptero_die "журнал изменений не открывается на запись: изменяющая операция отменена"; return 1; }
+}
+
+# ptero_journal <файл|команда> <параметр> <было> <стало>: дописывает строку журнала.
+ptero_journal() {
+  local ts; ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ( umask 077; printf '%s | %s | %s | %s | %s\n' "$ts" "$(_pt_jclean "${1:-}")" "$(_pt_jclean "${2:-}")" "$(_pt_jclean "${3:--}")" "$(_pt_jclean "${4:--}")" >> "$PTERO_CHANGES_LOG" ) 2>/dev/null \
+    || { ptero_die "не удалось записать строку журнала изменений"; return 1; }
+}
+
+# _pt_write_ready: запись разрешена (PTERO_ALLOW_WRITE=1) и журнал открывается.
+_pt_write_ready() {
+  [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "запись запрещена (PTERO_ALLOW_WRITE!=1): $1"; return 1; }
+  _pt_journal_ready
+}
+
+# ---- запись (только при PTERO_ALLOW_WRITE=1 и только по политике путей; каждая запись - строка журнала) ----
+
+# ptero_backup <путь критичного файла>: копия <путь>.bak-<UTC> на панели в той же папке. Содержимое идёт через локальный файл 600 (затирается).
+# Коды: 0 копия создана; 10 файла нет (копировать нечего); 1 ошибка; 2 путь не критичный. Для bridge-key.txt копии сразу ставится chmod 600
+# (не удалось - копия обнуляется и код 1).
+ptero_backup() {
+  local p="$1" tmp ts bak sha h
+  _pt_check_path "$p" || return 2
+  _pt_path_allowed backup "$p" || return 2
+  _pt_write_ready "backup $p" || return 1
+  _pt_mktemp || return 1; tmp="$_PT_LAST"
+  _pt_req GET "/files/contents?file=$(_pt_urlenc_path "$p")" || return 1
+  case "$PTERO_HTTP" in
+    200) ( umask 077; cat "$PTERO_BODY" > "$tmp" ); _pt_wipe ;;
+    404) _pt_wipe; _PT_PREV["$p"]=absent; _PT_BACKED["$p"]=1; return 10 ;;
+    *) # не 200/404 (панель иногда отвечает 500 на отсутствующий файл): файла нет в листинге каталога -> копировать нечего, иначе отказ
+       h="$PTERO_HTTP"; _pt_wipe
+       if ptero_file_exists "$p"; then ptero_die "бэкап $p: файл есть, но чтение дало HTTP $h; запись отменена"; return 1; fi
+       _PT_PREV["$p"]=absent; _PT_BACKED["$p"]=1; return 10 ;;
+  esac
+  sha="$(sha256sum -- "$tmp" | cut -c1-12)"; _PT_PREV["$p"]="sha256:$sha"
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"; bak="$p.bak-$ts"
+  ptero_file_write "$bak" "$tmp" || { : > "$tmp"; return 1; }
+  : > "$tmp"
+  if [[ "$p" == */bridge-key.txt ]]; then
+    if ! ptero_chmod "$(dirname "$p")" "$(basename "$bak")" 600; then
+      : > "$tmp"; ptero_file_write "$bak" "$tmp" >/dev/null 2>&1; ptero_die "chmod 600 копии ключа не выполнен: копия обнулена"; return 1
+    fi
+  fi
+  _PT_BACKED["$p"]=1
+  echo "бэкап: $bak"
+  return 0
+}
 
 # file_write <путь-на-сервере> <локальный-файл>: POST /files/write?file=... (тело = содержимое файла, без вывода).
+# Критичный файл: до первой записи за процесс делается ptero_backup (нет копии - нет записи).
 ptero_file_write() {
-  _pt_check_path "$1" || return 2
-  _pt_path_allowed write "$1" || return 2
+  local p="$1" re="\\.bak-$_PT_TS_RE\$" brc was now sha hide=0 res
+  _pt_check_path "$p" || return 2
+  _pt_path_allowed write "$p" || return 2
   [[ -f "$2" ]] || { ptero_die "нет локального файла для записи"; return 2; }
-  _pt_req POST "/files/write?file=$(_pt_urlenc_path "$1")" --data-binary "@$2" -H 'Content-Type: text/plain' || return 1
-  [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]] || { echo "file_write: HTTP $PTERO_HTTP" >&2; return 1; }
+  _pt_write_ready "file_write $p" || return 1
+  if _pt_critical_path "$p" && [[ -z "${_PT_BACKED[$p]:-}" ]]; then
+    ptero_backup "$p"; brc=$?
+    (( brc == 0 || brc == 10 )) || { ptero_die "бэкап перед записью не сделан: $p, запись отменена"; return 1; }
+  fi
+  [[ "$p" == */bridge-key.txt* ]] && hide=1
+  was="${_PT_PREV[$p]:-unknown}"; [[ "$p" =~ $re ]] && was=absent
+  sha="$(sha256sum -- "$2" | cut -c1-12)"; now="sha256:$sha"
+  if (( hide == 1 )); then was="<скрыто>"; now="<скрыто>"; fi
+  _pt_req POST "/files/write?file=$(_pt_urlenc_path "$p")" --data-binary "@$2" -H 'Content-Type: text/plain' || return 1
+  if [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]; then res="http=$PTERO_HTTP"; else res="FAILED http=$PTERO_HTTP"; fi
+  ptero_journal "$p" "file_write" "$was" "$now $res" || echo "WARN: строка журнала не записана" >&2
+  [[ "$res" != FAILED* ]] || { echo "file_write: HTTP $PTERO_HTTP" >&2; return 1; }
+  if [[ "$p" =~ $re ]]; then _PT_BACKED["${p%.bak-*}"]=1; fi   # копию сделал вызывающий (например, install-bridge.sh)
+  if (( hide == 0 )); then _PT_PREV["$p"]="$now"; fi
+  return 0
 }
 
 # upload <локальный-файл> <каталог-на-сервере> <имя-на-сервере>: GET /files/upload -> signed URL (не печатается), multipart.
-# Разрешено только /plugins + TwoMCBridge-0.1.0.jar.
+# Разрешено только /plugins + TwoMCBridge*.jar (чужие jar - запрет).
 ptero_upload() {
-  local local_file="$1" dir="$2" name="$3"
+  local local_file="$1" dir="$2" name="$3" was sha
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "запись запрещена (PTERO_ALLOW_WRITE!=1): upload"; return 1; }
-  [[ "${dir%/}" == "/plugins" && "$name" == "TwoMCBridge-0.1.0.jar" ]] || { ptero_die "upload: разрешён только /plugins/TwoMCBridge-0.1.0.jar"; return 2; }
+  [[ "${dir%/}" == "/plugins" ]] || { ptero_die "upload: разрешён только каталог /plugins"; return 2; }
+  _pt_name_ok "$name" || { ptero_die "upload: недопустимое имя файла"; return 2; }
+  _pt_path_allowed upload "/plugins/$name" || return 2
   [[ -f "$local_file" ]] || { ptero_die "нет локального файла для загрузки"; return 2; }
   _pt_check_path "$dir" || return 2
+  _pt_journal_ready || return 1
+  if ptero_file_exists "/plugins/$name"; then was=present; else was=absent; fi
+  sha="$(sha256sum -- "$local_file" | cut -c1-12)"
   _pt_req GET /files/upload || return 1
   [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "upload: получение URL, HTTP $PTERO_HTTP" >&2; return 1; }
   local url; url="$(ptero_json_str "$PTERO_BODY" url)"; _pt_wipe
@@ -244,31 +374,118 @@ ptero_upload() {
   code="$(curl -sS --max-time 300 -o /dev/null -w '%{http_code}' -K <(printf 'url = "%s&directory=%s"\n' "$url" "$(_pt_urlenc_path "$dir")") \
     -X POST --form "files=@${local_file};filename=${name}" </dev/null 2>/dev/null)" || code="000"
   unset url
-  [[ "$code" == "200" || "$code" == "204" ]] || { echo "upload: HTTP $code" >&2; return 1; }
+  if [[ "$code" == "200" || "$code" == "204" ]]; then
+    ptero_journal "/plugins/$name" "upload" "$was" "sha256:$sha http=$code" || echo "WARN: строка журнала не записана" >&2
+  else
+    ptero_journal "/plugins/$name" "upload" "$was" "FAILED http=$code sha256:$sha" || true
+    echo "upload: HTTP $code" >&2; return 1
+  fi
 }
 
-# power <signal>: разрешён только restart.
+# power <restart|stop|start|kill>. restart/stop/kill - только после успешного ptero_restart_guard в этом процессе
+# (игроки онлайн, say, 60 с) либо при PTERO_POWER_NOGUARD=1 (осознанное исключение, пишется в журнал).
 ptero_power() {
-  [[ "$1" == "restart" ]] || { ptero_die "разрешён только сигнал restart"; return 2; }
-  _pt_req POST /power -H 'Content-Type: application/json' --data-raw '{"signal":"restart"}' || return 1
-  [[ "$PTERO_HTTP" == "204" ]] || { echo "power: HTTP $PTERO_HTTP" >&2; return 1; }
+  local sig="$1" was="?" via=guard
+  case "$sig" in restart|stop|start|kill) ;; *) ptero_die "power: разрешены restart, stop, start, kill"; return 2 ;; esac
+  _pt_write_ready "power $sig" || return 1
+  if [[ "$sig" != start ]]; then
+    if [[ "${PTERO_POWER_NOGUARD:-0}" == 1 ]]; then via=NOGUARD
+    elif [[ "$_PT_GUARD_OK" != 1 ]]; then ptero_die "power $sig: сначала ptero_restart_guard (проверка игроков и say за 60 с); исключение - PTERO_POWER_NOGUARD=1"; return 1
+    fi
+  fi
+  was="$(ptero_state 2>/dev/null)"; was="${was:-?}"
+  _pt_req POST /power -H 'Content-Type: application/json' --data-raw "{\"signal\":\"$sig\"}" || return 1
+  if [[ "$PTERO_HTTP" == "204" ]]; then
+    _PT_GUARD_OK=0
+    ptero_journal "power" "$sig" "state=$was" "signal sent http=204 ($via)" || echo "WARN: строка журнала не записана" >&2
+  else
+    ptero_journal "power" "$sig" "state=$was" "FAILED http=$PTERO_HTTP ($via)" || true
+    echo "power: HTTP $PTERO_HTTP" >&2; return 1
+  fi
 }
 
-# Белый список консольных команд: `say TwoMC: <текст [A-Za-z0-9 .,:!?-]>`, `list`, `twomcbridge events`. Остальное (op, stop, ...) - отказ.
-_pt_cmd_allowed() {
-  local c="$1" re='^say TwoMC: [A-Za-z0-9 .,:!?-]{1,120}$'
-  case "$c" in
-    "list"|"twomcbridge events") return 0 ;;
+# ---- консольные команды: санитизация + явный денайлист ----
+
+# _pt_cmd_sanitize <команда>: одна строка, печатный ASCII 0x20-0x7E (без управляющих символов, табуляции и переводов строк),
+# 1..256 символов, не начинается с пробела.
+_pt_cmd_sanitize() {
+  local c="$1"
+  [[ -n "$c" ]] || { ptero_die "пустая команда"; return 1; }
+  (( ${#c} <= 256 )) || { ptero_die "команда длиннее 256 символов"; return 1; }
+  local re='^[ -~]+$'
+  [[ "$c" =~ $re ]] || { ptero_die "команда: допустима одна строка печатного ASCII без управляющих символов"; return 1; }
+  [[ "$c" != " "* ]] || { ptero_die "команда не должна начинаться с пробела"; return 1; }
+  return 0
+}
+
+# _pt_cmd_json_escape <команда>: печатает команду, экранированную для JSON-строки (\ и ").
+_pt_cmd_json_escape() { local c="$1"; c="${c//\\/\\\\}"; c="${c//\"/\\\"}"; printf '%s' "$c"; }
+
+# _pt_cmd_verb <команда>: имя команды в нижнем регистре без ведущего «/» и без пространства имён (minecraft:, bukkit:, essentials: ...).
+_pt_cmd_verb() {
+  local c="${1,,}" v
+  v="${c%% *}"; v="${v#/}"
+  [[ "$v" == *:* ]] && v="${v##*:}"
+  printf '%s' "$v"
+}
+
+# ДЕНАЙЛИСТ (обоснование - в тексте причины; op и deop НЕ запрещены). Команда проверяется по имени команды (verb); пространства имён срезаются,
+# поэтому `minecraft:execute` и `bukkit:reload` не обходят список. Это защита от ошибки, а не граница безопасности: мир и данные игроков
+# дополнительно защищены тем, что в ptero.sh нет удаления файлов. Печатает причину, код 0 - команда запрещена.
+_pt_cmd_denied() {
+  local c="${1,,}" v rest lpre
+  v="$(_pt_cmd_verb "$1")"
+  rest=""; [[ "$c" == *" "* ]] && rest="${c#* }"
+  case "$v" in
+    "") echo "пустое имя команды"; return 0 ;;
+    plugman|plugin|pm|pluginmanager|reload|rl)
+      echo "управление плагинами и глобальный reload: сторонние плагины не загружать, не выгружать, не удалять и не перезагружать целиком (reload плагина - его собственной командой)"; return 0 ;;
+    /*|we|worldedit|fawe|fastasyncworldedit|mv|mvm|mvdelete|mvremove|mvunload|mvconfirm|mvclone|mvregen|multiverse|multiverse-core|multiverse-inventories|mvinv|world|worlds|wm|worldmanager|regen|chunky|fill|fillbiome|clone)
+      echo "удаление, перегенерация или массовое изменение мира: мир удалять нельзя"; return 0 ;;
+    clear|clearinventory|ci|eci|eclear|clearall|eco|economy|authme|nlogin|login|l|register|reg|unregister|unreg|changepassword|changepass)
+      echo "очистка данных игрока (инвентарь, экономика) или команды авторизации с паролями (удаление данных игроков; пароли попали бы в журнал и argv)"; return 0 ;;
+    plugins|pl|bukkit)
+      case "$rest" in load*|unload*|delete*|remove*|install*|enable*|disable*|reload*|restart*)
+        echo "plugins load/unload/delete/enable/disable: сторонние плагины не загружать, не выгружать и не удалять через консоль"; return 0 ;; esac ;;
+    execute|function|schedule|datapack|sudo|esudo|su|sudoall|runas|console|cmd)
+      echo "обёртка, исполняющая другую команду или чужой код (обходит денайлист)"; return 0 ;;
+    lp|luckperms)
+      lpre=' (bulkupdate|delete[a-z]*|clear|migrate|import|trackclear) '
+      if [[ " $rest " =~ $lpre ]]; then echo "LuckPerms: массовое изменение или удаление данных прав"; return 0; fi ;;
   esac
-  [[ "$c" != *$'\n'* && "$c" =~ $re ]] && return 0
-  ptero_die "консольная команда не в белом списке"; return 1
+  return 1
 }
 
-# command <строка>: POST /command. Только белый список (_pt_cmd_allowed); JSON безопасен: символы без кавычек и обратной косой.
+# _pt_cmd_needs_guard <команда>: консольные stop и restart останавливают сервер: нужен ptero_restart_guard (как для power).
+_pt_cmd_needs_guard() { case "$(_pt_cmd_verb "$1")" in stop|restart) return 0 ;; esac; return 1; }
+
+# _pt_cmd_readonly <команда>: команды без изменений (в журнал не пишутся).
+_pt_cmd_readonly() { case "$(_pt_cmd_verb "$1")" in list|plugins|pl|version|ver|tps|mspt|help|\?) return 0 ;; esac; [[ "${1,,}" == "twomcbridge events" ]]; }
+
+# _pt_cmd_allowed <команда>: 0 - можно отправлять. Санитизация, денайлист, охрана stop/restart.
+_pt_cmd_allowed() {
+  local reason
+  _pt_cmd_sanitize "$1" || return 1
+  if reason="$(_pt_cmd_denied "$1")"; then ptero_die "команда запрещена: $reason"; return 1; fi
+  if _pt_cmd_needs_guard "$1" && [[ "$_PT_GUARD_OK" != 1 && "${PTERO_POWER_NOGUARD:-0}" != 1 ]]; then
+    ptero_die "консольные stop/restart: сначала ptero_restart_guard (игроки, say, 60 с); исключение - PTERO_POWER_NOGUARD=1"; return 1
+  fi
+  return 0
+}
+
+# command <строка>: POST /command. Санитизация + денайлист (_pt_cmd_allowed); JSON-экранирование; журнал (кроме команд только чтения).
 ptero_command() {
+  local ro=0
   _pt_cmd_allowed "$1" || return 2
-  _pt_req POST /command -H 'Content-Type: application/json' --data-raw "{\"command\":\"$1\"}" || return 1
+  _pt_cmd_readonly "$1" && ro=1
+  if (( ro == 0 )); then _pt_write_ready "command" || return 1; fi
+  _pt_req POST /command -H 'Content-Type: application/json' --data-raw "{\"command\":\"$(_pt_cmd_json_escape "$1")\"}" || return 1
+  if (( ro == 0 )); then
+    if [[ "$PTERO_HTTP" == "204" ]]; then ptero_journal "console: $1" "command" "-" "sent http=204" || echo "WARN: строка журнала не записана" >&2
+    else ptero_journal "console: $1" "command" "-" "FAILED http=$PTERO_HTTP" || true; fi
+  fi
   [[ "$PTERO_HTTP" == "204" ]] || { echo "command: HTTP $PTERO_HTTP" >&2; return 1; }
+  if _pt_cmd_needs_guard "$1"; then _PT_GUARD_OK=0; fi
 }
 
 # ---- консоль через websocket (node 22 во временном контейнере) ----
@@ -325,6 +542,7 @@ _pt_ws() {
   [[ "$secs" =~ ^[0-9]{1,4}$ ]] || { ptero_die "секунды: число"; return 2; }
   [[ -z "$send" ]] || _pt_cmd_allowed "$send" || return 2
   [[ -z "$send" || "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "отправка команды в консоль запрещена (PTERO_ALLOW_WRITE!=1)"; return 1; }
+  local jr=0; if [[ -n "$send" ]] && ! _pt_cmd_readonly "$send"; then jr=1; _pt_journal_ready || return 1; fi
   img="$(_pt_node_image)" || return 1
   _pt_req GET /websocket || return 1
   if [[ "$PTERO_HTTP" == "429" ]]; then sleep 45; _pt_req GET /websocket || return 1; fi   # панель ограничивает частоту выдачи токенов
@@ -341,6 +559,8 @@ _pt_ws() {
     "$img" node -e "$_PT_WS_JS" </dev/null 2>/dev/null
   local rc=$?
   unset tok sock
+  if (( jr == 1 )); then ptero_journal "console: $send" "command (websocket)" "-" "sent rc=$rc" || echo "WARN: строка журнала не записана" >&2; fi
+  if [[ -n "$send" ]] && _pt_cmd_needs_guard "$send"; then _PT_GUARD_OK=0; fi
   return $rc
 }
 
@@ -467,9 +687,9 @@ _pt_guard_probe() {
 # ptero_restart_guard <install|rollback>: перед restart. SLP>0 или list>0 -> `say`-предупреждение, ожидание 60 с, повторная проверка (если игроков стало больше -
 # второе предупреждение и ещё 30 с). SLP=0 -> перекрёстная проверка list: 0 -> можно; >0 -> предупреждение; list недоступен -> консервативно: предупреждение
 # и 60 с, затем restart. SLP и list недоступны -> отказ (код 1). Только при PTERO_ALLOW_WRITE=1. Ожидания для сухих прогонов: PTERO_GUARD_WAIT1/PTERO_GUARD_WAIT2.
-ptero_restart_guard() {
+_ptero_restart_guard_impl() {
   local why="$1" w1="${PTERO_GUARD_WAIT1:-60}" w2="${PTERO_GUARD_WAIT2:-30}" pr s l n n2 s2 l2 blind=0
-  [[ "$why" =~ ^(install|rollback)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
+  [[ "$why" =~ ^(install|rollback|access|config)$ && "$w1" =~ ^[0-9]{1,3}$ && "$w2" =~ ^[0-9]{1,3}$ ]] || { ptero_die "restart_guard: неверные аргументы"; return 2; }
   [[ "$PTERO_ALLOW_WRITE" == "1" ]] || { ptero_die "restart_guard требует PTERO_ALLOW_WRITE=1"; return 1; }
   pr="$(_pt_guard_probe)"; s="${pr% *}"; l="${pr#* }"   # stderr (диагностика ws) виден
   if [[ "$s" == "?" && "$l" == "?" ]]; then echo "BLOCKER: не удалось определить число игроков (SLP и websocket list недоступны)"; return 1; fi
@@ -498,6 +718,15 @@ ptero_restart_guard() {
   return 0
 }
 
+# Обёртка: после успешной проверки (код 0) выставляет _PT_GUARD_OK=1 - его требуют ptero_power restart/stop/kill и консольные stop/restart.
+# Работает только если вызвана в основном shell (не в $(...)). Флаг сбрасывается после использования.
+ptero_restart_guard() {
+  _PT_GUARD_OK=0
+  _ptero_restart_guard_impl "$@"; local rc=$?
+  (( rc == 0 )) && _PT_GUARD_OK=1
+  return $rc
+}
+
 # ---- файловые операции малого объёма (только при PTERO_ALLOW_WRITE=1 и только по белым спискам; JSON собирается из проверенных строк) ----
 _pt_name_ok() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; }
 
@@ -505,7 +734,9 @@ _pt_name_ok() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; }
 ptero_mkdir() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || { ptero_die "недопустимое имя каталога"; return 2; }
   [[ "${1%/}" == "/plugins" && "$2" == "TwoMCBridge" ]] || { ptero_die "mkdir: разрешён только /plugins/TwoMCBridge"; return 2; }
+  _pt_write_ready "mkdir" || return 1
   _pt_req POST /files/create-folder -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"name\":\"$2\"}" || return 1
+  ptero_journal "${1%/}/$2" "mkdir" "-" "http=$PTERO_HTTP" || true
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
@@ -514,18 +745,22 @@ ptero_chmod() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || return 2; [[ "$3" =~ ^[0-7]{3}$ ]] || return 2
   local re="^bridge-key\.txt(\.bak-$_PT_TS_RE)?\$"
   [[ "${1%/}" == "/plugins/TwoMCBridge" && "$2" =~ $re && "$3" == "600" ]] || { ptero_die "chmod: разрешён только 600 для bridge-key.txt[.bak-<время>] в /plugins/TwoMCBridge"; return 2; }
+  _pt_write_ready "chmod" || return 1
   _pt_req POST /files/chmod -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"file\":\"$2\",\"mode\":\"$3\"}]}" || return 1
+  ptero_journal "${1%/}/$2" "chmod" "-" "$3 http=$PTERO_HTTP" || true
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
 # rename <корень> <от> <к>: POST /files/rename (откат без удаления: jar переименовывается в *.disabled-*).
 ptero_rename() {
   _pt_check_path "$1" || return 2; _pt_name_ok "$2" || return 2; _pt_name_ok "$3" || return 2
-  local root="${1%/}" ok=0 re="^\.disabled-$_PT_TS_RE\$"
-  if [[ "$root" == "/plugins" && "$2" == "TwoMCBridge-0.1.0.jar" && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
+  local root="${1%/}" ok=0 re="^\.disabled-$_PT_TS_RE\$" jre='^TwoMCBridge[A-Za-z0-9._-]*\.jar$'
+  if [[ "$root" == "/plugins" && "$2" =~ $jre && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
   if [[ "$root" == "/plugins/TwoMCBridge" && ( "$2" == "config.yml" || "$2" == "bridge-key.txt" ) && "$3" == "$2"* && "${3#"$2"}" =~ $re ]]; then ok=1; fi
   [[ "$ok" == 1 ]] || { ptero_die "rename: разрешено только <файл Bridge> -> <файл>.disabled-<время>"; return 2; }
+  _pt_write_ready "rename" || return 1
   _pt_req POST /files/rename -H 'Content-Type: application/json' --data-raw "{\"root\":\"$1\",\"files\":[{\"from\":\"$2\",\"to\":\"$3\"}]}" || return 1
+  ptero_journal "$root/$2" "rename" "$2" "$3 http=$PTERO_HTTP" || true
   [[ "$PTERO_HTTP" == "204" || "$PTERO_HTTP" == "200" ]]
 }
 
