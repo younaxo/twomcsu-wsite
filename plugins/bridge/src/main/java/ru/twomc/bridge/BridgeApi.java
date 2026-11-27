@@ -49,6 +49,12 @@ final class BridgeApi {
         return classify(raw, DeliveryProtocol::parseAck);
     }
 
+    /** Пачка событий (снимки статистики и инвентаря). Подпись и nonce новые на каждый вызов, включая повтор. */
+    Result<List<EventsProtocol.EventResult>> events(byte[] body) {
+        Raw raw = post(Protocol.PATH_EVENTS, body);
+        return classify(raw, EventsProtocol::parse);
+    }
+
     private record Raw(Transport.Response response, String networkError) {}
 
     private Raw post(String path, byte[] body) {

@@ -22,13 +22,25 @@ public final class BridgePlugin extends JavaPlugin {
 
     private DeliveryEngine engine;
     private KeyStore store;
+    private TelemetryService telemetry;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         FileConfiguration cfg = getConfig();
-        if (!cfg.getBoolean("delivery.enabled", false)) {
-            getLogger().info("Выдача заказов выключена (delivery.enabled: false). Плагин ничего не опрашивает.");
+        boolean deliveryOn = cfg.getBoolean("delivery.enabled", false);
+        TelemetryConfig tcfg = TelemetryConfig.of(
+                cfg.getBoolean("stats.enabled", false),
+                cfg.getInt("stats.intervalMinutes", 10),
+                cfg.getString("stats.kills", "player"),
+                cfg.getString("stats.hits", "off"),
+                cfg.getBoolean("inventory.enabled", false),
+                cfg.getInt("inventory.intervalMinutes", 5),
+                cfg.getInt("inventory.minGapSeconds", 30),
+                cfg.getInt("inventory.heartbeatMinutes", 30));
+        if (!deliveryOn && !tcfg.anyEnabled()) {
+            getLogger().info("Выдача заказов, снимки статистики и инвентаря выключены (delivery.enabled, stats.enabled, "
+                    + "inventory.enabled: false). Плагин ничего не отправляет и не опрашивает.");
             return;
         }
 
@@ -42,12 +54,28 @@ public final class BridgePlugin extends JavaPlugin {
                 cfg.getInt("delivery.keyRetentionDays", 180));
         BridgeConfig.Result res = BridgeConfig.resolve(raw, System.getenv(), getDataFolder().toPath());
         if (!res.ok()) {
-            getLogger().warning("Выдача заказов ВЫКЛЮЧЕНА из-за настроек: " + res.problem());
+            getLogger().warning("Плагин ВЫКЛЮЧЕН из-за настроек подключения: " + res.problem());
             return;
         }
         BridgeConfig conf = res.config();
         for (String w : res.warnings()) {
             getLogger().warning(w);
+        }
+
+        for (String w : tcfg.warnings) {
+            getLogger().warning(w);
+        }
+        if (tcfg.anyEnabled()) {
+            try {
+                telemetry = TelemetryService.start(this, conf, tcfg, getDataFolder().toPath());
+                getLogger().info("Снимки включены: " + tcfg + ".");
+            } catch (RuntimeException | LinkageError e) {
+                telemetry = null;
+                getLogger().severe("Снимки статистики и инвентаря НЕ запущены (" + e.getClass().getSimpleName() + ").");
+            }
+        }
+        if (!deliveryOn) {
+            return;
         }
 
         try {
@@ -76,6 +104,10 @@ public final class BridgePlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (telemetry != null) {
+            telemetry.shutdown();
+            telemetry = null;
+        }
         if (engine != null) {
             engine.shutdown();
             engine = null;
@@ -101,6 +133,25 @@ public final class BridgePlugin extends JavaPlugin {
                     : store != null && store.corruptionPending() ? "ПОВРЕЖДЁН (нужен /twomcbridge ackcorrupt)" : "НЕДОСТУПЕН") + ", ключей " + s.storeSize()
                     + ", ack в очереди " + s.outbox() + ", заданий в работе " + s.inFlight()
                     + (s.pausedForMs() > 0 ? ", пауза ещё " + (s.pausedForMs() / 1000) + " с" : "") + ". Последнее: " + s.last());
+            return true;
+        }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("events")) {
+            if (telemetry == null) {
+                sender.sendMessage("TwoMC Bridge: снимки статистики и инвентаря выключены (stats.enabled, inventory.enabled).");
+                return true;
+            }
+            TelemetryCore.Status t = telemetry.core().status();
+            EventPipeline.Status q = telemetry.pipeline().status();
+            sender.sendMessage("TwoMC Bridge: статистика " + (t.statsEnabled() ? "вкл" : "выкл") + ", инвентарь "
+                    + (t.inventoryEnabled() ? (t.safeMode() ? "БЕЗОПАСНЫЙ РЕЖИМ (" + t.safeReason() + ")" : "вкл") : "выкл")
+                    + ", epoch " + t.epoch() + ", rev " + t.rev() + ", игроков " + t.players()
+                    + ". Очередь " + q.queued() + ", в отправке " + q.inFlight() + ", отправлено " + q.sent() + ", принято "
+                    + q.accepted() + ", отклонено " + q.rejected() + ", отброшено " + q.dropped() + ". Последнее: " + q.last());
+            return true;
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("invresume")) {
+            sender.sendMessage(telemetry == null ? "TwoMC Bridge: снимки инвентаря выключены."
+                    : "TwoMC Bridge: " + telemetry.core().resumeInventory(System.currentTimeMillis()));
             return true;
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("forget")) {
@@ -151,7 +202,7 @@ public final class BridgePlugin extends JavaPlugin {
                     : "TwoMC Bridge: перезапись журнала не удалась, выдача остаётся выключенной (см. лог).");
             return true;
         }
-        sender.sendMessage("Использование: /twomcbridge status | forget <idempotencyKey> | ackcorrupt [confirm]");
+        sender.sendMessage("Использование: /twomcbridge status | events | invresume | forget <idempotencyKey> | ackcorrupt [confirm]");
         return true;
     }
 
@@ -160,6 +211,6 @@ public final class BridgePlugin extends JavaPlugin {
         if (args.length == 2 && args[0].equalsIgnoreCase("ackcorrupt")) {
             return List.of("confirm");
         }
-        return args.length == 1 ? List.of("status", "forget", "ackcorrupt") : List.of();
+        return args.length == 1 ? List.of("status", "events", "invresume", "forget", "ackcorrupt") : List.of();
     }
 }
