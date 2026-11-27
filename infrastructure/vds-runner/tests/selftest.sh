@@ -40,4 +40,39 @@ done
 for p in .env.example apps/web/.env.sample apps/api/prisma/migrations/20240101_init/migration.sql apps/api/src/modules/auth/two-factor/secret-box.ts apps/api/src/a.ts package.json pnpm-lock.yaml; do
   wt_denied "$p" && bad "T3 ЛИШНЕЕ исключение: $p" || ok "T3 включён: $p"
 done
+
+# --- T4: аргументы java-build/bench проверяются ДО любого SSH (код 2, сеть не используется)
+rr() { ( VDS_LOCK_DIR="$D/t4-lock" "$HERE/run-remote.sh" "$@" ) >/dev/null 2>&1; echo $?; }
+[[ "$(rr java-build)" == 2 ]] && ok "T4a java-build без --path отклонён" || bad "T4a"
+[[ "$(rr java-build --path ../x)" == 2 ]] && ok "T4b --path с '..' отклонён" || bad "T4b"
+[[ "$(rr java-build --path /etc)" == 2 ]] && ok "T4c абсолютный --path отклонён" || bad "T4c"
+[[ "$(rr java-build --path 'a b')" == 2 ]] && ok "T4d --path с пробелом отклонён" || bad "T4d"
+[[ "$(rr unit --path plugins/bridge)" == 2 ]] && ok "T4e --path вне java-build отклонён" || bad "T4e"
+[[ "$(rr bench --env FOO=1)" == 2 ]] && ok "T4f неизвестный ключ --env отклонён" || bad "T4f"
+[[ "$(rr bench --env 'OHA_IMAGE=a;b')" == 2 ]] && ok "T4g значение --env со спецсимволом отклонено" || bad "T4g"
+[[ "$(rr bench --env PROFILE=small --env PROFILE=large)" == 2 ]] && ok "T4h повтор ключа --env отклонён" || bad "T4h"
+[[ "$(rr unit --env PROFILE=small)" == 2 ]] && ok "T4i --env вне bench отклонён" || bad "T4i"
+
+# --- T5: маскирование секретов в смоуке стенда (без сети; нужен node)
+if command -v node >/dev/null 2>&1; then
+  SMOKE_SELFTEST_MASK=1 node "$HERE/../test-website/smoke.mjs" 2>&1 | grep -q 'mask-selftest: ok' && ok "T5 smoke.mjs маскирует пароли, TOTP, JWT, Bearer, пароли в URL, otpauth" || bad "T5 маскирование смоука"
+else
+  echo "skip T5 (нет node)"
+fi
+
+# --- T6: проверка параметров bench (validate_params, подменённый nproc=6, без docker и сети) и нижний регистр тегов образов
+B="$HERE/server/ops/jobs/bench.sh"
+{ echo 'nproc() { echo 6; }'; sed -n "/^STAND_MIN_CPUS=/,/^validate_params ||/p" "$B" | sed '$d'; } > "$D/validate.sh"
+vp() { ( unset PROFILE DB_LATENCY_MS DURATION WARMUP REPEATS SERVER_NCPU LOADGEN_NCPU MEM HEAP JAVA_GC IMPLS LEVELS DOCKER_BUILD_ARGS SERVER_CPUS LOADGEN_CPUS
+         env "$@" bash -c "source '$D/validate.sh'; validate_params" >/dev/null 2>&1; echo $? ); }
+[[ "$(vp A=1)" == 0 ]] && ok "T6a умолчания (бенчмарк 0-3, стенду 2 ядра) допустимы" || bad "T6a"
+[[ "$(vp SERVER_CPUS=0-2 LOADGEN_CPUS=3-5)" == 1 ]] && ok "T6b cpuset без ядер для стенда отклонён" || bad "T6b"
+[[ "$(vp SERVER_CPUS=0-1 LOADGEN_CPUS=1-2)" == 1 ]] && ok "T6c пересекающиеся cpuset отклонены" || bad "T6c"
+[[ "$(vp SERVER_CPUS=0-9)" == 1 ]] && ok "T6d номер ядра >= nproc отклонён" || bad "T6d"
+[[ "$(vp PROFILE=huge)" == 1 ]] && ok "T6e PROFILE вне small|medium|large отклонён" || bad "T6e"
+[[ "$(vp DB_LATENCY_MS=5x)" == 1 ]] && ok "T6f нечисловой DB_LATENCY_MS отклонён" || bad "T6f"
+[[ "$(vp 'DOCKER_BUILD_ARGS=--privileged')" == 1 ]] && ok "T6g DOCKER_BUILD_ARGS с чужим флагом отклонён" || bad "T6g"
+[[ "$(vp 'DOCKER_BUILD_ARGS=--build-arg NODE_IMAGE=node:24 --no-cache')" == 0 ]] && ok "T6h --build-arg KEY=VAL и --no-cache допустимы" || bad "T6h"
+[[ "$(vp MEM=512m HEAP=1g)" == 1 ]] && ok "T6i HEAP >= MEM отклонён" || bad "T6i"
+if grep -nE 'twomcr-\$\{?id\}?-(api|web|java)|-t "twomcr-\$id' "$HERE"/server/ops/jobs/*.sh | grep -v '^$' | grep -q .; then bad "T6j тег образа с id без нижнего регистра"; else ok "T6j теги образов строятся из \${id,,}"; fi
 exit "$fail"

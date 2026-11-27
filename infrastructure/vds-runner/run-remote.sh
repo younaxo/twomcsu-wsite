@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # ЛОКАЛЬНО: поставить тяжёлое задание в очередь раннера на VDS, дождаться и забрать итог (лог, сводка, код возврата).
-#   run-remote.sh <unit|api-e2e|web-build|docker-build> [--ref <git-ref> | --worktree <путь>] [--include-untracked] [--out <каталог>] [--no-wait] [--timeout <мин>]
+#   run-remote.sh <unit|api-e2e|web-build|docker-build|java-build|bench> [--path <каталог>] [--env КЛЮЧ=ЗНАЧЕНИЕ]... [--ref <git-ref> | --worktree <путь>] [--include-untracked] [--out <каталог>] [--no-wait] [--timeout <мин>]
 #   run-remote.sh --attach <id> [--out <каталог>] [--timeout <мин>]     # дождаться/забрать ранее поставленное задание
 # По умолчанию снимок = git archive origin/main (после git fetch). --worktree: ТОЛЬКО tracked-файлы рабочей копии (с незакоммиченными правками;
 # новые файлы - `git add -N <файл>` или флаг --include-untracked); denylist секретов/дампов/мусора - lib/wt-filter.sh; список исключённого и неотслеживаемого печатается.
+# java-build: --path <каталог с Dockerfile в снимке> (обязателен, например plugins/bridge); jar и отчёты тестов - в <out>/out.
+# bench: --env КЛЮЧ=ЗНАЧЕНИЕ (OHA_IMAGE обязателен; списки через запятую; BENCH_PRECHECK_ONLY=1 - только проверки), результаты целиком - в <out>/out; ожидание по умолчанию 180 мин.
 # Код возврата: код задания на сервере (0 = успех); 70 - тайм-аут ожидания (задание продолжает работать; используйте --attach);
 # 255 - сбой SSH (НЕ повторять подряд: остановитесь и разберитесь).
 # Доступ к VDS: только через lib/vds-ssh.sh (блокировка, twomc@VDS_HOST, ключ, BatchMode, StrictHostKeyChecking=yes).
@@ -15,8 +17,8 @@ source "$HERE/lib/vds-ssh.sh"
 source "$HERE/lib/wt-filter.sh"
 trap vds_exit_cleanup EXIT
 
-JOB=""; REF=""; WT=""; OUT=""; INCLUDE_UNTRACKED=0; NOWAIT=0; ATTACH=""; TIMEOUT_MIN=60
-usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" >&2; exit 2; }
+JOB=""; REF=""; WT=""; OUT=""; INCLUDE_UNTRACKED=0; NOWAIT=0; ATTACH=""; TIMEOUT_MIN=""; JOB_PATH=""; ENVS=()
+usage() { sed -n "2,16p" "${BASH_SOURCE[0]}" >&2; exit 2; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --ref) REF="${2:?}"; shift 2 ;;
@@ -26,15 +28,36 @@ while [[ $# -gt 0 ]]; do
     --no-wait) NOWAIT=1; shift ;;
     --attach) ATTACH="${2:?}"; shift 2 ;;
     --timeout) TIMEOUT_MIN="${2:?}"; shift 2 ;;
+    --path) JOB_PATH="${2:?}"; shift 2 ;;
+    --env) ENVS+=("${2:?}"); shift 2 ;;
     -h|--help) usage ;;
     -*) echo "Неизвестный флаг: $1" >&2; usage ;;
     *) [[ -z "$JOB" ]] || usage; JOB="$1"; shift ;;
   esac
 done
-[[ "$TIMEOUT_MIN" =~ ^[0-9]+$ ]] || { echo "--timeout: число минут" >&2; exit 2; }
+[[ -z "$TIMEOUT_MIN" || "$TIMEOUT_MIN" =~ ^[0-9]+$ ]] || { echo "--timeout: число минут" >&2; exit 2; }
+BENCH_ENV_KEYS='OHA_IMAGE|PROFILE|DB_LATENCY_MS|DATASET_FILE|RULES|IMPLS|LEVELS|DURATION|WARMUP|REPEATS|DOCKER_BUILD_ARGS|BENCH_NODE_IMAGE|BENCH_PRECHECK_ONLY|MEM|HEAP|SERVER_NCPU|SERVER_CPUS|LOADGEN_CPUS|LOADGEN_NCPU|JAVA_GC'
 if [[ -z "$ATTACH" ]]; then
-  [[ "$JOB" =~ ^(unit|api-e2e|web-build|docker-build)$ ]] || { echo "Задание: unit | api-e2e | web-build | docker-build" >&2; usage; }
+  [[ "$JOB" =~ ^(unit|api-e2e|web-build|docker-build|java-build|bench)$ ]] || { echo "Задание: unit | api-e2e | web-build | docker-build | java-build | bench" >&2; usage; }
   [[ -z "$REF" || -z "$WT" ]] || { echo "--ref и --worktree взаимоисключающие" >&2; exit 2; }
+  if [[ "$JOB" == java-build ]]; then
+    [[ -n "$JOB_PATH" ]] || { echo "java-build: нужен --path <каталог с Dockerfile>, например plugins/bridge" >&2; exit 2; }
+    [[ "$JOB_PATH" =~ ^[A-Za-z0-9._/-]+$ && "$JOB_PATH" != /* && "$JOB_PATH" != *..* ]] || { echo "--path: относительный путь [A-Za-z0-9._/-] без '..'" >&2; exit 2; }
+  else
+    [[ -z "$JOB_PATH" ]] || { echo "--path допустим только для java-build" >&2; exit 2; }
+  fi
+  if (( ${#ENVS[@]} )); then
+    [[ "$JOB" == bench ]] || { echo "--env допустим только для bench" >&2; exit 2; }
+    for e in "${ENVS[@]}"; do
+      [[ "$e" =~ ^($BENCH_ENV_KEYS)=[A-Za-z0-9._:/@+,=-]*$ ]] || { echo "--env: недопустимый ключ или значение (ключи: ${BENCH_ENV_KEYS//|/ }; значения [A-Za-z0-9._:/@+,=-], списки через запятую)" >&2; exit 2; }
+    done
+    [[ "$(printf '%s\n' "${ENVS[@]}" | cut -d= -f1 | sort | uniq -d)" == "" ]] || { echo "--env: ключи не должны повторяться" >&2; exit 2; }
+  fi
+  TIMEOUT_MIN="${TIMEOUT_MIN:-$([[ "$JOB" == bench ]] && echo 180 || echo 60)}"
+else
+  # job из id: <UTC>-<job>-<hex6>
+  _j="${ATTACH#*Z-}"; _j="${_j%-*}"
+  TIMEOUT_MIN="${TIMEOUT_MIN:-$([[ "$_j" == bench ]] && echo 180 || echo 60)}"
 fi
 
 REPO="$(git -C "$HERE" rev-parse --show-toplevel)"
@@ -78,7 +101,9 @@ if [[ -z "$ATTACH" ]]; then
   # ---- бандл: meta.env + code.tar.gz + ops (скрипты раннера этой версии)
   ID="$(date -u +%Y%m%dT%H%M%SZ)-$JOB-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
   mkdir -p "$STAGE_TMP/bundle"
-  { echo "JOB=$JOB"; echo "REF_DESC=$REF_DESC"; echo "CREATED=$(date -u +%FT%TZ)"; } > "$STAGE_TMP/bundle/meta.env"
+  { echo "JOB=$JOB"; echo "REF_DESC=$REF_DESC"; echo "CREATED=$(date -u +%FT%TZ)"
+    [[ -z "$JOB_PATH" ]] || echo "JOB_PATH=$JOB_PATH"
+    for e in ${ENVS[@]+"${ENVS[@]}"}; do echo "ENV_$e"; done; } > "$STAGE_TMP/bundle/meta.env"
   mv "$STAGE_TMP/code.tar.gz" "$STAGE_TMP/bundle/code.tar.gz"
   cp -r "$HERE/server/ops" "$STAGE_TMP/bundle/ops"
   tar -cf "$STAGE_TMP/bundle-$ID.tar" -C "$STAGE_TMP/bundle" .
@@ -122,6 +147,6 @@ echo
 echo "================ СВОДКА ================"
 cat "$OUT/summary.txt"
 echo "========================================"
-echo "Артефакты: $OUT (result.env, summary.txt, job.log). Код возврата задания: $EXIT_CODE"
+echo "Артефакты: $OUT (result.env, summary.txt, job.log$([[ -d "$OUT/out" ]] && echo ", out/")). Код возврата задания: $EXIT_CODE"
 if [[ "$EXIT_CODE" != 0 ]]; then echo "---- хвост лога ----"; tail -n 40 "$OUT/job.log"; fi
 exit "$EXIT_CODE"

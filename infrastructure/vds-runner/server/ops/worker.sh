@@ -13,8 +13,8 @@ run_job() {
   local id="$1" dir="$RUNNER_ROOT/running/$1" start end rc
   mv "$RUNNER_ROOT/queue/$id" "$dir" || return 1
   # shellcheck disable=SC1091
-  source "$dir/meta.env"            # JOB, REF_DESC, OPS_HASH, CREATED
-  [[ "${JOB:-}" =~ ^(unit|api-e2e|web-build|docker-build)$ && "${OPS_HASH:-}" =~ ^[0-9a-f]{12}$ ]] || { echo "worker: недопустимые JOB/OPS_HASH в $id" >&2; return 2; }
+  set -a; source "$dir/meta.env"; set +a   # JOB, REF_DESC, OPS_HASH, CREATED, (JOB_PATH, ENV_* - только валидированные enqueue.sh)
+  [[ "${JOB:-}" =~ ^(unit|api-e2e|web-build|docker-build|java-build|bench)$ && "${OPS_HASH:-}" =~ ^[0-9a-f]{12}$ ]] || { echo "worker: недопустимые JOB/OPS_HASH в $id" >&2; return 2; }
   local ops="$RUNNER_ROOT/ops/$OPS_HASH"
   [[ -f "$ops/jobs/$JOB.sh" && -f "$ops/lib.sh" ]] || { echo "worker: нет скриптов ops/$OPS_HASH для $id" >&2; return 3; }
   mkdir -p "$dir/src"
@@ -25,6 +25,7 @@ run_job() {
     echo "== job=$JOB id=$id ref=$REF_DESC started=$(date -u +%FT%TZ)"
     # shellcheck disable=SC1091
     source "$ops/lib.sh"
+    job_timeout_for "$JOB"
     echo "== limits: cpus=$JOB_CPUS mem=$JOB_MEM cpu-shares=$CPU_SHARES nice=15 timeout=${JOB_TIMEOUT_SEC}s"
     export RUNNER_ROOT
     jrc=0
@@ -33,6 +34,8 @@ run_job() {
     docker_cleanup_job "$id"
     echo "== exit=$jrc"
   ) >> "$dir/job.log" 2>&1
+  # out/ (jar, отчёты, results): без симлинков (приходят из контейнеров и уходят клиенту tar-ом) и с доступом владельца для очистки
+  [[ ! -d "$dir/out" ]] || { find "$dir/out" -type l -delete 2>/dev/null; chmod -R u+rwX "$dir/out" 2>/dev/null; }
   rc="$(grep -E '^== exit=' "$dir/job.log" | tail -1 | sed 's/^== exit=//')"; rc="${rc:-99}"
   end="$(date +%s)"
   {
