@@ -14,7 +14,7 @@ trap 'rm -f -- "$STAGE_FILE"; vds_exit_cleanup' EXIT
 
 bundle() { # bundle <скрипт>: ptero.sh + скрипт (без shebang) одним файлом
   STAGE_FILE="$(mktemp "${TMPDIR:-/tmp}/bridge-dev-run.XXXXXX")"
-  { cat "$HERE/ptero.sh"; echo; grep -v '^#!' "$HERE/$1"; } > "$STAGE_FILE"
+  { cat "$HERE/ptero.sh"; echo; grep -v "^#!" "$HERE/stand-lib.sh"; echo; grep -v "^#!" "$HERE/$1"; } > "$STAGE_FILE"
 }
 
 cmd="${1:-}"; shift || true

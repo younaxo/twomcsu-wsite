@@ -307,3 +307,19 @@ ptero_rename() {
 
 # command_capture <команда> <секунды> <until-regex> <filter-regex>: отправить команду в консоль и напечатать совпавшие строки ответа.
 ptero_command_capture() { _pt_ws "$2" "$1" 0 "$3" "" "$4"; }
+
+# allocation: основная аллокация сервера (GET /network/allocations), печатает «<хост> <порт>»: ip_alias, если задан, иначе ip.
+# Только чтение. Значения несекретны (адрес игрового сервера). Код 1 - HTTP не 200 или формат неожиданный.
+ptero_allocation() {
+  _pt_req GET /network/allocations || return 1
+  [[ "$PTERO_HTTP" == "200" ]] || { echo "HTTP $PTERO_HTTP" >&2; return 1; }
+  local rec ip alias port host
+  rec="$(sed 's/{"object":"allocation"/\n&/g' "$PTERO_BODY" | grep '"is_default":true' | head -n1)"
+  [[ -n "$rec" ]] || { ptero_die "в ответе нет основной аллокации"; return 1; }
+  ip="$(sed -n 's/.*"ip":"\([^"]*\)".*/\1/p' <<<"$rec")"
+  alias="$(sed -n 's/.*"ip_alias":"\([^"]*\)".*/\1/p' <<<"$rec")"
+  port="$(sed -n 's/.*"port":\([0-9][0-9]*\).*/\1/p' <<<"$rec")"
+  host="${alias:-$ip}"
+  [[ "$host" =~ ^[A-Za-z0-9.-]+$ && "$port" =~ ^[0-9]{2,5}$ ]] || { ptero_die "адрес аллокации неожиданного формата"; return 1; }
+  printf '%s %s\n' "$host" "$port"
+}

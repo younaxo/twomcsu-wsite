@@ -3,11 +3,13 @@
 #   --dry-run  только чтение (GET): проверки версии/Java, наличие файлов, подписанный handshake сайта; ничего не меняет
 #   --yes      выполнить установку (запись на панель: файлы, restart, команды консоли)
 #   без флага  usage, ничего не делается
-# Вход вне репозитория: /home/twomc/bridge-dev-srv.secret.env (KEY=VALUE, права 600, создаёт Chief):
-#   BRIDGE_SITE_URL=https://<домен стенда>   (без пути: плагин добавляет /bridge/v1/... сам)
-#   BRIDGE_SERVER_SLUG=dev-srv               (^[a-z0-9][a-z0-9-]{1,31}$; зарегистрирован на сайте)
-#   BRIDGE_KEY_GEN=1                         (поколение ключа)
-#   BRIDGE_KEY_HEX=<64 hex>                  (ключ сервера, вывод bridge:print-key; выдаёт только владелец)
+# Порядок (runbook docs/runbooks/bridge-dev-srv.md): stand-bridge-secret -> stand-flags -> register-dev-srv --yes -> link-account --yes ->
+#   stage JAR -> install --dry-run -> install --yes -> bot-join -> проверка на стенде -> live-sigcheck. Этот скрипт - шаги install.
+# Вход вне репозитория: /home/twomc/bridge-dev-srv.secret.env (права 600), его пишет register-dev-srv.sh (ключ только в файл, не в вывод):
+#   KEY_ID=dev-srv.1                         (<slug>.<поколение>; slug ^[a-z0-9][a-z0-9-]{1,31}$, зарегистрирован на сайте)
+#   KEY=<64 hex>                             (ключ сервера, вывод bridge:print-key)
+#   SITE_URL=https://<домен стенда>          (без пути: плагин добавляет /bridge/v1/... сам)
+#   Прежний формат (BRIDGE_SITE_URL, BRIDGE_SERVER_SLUG, BRIDGE_KEY_GEN, BRIDGE_KEY_HEX) тоже принимается.
 # Файлы на VDS (кладёт `run-on-vds.sh stage <jar>`): ~/.twomc-inbox/TwoMCBridge.jar и bridge-config.yml.tpl.
 # Секреты нигде не печатаются. Коды: 0 установлено и первый успешный запрос подтверждён, 3 установлено, подтверждение ждёт игрока
 # онлайн (см. verify-bridge.sh), 1 блокер или ошибка, 2 неверные аргументы.
@@ -43,12 +45,18 @@ ptero_init || exit 1
 
 # ---- 0. вход Chief (вне репозитория), значения не печатаются
 HAVE_SECRET=0; BRIDGE_SITE_URL=""; BRIDGE_SERVER_SLUG=""; BRIDGE_KEY_GEN=""; BRIDGE_KEY_HEX=""
+KEY_ID=""; KEY=""; SITE_URL=""
 step 0 "входной файл ключа"
 if [[ -f "$SECRET_ENV" ]]; then
   perm="$(stat -c %a "$SECRET_ENV" 2>/dev/null || echo '?')"
   [[ "$perm" == 600 ]] || say "WARN: права secret.env: $perm (ожидается 600)"
   # shellcheck disable=SC1090
   . "$SECRET_ENV"
+  # Формат register-dev-srv.sh: KEY_ID=<slug>.<gen>, KEY=<64 hex>, SITE_URL=...; прежний формат BRIDGE_* тоже принимается.
+  if [[ -n "$KEY_ID" ]]; then
+    : "${BRIDGE_SERVER_SLUG:=${KEY_ID%.*}}" "${BRIDGE_KEY_GEN:=${KEY_ID##*.}}" "${BRIDGE_KEY_HEX:=$KEY}" "${BRIDGE_SITE_URL:=$SITE_URL}"
+  fi
+  KEY=""
   BRIDGE_KEY_GEN="${BRIDGE_KEY_GEN:-1}"; BRIDGE_KEY_HEX="${BRIDGE_KEY_HEX,,}"
   bad=""
   [[ "$BRIDGE_SITE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || bad+=" BRIDGE_SITE_URL(https://хост без пути)"
@@ -129,7 +137,7 @@ if [[ "$HAVE_SECRET" == 1 ]]; then
       --env-file <(printf 'KEYID=%s\nKEYHEX=%s\nSITEURL=%s\n' "$KEY_ID" "$BRIDGE_KEY_HEX" "$BRIDGE_SITE_URL") \
       "$nimg" node -e "$PREFLIGHT_JS" </dev/null 2>/dev/null)"
     say "handshake: ${hs:-нет ответа}"
-    [[ "$hs" == *"handshake=ok"* ]] || block "handshake не прошёл (503: BRIDGE_ENABLED или секрет не заданы; 401: ключ или slug не зарегистрированы; basic-auth-gate: нет обхода входа стенда для /bridge/v1/*; NETERR: сеть или TLS)"
+    [[ "$hs" == *"handshake=ok"* ]] || block "handshake не прошёл (503: BRIDGE_ENABLED или секрет не заданы; 401: ключ или slug не зарегистрированы; basic-auth-gate или 404: на nginx стенда нет location /bridge/v1/ -> API без входа стенда (плагин ходит на SITE_URL/bridge/v1/..., без /api); NETERR: сеть или TLS)"
   fi
 else
   say "пропущено: нет корректного secret.env"
