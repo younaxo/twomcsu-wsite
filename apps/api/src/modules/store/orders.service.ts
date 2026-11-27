@@ -59,6 +59,7 @@ import { toGuestOrderView } from './guest-order-view';
 import {
   badRequest,
   loginRequired,
+  notFound,
   paymentUnavailable,
   StoreCartError,
 } from './store-errors';
@@ -381,7 +382,7 @@ export class OrdersService {
       },
     });
     if (!cart || cart.items.length === 0) {
-      throw new BadRequestException('Корзина пуста');
+      throw badRequest(StoreCartError.CART_EMPTY, 'Корзина пуста');
     }
 
     // Недействительный сохранённый промокод здесь — 4xx с кодом PROMO_*, а не
@@ -420,7 +421,10 @@ export class OrdersService {
       include: { product: true },
     });
     if (!variant || !variant.isActive || !variant.product.isActive) {
-      throw new NotFoundException('Вариант товара не найден');
+      throw notFound(
+        StoreCartError.VARIANT_NOT_FOUND,
+        'Вариант товара не найден',
+      );
     }
     const quantity = dto.quantity ?? 1;
 

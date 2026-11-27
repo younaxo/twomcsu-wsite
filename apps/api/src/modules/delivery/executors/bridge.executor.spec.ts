@@ -136,7 +136,13 @@ describe('BridgeExecutor (0.13)', () => {
       .mockResolvedValueOnce(claimed())
       .mockResolvedValue(job({ status: BridgeDeliveryJobStatus.DONE }));
     const { executor } = setup({ getById });
+    // Окно ожидания большое: тест завершается по ack (второй опрос), а не по
+    // времени, поэтому не зависит от нагрузки CI (R171).
+    executor.timing.ackWaitMs = 30_000;
+    executor.timing.pollMs = 1;
     expect((await executor.execute(task())).kind).toBe('delivered');
+    // Ровно два опроса: первый видит CLAIMED, второй - DONE.
+    expect(getById).toHaveBeenCalledTimes(2);
   });
 
   it('отказ плагина -> failed с причиной', async () => {

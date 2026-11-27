@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { tokenStore } from '@/lib/api/token-store';
 import { useAuthStore } from '@/lib/auth/store';
-import { API_URL } from '@/lib/env';
+import { realtimeTarget } from '@/lib/realtime';
 import { useActiveConversation } from '@/lib/notifications/in-app';
 import { messageKeys } from './hooks';
 
@@ -28,7 +28,8 @@ export function useConversationSocket(conversationId: string) {
   useEffect(() => {
     const token = tokenStore.get();
     if (!authenticated || !token) return;
-    const connection = io(`${API_URL}/messages`, {
+    const connection = io(realtimeTarget('/messages').url, {
+      path: realtimeTarget('/messages').path,
       auth: { token },
       transports: ['websocket'],
       reconnectionAttempts: 5,

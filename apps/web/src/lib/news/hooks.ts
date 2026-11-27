@@ -110,6 +110,13 @@ export function useNewsActions(slug: string) {
       api.delete(`/news/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}`),
     onSuccess: refresh,
   });
+  const edit = useMutation({
+    mutationFn: ({ commentId, content }: { commentId: string; content: string }) =>
+      api.patch(`/news/${encodeURIComponent(slug)}/comments/${encodeURIComponent(commentId)}`, {
+        content,
+      }),
+    onSuccess: refresh,
+  });
   const react = useMutation({
     mutationFn: ({ commentId, key }: { commentId: string; key: string }) =>
       api.post(
@@ -118,5 +125,5 @@ export function useNewsActions(slug: string) {
       ),
     onSuccess: refresh,
   });
-  return { like, comment, remove, react };
+  return { like, comment, edit, remove, react };
 }

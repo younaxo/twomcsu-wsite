@@ -1,6 +1,7 @@
 import type { ReportStatus, ReportType } from './admin';
 import type { IsoDateString, Paginated } from './common';
 import type { PunishmentType } from './moderation';
+import type { PunishmentKind } from './punishments';
 
 /// Система обращений (`/reports`, `/moderation/reports`, `/admin/reports`).
 /// `ReportType`/`ReportStatus` и их константы уже экспортируются из `admin.ts`.
@@ -33,6 +34,18 @@ export interface ReportEvidenceLinkDto {
   type: string | null;
   order: number;
   createdAt: IsoDateString;
+}
+
+/// Наказание сервера (зеркало LiteBans), которое обжалуется (l1-02, ADR-0194).
+/// Без выдавшего, причины, uuid и IP; subjectName приходит только персоналу.
+export interface ReportAppealedMinecraftPunishmentDto {
+  ref: string;
+  kind: PunishmentKind;
+  status: 'ACTIVE' | 'EXPIRED' | 'REMOVED';
+  startedAt: IsoDateString;
+  until: IsoDateString | null;
+  removedAt: IsoDateString | null;
+  subjectName?: string | null;
 }
 
 /// Обжалуемое наказание: без `issuedBy` и прочих служебных полей.
@@ -131,6 +144,8 @@ export interface ReportDetailDto extends ReportSummaryDto {
   evidenceLinks: ReportEvidenceLinkDto[];
   messages: ReportMessageDto[];
   appealedPunishment: ReportAppealedPunishmentDto | null;
+  /** Наказание сервера по ссылке ban-123; null у остальных обращений. */
+  appealedMinecraftPunishment?: ReportAppealedMinecraftPunishmentDto | null;
 }
 
 /// `GET /reports/:reportNumber` для персонала (`reports.view`).
@@ -177,6 +192,7 @@ export interface StaffReportListItemDto extends ReportSummaryDto, ReportStaffFie
   priority: ReportPriority;
   author: ReportPublicUserDto;
   assignedTo?: ReportPublicUserDto | null;
+  appealedMinecraftPunishment?: ReportAppealedMinecraftPunishmentDto | null;
 }
 export type StaffReportListResponse = Paginated<StaffReportListItemDto>;
 

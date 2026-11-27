@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
+import { AppealedMcPunishment } from '@/components/admin/appealed-mc-punishment';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -528,6 +529,9 @@ function Card({ number }: { number: string }) {
                 Обжалуется: {PUNISHMENT_TYPE_LABEL[data.appealedPunishment.punishmentType]} ·{' '}
                 {data.appealedPunishment.reason}
               </p>
+            ) : null}
+            {data.appealedMinecraftPunishment ? (
+              <AppealedMcPunishment punishment={data.appealedMinecraftPunishment} />
             ) : null}
             {data.internalNote ? (
               <p className="rounded-lg bg-surface-sunken px-3 py-2 text-xs text-muted-foreground">

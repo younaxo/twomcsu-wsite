@@ -6,6 +6,7 @@ import { LifeBuoy, Lock, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
+import { AppealedMcPunishment } from '@/components/admin/appealed-mc-punishment';
 import { PermissionGate } from '@/components/admin/permission-gate';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ import {
 } from '@/lib/admin/reports';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime } from '@/lib/format';
+import { ReportsStatsPanel } from './_components/reports-stats';
 import { REPORT_STATUS_LABEL, type ReportStatus } from '@/lib/support/hooks';
 
 /// Очередь обращений для персонала (Этап 01, шаг C): фильтры по статусу, типу,
@@ -171,6 +173,9 @@ function ReportRow({ report }: { report: StaffReportSummary }) {
             {REPORT_PRIORITY_LABEL[report.priority]}
           </Badge>
         ) : null}
+        {report.appealedMinecraftPunishment ? (
+          <AppealedMcPunishment punishment={report.appealedMinecraftPunishment} compact />
+        ) : null}
         {report.isLocked ? <Lock aria-label="Заблокировано" className="size-3.5" /> : null}
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {report.author?.username ?? '—'}
@@ -237,19 +242,29 @@ function ReportList({
 function Sections() {
   const { can } = usePermissions();
   const queue = <ReportList archived={false} emptyTitle="Обращений нет" testId="staff-reports" />;
-  if (!can('reports.archived.view')) return queue;
+  const canArchive = can('reports.archived.view');
+  const canStats = can('reports.stats');
+  if (!canArchive && !canStats) return queue;
   return (
     <Tabs defaultValue="queue">
       <TabsList>
         <TabsTrigger value="queue">Очередь</TabsTrigger>
-        <TabsTrigger value="archive">Архив</TabsTrigger>
+        {canArchive ? <TabsTrigger value="archive">Архив</TabsTrigger> : null}
+        {canStats ? <TabsTrigger value="stats">Статистика</TabsTrigger> : null}
       </TabsList>
       <TabsContent value="queue" className="pt-4">
         {queue}
       </TabsContent>
-      <TabsContent value="archive" className="pt-4">
-        <ReportList archived emptyTitle="Архив пуст" testId="archived-reports" />
-      </TabsContent>
+      {canArchive ? (
+        <TabsContent value="archive" className="pt-4">
+          <ReportList archived emptyTitle="Архив пуст" testId="archived-reports" />
+        </TabsContent>
+      ) : null}
+      {canStats ? (
+        <TabsContent value="stats" className="pt-4">
+          <ReportsStatsPanel />
+        </TabsContent>
+      ) : null}
     </Tabs>
   );
 }
