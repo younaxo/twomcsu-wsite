@@ -1,9 +1,11 @@
 'use client';
 
-import { WalletCards } from 'lucide-react';
+import { Lock, WalletCards } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/admin/page-header';
 import { RequireSession } from '@/components/auth/require-session';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CurrencyIcon } from '@/components/ui/currency-icon';
 import { DataGrid, type DataGridColumn } from '@/components/ui/data-grid';
@@ -66,6 +68,8 @@ const COLUMNS: DataGridColumn<WalletEntry>[] = [
   },
 ];
 
+const CLOSED_ACTIONS = ['Потратить рубины', 'Передать рубины другому игроку'];
+
 function WalletContent() {
   const [page, setPage] = useState(1);
   const history = useMyWalletHistory(page);
@@ -99,7 +103,40 @@ function WalletContent() {
         <p className="text-sm text-muted-foreground" data-testid="wallet-disclaimer">
           {RUBY_DISCLAIMER}
         </p>
+        <div className="mt-3">
+          <Button asChild size="sm">
+            <Link href="/shop" data-testid="wallet-topup-link">
+              Пополнить рубины в магазине
+            </Link>
+          </Button>
+        </div>
       </Card>
+
+      <section
+        aria-labelledby="wallet-closed-title"
+        className="flex flex-col gap-3 rounded-lg border border-border bg-surface-sunken p-4"
+        data-testid="wallet-closed-block"
+      >
+        <h2 id="wallet-closed-title" className="flex items-center gap-2 text-lg font-semibold">
+          <Lock className="size-4 shrink-0" aria-hidden="true" />
+          Траты и передача рубинов
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Траты и передача рубинов — закрыто по плану, появятся после решения владельца.
+        </p>
+        <ul className="flex flex-col gap-2 text-sm">
+          {CLOSED_ACTIONS.map((label) => (
+            <li
+              key={label}
+              aria-disabled="true"
+              className="flex items-center justify-between gap-2 rounded-md border border-border-subtle px-3 py-2 text-muted-foreground"
+            >
+              <span>{label}</span>
+              <span className="text-xs">Недоступно</span>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section aria-labelledby="wallet-history-title" className="flex flex-col gap-3">
         <h2 id="wallet-history-title" className="text-lg font-semibold">
@@ -131,8 +168,8 @@ function WalletContent() {
   );
 }
 
-/// «Настройки → Кошелёк»: баланс рубинов и журнал операций (0.15). Только чтение:
-/// ни трат, ни передачи, ни вывода.
+/// «Настройки → Кошелёк»: баланс рубинов и журнал операций (0.15). Баланс, история, пополнение
+/// через магазин; траты и передача закрыты по плану (hard gate, Q69), без запросов к API.
 export default function WalletSettingsPage() {
   return (
     <>
