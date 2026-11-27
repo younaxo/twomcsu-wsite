@@ -324,10 +324,10 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
 
         <Card className="flex flex-col gap-3">
           <h2 className="font-display text-lg font-bold">Согласие</h2>
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 max-md:min-h-10">
             <Checkbox
               id={offerId}
-              className="mt-0.5"
+              className="mt-0.5 max-md:mt-3"
               checked={accepted}
               invalid={offerError !== null}
               aria-required
@@ -338,7 +338,7 @@ function CheckoutForm({ cart, config }: { cart: CartView; config: CheckoutConfig
                 if (value === true) setOfferError(null);
               }}
             />
-            <label htmlFor={offerId} className="text-sm leading-snug">
+            <label htmlFor={offerId} className="text-sm leading-snug max-md:py-2.5">
               Я принимаю{' '}
               <Link
                 href={OFFER_DOC_HREF}

@@ -135,6 +135,30 @@ describe('оформление /shop/checkout', () => {
     );
   });
 
+  it('согласие: зона касания на мобильных >= 40px, label целиком переключает, ссылки — нет', async () => {
+    const user = userEvent.setup();
+    signIn();
+    route();
+    render(<CheckoutPage />, { wrapper: Providers });
+    const box = await screen.findByRole('checkbox');
+    expect(box.className).toContain('max-md:before:-inset-3');
+    expect(box.className).toContain('before:-inset-2');
+    expect(box.className).toContain('size-4');
+    const label = document.querySelector(`label[for="${box.id}"]`) as HTMLElement;
+    expect(label).not.toBeNull();
+    await user.click(label);
+    expect(box).toBeChecked();
+    // Клик по ссылке открывает документ и не меняет состояние чекбокса.
+    const offerLink = screen.getByRole('link', { name: /условия оферты/ });
+    offerLink.addEventListener('click', (e) => e.preventDefault());
+    await user.click(offerLink);
+    expect(box).toBeChecked();
+    const refundsLink = screen.getByRole('link', { name: /политику возвратов/ });
+    refundsLink.addEventListener('click', (e) => e.preventDefault());
+    await user.click(refundsLink);
+    expect(box).toBeChecked();
+  });
+
   it('без согласия: заказ не создаётся, ошибка у чекбокса, фокус на нём', async () => {
     const user = userEvent.setup();
     signIn();
