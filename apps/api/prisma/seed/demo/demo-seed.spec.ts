@@ -1118,7 +1118,7 @@ describe('демо-сид на стенде с прошлыми данными',
     );
     await seedDemoSocial(f.prisma as any, 'pos-1');
     const convs = [...f.tables.get('conversation')!.values()];
-    expect(convs.filter((c) => c.directKey === key)).toHaveLength(1);
+    expect(new Set(convs.filter((c) => c.directKey === key).map((c) => c.id))).toEqual(new Set(['legacy-conv']));
     expect(convs.some((c) => c.id === direct.id)).toBe(false);
     const msgs = [...f.tables.get('directMessage')!.values()].filter((m) =>
       direct.messages.some((x) => x.id === m.id),
