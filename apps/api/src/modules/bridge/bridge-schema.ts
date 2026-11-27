@@ -15,6 +15,11 @@ import {
   PunishmentRemoval,
 } from '../punishments/punishment.types';
 import { sanitizeLabel, sanitizeReason } from '../punishments/text-sanitizer';
+import { parseSnapshot } from '../inventory/inventory-normalize';
+import {
+  InventoryValidationError,
+  type NormalizedSnapshot,
+} from '../inventory/inventory.types';
 
 /// Строгие схемы Bridge v1 (раздел 4 контракта). Ошибка конверта - вся пачка
 /// отклоняется (422); ошибка `data` - отклоняется только событие
@@ -432,6 +437,23 @@ export function parseStatsSnapshot(
     return { ok: true, value: { uuid: u, metrics } };
   } catch (e) {
     if (e instanceof Invalid) return { ok: false };
+    throw e;
+  }
+}
+
+/// `data` события `inventory.snapshot` (раздел 16 контракта): схему, лимиты
+/// слотов, предметов и размера ряда, очистку текста и список разрешённых полей
+/// предмета задаёт модуль инвентаря (ADR-0168, `parseSnapshot`); здесь она
+/// не дублируется, только проверяется до обращений к Redis и БД. Лишние поля
+/// (`serverId`, `ip`, сырой NBT) отклоняются строгой схемой инвентаря.
+export function parseInventorySnapshot(
+  data: Record<string, unknown>,
+  now: Date,
+): Parsed<NormalizedSnapshot> {
+  try {
+    return { ok: true, value: parseSnapshot(data, now) };
+  } catch (e) {
+    if (e instanceof InventoryValidationError) return { ok: false };
     throw e;
   }
 }

@@ -15,6 +15,7 @@ const cfg = (over: Partial<BridgeConfig> = {}): BridgeConfig => ({
   bodyReadTimeoutMs: 10000,
   deliveryEnabled: false,
   statsEnabled: false,
+  inventoryEnabled: false,
   ...over,
 });
 

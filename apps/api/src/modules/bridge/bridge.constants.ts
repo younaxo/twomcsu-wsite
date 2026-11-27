@@ -81,6 +81,8 @@ export const CAPABILITY_KEYS = [
   'player-events',
   /// Сервер принимает задания выдачи заказов (0.13). Выдаётся владельцем явно.
   'delivery',
+  /// Сервер присылает снимки инвентаря игроков (раздел 16 контракта). Выдаёт владелец.
+  'inventory-sync',
 ] as const;
 export type BridgeCapability = (typeof CAPABILITY_KEYS)[number];
 

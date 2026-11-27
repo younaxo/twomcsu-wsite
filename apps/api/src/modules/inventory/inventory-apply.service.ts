@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { createHash } from 'crypto';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { compareFreshness } from './inventory-freshness';
 import { SERVER_SLUG } from './inventory-limits';
 import {
@@ -23,6 +24,9 @@ import {
   type NormalizedSnapshot,
 } from './inventory.types';
 
+const FUTURE_EPOCH_WARN_MS = 120_000;
+const FUTURE_EPOCH_WARN_EVERY_MS = 10 * 60_000;
+
 /// Применение событий `inventory.snapshot` и `inventory.delta` (ADR-0168,
 /// раздел 4.2; ADR-0179). Не зависит от источника: приёмник Bridge (этап 03)
 /// вызывает методы с `serverSlug` из `key-id` (не из тела) и необработанным
@@ -30,6 +34,11 @@ import {
 /// (журнал Redis — задача приёмника).
 @Injectable()
 export class InventoryApplyService {
+  private readonly logger = new Logger(InventoryApplyService.name);
+  /// Последний вывод предупреждения по ряду (серверный ключ + хеш игрока):
+  /// не чаще раза в 10 минут, размер ограничен.
+  private readonly futureEpochWarned = new Map<string, number>();
+
   constructor(
     @Inject(INVENTORY_STORE) private readonly store: InventoryStore,
   ) {}
@@ -42,7 +51,7 @@ export class InventoryApplyService {
     return this.run(
       serverSlug,
       () => parseSnapshot(data, now),
-      (p) => this.decideSnapshot(p, now),
+      (p, userId) => this.decideSnapshot(p, now, { serverSlug, userId }),
     );
   }
 
@@ -78,7 +87,7 @@ export class InventoryApplyService {
     if (userId !== expectedUserId) return { status: 'resync_required' };
     return this.store.mutate(
       { userId, serverSlug, group: snapshot.group },
-      this.decideSnapshot(snapshot, now),
+      this.decideSnapshot(snapshot, now, { serverSlug, userId }),
     );
   }
 
@@ -87,6 +96,7 @@ export class InventoryApplyService {
     parse: () => T,
     decide: (
       parsed: T,
+      userId: string,
     ) => (current: StoredInventory | null) => InventoryDecision,
   ): Promise<ApplyResult> {
     if (!SERVER_SLUG.test(serverSlug)) {
@@ -119,11 +129,15 @@ export class InventoryApplyService {
     }
     return this.store.mutate(
       { userId, serverSlug, group: parsed.group },
-      decide(parsed),
+      decide(parsed, userId),
     );
   }
 
-  private decideSnapshot(snapshot: NormalizedSnapshot, now: Date) {
+  private decideSnapshot(
+    snapshot: NormalizedSnapshot,
+    now: Date,
+    who: { serverSlug: string; userId: string },
+  ) {
     return (current: StoredInventory | null): InventoryDecision => {
       const contentHash = hashSlots(snapshot.slots);
       const meta = {
@@ -144,7 +158,10 @@ export class InventoryApplyService {
       // без изменений»); другой состав — `stale`.
       if (current) {
         const order = compareFreshness(snapshot, current);
-        if (order < 0) return { write: null, result: { status: 'stale' } };
+        if (order < 0) {
+          this.warnIfRowEpochAhead(current, now, who);
+          return { write: null, result: { status: 'stale' } };
+        }
         if (order === 0) {
           if (current.contentHash === contentHash) {
             return {
@@ -174,6 +191,36 @@ export class InventoryApplyService {
         result: { status: 'applied', kind: 'snapshot', contentChanged: true },
       };
     };
+  }
+
+  /// Ряд с `epoch` из будущего (более 120 с вперёд от часов приёмника) глушит
+  /// все честные снимки как `stale` (раздел 16.3 контракта). Предупреждение
+  /// без персональных данных: сервер, хеш `userId`, `epoch`.
+  private warnIfRowEpochAhead(
+    current: StoredInventory,
+    now: Date,
+    who: { serverSlug: string; userId: string },
+  ): void {
+    if (!/^[0-9]{1,16}$/.test(current.epoch)) return;
+    const aheadMs = Number(current.epoch) - now.getTime();
+    if (aheadMs <= FUTURE_EPOCH_WARN_MS) return;
+    const user = createHash('sha256')
+      .update(who.userId)
+      .digest('hex')
+      .slice(0, 12);
+    const key = `${who.serverSlug}|${user}`;
+    const last = this.futureEpochWarned.get(key);
+    if (
+      last !== undefined &&
+      now.getTime() - last < FUTURE_EPOCH_WARN_EVERY_MS
+    ) {
+      return;
+    }
+    if (this.futureEpochWarned.size >= 1000) this.futureEpochWarned.clear();
+    this.futureEpochWarned.set(key, now.getTime());
+    this.logger.warn(
+      `inventory snapshot stale: row epoch ahead of clock server=${who.serverSlug} user=${user} epoch=${current.epoch} ahead_s=${Math.round(aheadMs / 1000)}`,
+    );
   }
 
   private decideDelta(delta: NormalizedDelta, now: Date) {
