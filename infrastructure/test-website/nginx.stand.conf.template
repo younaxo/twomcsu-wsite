@@ -11,6 +11,7 @@
 #   - /robots.txt и ACME отдаёт сам nginx без проверки; запросы изнутри docker-сети (SSR web -> публичный API-URL) пропускаются по адресу источника.
 # Cookie-пропуск и заголовок X-Stand-Gate вырезаются перед proxy_pass: приложение их не видит. Остальные cookie
 # (в т.ч. two_factor_challenge, Q105) проходят без изменений, Set-Cookie приложения nginx не трогает (кроме proxy_cookie_path для /auth).
+# Картинки /api/uploads/*: приложение, при 404 - публичные файлы CDN (location @cdn_uploads; запись в CDN невозможна: только GET/HEAD, тело не передаётся).
 # Прежний basic-шаблон: git-история этого файла (откат описан в docs/runbooks/test-website-stand.md).
 
 geo $stand_internal {
@@ -19,10 +20,20 @@ geo $stand_internal {
     172.16.0.0/12    1;
 }
 
-# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass.
+# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass. Имя с границей (начало строки или «;»): чужие cookie
+# вида «x__Host-stand_gate=» не затрагиваются. Три формы: пропуск не последний / последний / единственный.
+# Регулярные выражения проверяются тестом stand-gate.test.mjs (читает этот файл).
 map $http_cookie $stand_fwd_cookie {
     default $http_cookie;
-    "~^(?<ck_pre>.*?);?[ ]*__Host-stand_gate=[A-Za-z0-9._-]+(?<ck_post>.*)$"   "$ck_pre$ck_post";
+    "~^(?<ck_pre>|.*?;[ ]*)__Host-stand_gate=[^;]*;[ ]*(?<ck_post>.*)$"   "$ck_pre$ck_post";
+    "~^(?<ck_head>.*?);[ ]*__Host-stand_gate=[^;]*$"                      "$ck_head";
+    "~^__Host-stand_gate=[^;]*$"                                          "";
+}
+
+# Путь картинок для fallback на CDN: /api/uploads/<путь> -> <путь>. Только безопасные символы и без «..»; иначе пусто (404).
+map $uri $stand_cdn_path {
+    default "";
+    "~^/api/uploads/(?!.*\.\.)(?<cdn_rest>[A-Za-z0-9._/-]+)$"   $cdn_rest;
 }
 
 map $http_upgrade $stand_connection_upgrade {
@@ -118,6 +129,54 @@ server {
         add_header X-Robots-Tag "noindex, nofollow" always;
         add_header Cache-Control "no-store" always;
         return 401 '{"statusCode":401,"error":"stand_gate_required","message":"Stand login required: /__stand/login"}';
+    }
+
+    # Картинки: сначала приложение (/uploads у API); 404 -> публичные файлы production-CDN (только чтение: GET/HEAD).
+    # Путь тот же без /api/uploads (apps/web: cdnUrl() = NEXT_PUBLIC_CDN_BASE_URL + путь из apps/web/public, напр. assets/...).
+    location /api/uploads/ {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        error_page 404 = @cdn_uploads;
+        limit_except GET HEAD { deny all; }
+        proxy_intercept_errors on;
+        proxy_pass http://127.0.0.1:${API_PORT}/uploads/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+    }
+
+    # Внутренний fallback на cdn-files.twomc.su: без cookie и Authorization, без тела, проверка сертификата CDN.
+    # Заголовки Cache-Control, Content-Type, CSP (svg) приходят от CDN как есть; дубли защитных заголовков скрыты (их ставит server{}).
+    location @cdn_uploads {
+        if ($stand_cdn_path = "") { return 404; }
+        resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+        resolver_timeout 3s;
+        proxy_pass https://cdn-files.twomc.su/$stand_cdn_path;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cdn-files.twomc.su;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_set_header Host cdn-files.twomc.su;
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization "";
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Connection "";
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_hide_header X-Robots-Tag;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Set-Cookie;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 20s;
     }
 
     location /api/ {

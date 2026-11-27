@@ -11,7 +11,7 @@ check() { # имя, ожидание, факт
   if [[ "$3" == $2 ]]; then echo "OK   $1: $3"; else echo "FAIL $1: ожидалось $2, получено $3"; fail=1; fi
 }
 # Запрос с сервисным токеном (заголовок X-Stand-Gate) - как раннер и мониторинг.
-authed() { printf 'header = "X-Stand-Gate: %s"\n' "$(cat "$STAND_ROOT/gate.token")" | curl -K - "$@"; }
+authed() { printf 'header = "X-Stand-Gate: %s"\n' "$(cat "$STAND_ROOT/gate.service.token")" | curl -K - "$@"; }
 cred_pass() {
   awk 'BEGIN{s=0} /^[[:space:]]*\[/{s=(tolower($0) ~ /^[[:space:]]*\[basic auth\][[:space:]]*\r?$/)} s && /^[[:space:]]*password[[:space:]]*:/{sub(/^[^:]*:[[:space:]]*/,""); sub(/\r$/,""); print; exit}' "$CREDENTIALS_FILE" 2>/dev/null
 }
@@ -23,9 +23,10 @@ login_post() {
 
 envval() { grep -E "^$1=" "$STAND_ROOT/stand.env" 2>/dev/null | head -1 | cut -d= -f2-; }
 check "stand.env права 600" "600" "$(stat -c %a "$STAND_ROOT/stand.env" 2>/dev/null || echo none)"
-check "gate.token права 600" "600" "$(stat -c %a "$STAND_ROOT/gate.token" 2>/dev/null || echo none)"
+check "gate.service.token права 600" "600" "$(stat -c %a "$STAND_ROOT/gate.service.token" 2>/dev/null || echo none)"
 check "gate.key права 600" "600" "$(stat -c %a "$STAND_ROOT/gate.key" 2>/dev/null || echo none)"
 check "gate.pass.hash права 600" "600" "$(stat -c %a "$STAND_ROOT/gate.pass.hash" 2>/dev/null || echo none)"
+check "бэкапы stand.conf.bak.* без доступа другим (все 600)" "0" "$(find /etc/nginx/conf.d -maxdepth 1 -name 'stand.conf.bak.*' ! -perm 600 2>/dev/null | wc -l)"
 check "файл учётных данных права 600 (только чтение)" "600" "$(stat -c %a "$CREDENTIALS_FILE" 2>/dev/null || echo none)"
 check "AUTH_TEST_OTP_ENABLED не true" "0" "$(grep -Eic '^AUTH_TEST_OTP_ENABLED=("?)true' "$STAND_ROOT/stand.env" 2>/dev/null || true)"
 check "gate-контейнер работает" "true" "$(docker inspect -f '{{.State.Running}}' twomc-stand-gate 2>/dev/null || echo none)"
@@ -67,6 +68,31 @@ check "с токеном X-Stand-Gate страница 200" "200" "$(authed -s -
 check "с неверным X-Stand-Gate -> 302" "302" "$(printf 'header = "X-Stand-Gate: %s"\n' "$(openssl rand -hex 24)" | curl -K - -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
 check "с токеном X-Robots-Tag" "*noindex*nofollow*" "$(authed -sI "https://$STAND_DOMAIN/" | tr -d '\r' | grep -i '^x-robots-tag' || echo none)"
 check "выход очищает cookie" "*Max-Age=0*" "$(curl -sI "https://$STAND_DOMAIN/__stand/logout" | tr -d '\r' | grep -i '^set-cookie: __Host-stand_gate' || echo none)"
+# L6: форма входа не просит Basic Auth; подделка заголовков снаружи; методы; выход; картинки (секреты не печатаются).
+# Не проверяется живьём: что cookie пропуска не доходит до приложения (нужен эхо-эндпоинт); это покрыто тестом шаблона в stand-gate.test.mjs.
+check "нет WWW-Authenticate (страница)" "0" "$(curl -sI "https://$STAND_DOMAIN/" | grep -ci '^www-authenticate')"
+check "нет WWW-Authenticate (/api/*)" "0" "$(curl -sI "https://$STAND_DOMAIN/api/auth/me" | grep -ci '^www-authenticate')"
+check "нет WWW-Authenticate (неверный вход)" "0" "$(grep -ci '^www-authenticate' <<<"$WRONG_HDR")"
+check "подделка X-Stand-Internal/X-Forwarded-For/X-Real-IP снаружи: страница -> 302" "302" "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Stand-Internal: 1' -H 'X-Forwarded-For: 127.0.0.1' -H 'X-Real-IP: 127.0.0.1' "https://$STAND_DOMAIN/")"
+check "подделка заголовков снаружи: /api/auth/me -> 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Stand-Internal: 1' -H 'X-Forwarded-For: 127.0.0.1' -H 'X-Real-IP: 127.0.0.1' "https://$STAND_DOMAIN/api/auth/me")"
+check "HEAD страницы без входа -> 302" "302" "$(curl -sI -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
+check "OPTIONS страницы без входа -> 302" "302" "$(curl -s -X OPTIONS -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
+check "OPTIONS /api/* без входа -> 401" "401" "$(curl -s -X OPTIONS -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/auth/me")"
+check "GET /__stand/logout: страница, cookie не трогает" "200 0" "$(curl -si "https://$STAND_DOMAIN/__stand/logout" | tr -d '\r' | awk 'NR==1{c=$2} tolower($0) ~ /^set-cookie:/{n++} END{print c, n+0}')"
+check "POST /__stand/logout с чужим Origin -> 403" "403" "$(curl -s -X POST -o /dev/null -w '%{http_code}' -H 'Origin: https://evil.invalid' "https://$STAND_DOMAIN/__stand/logout")"
+check "POST /__stand/logout без Origin -> 403" "403" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/__stand/logout")"
+LOGOUT_HDR="$(printf 'header = "Cookie: %s"\nheader = "Origin: https://%s"\n' "$COOKIE_VAL" "$STAND_DOMAIN" | curl -K - -s -X POST -D - -o /dev/null "https://$STAND_DOMAIN/__stand/logout" | tr -d '\r')"
+check "POST /__stand/logout с Origin -> 303" "HTTP/*303*" "$(head -1 <<<"$LOGOUT_HDR")"
+check "выход очищает cookie (Max-Age=0)" "1" "$(grep -ci '^set-cookie: __Host-stand_gate=;.*max-age=0' <<<"$LOGOUT_HDR")"
+check "после выхода запрос без cookie -> 302" "302" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
+# Картинки: приложение, при 404 - публичные файлы CDN (health.txt есть только на CDN). Только чтение.
+check "картинки без входа -> 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt")"
+check "картинки: fallback на CDN (health.txt)" "ok 200*" "$(authed -s -w '\n%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt" | tr '\n' ' ')"
+check "картинки: защитные заголовки без дублей" "1" "$(authed -sI "https://$STAND_DOMAIN/api/uploads/health.txt" | grep -ci '^x-content-type-options')"
+check "картинки: несуществующий файл -> 404" "404" "$(authed -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/no-such-file-$(openssl rand -hex 4).png")"
+check "картинки: POST запрещён -> 403" "403" "$(authed -s -X POST -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt")"
+check "картинки: обход каталога -> 4xx" "4*" "$(authed -s --path-as-is -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/../../etc/passwd")"
+
 check "неизвестный Host :80" "000" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: unknown.example.invalid' "http://127.0.0.1/")"
 check "неизвестный SNI :443" "000" "$(curl -sk -o /dev/null -w '%{http_code}' --resolve "unknown.example.invalid:443:127.0.0.1" "https://unknown.example.invalid/")"
 

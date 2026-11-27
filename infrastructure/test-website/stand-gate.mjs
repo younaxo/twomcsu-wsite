@@ -3,11 +3,11 @@
 // Секреты читаются из файлов (пути из окружения) и не печатаются:
 //   GATE_KEY_FILE        ключ HMAC для подписи cookie ($STAND_ROOT/gate.key, 600)
 //   GATE_PASS_HASH_FILE  хеш пароля формата scrypt$N$r$p$соль_b64$хеш_b64 ($STAND_ROOT/gate.pass.hash, 600); читается при каждой попытке входа
-//   GATE_TOKEN_FILE      сервисный токен для заголовка X-Stand-Gate (раннер, мониторинг); необязателен
+//   GATE_TOKEN_FILE      сервисный токен для заголовка X-Stand-Gate ($STAND_ROOT/gate.service.token, 600; раннер, мониторинг); необязателен
 // Прочее: GATE_PORT (4100), GATE_HOST (0.0.0.0 внутри контейнера; порт публикуется только на 127.0.0.1), GATE_COOKIE_DAYS (7).
 // CLI: `node stand-gate.mjs hash` читает пароль со stdin и печатает строку хеша (пароль не попадает в argv).
 import { createServer } from 'node:http';
-import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, createHash, randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -15,6 +15,8 @@ export const COOKIE_NAME = '__Host-stand_gate';
 export const LOGIN_PATH = '/__stand/login';
 const SIGN_PREFIX = 'stand-gate-v1:';
 const MAX_BODY = 4096;
+const scryptAsync = (password, salt, keylen, opts) =>
+  new Promise((resolve, reject) => scrypt(password, salt, keylen, opts, (e, k) => (e ? reject(e) : resolve(k))));
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 };
 
 // ---- пароль
@@ -23,7 +25,8 @@ export function hashPassword(password, salt = randomBytes(16)) {
   return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${h.toString('base64')}`;
 }
 
-export function verifyPassword(password, stored) {
+// Асинхронно (libuv-пул): проверка пароля не блокирует цикл событий, /__stand/auth отвечает во время подбора.
+export async function verifyPassword(password, stored) {
   if (typeof password !== 'string' || typeof stored !== 'string') return false;
   const parts = stored.trim().split('$');
   if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
@@ -34,7 +37,7 @@ export function verifyPassword(password, stored) {
   if (want.length < 16 || salt.length < 8) return false;
   let got;
   try {
-    got = scryptSync(password, salt, want.length, { N, r, p, maxmem: 128 * N * r + 1024 * 1024 });
+    got = await scryptAsync(password, salt, want.length, { N, r, p, maxmem: 128 * N * r + 1024 * 1024 });
   } catch {
     return false;
   }
@@ -62,14 +65,28 @@ export function verifyCookie(key, value, nowSec) {
   return Number(exp) > nowSec;
 }
 
+// Имя с границей: «xx__Host-stand_gate=...» и «__Host-stand_gate_2=...» чужими cookie считаются (граница: начало строки или «;»).
 export function readCookie(header, name) {
   if (typeof header !== 'string') return null;
-  for (const part of header.split(';')) {
-    const i = part.indexOf('=');
-    if (i < 0) continue;
-    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
-  }
-  return null;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:^|;\\s*)${escaped}=([^;]*)`);
+  const m = re.exec(header);
+  return m ? m[1].trim() : null;
+}
+
+// Ключ лимита попыток: IPv4 как есть, IPv6 по префиксу /64 (иначе подбор с одной сети /64 обходит лимит), ::ffff:a.b.c.d -> IPv4.
+export function limiterKey(ip) {
+  const s = String(ip ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
+  if (mapped) return mapped[1];
+  if (!s.includes(':')) return s || 'unknown';
+  if (!/^[0-9a-f:.]+$/.test(s) || s.includes(':::') || (s.match(/::/g) ?? []).length > 1) return s;
+  const [head, tail] = s.includes('::') ? s.split('::') : [s, null];
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const groups = tail === null ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t];
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return s;
+  return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 
 // ---- защита от open redirect: только относительный путь вида /x (один «/» в начале)
@@ -171,6 +188,36 @@ ${err}
 `;
 }
 
+export function renderLogout() {
+  return `<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Выход со стенда</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:#121212;color:#f2f2f2;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{width:100%;max-width:380px;background:#1c1c1c;border:1px solid #333;border-radius:12px;padding:24px}
+h1{margin:0 0 16px;font-size:22px}
+button{width:100%;min-height:44px;border:0;border-radius:8px;background:#F26A1B;color:#1a0d02;font:inherit;font-weight:700;cursor:pointer}
+button:focus-visible{outline:3px solid #ffb27d;outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+<h1>Выйти со стенда?</h1>
+<form method="post" action="/__stand/logout">
+<button type="submit" autofocus>Выйти</button>
+</form>
+</main>
+</body>
+</html>
+`;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -253,7 +300,7 @@ export function createHandler(deps) {
       if (path === LOGIN_PATH && req.method === 'POST') {
         const ip = clientIp(req);
         if (!originOk(req)) return send(res, 403, 'Forbidden', { 'content-type': 'text/plain; charset=utf-8' });
-        if (!limiter.hit(ip)) {
+        if (!limiter.hit(limiterKey(ip))) {
           log(`login limited ip=${ip}`);
           return html(res, 429, renderLogin({ error: 'Слишком много попыток. Подождите минуту.' }));
         }
@@ -271,7 +318,7 @@ export function createHandler(deps) {
         } catch {
           stored = '';
         }
-        if (password.length > 0 && password.length <= 256 && verifyPassword(password, stored)) {
+        if (password.length > 0 && password.length <= 256 && (await verifyPassword(password, stored))) {
           log(`login ok ip=${ip}`);
           const exp = Math.floor(now() / 1000) + maxAge;
           return send(res, 303, '', { location: next, 'set-cookie': setCookie(signCookie(deps.key, exp), maxAge) });
@@ -281,7 +328,12 @@ export function createHandler(deps) {
         return html(res, 401, renderLogin({ next, error: 'Неверный пароль.' }));
       }
 
-      if (path === '/__stand/logout') {
+      // GET (ссылка, картинка, предзагрузка) cookie не трогает: только страница с кнопкой. Выход - POST с проверкой Origin (CSRF).
+      if (path === '/__stand/logout' && (req.method === 'GET' || req.method === 'HEAD')) {
+        return html(res, 200, renderLogout());
+      }
+      if (path === '/__stand/logout' && req.method === 'POST') {
+        if (!originOk(req)) return send(res, 403, 'Forbidden', { 'content-type': 'text/plain; charset=utf-8' });
         return send(res, 303, '', { location: LOGIN_PATH, 'set-cookie': setCookie('', 0) });
       }
 

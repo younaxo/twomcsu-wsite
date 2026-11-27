@@ -26,7 +26,7 @@ const WIDTHS = (process.env.WIDTHS || '360,390,1280').split(',').map(Number);
 const PW_DIR = process.env.PW_DIR || '/tmp/pw';
 const { chromium } = createRequire(PW_DIR + '/')('playwright-core');
 
-// Формат файла учёток: секции [basic auth] (пароль формы входа на стенд) / [игрок] / [админ], строки "ключ: значение" (login, password, totp_secret).
+// Формат файла учёток: секции формы входа на стенд (в файле у неё историческое имя «basic auth»; ключ password) / [игрок] / [админ], строки "ключ: значение" (login, password, totp_secret).
 const acc = {};
 {
   let sec = '';
@@ -129,7 +129,7 @@ const ADMIN_PAGES = [
 
 const browser = await chromium.launch({ headless: true });
 
-// Вход на стенд: форма /__stand/login (cookie __Host-stand_gate кладётся в контекст). Пароль берётся из секции [basic auth] файла учёток и не печатается.
+// Вход на стенд: форма /__stand/login (cookie __Host-stand_gate кладётся в контекст). Пароль берётся из секции формы входа на стенд файла учёток (историческое имя «basic auth») и не печатается.
 async function newContext(w) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, locale: 'ru-RU' });
   const r = await ctx.request.post(`${BASE}/__stand/login`, {

@@ -2,8 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 import {
-  COOKIE_NAME, createHandler, createLimiter, hashPassword, isBypass, readCookie, safeNext, signCookie, verifyCookie, verifyPassword,
+  COOKIE_NAME, createHandler, createLimiter, hashPassword, isBypass, limiterKey, readCookie, safeNext, signCookie, verifyCookie, verifyPassword,
 } from './stand-gate.mjs';
 
 const KEY = 'k'.repeat(64);
@@ -42,13 +43,31 @@ test('подпись cookie и истечение (подмена времени
   assert.equal(verifyCookie(KEY, `${exp + 999}.${v.split('.')[1]}`, exp - 1), false); // подмена срока
   assert.equal(verifyCookie(KEY, 'garbage', 0), false);
   assert.equal(readCookie(`a=1; ${COOKIE_NAME}=${v}; b=2`, COOKIE_NAME), v);
+  // L5: граница имени. Чужие cookie с похожим именем не принимаются.
+  assert.equal(readCookie(`x${COOKIE_NAME}=${v}`, COOKIE_NAME), null);
+  assert.equal(readCookie(`a=1;x${COOKIE_NAME}=${v}`, COOKIE_NAME), null);
+  assert.equal(readCookie(`${COOKIE_NAME}_2=${v}`, COOKIE_NAME), null);
+  assert.equal(readCookie(`a=1;${COOKIE_NAME}=${v}`, COOKIE_NAME), v);
+  assert.equal(readCookie(`${COOKIE_NAME}=${v}`, COOKIE_NAME), v);
 });
 
-test('пароль: верный/неверный/мусорный хеш', () => {
-  assert.equal(verifyPassword(PASS, HASH), true);
-  assert.equal(verifyPassword(PASS + 'x', HASH), false);
-  assert.equal(verifyPassword(PASS, 'scrypt$bad'), false);
-  assert.equal(verifyPassword(PASS, ''), false);
+test('пароль (async scrypt): верный/неверный/мусорный хеш', async () => {
+  assert.equal(await verifyPassword(PASS, HASH), true);
+  assert.equal(await verifyPassword(PASS + 'x', HASH), false);
+  assert.equal(await verifyPassword(PASS, 'scrypt$bad'), false);
+  assert.equal(await verifyPassword(PASS, ''), false);
+  assert.ok(verifyPassword(PASS, HASH) instanceof Promise); // не блокирует цикл событий
+});
+
+test('ключ лимита: IPv6 по /64, IPv4 как есть, mapped -> IPv4', () => {
+  assert.equal(limiterKey('203.0.113.7'), '203.0.113.7');
+  assert.equal(limiterKey('::ffff:203.0.113.7'), '203.0.113.7');
+  assert.equal(limiterKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd'), '2001:db8:1:2::/64');
+  assert.equal(limiterKey('2001:DB8:1:2::1'), '2001:db8:1:2::/64');
+  assert.equal(limiterKey('2001:db8:1:2:ffff::9'), limiterKey('2001:db8:1:2::1'));
+  assert.notEqual(limiterKey('2001:db8:1:3::1'), limiterKey('2001:db8:1:2::1'));
+  assert.equal(limiterKey('2001:db8::1'), '2001:db8:0:0::/64');
+  assert.equal(limiterKey(''), 'unknown');
 });
 
 test('open redirect: безопасный next', () => {
@@ -162,13 +181,162 @@ test('лимит попыток: 11-я за минуту -> 429, после ок
   } finally { await s.close(); }
 });
 
-test('выход очищает cookie; закрытые пути gate -> 404', async () => {
+test('лимит попыток: весь /64 IPv6 делит один счётчик', async () => {
+  const limiter = createLimiter({ max: 3, windowMs: 60_000, now: () => 0 });
+  const s = await start({ limiter });
+  try {
+    const f = (ip) => { const o = form({ password: 'bad', next: '/' }); o.headers['x-real-ip'] = ip; return o; };
+    assert.equal((await s.call('/__stand/login', f('2001:db8:5:5::1'))).status, 401);
+    assert.equal((await s.call('/__stand/login', f('2001:db8:5:5:1::2'))).status, 401);
+    assert.equal((await s.call('/__stand/login', f('2001:db8:5:5:ffff:ffff:ffff:ffff'))).status, 401);
+    assert.equal((await s.call('/__stand/login', f('2001:db8:5:5::99'))).status, 429);
+    assert.equal((await s.call('/__stand/login', f('2001:db8:5:6::1'))).status, 401); // другая сеть /64
+  } finally { await s.close(); }
+});
+
+test('выход (L3): GET - страница с кнопкой без смены cookie; POST с Origin очищает; чужой Origin 403', async () => {
   const s = await start();
   try {
-    const r = await s.call('/__stand/logout');
+    let r = await s.call('/__stand/logout');
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('set-cookie'), null);
+    const html = await r.text();
+    assert.match(html, /<html lang="ru">/);
+    assert.match(html, /<form method="post" action="\/__stand\/logout">/);
+    assert.doesNotMatch(html, /blur|backdrop/i);
+    r = await s.call('/__stand/logout', { method: 'POST', headers: { origin: 'SELF' } });
     assert.equal(r.status, 303);
     assert.equal(r.headers.get('location'), '/__stand/login');
     assert.match(r.headers.get('set-cookie'), /^__Host-stand_gate=; .*Max-Age=0$/);
+    r = await s.call('/__stand/logout', { method: 'POST', headers: { origin: 'https://evil.example' } });
+    assert.equal(r.status, 403);
+    assert.equal(r.headers.get('set-cookie'), null);
+    assert.equal((await s.call('/__stand/logout', { method: 'POST' })).status, 403); // без Origin
     assert.equal((await s.call('/unknown')).status, 404);
   } finally { await s.close(); }
+});
+
+test('L6: ни один ответ gate не просит Basic Auth (нет WWW-Authenticate)', async () => {
+  const s = await start();
+  try {
+    const calls = [
+      s.call('/__stand/auth', { headers: { 'x-original-uri': '/', 'x-original-method': 'GET' } }),
+      s.call('/__stand/redirect', { headers: { 'x-original-uri': '/shop' } }),
+      s.call('/__stand/login'),
+      s.call('/__stand/login', form({ password: 'wrong', next: '/' })),
+      s.call('/__stand/logout'),
+      s.call('/unknown'),
+    ];
+    for (const r of await Promise.all(calls)) assert.equal(r.headers.get('www-authenticate'), null, `status ${r.status}`);
+  } finally { await s.close(); }
+});
+
+test('L6: после выхода (cookie снята) повторный запрос -> 401 -> редирект на форму; HEAD/OPTIONS', async () => {
+  const s = await start();
+  try {
+    let r = await s.call('/__stand/login', form({ password: PASS, next: '/' }));
+    const cookie = r.headers.get('set-cookie').split(';')[0];
+    const authed = { 'x-original-uri': '/shop', 'x-original-method': 'GET' };
+    assert.equal((await s.call('/__stand/auth', { headers: { cookie, ...authed } })).status, 204);
+    r = await s.call('/__stand/logout', { method: 'POST', headers: { origin: 'SELF', cookie } });
+    assert.match(r.headers.get('set-cookie'), /Max-Age=0$/);
+    // Браузер, получив Max-Age=0, cookie не шлёт: запрос без неё.
+    assert.equal((await s.call('/__stand/auth', { headers: authed })).status, 401);
+    r = await s.call('/__stand/redirect', { headers: { 'x-original-uri': '/shop' } });
+    assert.equal(r.status, 302);
+    assert.match(r.headers.get('location'), /^\/__stand\/login\?next=/);
+    // Cookie без состояния: украденная копия действует до срока (сброс всех сессий = замена gate.key, runbook).
+    assert.equal((await s.call('/__stand/auth', { headers: { cookie, ...authed } })).status, 204);
+    // HEAD отдаёт форму без тела; OPTIONS и прочие методы на форму и выход -> 404.
+    r = await s.call('/__stand/login', { method: 'HEAD' });
+    assert.equal(r.status, 200);
+    assert.equal(await r.text(), '');
+    assert.equal((await s.call('/__stand/login', { method: 'OPTIONS' })).status, 404);
+    assert.equal((await s.call('/__stand/login', { method: 'PUT' })).status, 404);
+    assert.equal((await s.call('/__stand/logout', { method: 'OPTIONS' })).status, 404);
+    // Обход по методам: HEAD/GET health можно, OPTIONS и POST health нельзя.
+    assert.equal(isBypass('/api/health', 'HEAD'), true);
+    assert.equal(isBypass('/api/health', 'OPTIONS'), false);
+    assert.equal(isBypass('/api/webhooks/payments/test', 'OPTIONS'), false);
+    assert.equal(isBypass('/api/webhooks/payments/test', 'HEAD'), false);
+  } finally { await s.close(); }
+});
+
+// ---- Шаблон nginx (читается как текст): подделка заголовков снаружи, вырезание cookie пропуска, fallback картинок.
+const TEMPLATE = readFileSync(new URL('./nginx.stand.conf.template', import.meta.url), 'utf8');
+// Блок директивы: ищется в начале строки (не в комментариях); location - только внутри server{} с 443 (в блоке :80 свой `location /`).
+function block(name) {
+  const base = name.startsWith('location') ? TEMPLATE.indexOf('listen 443') : 0;
+  const esc = name.trimEnd().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(`^\\s*${esc}\\s*\\{`, 'm').exec(TEMPLATE.slice(base));
+  assert.ok(m, `нет блока ${name}`);
+  const open = base + m.index + m[0].length - 1;
+  let depth = 0;
+  let i = open;
+  for (; i < TEMPLATE.length; i++) {
+    if (TEMPLATE[i] === '{') depth++;
+    if (TEMPLATE[i] === '}' && --depth === 0) break;
+  }
+  return TEMPLATE.slice(open, i + 1);
+}
+
+test('шаблон: X-Stand-Internal задаёт только nginx из $stand_internal (geo по $remote_addr), клиентское значение затирается', () => {
+  assert.match(block('location = /__stand/auth'), /proxy_set_header X-Stand-Internal \$stand_internal;/);
+  assert.match(block('geo $stand_internal'), /127\.0\.0\.1\/32\s+1;/);
+  assert.doesNotMatch(TEMPLATE.replace(/^\s*#.*$/gm, ''), /set_real_ip_from|real_ip_header|\$http_x_stand_internal|\$http_x_forwarded_for|\$http_x_real_ip/i, 'адрес клиента берётся только из $remote_addr');
+  for (const loc of ['location /api/ ', 'location / ', 'location /api/uploads/ ']) {
+    const b = block(loc);
+    assert.match(b, /proxy_set_header X-Forwarded-For \$remote_addr;/, loc);
+    assert.match(b, /proxy_set_header X-Stand-Gate "";/, loc);
+    assert.doesNotMatch(b, /X-Stand-Internal/, loc);
+  }
+});
+
+// Регулярные выражения map $http_cookie переносятся в JS как есть (PCRE и JS совпадают в этих конструкциях).
+function stripGateCookie(header) {
+  const m = block('map $http_cookie $stand_fwd_cookie');
+  const rules = [...m.matchAll(/^\s*"~(.+?)"\s+"(.*)"\s*;/gm)].map((x) => [new RegExp(x[1]), x[2]]);
+  assert.equal(rules.length, 3);
+  for (const [re, out] of rules) {
+    const r = re.exec(header);
+    if (r) return out.replace(/\$(\w+)/g, (_, n) => r.groups?.[n] ?? '');
+  }
+  return header;
+}
+
+test('шаблон: cookie пропуска вырезается перед приложением, остальные cookie и чужие имена нетронуты', () => {
+  const v = signCookie(KEY, 2_000_000);
+  const g = `${COOKIE_NAME}=${v}`;
+  assert.equal(stripGateCookie(g), '');
+  assert.equal(stripGateCookie(`a=1; ${g}`), 'a=1');
+  assert.equal(stripGateCookie(`${g}; b=2`), 'b=2');
+  assert.equal(stripGateCookie(`a=1; ${g}; b=2; c=3`), 'a=1; b=2; c=3');
+  assert.equal(stripGateCookie(`a=1;${g};b=2`), 'a=1;b=2');
+  assert.equal(stripGateCookie('a=1; b=2'), 'a=1; b=2');
+  assert.equal(stripGateCookie(`x${g}`), `x${g}`); // чужая cookie с похожим окончанием имени
+  assert.equal(stripGateCookie(`a=1; two_factor_challenge=abc; ${g}`), 'a=1; two_factor_challenge=abc');
+  assert.doesNotMatch(stripGateCookie(`a=1; ${g}; b=2`), /stand_gate/);
+});
+
+test('шаблон: fallback картинок на CDN - только чтение публичных файлов', () => {
+  const up = block('location /api/uploads/ ');
+  assert.match(up, /error_page 404 = @cdn_uploads;/);
+  assert.match(up, /proxy_intercept_errors on;/);
+  assert.match(up, /limit_except GET HEAD \{ deny all; \}/);
+  assert.match(up, /auth_request \/__stand\/auth;/);
+  const cdn = block('location @cdn_uploads');
+  assert.match(cdn, /proxy_pass https:\/\/cdn-files\.twomc\.su\/\$stand_cdn_path;/);
+  assert.match(cdn, /proxy_ssl_server_name on;/);
+  assert.match(cdn, /proxy_set_header Host cdn-files\.twomc\.su;/);
+  assert.match(cdn, /proxy_pass_request_body off;/);
+  assert.match(cdn, /proxy_set_header Cookie "";/);
+  assert.match(cdn, /proxy_set_header Authorization "";/);
+  assert.doesNotMatch(cdn, /auth_request|proxy_method|proxy_pass http:/);
+  // Отображение пути: только безопасные символы, без «..».
+  const re = new RegExp(/"~(.+?)"/.exec(block('map $uri $stand_cdn_path'))[1]);
+  assert.equal(re.exec('/api/uploads/assets/images/logo.png').groups.cdn_rest, 'assets/images/logo.png');
+  assert.equal(re.exec('/api/uploads/avatars/u1/a-b_c.webp').groups.cdn_rest, 'avatars/u1/a-b_c.webp');
+  for (const bad of ['/api/uploads/../etc/passwd', '/api/uploads/a/../b', '/api/uploads/a b', '/api/uploads/a%2e%2e/b', '/api/uploads/', '/api/uploads/a?x=1']) {
+    assert.equal(re.exec(bad), null, bad);
+  }
 });
