@@ -10,6 +10,9 @@ const productionSet = {
   TRUST_PROXY: '1',
   COOKIE_SECURE: 'true',
   COOKIE_DOMAIN: '.twomc.su',
+  WEB_ORIGIN: 'https://twomc.su',
+  FRONTEND_URL: 'https://twomc.su',
+  CDN_BASE_URL: 'https://cdn-files.twomc.su',
   TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
   TURNSTILE_SECRET_KEY: 'test-secret',
 };

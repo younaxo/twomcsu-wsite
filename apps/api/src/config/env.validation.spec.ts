@@ -39,6 +39,9 @@ describe('envValidationSchema production cookie и 2FA (ADR-0156)', () => {
     TURNSTILE_SECRET_KEY: 'test-secret',
     COOKIE_SECURE: 'true',
     COOKIE_DOMAIN: '.twomc.su',
+    WEB_ORIGIN: 'https://twomc.su',
+    FRONTEND_URL: 'https://twomc.su',
+    CDN_BASE_URL: 'https://cdn-files.twomc.su',
     TWO_FACTOR_ENCRYPTION_KEY: 'k'.repeat(32),
   };
   const validate = (v: Record<string, unknown>) =>
@@ -184,6 +187,9 @@ describe('envValidationSchema production startup check (TRUST_PROXY, Turnstile)'
     TRUST_PROXY: '1',
     COOKIE_SECURE: 'true',
     COOKIE_DOMAIN: '.twomc.su',
+    WEB_ORIGIN: 'https://twomc.su',
+    FRONTEND_URL: 'https://twomc.su',
+    CDN_BASE_URL: 'https://cdn-files.twomc.su',
     TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
     TURNSTILE_SECRET_KEY: 'test-secret',
   };
@@ -277,6 +283,9 @@ describe('envValidationSchema NODE_ENV fail-closed (ADR-0164)', () => {
         TRUST_PROXY: '1',
         COOKIE_SECURE: 'true',
         COOKIE_DOMAIN: '.twomc.su',
+        WEB_ORIGIN: 'https://twomc.su',
+        FRONTEND_URL: 'https://twomc.su',
+        CDN_BASE_URL: 'https://cdn-files.twomc.su',
         TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
         TURNSTILE_SECRET_KEY: 'test-secret',
       }).error,
@@ -291,6 +300,9 @@ describe('envValidationSchema NODE_ENV fail-closed (ADR-0164)', () => {
       TRUST_PROXY: '1',
       COOKIE_SECURE: 'true',
       COOKIE_DOMAIN: '.twomc.su',
+      WEB_ORIGIN: 'https://twomc.su',
+      FRONTEND_URL: 'https://twomc.su',
+      CDN_BASE_URL: 'https://cdn-files.twomc.su',
       TWO_FACTOR_ENCRYPTION_KEY: 'x'.repeat(40),
       TURNSTILE_SECRET_KEY: 'test-secret',
     };
