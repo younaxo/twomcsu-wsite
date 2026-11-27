@@ -36,6 +36,11 @@ import {
 } from './social';
 import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
 import {
+  STAND_PLAYER_UUID,
+  STAND_PUNISHMENTS,
+  seedDemoStandPlayer,
+} from './stand-player';
+import {
   assertDemoSeedAllowed,
   assertDemoUserNotForeign,
   demoSeedRefusals,
@@ -604,5 +609,120 @@ describe('seedDemoPunishmentLinks (in-memory Prisma)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/demo_ember/);
     expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+});
+
+describe('seedDemoStandPlayer (in-memory Prisma)', () => {
+  const savedEnv = { ...process.env };
+  beforeEach(() => {
+    Object.assign(process.env, ok);
+  });
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    jest.restoreAllMocks();
+  });
+  const userKey = (n: string) => JSON.stringify({ username: n });
+  const prepare = (username?: string, existingAccount?: Record<string, unknown>) => {
+    const f = fakePrisma();
+    if (username) {
+      f.tables.set(
+        'user',
+        new Map([[userKey(username), { id: 'u-stand', username }]]),
+      );
+    }
+    if (existingAccount) {
+      f.tables.set(
+        'minecraftAccount',
+        new Map([[JSON.stringify({ userId: 'u-stand' }), existingAccount]]),
+      );
+    }
+    return f;
+  };
+  const run = (f: ReturnType<typeof fakePrisma>, name?: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    seedDemoStandPlayer(f.prisma as any, {
+      ...(name ? { DEMO_STAND_PLAYER_USERNAME: name } : {}),
+    } as NodeJS.ProcessEnv);
+
+  it('env не задана: ничего не пишется', async () => {
+    const f = prepare('tester');
+    await run(f);
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+
+  it('пользователя нет: предупреждение без имени, без записей', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = prepare();
+    await run(f, 'secretname');
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).not.toContain('secretname');
+  });
+
+  it('demo_*: пропуск', async () => {
+    const f = prepare('demo_ember');
+    await run(f, 'demo_ember');
+    expect(f.calls).toEqual([]);
+  });
+
+  it('создаёт аккаунт, 3 наказания и одно обжалование; повтор не дублирует', async () => {
+    const f = prepare('tester');
+    await run(f, 'tester');
+    await run(f, 'tester');
+    const acc = [...f.tables.get('minecraftAccount')!.values()];
+    expect(acc).toHaveLength(1);
+    expect(acc[0]).toMatchObject({
+      userId: 'u-stand',
+      uuid: STAND_PLAYER_UUID,
+      name: 'StandPlayer',
+    });
+    expect(STAND_PLAYER_UUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(STAND_PLAYER_UUID).not.toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
+    const pun = [...f.tables.get('minecraftPunishment')!.values()];
+    expect(pun.map((p) => [p.kind, p.status]).sort()).toEqual([
+      ['BAN', 'ACTIVE'],
+      ['MUTE', 'EXPIRED'],
+      ['WARN', 'EXPIRED'],
+    ]);
+    for (const p of pun) {
+      expect(p).toMatchObject({
+        source: 'litebans',
+        subjectUuid: STAND_PLAYER_UUID,
+        issuerHidden: true,
+        ipBan: false,
+      });
+    }
+    const reports = [...f.tables.get('report')!.values()];
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      type: 'PUNISHMENT_APPEAL',
+      status: 'IN_REVIEW',
+      authorId: 'u-stand',
+    });
+    const ban = pun.find((p) => p.kind === 'BAN')!;
+    expect(reports[0].appealedMinecraftPunishmentId).toBe(ban.id);
+    // Данные пользователя не трогаются.
+    expect(f.tables.has('userRole')).toBe(false);
+    expect(f.calls.some((c) => c.startsWith('user.upsert'))).toBe(false);
+    const ids = STAND_PUNISHMENTS.map((p) => p.sourceId);
+    for (const d of DEMO_PUNISHMENTS) expect(ids).not.toContain(d.sourceId);
+  });
+
+  it('уже есть MinecraftAccount: используется его uuid', async () => {
+    const real = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: real, name: 'Existing' });
+    await run(f, 'tester');
+    expect(f.tables.get('minecraftAccount')!.size).toBe(1);
+    expect(f.calls).not.toContain('minecraftAccount.upsert');
+    for (const p of f.tables.get('minecraftPunishment')!.values()) {
+      expect(p).toMatchObject({ subjectUuid: real, subjectName: 'Existing' });
+    }
+  });
+
+  it('без разрешённого окружения отклоняется', async () => {
+    process.env.NODE_ENV = 'production';
+    const f = prepare('tester');
+    await expect(run(f, 'tester')).rejects.toThrow(/fail closed/);
+    expect(f.calls).toEqual([]);
   });
 });

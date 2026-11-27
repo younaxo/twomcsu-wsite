@@ -26,6 +26,7 @@ import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
 import { DEMO_PLAYERS, demoPlayerEmail } from './social';
 import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
+import { seedDemoStandPlayer } from './stand-player';
 
 const DAY = 86_400_000;
 const daysAgo = (n: number): Date => new Date(Date.now() - n * DAY);
@@ -326,9 +327,10 @@ async function main(): Promise<void> {
 
     const socialSummary = await seedDemoSocial(prisma, defaultPosition.id);
     const linksSummary = await seedDemoPunishmentLinks(prisma);
+    const standSummary = await seedDemoStandPlayer(prisma);
 
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}, ${linksSummary}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}, ${linksSummary}, ${standSummary}`,
     );
   } finally {
     await prisma.$disconnect();
