@@ -458,3 +458,209 @@ export function buildDemoSyncState(now: Date) {
     lastSuccessAt: now,
   }));
 }
+
+/// Контент для страниц /rules, /faq, /info и /events тестового стенда.
+/// Нейтральный текст без санкций, цен и обязательств; настоящие правила
+/// утверждает администрация.
+export const DEMO_EVENT_DISCLAIMER =
+  'Демонстрационное событие для тестового стенда.';
+
+export const DEMO_CONTENT_DISCLAIMER =
+  'Демонстрационный текст для тестового стенда; настоящие правила утверждает администрация.';
+
+/// Заведомо не bcrypt-хеш: bcrypt.compare возвращает false, вход невозможен.
+export const DEMO_AUTHOR = {
+  username: 'demo_system',
+  email: 'demo-system@example.invalid',
+  discriminator: 0,
+  password: '!demo-login-disabled',
+} as const;
+
+export function demoAuthorTag(): string {
+  return `${DEMO_AUTHOR.username}#${String(DEMO_AUTHOR.discriminator).padStart(4, '0')}`;
+}
+
+export type DemoTopicCategory = 'RULES' | 'FAQ' | 'INFORMATION';
+
+export interface DemoTopic {
+  slug: string;
+  title: string;
+  category: DemoTopicCategory;
+  description: string;
+  body: string;
+  order: number;
+}
+
+const eventContent = (body: string): string =>
+  `${DEMO_EVENT_DISCLAIMER}\n\n${body}`;
+
+const topicContent = (body: string): string =>
+  `${DEMO_CONTENT_DISCLAIMER}\n\n${body}`;
+
+export const DEMO_TOPICS: DemoTopic[] = [
+  {
+    slug: 'demo-rule-respect',
+    title: '[Демо] Уважение к игрокам',
+    category: 'RULES',
+    description: 'Пример правила о общении.',
+    body: 'Общайтесь вежливо и уважайте других участников сообщества.',
+    order: 1,
+  },
+  {
+    slug: 'demo-rule-fair-play',
+    title: '[Демо] Честная игра',
+    category: 'RULES',
+    description: 'Пример правила об игровом процессе.',
+    body: 'Играйте честно: примеры допустимого и недопустимого поведения определяет администрация.',
+    order: 2,
+  },
+  {
+    slug: 'demo-rule-reports',
+    title: '[Демо] Обращения к администрации',
+    category: 'RULES',
+    description: 'Пример правила об обращениях.',
+    body: 'Если вы заметили проблему, сообщите о ней через форму обращения на сайте.',
+    order: 3,
+  },
+  {
+    slug: 'demo-faq-start',
+    title: '[Демо] Как начать играть?',
+    category: 'FAQ',
+    description: 'Пример ответа для новичков.',
+    body: 'Зарегистрируйтесь на сайте, привяжите игровой аккаунт и подключитесь к серверу по адресу из раздела «Серверы».',
+    order: 1,
+  },
+  {
+    slug: 'demo-faq-link-account',
+    title: '[Демо] Как привязать игровой аккаунт?',
+    category: 'FAQ',
+    description: 'Пример ответа о привязке аккаунта.',
+    body: 'Откройте настройки профиля и следуйте подсказкам на странице привязки.',
+    order: 2,
+  },
+  {
+    slug: 'demo-faq-support',
+    title: '[Демо] Куда обратиться за помощью?',
+    category: 'FAQ',
+    description: 'Пример ответа о поддержке.',
+    body: 'Воспользуйтесь формами обратной связи на сайте или напишите в официальные каналы сообщества.',
+    order: 3,
+  },
+  {
+    slug: 'demo-faq-news',
+    title: '[Демо] Где следить за новостями?',
+    category: 'FAQ',
+    description: 'Пример ответа о новостях.',
+    body: 'Актуальные объявления публикуются в разделе «Новости» на сайте.',
+    order: 4,
+  },
+  {
+    slug: 'demo-info-about',
+    title: '[Демо] О проекте',
+    category: 'INFORMATION',
+    description: 'Пример информационной страницы.',
+    body: 'TwoMC — сообщество игроков Minecraft. Здесь собраны серверы, новости и инструменты для участников.',
+    order: 1,
+  },
+  {
+    slug: 'demo-info-servers',
+    title: '[Демо] Как устроены серверы',
+    category: 'INFORMATION',
+    description: 'Пример информационной страницы о серверах.',
+    body: 'Список серверов и адреса для подключения доступны в разделе «Серверы».',
+    order: 2,
+  },
+].map((t) => ({ ...t, body: topicContent(t.body) })) as DemoTopic[];
+
+export interface DemoEvent {
+  slug: string;
+  title: string;
+  description: string;
+  category: 'COMMUNITY' | 'UPDATE';
+  /// Публичная выдача показывает только PUBLISHED; «прошедшее» задаётся датами.
+  status: 'PUBLISHED';
+  /// Смещение начала от «сейчас» в днях (отрицательное = прошедшее).
+  startOffsetDays: number;
+  durationHours: number;
+  location: string;
+  isFeatured: boolean;
+}
+
+export const DEMO_EVENTS: DemoEvent[] = [
+  {
+    slug: 'demo-event-upcoming',
+    title: '[Демо] Встреча сообщества',
+    description: eventContent(
+      'Пример будущего события: открытая встреча игроков.',
+    ),
+    category: 'COMMUNITY',
+    status: 'PUBLISHED',
+    startOffsetDays: 7,
+    durationHours: 2,
+    location: 'Игровой сервер',
+    isFeatured: true,
+  },
+  {
+    slug: 'demo-event-past',
+    title: '[Демо] Итоги прошлой встречи',
+    description: eventContent('Пример прошедшего события: встреча состоялась.'),
+    category: 'COMMUNITY',
+    status: 'PUBLISHED',
+    startOffsetDays: -14,
+    durationHours: 2,
+    location: 'Игровой сервер',
+    isFeatured: false,
+  },
+];
+
+export function buildDemoEventDates(
+  e: DemoEvent,
+  now: Date,
+): { startsAt: Date; endsAt: Date } {
+  const startsAt = new Date(now.getTime() + e.startOffsetDays * 86_400_000);
+  return {
+    startsAt,
+    endsAt: new Date(startsAt.getTime() + e.durationHours * 3_600_000),
+  };
+}
+
+/// Поля строки Topic; условия публичной выдачи TopicsService: isActive, PUBLIC.
+export function buildDemoTopicRow(t: DemoTopic) {
+  return {
+    title: t.title,
+    category: t.category,
+    visibility: 'PUBLIC' as const,
+    description: t.description,
+    content: t.body,
+    contentHtml: demoEscapeToHtml(t.body),
+    order: t.order,
+    isActive: true,
+  };
+}
+
+/// Поля строки CalendarEvent; условия публичной выдачи EventsService:
+/// status PUBLISHED, visibility PUBLIC (поля isPublic в модели нет).
+export function buildDemoEventRow(e: DemoEvent, now: Date) {
+  return {
+    title: e.title,
+    description: e.description,
+    descriptionHtml: demoEscapeToHtml(e.description),
+    category: e.category,
+    status: e.status,
+    visibility: 'PUBLIC' as const,
+    location: e.location,
+    isFeatured: e.isFeatured,
+    ...buildDemoEventDates(e, now),
+  };
+}
+
+/// Экранирование текста для contentHtml (как escapeToHtml в API).
+export function demoEscapeToHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\r\n|\r|\n/g, '<br>');
+}

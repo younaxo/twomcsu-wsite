@@ -1,7 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import {
   DEMO_ACHIEVEMENTS,
+  DEMO_AUTHOR,
   DEMO_CATEGORIES,
+  DEMO_EVENTS,
   DEMO_FORMS,
   DEMO_NEWS,
   DEMO_PUNISHMENT_SCOPE,
@@ -10,10 +12,14 @@ import {
   DEMO_SERVER_CATEGORY,
   DEMO_SERVERS,
   DEMO_SETTINGS,
+  DEMO_TOPICS,
   DEMO_VOTE_SITE,
+  buildDemoEventRow,
   buildDemoProducts,
   buildDemoPunishmentRow,
   buildDemoSyncState,
+  buildDemoTopicRow,
+  demoAuthorTag,
   demoPunishmentSourceId,
 } from './data';
 import { assertDemoSeedAllowed } from './guard';
@@ -28,14 +34,31 @@ async function main(): Promise<void> {
   assertDemoSeedAllowed(process.env);
   const prisma = new PrismaClient();
   try {
-    const author = await prisma.user.findFirst({
-      orderBy: { createdAt: 'asc' },
+    // Отдельный демо-автор: реальные пользователи не попадают в публичные ответы.
+    // Без ролей; пароль — не bcrypt-хеш, вход невозможен.
+    const defaultPosition = await prisma.position.findFirst({
+      where: { isDefault: true },
     });
-    if (!author) {
+    if (!defaultPosition) {
       throw new Error(
-        'Нет ни одного пользователя: сначала выполните обычный `db:seed` с bootstrap-аккаунтами.',
+        'Нет позиции по умолчанию (isDefault): сначала выполните обычный `db:seed`.',
       );
     }
+    const authorData = {
+      email: DEMO_AUTHOR.email,
+      password: DEMO_AUTHOR.password,
+    };
+    const author = await prisma.user.upsert({
+      where: { username: DEMO_AUTHOR.username },
+      create: {
+        username: DEMO_AUTHOR.username,
+        tag: demoAuthorTag(),
+        discriminator: DEMO_AUTHOR.discriminator,
+        positionId: defaultPosition.id,
+        ...authorData,
+      },
+      update: authorData,
+    });
 
     const categoryIds = new Map<string, string>();
     for (const c of DEMO_CATEGORIES) {
@@ -95,6 +118,25 @@ async function main(): Promise<void> {
       await prisma.news.upsert({
         where: { slug: n.slug },
         create: { slug: n.slug, authorId: author.id, ...data },
+        update: data,
+      });
+    }
+
+    for (const t of DEMO_TOPICS) {
+      const data = buildDemoTopicRow(t);
+      await prisma.topic.upsert({
+        where: { slug: t.slug },
+        create: { slug: t.slug, createdBy: author.id, ...data },
+        update: data,
+      });
+    }
+
+    const eventsNow = new Date();
+    for (const e of DEMO_EVENTS) {
+      const data = buildDemoEventRow(e, eventsNow);
+      await prisma.calendarEvent.upsert({
+        where: { slug: e.slug },
+        create: { slug: e.slug, createdById: author.id, ...data },
         update: data,
       });
     }
@@ -267,7 +309,7 @@ async function main(): Promise<void> {
     }
 
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}`,
     );
   } finally {
     await prisma.$disconnect();
