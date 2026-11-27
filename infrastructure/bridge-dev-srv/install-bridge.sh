@@ -175,6 +175,10 @@ if [[ "$MODE" == yes ]]; then
 else
   pl="$(ptero_players_online 2>/dev/null)"; say "$pl"
   say "dry-run: число игроков берётся через SLP (только чтение); команда list не отправляется"
+  if sv="$(ptero_slp 2>/dev/null)"; then
+    say "SLP: $sv"
+    ptero_slp_maintenance "${sv##* version=}" && say "WARN: version.name указывает на техработы/whitelist; бот войти не сможет без добавления в whitelist владельцем (не блокер установки)"
+  fi
 fi
 
 if [[ "$MODE" == dry ]]; then

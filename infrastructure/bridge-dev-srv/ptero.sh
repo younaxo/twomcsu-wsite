@@ -359,28 +359,32 @@ const pkt = (body) => Buffer.concat([vi(body.length), body]);
 const rv = (buf, o) => { let r = 0, s = 0; for (let i = 0; i < 5; i++) { if (o + i >= buf.length) return null; const x = buf[o + i]; r |= (x & 127) << s; if (!(x & 128)) return [r >>> 0, i + 1]; s += 7; } return "bad"; };
 const hs = Buffer.concat([vi(0), vi(767), vi(Buffer.byteLength(host)), Buffer.from(host), Buffer.from([(port >> 8) & 255, port & 255]), vi(1)]);
 let acc = Buffer.alloc(0), done = false;
-const fail = () => { if (done) return; done = true; sock.destroy(); process.exit(1); };
+const fail = (w) => { if (done) return; done = true; sock.destroy(); console.log("ERR:" + (typeof w === "string" ? w : "closed")); process.exit(1); };
 const sock = net.connect({ host, port });
-const timer = setTimeout(fail, timeoutMs);
+let got = false;
+const timer = setTimeout(() => fail(got ? "timeout-incomplete" : "timeout-no-data"), timeoutMs);
 sock.on("connect", () => { sock.write(Buffer.concat([pkt(hs), pkt(vi(0))])); });
-sock.on("error", fail);
-sock.on("close", fail);
+sock.on("error", (e) => fail("net-" + ((e && e.code) || "error")));
+sock.on("close", () => fail(got ? "closed-incomplete" : "closed-no-data"));
 sock.on("data", (d) => {
   if (done) return;
+  got = true;
   acc = Buffer.concat([acc, d]);
-  if (acc.length > 1048576) return fail();
-  const l = rv(acc, 0); if (l === null) return; if (l === "bad") return fail();
-  if (l[0] < 2 || l[0] > 1048576) return fail();
+  if (acc.length > 1048576) return fail("too-big");
+  const l = rv(acc, 0); if (l === null) return; if (l === "bad") return fail("bad-length");
+  if (l[0] < 2 || l[0] > 1048576) return fail("bad-length");
   if (acc.length < l[1] + l[0]) return;
-  const id = rv(acc, l[1]); if (!id || id === "bad" || id[0] !== 0) return fail();
-  const sl = rv(acc, l[1] + id[1]); if (!sl || sl === "bad") return fail();
+  const id = rv(acc, l[1]); if (!id || id === "bad" || id[0] !== 0) return fail("bad-packet-id");
+  const sl = rv(acc, l[1] + id[1]); if (!sl || sl === "bad") return fail("bad-string-length");
   const start = l[1] + id[1] + sl[1], end = start + sl[0];
-  if (end > l[1] + l[0] || end > acc.length) return fail();
-  let j; try { j = JSON.parse(acc.subarray(start, end).toString("utf8")); } catch (e) { return fail(); }
+  if (end > l[1] + l[0] || end > acc.length) return fail("bad-string-length");
+  let j; try { j = JSON.parse(acc.subarray(start, end).toString("utf8")); } catch (e) { return fail("bad-json"); }
   const p = j && j.players;
-  if (!p || !Number.isInteger(p.online) || p.online < 0 || p.online > 100000) return fail();
+  if (!p || !Number.isInteger(p.online) || p.online < 0 || p.online > 100000) return fail("bad-players");
   const max = Number.isInteger(p.max) && p.max >= 0 ? p.max : 0;
-  const ver = String((j.version && j.version.name) || "?").replace(/[^A-Za-z0-9._ -]/g, "").slice(0, 40).replace(/ /g, "_") || "?";
+  // Цветовые коды §x убираются, управляющие символы удаляются, пробелы -> «_»; кириллица и прочий UTF-8 сохраняются.
+  const vn = j.version && typeof j.version.name === "string" ? j.version.name : "";
+  const ver = vn.replace(/\u00a7./gsu, "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "").trim().slice(0, 60).replace(/\s+/g, "_") || "?";
   done = true; clearTimeout(timer); sock.destroy();
   console.log("players=" + p.online + " max=" + max + " version=" + ver);
   process.exit(0);
@@ -395,10 +399,18 @@ ptero_slp() {
   [[ "$host" =~ ^[A-Za-z0-9.-]+$ && "$port" =~ ^[0-9]{2,5}$ ]] || return 1
   img="$(_pt_node_image 2>/dev/null)" || return 1
   for net in bridge host; do
-    out="$(timeout 20 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 64m --network "$net" \
+    out="$(timeout 20 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m --network "$net" \
       -e PT_HOST="$host" -e PT_PORT="$port" -e PT_TIMEOUT_MS=5000 "$img" node -e "$_PT_SLP_JS" </dev/null 2>/dev/null)" || out=""
-    if [[ "$out" =~ ^players=[0-9]+\ max=[0-9]+\ version=[A-Za-z0-9._-]+$ ]]; then printf '%s\n' "$out"; return 0; fi
+    if [[ "$out" =~ ^players=[0-9]+\ max=[0-9]+\ version=[^[:space:][:cntrl:]]+$ ]]; then printf '%s\n' "$out"; return 0; fi
+    echo "SLP: сеть $net, $host:$port: ${out:-нет вывода (docker/timeout)}" >&2
   done
+  return 1
+}
+
+# ptero_slp_maintenance <version>: код 0, если version.name похож на режим техработ (Тех. работы / maintenance / whitelist).
+ptero_slp_maintenance() {
+  case "${1,,}" in *maintenance*|*whitelist*|*"тех."*|*тех_работ*|*"тех.работ"*|*техработ*|*"Тех."*|*"Тех_"*) return 0 ;; esac
+  case "$1" in *Тех.*|*Тех_*|*Техработ*|*ТЕХ*) return 0 ;; esac
   return 1
 }
 

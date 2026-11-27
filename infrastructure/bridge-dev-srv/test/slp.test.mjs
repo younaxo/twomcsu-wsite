@@ -12,7 +12,7 @@ const js = /_PT_SLP_JS='([^']*)'/.exec(src)?.[1];
 assert.ok(js, "_PT_SLP_JS не найден");
 
 const vi = (n) => { const b = []; do { let x = n & 127; n >>>= 7; if (n) x |= 128; b.push(x); } while (n); return Buffer.from(b); };
-const statusPacket = (obj) => { const s = Buffer.from(typeof obj === "string" ? obj : JSON.stringify(obj)); const body = Buffer.concat([vi(0), vi(s.length), s]); return Buffer.concat([vi(body.length), body]); };
+const statusPacket = (obj) => { const s = Buffer.from(typeof obj === "string" ? obj : JSON.stringify(obj)); const body = Buffer.concat([vi(0), vi(s.length), s]); /* s.length - байты (Buffer) */ return Buffer.concat([vi(body.length), body]); };
 
 function serve(onData) {
   return new Promise((resolve) => {
@@ -46,6 +46,32 @@ test("ответ частями (фрагментация TCP)", async () => {
   assert.equal(r.out, "players=0 max=5 version=1.21");
 });
 
+test("кириллица и §c, длина строки в байтах, ответ дробится на чанки внутри многобайтных символов", async () => {
+  const p = statusPacket({ version: { name: "§cТех. работы", protocol: 774 }, players: { max: 249, online: 0 }, description: "Привет, мир ✓ 🎮" });
+  const srv = await serve(async (sock) => { for (let i = 0; i < p.length; i += 7) { sock.write(p.subarray(i, i + 7)); await new Promise((r) => setTimeout(r, 5)); } });
+  const r = await run(srv.address().port);
+  srv.close();
+  assert.equal(r.code, 0);
+  assert.equal(r.out, "players=0 max=249 version=Тех._работы");
+});
+
+test("сервер не закрывает сокет после ответа (разбор по длине пакета)", async () => {
+  const srv = await serve((sock) => sock.write(statusPacket({ version: { name: "1.21.4" }, players: { max: 10, online: 2 } })));
+  const t0 = Date.now();
+  const r = await run(srv.address().port, 4000);
+  srv.close();
+  assert.equal(r.out, "players=2 max=10 version=1.21.4");
+  assert.ok(Date.now() - t0 < 3000);
+});
+
+test("длинный ответ (favicon ~20 КБ, varint длины из 3 байт)", async () => {
+  const p = statusPacket({ version: { name: "Paper 1.21.4" }, players: { max: 20, online: 1 }, favicon: "data:image/png;base64," + "A".repeat(20000) });
+  const srv = await serve((sock) => sock.write(p));
+  const r = await run(srv.address().port);
+  srv.close();
+  assert.equal(r.out, "players=1 max=20 version=Paper_1.21.4");
+});
+
 for (const [name, reply] of [
   ["мусор", () => Buffer.from("HTTP/1.1 400 Bad Request\r\n\r\n")],
   ["не JSON", () => statusPacket("not json")],
@@ -58,7 +84,7 @@ for (const [name, reply] of [
     const r = await run(srv.address().port);
     srv.close();
     assert.equal(r.code, 1);
-    assert.equal(r.out, "");
+    assert.match(r.out, /^ERR:[a-z-]+$/);
   });
 }
 
