@@ -1,15 +1,15 @@
-import { IsOptional, IsString, Length } from 'class-validator';
+import { Allow } from 'class-validator';
 
+/// Поля проверяются в VotingService уже после секрета: отсутствующий или
+/// неверный секрет всегда даёт единый 401, а не 400 валидации (ответ не должен
+/// различать причину до аутентификации). Тип и длина — в сервисе.
 export class VoteWebhookDto {
-  @IsString()
-  @Length(1, 500)
-  secret!: string;
+  @Allow()
+  secret?: unknown;
 
-  @IsString()
-  @Length(1, 32)
-  username!: string;
+  @Allow()
+  username?: unknown;
 
-  @IsOptional()
-  @IsString()
-  externalId?: string;
+  @Allow()
+  externalId?: unknown;
 }
