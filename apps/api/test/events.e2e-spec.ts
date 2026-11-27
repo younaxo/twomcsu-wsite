@@ -311,6 +311,10 @@ describe('Events (e2e)', () => {
       (_, i) => `events-race${i}-${unique}@example.com`,
     );
     try {
+      const { positionId } = await prisma.user.findUniqueOrThrow({
+        where: { id: alice.id },
+        select: { positionId: true },
+      });
       await prisma.user.createMany({
         data: emails.map((email, i) => ({
           email,
@@ -318,6 +322,7 @@ describe('Events (e2e)', () => {
           tag: `er${i}${unique}#${1000 + i}`,
           discriminator: 1000 + i,
           password: 'not-a-real-hash',
+          positionId,
         })),
       });
       const users = await prisma.user.findMany({
