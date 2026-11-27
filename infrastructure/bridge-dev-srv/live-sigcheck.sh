@@ -12,6 +12,8 @@
 #   --no-payments  проверять только Bridge
 #   --payments-only  проверять только webhook оплаты (4 случая); файл ключа Bridge (secret.env) НЕ нужен и не читается; нужен только PAYMENT_WEBHOOK_SECRET из stand.env
 #                  (нет или короче 32 - ошибка, не SKIP). Адрес стенда фиксирован (EXPECTED_SITE). Несовместим с --no-payments; --loopback допустим.
+#   --provider <slug>  провайдер, на чей адрес идёт webhook (/api/webhooks/payments/<slug>); подпись у всех провайдеров одна (webhook-signature.ts). По умолчанию "test";
+#                  с --order без --provider slug берётся из БД стенда (read-only psql в twomc-stand-postgres по orderNumber, печатается только slug).
 #   --order <номер>  4-й случай webhook идёт на РЕАЛЬНЫЙ тестовый заказ стенда с этим orderNumber: два одинаковых запроса status=failed,
 #                  ожидается 2xx (accepted) и затем 2xx already_processed. ВНИМАНИЕ: заказ в статусе PENDING без paymentId будет переведён в FAILED (для заказа необратимо;
 #                  брать только одноразовый тестовый заказ). Без --order и с --payments-only 4-й случай пропускается (SKIP) с пометкой; без --order и без --payments-only
@@ -34,18 +36,21 @@ set -uo pipefail
 if ! declare -F _pt_node_image >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 PTERO_ALLOW_WRITE=0
 
-LOOP=0; PAY=1; PAYONLY=0; ORDER=""; BPFX=""
+LOOP=0; PAY=1; PAYONLY=0; ORDER=""; BPFX=""; PROVIDER=""; PAYID=""
 while (( $# )); do
   case "$1" in
     --loopback) LOOP=1 ;; --no-payments) PAY=0 ;; --api-prefix) BPFX="/api" ;; --payments-only) PAYONLY=1 ;;
     --order) [[ $# -ge 2 ]] || { echo "--order требует номер заказа" >&2; exit 2; }; ORDER="$2"; shift ;;
-    *) echo "Неизвестный аргумент: $1 (допустимо --loopback | --no-payments | --api-prefix | --payments-only | --order <номер>)" >&2; exit 2 ;;
+    --provider) [[ $# -ge 2 ]] || { echo "--provider требует slug" >&2; exit 2; }; PROVIDER="$2"; shift ;;
+    *) echo "Неизвестный аргумент: $1 (допустимо --loopback | --no-payments | --api-prefix | --payments-only | --order <номер> | --provider <slug>)" >&2; exit 2 ;;
   esac
   shift
 done
 [[ "$PAYONLY" == 0 || "$PAY" == 1 ]] || { echo "--payments-only несовместим с --no-payments" >&2; exit 2; }
 [[ "$PAY" == 1 || -z "$ORDER" ]] || { echo "--order несовместим с --no-payments" >&2; exit 2; }
 [[ -z "$ORDER" || "$ORDER" =~ ^[A-Za-z0-9_-]{3,64}$ ]] || { echo "--order: недопустимый номер заказа" >&2; exit 2; }
+[[ -z "$PROVIDER" || "$PROVIDER" =~ ^[a-z0-9-]{1,32}$ ]] || { echo "--provider: недопустимый slug" >&2; exit 2; }
+[[ "$PAY" == 1 || -z "$PROVIDER" ]] || { echo "--provider несовместим с --no-payments" >&2; exit 2; }
 # Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
 SECRET_ENV=/home/twomc/bridge-dev-srv.secret.env
 [[ "${STAND_TEST:-0}" == 1 ]] && SECRET_ENV="${BRIDGE_SECRET_ENV:-$SECRET_ENV}"
@@ -76,6 +81,21 @@ if [[ "$PAY" == 1 ]]; then
     echo "WARN: PAYMENT_WEBHOOK_SECRET не прочитан (или короче 32): проверки webhook пропущены (SKIP)"; PAYSECRET=""; PAY=0
   fi
 fi
+
+# Провайдер реального заказа: явный --provider, иначе read-only запрос к БД стенда по orderNumber (печатается только slug; paymentId заказа берётся для тела, не печатается).
+if [[ "$PAY" == 1 && -n "$ORDER" && -z "$PROVIDER" ]]; then
+  _sv() { grep -E "^$1=" "$STAND_ENV" 2>/dev/null | tail -n1 | cut -d= -f2- | tr -d '[:cntrl:]"'; }
+  PG_USER="$(_sv POSTGRES_USER)"; PG_DB="$(_sv POSTGRES_DB)"
+  [[ "$PG_USER" =~ ^[A-Za-z0-9_]+$ && "$PG_DB" =~ ^[A-Za-z0-9_]+$ ]] || { echo "ОШИБКА: POSTGRES_USER/POSTGRES_DB не прочитаны из stand.env; укажите --provider <slug>"; exit 1; }
+  ROW="$(docker exec twomc-stand-postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -tA -F '|' \
+    -c "SELECT COALESCE(\"paymentProvider\",''), COALESCE(\"paymentId\",'') FROM orders WHERE \"orderNumber\"='$ORDER' LIMIT 2" </dev/null 2>/dev/null)"
+  [[ -n "$ROW" && "$(wc -l <<<"$ROW")" -eq 1 ]] || { echo "ОШИБКА: заказ $ORDER не найден (или не единственный); укажите --provider <slug>"; exit 1; }
+  IFS='|' read -r PROVIDER PAYID <<<"$ROW"
+  [[ "$PROVIDER" =~ ^[a-z0-9-]{1,32}$ ]] || { echo "ОШИБКА: у заказа $ORDER не выбран провайдер (не нажата «Оплатить»); укажите --provider <slug>"; exit 1; }
+  [[ "$PAYID" =~ ^[A-Za-z0-9_-]{1,100}$ ]] || PAYID=""
+  echo "провайдер заказа: $PROVIDER"
+fi
+PROVIDER="${PROVIDER:-test}"
 
 img="$(_pt_node_image 2>/dev/null)" || { echo "ОШИБКА: нет локального образа node (docker pull здесь не выполняется)"; exit 1; }
 
@@ -120,14 +140,14 @@ async function bridge(){
   r=await post(url,h,body);row("bridge 3 верная подпись, ts -120 с","401",show(r),is401(r));
 }
 async function payments(){
-  const P="/webhooks/payments/test";const url=SITE+"/api"+P;const S=e.PAYSECRET;
+  const P="/webhooks/payments/"+e.PROVIDER;const url=SITE+"/api"+P;const S=e.PAYSECRET;
   const mkBody=()=>JSON.stringify({orderNumber:"SIGCHECK-NOORDER",paymentId:"sigcheck-"+c.randomBytes(8).toString("hex"),currency:"RUB",status:"failed",amount:"1.00"});
   const sign=(body,tsOff)=>{const ts=String(Math.floor(Date.now()/1000)+tsOff);return {"x-twomc-timestamp":ts,"x-twomc-signature":hm(Buffer.from(S,"utf8"),ts+"."+body)};};
   const safe=(r)=>is2(r)&&/order_not_found|already_processed/.test(r.text);
   const ORD=e.ORDER||"";
   if(ORD){
     // реальный тестовый заказ: status=failed дважды (одно и то же тело и подпись); первый принят, второй already_processed
-    const bodyO=JSON.stringify({orderNumber:ORD,paymentId:"sigcheck-"+c.randomBytes(8).toString("hex"),currency:"RUB",status:"failed",amount:"1.00"});
+    const bodyO=JSON.stringify({orderNumber:ORD,paymentId:e.PAYID||("sigcheck-"+c.randomBytes(8).toString("hex")),currency:"RUB",status:"failed",amount:"1.00"});
     const hO=sign(bodyO,0);
     const a=await post(url,hO,bodyO);const b=await post(url,hO,bodyO);
     const okA=is2(a)&&/"accepted" ?: ?true/.test(a.text)&&!/already_processed/.test(a.text);const okB=is2(b)&&/already_processed/.test(b.text);
@@ -151,9 +171,9 @@ async function payments(){
 '
 
 addhost=(); [[ "$LOOP" == 1 ]] && addhost=(--add-host "$HOSTNAME_ONLY:host-gateway")
-echo "режим: $([[ "$LOOP" == 1 ]] && echo 'loopback (с хоста через docker0)' || echo 'публичный адрес'); bridge: $([[ "$PAYONLY" == 1 ]] && echo 'пропущен (--payments-only)' || echo "${EXPECTED_SITE}${BPFX}/bridge/v1/events"); webhook: $([[ "$PAY" == 1 ]] && echo да || echo пропущен); заказ: $([[ -n "$ORDER" ]] && echo 'реальный тестовый' || echo нет)"
+echo "провайдер webhook: $PROVIDER"; echo "режим: $([[ "$LOOP" == 1 ]] && echo 'loopback (с хоста через docker0)' || echo 'публичный адрес'); bridge: $([[ "$PAYONLY" == 1 ]] && echo 'пропущен (--payments-only)' || echo "${EXPECTED_SITE}${BPFX}/bridge/v1/events"); webhook: $([[ "$PAY" == 1 ]] && echo да || echo пропущен); заказ: $([[ -n "$ORDER" ]] && echo 'реальный тестовый' || echo нет)"
 timeout 120 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m ${addhost[@]+"${addhost[@]}"} \
-  --env-file <(printf 'SITE=%s\nBPFX=%s\nKEYID=%s\nKEYHEX=%s\nPAYSECRET=%s\nORDER=%s\nPAYONLY=%s\n' "$SITE_URL" "$BPFX" "$KEY_ID" "$KEY" "$PAYSECRET" "$ORDER" "$PAYONLY") \
+  --env-file <(printf 'SITE=%s\nBPFX=%s\nKEYID=%s\nKEYHEX=%s\nPAYSECRET=%s\nORDER=%s\nPAYONLY=%s\nPROVIDER=%s\nPAYID=%s\n' "$SITE_URL" "$BPFX" "$KEY_ID" "$KEY" "$PAYSECRET" "$ORDER" "$PAYONLY" "$PROVIDER" "$PAYID") \
   "$img" node -e "$JS" </dev/null 2>/dev/null
 rc=$?
 KEY=""; PAYSECRET=""
