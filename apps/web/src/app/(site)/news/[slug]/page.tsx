@@ -70,6 +70,8 @@ function Comments({ article }: { article: NewsArticleDto }) {
 
   const saveEdit = (event: FormEvent) => {
     event.preventDefault();
+    // Пока запрос идёт, повторная отправка (клик, Enter, submit формы) не шлёт второй.
+    if (actions.edit.isPending) return;
     const text = editing?.text.trim();
     if (!editing || !text) return;
     const { id } = editing;
@@ -229,7 +231,7 @@ function Comments({ article }: { article: NewsArticleDto }) {
                         size="sm"
                         type="submit"
                         loading={actions.edit.isPending}
-                        disabled={!editing.text.trim()}
+                        disabled={!editing.text.trim() || actions.edit.isPending}
                       >
                         Сохранить
                       </Button>

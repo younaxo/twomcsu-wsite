@@ -417,11 +417,24 @@ ${entries}
     });
   }
 
-  async removeComment(userId: string, commentId: string): Promise<void> {
+  async removeComment(
+    userId: string,
+    slug: string,
+    commentId: string,
+  ): Promise<void> {
+    const news = await this.prisma.news.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
+    if (!news) {
+      throw new NotFoundException('Комментарий не найден');
+    }
     const comment = await this.prisma.newsComment.findUnique({
       where: { id: commentId },
     });
-    if (!comment || comment.isDeleted) {
+    // Комментарий должен принадлежать новости из адреса: иначе 404, неотличимый
+    // от несуществующего (не раскрываем чужие комментарии).
+    if (!comment || comment.isDeleted || comment.newsId !== news.id) {
       throw new NotFoundException('Комментарий не найден');
     }
     if (comment.authorId !== userId) {
