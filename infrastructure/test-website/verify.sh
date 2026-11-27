@@ -113,7 +113,7 @@ check "после выхода запрос без cookie -> 302" "302" "$(curl 
 # Диагностика цепочки CDN так же, как её проверяет nginx (бандл ca-certificates, глубина 3): код 0 = цепочка полная и доверенная; 20 = нет издателя в бандле/цепочка неполная.
 check "картинки: TLS-цепочка cdn-files.twomc.su проверяется бандлом nginx (verify 0)" "Verify return code: 0 (ok)" "$(timeout 15 openssl s_client -connect cdn-files.twomc.su:443 -servername cdn-files.twomc.su -verify_hostname cdn-files.twomc.su -verify_depth 3 -CAfile /etc/ssl/certs/ca-certificates.crt </dev/null 2>/dev/null | grep -m1 'Verify return code' || echo none)"
 check "картинки без входа -> 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt")"
-check "картинки: fallback на CDN (health.txt)" "ok 200*" "$(authed -s -w '\n%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt" | tr '\n' ' ')"
+check "картинки: fallback на CDN (health.txt)" "ok 200" "$(authed -s -w '\n%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt" | tr '\n' ' ' | tr -s ' ' | sed -e 's/^ //' -e 's/ $//')"
 check "картинки: защитные заголовки без дублей" "1" "$(authed -sI "https://$STAND_DOMAIN/api/uploads/health.txt" | grep -ci '^x-content-type-options')"
 check "картинки: несуществующий файл -> 404" "404" "$(authed -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/no-such-file-$(openssl rand -hex 4).png")"
 check "картинки: POST запрещён -> 403" "403" "$(authed -s -X POST -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt")"
