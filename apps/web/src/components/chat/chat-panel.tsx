@@ -14,7 +14,7 @@ import { io, type Socket } from 'socket.io-client';
 import { Avatar } from '@/components/ui/avatar';
 import { Button, IconButton } from '@/components/ui/button';
 import { ErrorState } from '@/components/ui/error-state';
-import { Textarea } from '@/components/ui/input';
+import { MentionTextarea } from '@/components/mentions';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
@@ -332,7 +332,8 @@ function ChannelView({ channel }: { channel: ChatChannelDto }) {
               void send();
             }}
           >
-            <Textarea
+            <MentionTextarea
+              wrapperClassName="flex-1"
               aria-label="Сообщение в чат"
               placeholder="Сообщение…"
               value={content}

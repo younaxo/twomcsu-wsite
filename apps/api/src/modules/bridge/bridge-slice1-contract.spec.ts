@@ -64,6 +64,8 @@ const config: BridgeConfig = {
   applyLatencyLimitMs: 2000,
   bodyReadTimeoutMs: 10000,
   deliveryEnabled: false,
+  statsEnabled: false,
+  inventoryEnabled: false,
 };
 
 function ctx(): BridgeAuthContext {

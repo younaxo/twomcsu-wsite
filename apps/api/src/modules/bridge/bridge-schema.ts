@@ -15,6 +15,11 @@ import {
   PunishmentRemoval,
 } from '../punishments/punishment.types';
 import { sanitizeLabel, sanitizeReason } from '../punishments/text-sanitizer';
+import { parseSnapshot } from '../inventory/inventory-normalize';
+import {
+  InventoryValidationError,
+  type NormalizedSnapshot,
+} from '../inventory/inventory.types';
 
 /// Строгие схемы Bridge v1 (раздел 4 контракта). Ошибка конверта - вся пачка
 /// отклоняется (422); ошибка `data` - отклоняется только событие
@@ -373,4 +378,82 @@ export function parseOverflow(
       dropped: data.dropped,
     },
   };
+}
+
+/// Белый список метрик `player.stats.snapshot` и верхние границы (ADR-0195,
+/// Q68). Только поля, которые уже есть в `PlayerStatistics`; монеты сайта
+/// (`coins`), покупки и любые экономические значения сюда не входят.
+export const STATS_METRIC_LIMITS = {
+  playTimeMinutes: 5_000_000,
+  kills: 100_000_000,
+  deaths: 100_000_000,
+  hits: 1_000_000_000,
+} as const;
+
+export type StatsMetricKey = keyof typeof STATS_METRIC_LIMITS;
+
+export interface StatsSnapshotData {
+  /// UUID игрока в каноническом виде (нижний регистр, с дефисами).
+  uuid: string;
+  /// Ник из события только информационный: не хранится и не используется.
+  metrics: Partial<Record<StatsMetricKey, number>>;
+}
+
+/// `data` события `player.stats.snapshot` (3.3 контракта): строгий набор
+/// ключей `uuid`, `name`, `metrics`; в `metrics` - непустое подмножество
+/// белого списка, неотрицательные целые не выше предела. Лишние поля
+/// (включая `serverId`, `coins`, `ip`) отклоняются.
+export function parseStatsSnapshot(
+  data: Record<string, unknown>,
+): Parsed<StatsSnapshotData> {
+  try {
+    checkKeys(data, ['uuid', 'metrics'], ['name']);
+    const u = uuid(data.uuid);
+    if (u === null) fail();
+    if (data.name !== undefined && data.name !== null) {
+      str(data.name, 1, 32);
+    }
+    const rawMetrics = data.metrics;
+    if (!isPlainObject(rawMetrics)) fail();
+    const keys = Object.keys(rawMetrics);
+    if (keys.length === 0) fail();
+    const metrics: Partial<Record<StatsMetricKey, number>> = {};
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(STATS_METRIC_LIMITS, key)) {
+        fail();
+      }
+      const limit = STATS_METRIC_LIMITS[key as StatsMetricKey];
+      const value = rawMetrics[key];
+      if (
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        value > limit
+      ) {
+        fail();
+      }
+      metrics[key as StatsMetricKey] = value;
+    }
+    return { ok: true, value: { uuid: u, metrics } };
+  } catch (e) {
+    if (e instanceof Invalid) return { ok: false };
+    throw e;
+  }
+}
+
+/// `data` события `inventory.snapshot` (раздел 16 контракта): схему, лимиты
+/// слотов, предметов и размера ряда, очистку текста и список разрешённых полей
+/// предмета задаёт модуль инвентаря (ADR-0168, `parseSnapshot`); здесь она
+/// не дублируется, только проверяется до обращений к Redis и БД. Лишние поля
+/// (`serverId`, `ip`, сырой NBT) отклоняются строгой схемой инвентаря.
+export function parseInventorySnapshot(
+  data: Record<string, unknown>,
+  now: Date,
+): Parsed<NormalizedSnapshot> {
+  try {
+    return { ok: true, value: parseSnapshot(data, now) };
+  } catch (e) {
+    if (e instanceof InventoryValidationError) return { ok: false };
+    throw e;
+  }
 }

@@ -135,12 +135,70 @@ describe('sanitizeDeliveryError', () => {
     expect(text.length).toBeLessThanOrEqual(300);
   });
 
-  it('огромное сообщение разбирается быстро и обрезается', () => {
-    const started = Date.now();
-    const text = sanitizeDeliveryError('a'.repeat(200_000));
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(text.length).toBeLessThanOrEqual(300);
+  // Вход режется до первых 4000 символов (SANITIZE_INPUT_LIMIT в
+  // delivery-status.ts, константа не экспортируется), поэтому 50k и 200k
+  // символов - одна и та же операция; сравнивать их по времени бессмысленно.
+  // Здесь проверяются сам лимит и худшие формы входа на длине ровно лимита.
+  const INPUT_LIMIT = 4000;
+  const fill = (unit: string): string =>
+    unit.repeat(Math.ceil(INPUT_LIMIT / unit.length)).slice(0, INPUT_LIMIT);
+
+  it('лимит разбора: символы после 4000-го отбрасываются, до него сохраняются', () => {
+    // Цепочка обратных слэшей схлопывается в одну кавычку, поэтому метки
+    // видны в итоговых 300 символах. KEEP заканчивается ровно на 4000-м
+    // символе (остаётся), всё с 4001-го отбрасывается.
+    const head = `${'\\'.repeat(INPUT_LIMIT - 5)}"KEEP`;
+    expect(head.length).toBe(INPUT_LIMIT);
+    expect(sanitizeDeliveryError(`${head}DROP`)).toBe('"KEEP');
+    // Секрет за пределом лимита не разбирается и не попадает в итог.
+    expect(sanitizeDeliveryError(`${head} password=hunter2`)).toBe('"KEEP');
+    // Секрет внутри лимита скрывается.
+    const text = sanitizeDeliveryError(
+      `${'\\'.repeat(INPUT_LIMIT - 40)}" password=hunter2 end`,
+    );
+    expect(text).not.toContain('hunter2');
+    expect(text).toContain('[скрыто]');
   });
+
+  it('огромное сообщение обрезается до итоговых 300 символов', () => {
+    expect(
+      sanitizeDeliveryError('x y '.repeat(500_000)).length,
+    ).toBeLessThanOrEqual(300);
+  });
+
+  // Защита от катастрофического backtracking: на длине лимита квадратичный
+  // разбор дал бы секунды. Порог абсолютный с большим запасом над обычными
+  // единицами-десятками мс, по медиане трёх прогонов, чтобы шум CI (GC,
+  // соседние задания) не ронял тест.
+  const RUNS = 3;
+  const ABSOLUTE_LIMIT_MS = 1500;
+  it.each([
+    ['a x N', fill('a')],
+    ['http:// + a x N', `http://${fill('a').slice(7)}`],
+    ['цепочка обратных слэшей', fill('\\')],
+    ['цепочка слэшей с кавычкой', `${fill('\\').slice(1)}"`],
+    ['цепочка %3D', fill('%3D')],
+    ['key= x N', fill('key=')],
+    [
+      'экранирование, проценты, bearer',
+      fill('\\"%3A%3D bearer: authorization:"'),
+    ],
+  ])(
+    'худшая форма входа на длине лимита быстрая: %s',
+    (_name, input) => {
+      expect(input.length).toBe(INPUT_LIMIT);
+      const samples: number[] = [];
+      for (let i = 0; i < RUNS; i += 1) {
+        const started = performance.now();
+        const text = sanitizeDeliveryError(input);
+        samples.push(performance.now() - started);
+        expect(text.length).toBeLessThanOrEqual(300);
+      }
+      samples.sort((a, b) => a - b);
+      expect(samples[1]).toBeLessThan(ABSOLUTE_LIMIT_MS);
+    },
+    15000,
+  );
 });
 
 describe('ManualExecutor', () => {

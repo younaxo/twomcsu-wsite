@@ -1,4 +1,5 @@
-import { INestApplication } from '@nestjs/common';
+import { ConflictException, INestApplication } from '@nestjs/common';
+import { EventsService } from '../src/modules/events/events.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
@@ -288,6 +289,91 @@ describe('Events (e2e)', () => {
       await prisma.calendarEvent.delete({ where: { id: past.id } });
     }
   });
+
+  it('J-09-2: 20 параллельных записей при лимите 5 -> ровно 5 GOING, остальные 409', async () => {
+    const LIMIT = 5;
+    const N = 20;
+    const event = await prisma.calendarEvent.create({
+      data: {
+        slug: `e2e-${unique}-race`,
+        title: 'Гонка',
+        description: 'Лимит',
+        descriptionHtml: '<p>Лимит</p>',
+        category: 'COMMUNITY',
+        status: 'PUBLISHED',
+        startsAt: new Date(Date.now() + 3 * 86_400_000),
+        maxParticipants: LIMIT,
+        createdById: organizer.id,
+      },
+    });
+    const emails = Array.from(
+      { length: N },
+      (_, i) => `events-race${i}-${unique}@example.com`,
+    );
+    try {
+      const { positionId } = await prisma.user.findUniqueOrThrow({
+        where: { id: alice.id },
+        select: { positionId: true },
+      });
+      await prisma.user.createMany({
+        data: emails.map((email, i) => ({
+          email,
+          username: `er${i}${unique}`.slice(0, 16),
+          tag: `er${i}${unique}#${1000 + i}`,
+          discriminator: 1000 + i,
+          password: 'not-a-real-hash',
+          positionId,
+        })),
+      });
+      const users = await prisma.user.findMany({
+        where: { email: { in: emails } },
+      });
+      expect(users).toHaveLength(N);
+      const service = app.get(EventsService);
+
+      const results = await Promise.allSettled(
+        users.map((u) =>
+          service.attend({ id: u.id }, event.id, { status: 'GOING' } as never),
+        ),
+      );
+      const ok = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected',
+      );
+      expect(ok).toHaveLength(LIMIT);
+      expect(rejected).toHaveLength(N - LIMIT);
+      for (const r of rejected) {
+        expect(r.reason).toBeInstanceOf(ConflictException);
+      }
+      expect(
+        await prisma.eventParticipant.count({
+          where: { eventId: event.id, status: 'GOING' },
+        }),
+      ).toBe(LIMIT);
+
+      // Повтор уже записанного идемпотентен и не падает на полном лимите.
+      const going = await prisma.eventParticipant.findFirstOrThrow({
+        where: { eventId: event.id, status: 'GOING' },
+      });
+      await service.attend({ id: going.userId }, event.id, {
+        status: 'GOING',
+      } as never);
+      // Отмена освобождает место.
+      await service.leave(going.userId, event.id);
+      const free = users[results.findIndex((r) => r.status === 'rejected')];
+      await service.attend({ id: free.id }, event.id, {
+        status: 'GOING',
+      } as never);
+      expect(
+        await prisma.eventParticipant.count({
+          where: { eventId: event.id, status: 'GOING' },
+        }),
+      ).toBe(LIMIT);
+    } finally {
+      await prisma.calendarEvent.delete({ where: { id: event.id } });
+      await prisma.user.deleteMany({ where: { email: { in: emails } } });
+    }
+  }, 30_000);
 
   it('изменение расписания опубликованного события уведомляет участников (EVENT_UPDATED)', async () => {
     const newStartsAt = new Date(

@@ -95,3 +95,71 @@ describe('EventsService: без ключа 2FA вне dev/test — fail closed (
     },
   );
 });
+
+describe('EventsService.attend: лимит из заблокированной строки (J-09-2)', () => {
+  const viewer = { id: 'u1' } as never;
+  const future = new Date(Date.now() + 86_400_000);
+
+  function attendSetup(locked: unknown[], going: number) {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue(locked),
+      eventParticipant: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(going),
+        upsert: jest.fn().mockResolvedValue({ status: 'GOING' }),
+      },
+    };
+    const prisma = {
+      calendarEvent: {
+        // Устаревшее значение: до блокировки лимит был 100.
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'e1',
+          status: 'PUBLISHED',
+          visibility: 'PUBLIC',
+          startsAt: future,
+          endsAt: null,
+          registrationDeadline: null,
+          maxParticipants: 100,
+        }),
+      },
+      $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
+    };
+    const service = new EventsService(
+      prisma as never,
+      { hasPermission: jest.fn() } as never,
+      { get: (_n: string, d?: string) => d } as never,
+    );
+    return { service, tx };
+  }
+
+  it('использует maxParticipants из заблокированной строки, а не из ранее прочитанного', async () => {
+    const { service, tx } = attendSetup(
+      [{ status: 'PUBLISHED', maxParticipants: 2, registrationDeadline: null }],
+      2,
+    );
+    await expect(
+      service.attend(viewer, 'e1', { status: 'GOING' } as never),
+    ).rejects.toThrow('Достигнут лимит участников события');
+    expect(tx.eventParticipant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('событие отменено после чтения: 404, запись не создаётся', async () => {
+    const { service, tx } = attendSetup(
+      [{ status: 'CANCELLED', maxParticipants: 5, registrationDeadline: null }],
+      0,
+    );
+    await expect(
+      service.attend(viewer, 'e1', { status: 'GOING' } as never),
+    ).rejects.toThrow('Событие не найдено');
+    expect(tx.eventParticipant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('лимит снят в промежутке: запись проходит', async () => {
+    const { service, tx } = attendSetup(
+      [{ status: 'PUBLISHED', maxParticipants: null, registrationDeadline: null }],
+      999,
+    );
+    await service.attend(viewer, 'e1', { status: 'GOING' } as never);
+    expect(tx.eventParticipant.upsert).toHaveBeenCalled();
+  });
+});
