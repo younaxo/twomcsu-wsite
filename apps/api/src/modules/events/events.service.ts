@@ -172,24 +172,34 @@ export class EventsService {
       throw new ForbiddenException('Событие уже прошло');
     }
 
-    if (event.maxParticipants && dto.status === 'GOING') {
-      const existing = await this.prisma.eventParticipant.findUnique({
+    const write = (db: Prisma.TransactionClient | PrismaService) =>
+      db.eventParticipant.upsert({
         where: { eventId_userId: { eventId, userId } },
+        create: { eventId, userId, status: dto.status },
+        update: { status: dto.status },
       });
-      if (!existing || existing.status !== 'GOING') {
-        const goingCount = await this.prisma.eventParticipant.count({
-          where: { eventId, status: 'GOING' },
-        });
-        if (goingCount >= event.maxParticipants) {
-          throw new ConflictException('Достигнут лимит участников события');
-        }
-      }
+
+    if (!event.maxParticipants || dto.status !== 'GOING') {
+      return write(this.prisma);
     }
 
-    return this.prisma.eventParticipant.upsert({
-      where: { eventId_userId: { eventId, userId } },
-      create: { eventId, userId, status: dto.status },
-      update: { status: dto.status },
+    // Лимит без гонки (J-09-2): строка события блокируется на время
+    // транзакции, параллельные записи на то же событие идут по очереди, и
+    // подсчёт GOING всегда видит результат предыдущей записи.
+    const max = event.maxParticipants;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM calendar_events WHERE id = ${eventId} FOR UPDATE`;
+      const existing = await tx.eventParticipant.findUnique({
+        where: { eventId_userId: { eventId, userId } },
+      });
+      if (existing?.status === 'GOING') return existing; // идемпотентно
+      const goingCount = await tx.eventParticipant.count({
+        where: { eventId, status: 'GOING' },
+      });
+      if (goingCount >= max) {
+        throw new ConflictException('Достигнут лимит участников события');
+      }
+      return write(tx);
     });
   }
 
