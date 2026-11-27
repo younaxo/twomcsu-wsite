@@ -20,7 +20,7 @@
 | Каталог стенда                              | `/srv/twomc-stand/` (`ops/` - скрипты, `releases/<sha>/` - код релиза, `stand.env` 600, `gate.token` 600, `.release`, `.release.prev`, `deploy.log`)                                                                        |
 | Секреты                                     | `/srv/twomc-stand/stand.env` (генерирует `gen-env.sh`, bootstrap-пароли stand_owner / stand_curator внутри), `/home/twomc/test-website-basic-auth.txt` (600, формат `user:password`), `/etc/nginx/stand.htpasswd`           |
 | Контейнеры (проект `twomc-stand`)           | `twomc-stand-postgres` (127.0.0.1:55432), `twomc-stand-redis` (только внутренняя сеть), `twomc-stand-api` (127.0.0.1:4000), `twomc-stand-web` (127.0.0.1:3000)                                                              |
-| nginx                                       | `/etc/nginx/conf.d/00-default-reject.conf` (default_server), `/etc/nginx/conf.d/stand.conf` (640, содержит токен пропуска)                                                                                                  |
+| nginx                                       | `/etc/nginx/conf.d/00-default-reject.conf` (default_server), `/etc/nginx/conf.d/stand.conf` (640; секретов не содержит), контейнер `twomc-stand-gate` (127.0.0.1:4100)                                                                                                  |
 
 Наружу открыты только 22, 80, 443. Postgres слушает только loopback (нужно для честного guard демо-сида), Redis не опубликован.
 
@@ -39,8 +39,8 @@
 - Turnstile: проверка выключена (`TURNSTILE_DISABLED=true`, допустимо только вне production); в web вшит публичный тестовый site key Cloudflare `1x00000000000000000000AA` (не секрет).
 - Почта: `SMTP_HOST` не задан, письма пишутся только в лог API.
 - Один origin: web на `/`, API на `/api/` (nginx срезает префикс). Причина: отдельного DNS-имени для API нет (`api.test-website.twomc.su` не резолвится). Realtime (чат, ЛС, уведомления): с PR #241 клиент подключается через `realtimeTarget` — origin в URL, префикс в `path` (`/api/socket.io`); nginx срезает `/api` и пропускает Upgrade. Проверено 28.11 на релизе 6c2d5e04: handshake socket.io на `/notifications` через `/api/socket.io` успешен (websocket и polling с апгрейдом). Ранее (до #241) realtime на стенде не работал.
-- Basic auth и API: приложение шлёт `Authorization: Bearer`, который затирает кэшированный basic. Поэтому после успешного basic auth nginx выдаёт cookie `__Host-stand_gate` (HttpOnly, Secure, SameSite=Lax, 12 часов); с cookie basic не запрашивается. Cookie выдаётся только на успешные ответы (не на 401). SSR web ходит на публичный URL API изнутри docker-сети; такие запросы (172.16.0.0/12, 127.0.0.1) пропускаются по адресу источника. Заголовок Basic к приложению не пробрасывается, а cookie-пропуск вырезается из заголовка Cookie перед proxy_pass (приложение его не видит). Префикс `__Host-` запрещает Domain и требует Secure и Path=/.
-- noindex: `/robots.txt` отдаёт `User-agent: *` / `Disallow: /` (без basic auth, чтобы краулер увидел правило) и заголовок `X-Robots-Tag: noindex, nofollow` на всех ответах, включая 401.
+- Защита входом (с 2026-11-27, PR feat/stand-gate-form): вместо системного окна Basic Auth - своя страница `/__stand/login` (раздел «Форма входа»). Прежняя схема (basic + статический cookie-пропуск) заменена; `stand.htpasswd` остаётся на диске и не используется. SSR web ходит на публичный URL API изнутри docker-сети; такие запросы (172.16.0.0/12, 127.0.0.1) пропускаются по адресу источника.
+- noindex: `/robots.txt` отдаёт `User-agent: *` / `Disallow: /` (без входа, чтобы краулер увидел правило) и заголовок `X-Robots-Tag: noindex, nofollow` на всех ответах, включая 302 формы, форму и 401 JSON.
 - Неизвестные Host: :80 - `return 444`, :443 - `ssl_reject_handshake on` (рукопожатие отклоняется, сертификат не нужен). giveaway.twomc.su резолвится на этот IP, но намеренно закрыт.
 - Сертификат выпущен без e-mail (`--register-unsafely-without-email`): адрес владельца внешнему сервису не передавался. Уведомления об истечении не придут; продление автоматическое (таймер certbot и deploy-hook перезагрузки nginx). Проверка: `sudo certbot renew --dry-run`.
 
@@ -62,7 +62,7 @@ infrastructure/test-website/release.sh [ref] [--seed]   # ref по умолча�
 
 ```sh
 /srv/twomc-stand/ops/gen-env.sh                         # один раз; существующий stand.env не перезаписывается
-/srv/twomc-stand/ops/setup-nginx.sh                     # один раз: htpasswd, токен, default_server, certbot, nginx
+/srv/twomc-stand/ops/setup-nginx.sh                     # один раз: gate.key, хеш пароля формы, токен, контейнер gate, default_server, certbot, nginx
 nohup /srv/twomc-stand/ops/deploy-stand.sh <sha12> > /srv/twomc-stand/deploy.log 2>&1 &
 /srv/twomc-stand/ops/seed-demo.sh                       # роли, bootstrap-аккаунты, демо-данные (идемпотентно)
 /srv/twomc-stand/ops/verify.sh                          # проверки
@@ -80,10 +80,10 @@ nohup /srv/twomc-stand/ops/deploy-stand.sh <sha12> > /srv/twomc-stand/deploy.log
 
 ```sh
 dig +short test-website.twomc.su @1.1.1.1                      # с сервера: 31.76.77.45
-curl -sI https://test-website.twomc.su                          # 401 без auth
-printf 'user = "%s"\n' "$(grep -v '^Устарело' ~/test-website-basic-auth.txt)" | curl -K - -sI https://test-website.twomc.su   # 200 + X-Robots-Tag
+curl -sI https://test-website.twomc.su                          # 302 на /__stand/login без входа
+printf 'header = "X-Stand-Gate: %s"\n' "$(cat /srv/twomc-stand/gate.token)" | curl -K - -sI https://test-website.twomc.su   # 200 + X-Robots-Tag (сервисный токен, не печатать)
 curl -s https://test-website.twomc.su/robots.txt                # Disallow: /
-printf 'user = "%s"\n' "$(grep -v '^Устарело' ~/test-website-basic-auth.txt)" | curl -K - -s https://test-website.twomc.su/api/health
+curl -s https://test-website.twomc.su/api/health                # 200 без входа
 curl -sI http://test-website.twomc.su                           # 301 на https
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: unknown.example.invalid' http://127.0.0.1/   # 000 (444)
 sudo ufw status verbose; sudo fail2ban-client status sshd; timedatectl
@@ -128,7 +128,7 @@ Cookie и CORS жёстко не зашиты: `refresh-cookie.ts` берёт `C
 - Остановить стенд: `docker compose -p twomc-stand --env-file /srv/twomc-stand/stand.env -f <релиз>/infrastructure/docker-compose.prod.yml -f /srv/twomc-stand/ops/docker-compose.stand.yml stop api web`.
 - Закрыть стенд от интернета мгновенно: `sudo rm /etc/nginx/conf.d/stand.conf && sudo nginx -s reload` (останется default_server 444) или `sudo ufw deny 443/tcp` (после проверки SSH-доступа).
 - Полный снос стенда (только по решению владельца; данные тестовые): `docker compose -p twomc-stand ... down -v`, удалить `/srv/twomc-stand`, `/etc/nginx/conf.d/stand.conf`, `/etc/nginx/stand.htpasswd`, `certbot delete --cert-name test-website.twomc.su`.
-- Ротация basic auth: `setup-nginx.sh --rotate` (раздел 9; старые файлы сохраняются, не удаляются); ротация токена пропуска (cookie `__Host-stand_gate`): `rm /srv/twomc-stand/gate.token`, снова `setup-nginx.sh` (перегенерирует токен и `stand.conf`, nginx перечитает); старые cookie перестанут действовать, все получат basic-запрос заново. Ротировать при подозрении на утечку cookie или заголовка Cookie.
+- Ротация пароля формы и токена: раздел «Форма входа» ниже. Ротация токена X-Stand-Gate: `rm /srv/twomc-stand/gate.token`, `setup-nginx.sh` (создаст новый и пересоздаст gate); обновить токен у раннера и мониторинга.
 - Бан своего IP (fail2ban): через консоль/VNC провайдера выполнить `sudo fail2ban-client status sshd` и `sudo fail2ban-client unban <ip>` (или подождать 10 минут). Профиль мягкий (sshd: 10 попыток за 10 мин, бан 10 мин). Проверки входа выполнять по одной, root-вход не пробовать: он закрыт и только набирает штрафные попытки.
 - Ротация секретов приложения: пароль Postgres/Redis записан в томах при инициализации, менять только вместе с томами (`down -v`); `gen-env.sh` намеренно не перезаписывает `stand.env`.
 - Диск: `docker builder prune` и удаление старых тегов образов - вручную и осознанно; перед крупными работами владельцу - снимок диска в панели хостинга.
@@ -150,10 +150,10 @@ Cookie и CORS жёстко не зашиты: `refresh-cookie.ts` берёт `C
 
 ## 9. Учётные данные: правила
 
-- Окончательный файл учётных данных стенда: `/home/twomc/test-website-credentials.txt` (владелец `twomc`, 600). Скрипты из `infrastructure/test-website/` его НЕ пишут и не изменяют; `verify.sh` только проверяет права (чтение).
+- Окончательный файл учётных данных стенда: `/home/twomc/test-website-credentials.txt` (владелец `twomc`, 600). Читает только владелец/главный агент. Единственное исключение для скриптов: `setup-nginx.sh` читает пароль секции `[basic auth]` (пароль формы входа) и, если секции нет, ДОПИСЫВАЕТ её в конец файла; существующее содержимое не меняется. `verify.sh` читает пароль для проверки входа и права файла.
 - Прежние `/home/twomc/test-website-basic-auth.txt` и `/home/twomc/test-website-accounts.txt` не удаляются, помечены как устаревшие.
-- Защита от перезаписи: `setup-nginx.sh` создаёт basic auth и htpasswd только при первом запуске (если нет ни файла, ни htpasswd); существующие не меняются. Ротация только явно: `setup-nginx.sh --rotate` (старые файлы сохраняются как `*.bak.<время>`, окончательный файл обновляется вручную). `gen-env.sh` не перезаписывает существующий `stand.env`.
-- Раздел 7 «Ротация basic auth» (удалить файлы и перезапустить) заменён этим флагом.
+- Защита от перезаписи: `setup-nginx.sh` создаёт `gate.key`, `gate.token`, `gate.pass.hash` только если их нет. Пароль меняется явно (раздел «Форма входа»). `gen-env.sh` не перезаписывает существующий `stand.env`.
+- Раздел 7 «Ротация basic auth» заменён разделом «Форма входа».
 
 ## Дымовая проверка стенда (smoke)
 
@@ -178,3 +178,29 @@ infrastructure/test-website/run-visual.sh --fetch /srv/twomc-stand/qa/visual-<д
 ```
 Одноразовый контейнер `mcr.microsoft.com/playwright:v1.49.1-jammy` (`PW_VERSION`), headless Chromium, `--cap-drop ALL`, `--read-only`, 3 ГБ, 1500 с. Вход игрока и админа (с TOTP) через форму `/login`; учётки читаются из окончательного файла (только `:ro`), в вывод не попадают (`mask()`). Ширины 360, 390, 1280; для каждой пары страница x ширина: статус, горизонтальный скролл, цели < 40x40 (на мобильных, первые 10), ошибки консоли, неудачные ответы, полноэкранный скриншот. Побочный эффект: корзина игрока очищается и в неё кладётся первый товар. Откат: ничего не меняет в коде и данных стенда, кроме корзины и ещё двух входов; каталог результатов можно удалить вручную.
 Откат: смоук ничего не меняет в коде стенда; он включает флаги `stats.public.enabled` и `punishments.public.enabled` и создаёт заказ тестового игрока (одноразовая проверка на тестовых данных).
+
+## Форма входа на стенд (вместо Basic Auth, с 2026-11-27)
+
+Системное окно браузера (Basic Auth) заменено страницей `https://test-website.twomc.su/__stand/login` (тёмная тема «Полдень», поле пароля, `lang=ru`, `noindex`).
+
+**Как устроено.** nginx на каждый запрос делает `auth_request` к контейнеру `twomc-stand-gate` (`stand-gate.mjs`, node:20-alpine, только `127.0.0.1:4100`, read-only, без capabilities, `--restart unless-stopped`). Контейнер запускает `setup-nginx.sh` (вне compose-проекта релизов: переживает деплой api/web; выбран вместо systemd, так как на хосте нет node, а образ node:20-alpine уже используется стендом). Без пропуска: страницы получают 302 на `/__stand/login?next=<путь>` (только относительный путь с одним `/`, иначе `/`), `/api/*` получает 401 JSON `stand_gate_required` (не HTML). Пропуск: cookie `__Host-stand_gate` = `<срок unix>.<HMAC-SHA256 hex>`, Secure, HttpOnly, SameSite=Lax, Path=/, 7 суток; ключ `/srv/twomc-stand/gate.key` (600). Вход: `POST /__stand/login` (проверка Origin = Host, не более 10 попыток в минуту с IP, задержка 0,7 с на неудачу, scrypt + timingSafeEqual против `/srv/twomc-stand/gate.pass.hash`, 600). Cookie вырезается из `Cookie` перед передачей приложению; cookie 2FA админа (`two_factor_challenge`, `Path=/auth` -> `/api/auth` через `proxy_cookie_path`, Q105) и Set-Cookie приложения не затрагиваются. WebSocket/SSE (`/api/socket.io`) проходят с той же cookie.
+
+**Как войти.** Открыть адрес стенда, ввести пароль. Пароль: файл `/home/twomc/test-website-credentials.txt`, секция `[basic auth]`, строка `password:` (читает только владелец или главный агент; не копировать в чаты и логи). Выход: открыть `/__stand/logout` (cookie очищается, откроется форма). Срок: 7 суток, потом форма снова.
+
+**Мимо формы** (список точных путей в `isBypass` файла `stand-gate.mjs`, под тестами):
+- `/robots.txt` (отдаёт nginx), `/.well-known/acme-challenge/` (порт 80);
+- `GET|HEAD /api/health`;
+- `POST /api/webhooks/payments/<провайдер>` (подпись проверяет API) и `POST /api/voting/webhook/<slug>`;
+- любой запрос с заголовком `X-Stand-Gate: <содержимое /srv/twomc-stand/gate.token>` (раннер, мониторинг; сравнение за постоянное время);
+- запросы из docker-сети и с loopback сервера (SSR web). `smoke.mjs` ходит прямо на loopback-порты, формы не проходит; `visual-check.mjs` входит формой (пароль из секции `[basic auth]`, не печатается), `verify.sh` использует форму и токен через stdin-конфиг curl.
+Примеры для раннера: `printf 'header = "X-Stand-Gate: %s"\n' "$(cat /srv/twomc-stand/gate.token)" | curl -K - https://test-website.twomc.su/...` (токен не печатать и не передавать в argv).
+
+**Смена пароля.** Изменить значение `password:` в секции `[basic auth]` файла учётных данных, затем на сервере `/srv/twomc-stand/ops/setup-nginx.sh --rotate-pass` (пересчитает хеш, пересоздаст gate). Старые cookie остаются действительными до срока; чтобы сбросить все сессии: `rm /srv/twomc-stand/gate.key` и `setup-nginx.sh` (новый ключ, все выходят). Если секции `[basic auth]` нет, скрипт сам сгенерирует пароль и допишет секцию (на экран не выводится).
+
+**Установка на стенд (владелец/Platform, после слияния PR).** Выложить ops-файлы (`push-release.sh`, в бандл входит `stand-gate.mjs`), затем на сервере `/srv/twomc-stand/ops/setup-nginx.sh` и `/srv/twomc-stand/ops/verify.sh`. Скрипт идемпотентен; перед заменой `stand.conf` сохраняется как `stand.conf.bak.<время>`, при провале `nginx -t` предыдущая конфигурация восстанавливается автоматически. Gate поднимается ДО смены nginx; если он не стартовал, nginx не меняется.
+
+**Откат на Basic Auth** (старый `/etc/nginx/stand.htpasswd` не удалялся): 1) взять предыдущий шаблон `git show 6eb18690:infrastructure/test-website/nginx.stand.conf.template` (для basic нужен `STAND_GATE_TOKEN` = содержимое `gate.token`, `envsubst '${STAND_DOMAIN} ${STAND_GATE_TOKEN} ${WEB_PORT} ${API_PORT}'`) либо вернуть сохранённый `/etc/nginx/conf.d/stand.conf.bak.<время>`; 2) `sudo nginx -t && sudo systemctl reload nginx`; 3) `docker rm -f twomc-stand-gate` (по желанию). Мгновенно закрыть стенд от интернета: раздел 7.
+
+**Альтернатива «без защиты» (не рекомендуется).** Убрать `auth_request` и оставить только noindex: стенд станет виден любому, кто знает адрес (поисковики не проиндексируют, но боты, сканеры и случайные посетители увидят тестовые данные, мок-платежи, формы регистрации с кодами в логе API и dev-режим API с ослабленными проверками); риск средний: нет реальных денег и боевых данных, но возможны спам регистраций, нагрузка на VDS и утечка незавершённых функций. Допустимо только на короткое время и по решению владельца.
+
+**Что проверить на стенде после применения (не проверялось локально: стенд и VDS не трогались).** `verify.sh` целиком; в Chromium: форма на 360/390/1280, вход, переход на `next`, чат (socket.io), вход админа с 2FA и `/admin/store/products`, выход; `smoke.sh` 40/40 и `visual-check.sh` (72 страницы).
