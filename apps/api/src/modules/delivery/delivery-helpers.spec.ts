@@ -136,10 +136,27 @@ describe('sanitizeDeliveryError', () => {
   });
 
   it('огромное сообщение разбирается быстро и обрезается', () => {
-    const started = Date.now();
-    const text = sanitizeDeliveryError('a'.repeat(200_000));
-    expect(Date.now() - started).toBeLessThan(1000);
-    expect(text.length).toBeLessThanOrEqual(300);
+    // Защита от катастрофического backtracking: при квадратичном разборе
+    // 200 000 символов дают десятки секунд, поэтому порог берём с большим
+    // запасом и по медиане, чтобы шум CI (GC, соседние задания) не ронял тест.
+    const median = (size: number): number => {
+      const input = 'a'.repeat(size);
+      const samples: number[] = [];
+      for (let i = 0; i < 5; i += 1) {
+        const started = performance.now();
+        const text = sanitizeDeliveryError(input);
+        samples.push(performance.now() - started);
+        expect(text.length).toBeLessThanOrEqual(300);
+      }
+      samples.sort((a, b) => a - b);
+      return samples[2];
+    };
+    const small = median(50_000);
+    const large = median(200_000);
+    expect(large).toBeLessThan(3000);
+    // Линейный разбор: вход x4 даёт примерно x4; квадратичный дал бы ~x16.
+    // Нижняя граница 50 мс гасит шум на очень быстрых прогонах.
+    expect(large).toBeLessThan(Math.max(small * 10, 50));
   });
 });
 
