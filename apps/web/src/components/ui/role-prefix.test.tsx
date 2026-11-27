@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RolePrefix, UserRolesInline } from './role-prefix';
 import { TooltipProvider } from './tooltip';
 
@@ -68,5 +68,26 @@ describe('UserRolesInline', () => {
     expect(screen.getAllByRole('img')).toHaveLength(1);
     expect(screen.getByText('Developer')).toBeInTheDocument();
     expect(screen.getByText('VIP')).toBeInTheDocument();
+  });
+});
+
+describe('RolePrefix: флаг NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('по умолчанию (флаг выключен) — сразу текстовый бейдж без <img>', () => {
+    vi.stubEnv('NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN', '');
+    const { container } = renderWithProvider(<RolePrefix role={chiefCurator} tooltip={false} />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('Chief Curator')).toBeInTheDocument();
+  });
+
+  it('флаг включён — PNG с CDN', () => {
+    vi.stubEnv('NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN', 'true');
+    renderWithProvider(<RolePrefix role={chiefCurator} tooltip={false} />);
+    expect(screen.getByRole('img', { name: 'Chief Curator' }).getAttribute('src')).toMatch(
+      /prefixes\/chief-curator\.png$/,
+    );
   });
 });
