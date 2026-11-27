@@ -18,7 +18,7 @@ rm -rf "$d.tmp"; mkdir -p "$d.tmp"
 tar -xzf "$BUNDLE/release.tar.gz" -C "$d.tmp"
 rm -rf "$d"; mv "$d.tmp" "$d"
 cp -f "$BUNDLE"/ops/* "$STAND_ROOT/ops/"
-( cd "$STAND_ROOT/ops" && sed -i 's/\r$//' ./*.sh ./*.template ./*.conf ./*.yml && chmod +x ./*.sh )
+( cd "$STAND_ROOT/ops" && sed -i 's/\r$//' ./*.sh ./*.template ./*.conf ./*.yml ./stand-flags.defaults && chmod +x ./*.sh )
 echo "Выгружено: $SHA -> $d"
 
 [ -n "$ACTIONS" ] || { echo "Дальше на сервере: $STAND_ROOT/ops/deploy-stand.sh $SHA"; exit 0; }

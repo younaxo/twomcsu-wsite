@@ -33,7 +33,7 @@ vds_stage_new
 mkdir -p "$STAGE_TMP/bundle/ops"
 git -C "$REPO" archive --format=tar.gz -o "$STAGE_TMP/bundle/release.tar.gz" "$REF"
 # Ops-файлы стенда берутся из рабочей копии (могут быть новее, чем $REF); только известные типы файлов.
-( cd "$HERE" && cp -- *.sh *.template *.conf *.yml "$STAGE_TMP/bundle/ops/" )
+( cd "$HERE" && cp -- *.sh *.template *.conf *.yml stand-gate.mjs stand-flags.defaults "$STAGE_TMP/bundle/ops/" )
 tar -cf "$STAGE_TMP/bundle.tar" -C "$STAGE_TMP/bundle" .
 
 echo "Релиз $SHA (ref $REF), шаги на сервере: ${STAND_ACTIONS:-только выгрузка}. Один SSH-сеанс."

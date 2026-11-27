@@ -1,13 +1,18 @@
 # Тестовый стенд основного сайта. Подстановка (envsubst, только эти переменные):
-#   ${STAND_DOMAIN} ${STAND_GATE_TOKEN} ${WEB_PORT} ${API_PORT}
+#   ${STAND_DOMAIN} ${WEB_PORT} ${API_PORT} ${GATE_PORT}
 # Установка и выпуск сертификата: setup-nginx.sh. Домен берётся ТОЛЬКО из STAND_DOMAIN.
 #
 # Схема: один origin. /      -> web (Next.js, 127.0.0.1:${WEB_PORT})
 #                  /api/   -> api (NestJS, 127.0.0.1:${API_PORT}), префикс /api срезается
-# Защита: basic auth на всём, кроме /robots.txt и ACME. Приложение шлёт Authorization: Bearer и тем
-# затирает кэшированный basic, поэтому после успешного basic auth выдаётся cookie-пропуск __Host-stand_gate (префикс __Host-: только Secure, Path=/, без Domain)
-# (HttpOnly, Secure); с ним basic не запрашивается повторно. Запросы изнутри docker-сети (SSR web ->
-# публичный API-URL) пропускаются по адресу источника. Заголовок Basic к приложению не пробрасывается.
+# Защита (схема «форма входа», вместо Basic Auth): auth_request к gate-сервису (stand-gate.mjs, 127.0.0.1:${GATE_PORT}).
+#   - нет валидной cookie __Host-stand_gate (expiry + HMAC) и нет заголовка X-Stand-Gate -> страницы 302 на /__stand/login?next=...,
+#     /api/* -> 401 JSON (не 302);
+#   - мимо формы решает gate по таблице точных путей (/api/health, вебхуки платежей и голосований) и по X-Stand-Gate (раннер, мониторинг);
+#   - /robots.txt и ACME отдаёт сам nginx без проверки; запросы изнутри docker-сети (SSR web -> публичный API-URL) пропускаются по адресу источника.
+# Cookie-пропуск и заголовок X-Stand-Gate вырезаются перед proxy_pass: приложение их не видит. Остальные cookie
+# (в т.ч. two_factor_challenge, Q105) проходят без изменений, Set-Cookie приложения nginx не трогает (кроме proxy_cookie_path для /auth).
+# Картинки /api/uploads/*: приложение, при 404 - публичные файлы CDN (location @cdn_uploads; запись в CDN невозможна: только GET/HEAD, тело не передаётся).
+# Прежний basic-шаблон: git-история этого файла (откат описан в docs/runbooks/test-website-stand.md).
 
 geo $stand_internal {
     default          0;
@@ -15,28 +20,20 @@ geo $stand_internal {
     172.16.0.0/12    1;
 }
 
-map "$stand_internal:$http_cookie" $stand_auth_realm {
-    default                         "TwoMC test stand";
-    "~^1:"                          off;
-    "~^0:(?:.*;[ ]*)?__Host-stand_gate=${STAND_GATE_TOKEN}(?:;.*)?$"   off;
-}
-
-# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass: приложение его не видит и не может утечь/залогировать.
+# Cookie-пропуск вырезается из заголовка Cookie перед proxy_pass. Имя с границей (начало строки или «;»): чужие cookie
+# вида «x__Host-stand_gate=» не затрагиваются. Три формы: пропуск не последний / последний / единственный.
+# Регулярные выражения проверяются тестом stand-gate.test.mjs (читает этот файл).
 map $http_cookie $stand_fwd_cookie {
     default $http_cookie;
-    "~^(?<ck_pre>.*?);?[ ]*__Host-stand_gate=[0-9a-f]+(?<ck_post>.*)$"   "$ck_pre$ck_post";
+    "~^(?<ck_pre>|.*?;[ ]*)__Host-stand_gate=[^;]*;[ ]*(?<ck_post>.*)$"   "$ck_pre$ck_post";
+    "~^(?<ck_head>.*?);[ ]*__Host-stand_gate=[^;]*$"                      "$ck_head";
+    "~^__Host-stand_gate=[^;]*$"                                          "";
 }
 
-# Cookie выдаётся только если пришли basic-учётные данные; add_header без always не добавляет его
-# к ответам 401 (иначе неверный пароль тоже получал бы пропуск).
-map $remote_user $stand_set_cookie {
-    ""      "";
-    default "__Host-stand_gate=${STAND_GATE_TOKEN}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=43200";
-}
-
-map $http_authorization $stand_fwd_authz {
-    default     $http_authorization;
-    "~^Basic "  "";
+# Путь картинок для fallback на CDN: /api/uploads/<путь> -> <путь>. Только безопасные символы и без «..»; иначе пусто (404).
+map $uri $stand_cdn_path {
+    default "";
+    "~^/api/uploads/(?!.*\.\.)(?<cdn_rest>[A-Za-z0-9._/-]+)$"   $cdn_rest;
 }
 
 map $http_upgrade $stand_connection_upgrade {
@@ -66,27 +63,262 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/${STAND_DOMAIN}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    # noindex на каждом ответе, включая 401.
+    # noindex на каждом ответе: форма, 302, 401, приложение. Gate X-Robots-Tag сам не ставит (иначе дубль).
+    # ВАЖНО: add_header в location отменяет унаследованные; в locations ниже add_header не используется, кроме /robots.txt (повторён).
     add_header X-Robots-Tag "noindex, nofollow" always;
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header Strict-Transport-Security "max-age=86400" always;
-    add_header Set-Cookie $stand_set_cookie;
-
-    auth_basic $stand_auth_realm;
-    auth_basic_user_file /etc/nginx/stand.htpasswd;
 
     client_max_body_size 20m;
 
+    # Ответ gate на отсутствие пропуска: страницы -> форма входа (302 формирует gate: безопасный next, urlencode).
+    error_page 401 = @stand_login;
+
     location = /robots.txt {
-        auth_basic off;
         default_type text/plain;
         add_header X-Robots-Tag "noindex, nofollow" always;
         return 200 "User-agent: *\nDisallow: /\n";
     }
 
+    # Форма входа и выход: без проверки пропуска. Только /__stand/login и /__stand/logout; остальное gate отдаёт 404.
+    location /__stand/ {
+        proxy_pass http://127.0.0.1:${GATE_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Connection "";
+        client_max_body_size 8k;
+    }
+
+    # Подзапрос проверки: снаружи недоступен (404). Заголовки X-Stand-* для gate задаёт только nginx (клиентские затираются).
+    location = /__stand/auth {
+        internal;
+        proxy_pass http://127.0.0.1:${GATE_PORT};
+        proxy_http_version 1.1;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header X-Original-Method $request_method;
+        proxy_set_header X-Stand-Internal $stand_internal;
+        # Cookie и X-Stand-Gate клиента передаются как есть (gate их проверяет).
+    }
+
+    # Редирект на форму (gate строит Location). Без URI в proxy_pass: путь задаёт rewrite.
+    location @stand_login {
+        rewrite ^ /__stand/redirect break;
+        proxy_pass http://127.0.0.1:${GATE_PORT};
+        proxy_http_version 1.1;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Host $host;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Original-URI $request_uri;
+    }
+
+    # /api/* без пропуска: JSON 401, не редирект на HTML (XHR/fetch).
+    location @stand_api_401 {
+        default_type application/json;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        add_header Cache-Control "no-store" always;
+        return 401 '{"statusCode":401,"error":"stand_gate_required","message":"Stand login required: /__stand/login"}';
+    }
+
+    # Картинки: сначала приложение (/uploads у API); 404 -> публичные файлы production-CDN (только чтение: GET/HEAD).
+    # Путь тот же без /api/uploads (apps/web: cdnUrl() = NEXT_PUBLIC_CDN_BASE_URL + путь из apps/web/public, напр. assets/...).
+    location /api/uploads/ {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        error_page 404 = @cdn_uploads;
+        limit_except GET HEAD { deny all; }
+        proxy_intercept_errors on;
+        proxy_pass http://127.0.0.1:${API_PORT}/uploads/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+    }
+
+    # Внутренний fallback на cdn-files.twomc.su: без cookie и Authorization, без тела, проверка сертификата CDN.
+    # Заголовки Cache-Control, Content-Type, CSP (svg) приходят от CDN как есть; дубли защитных заголовков скрыты (их ставит server{}).
+    location @cdn_uploads {
+        if ($stand_cdn_path = "") { return 404; }
+        resolver 1.1.1.1 8.8.8.8 valid=300s ipv6=off;
+        resolver_timeout 3s;
+        proxy_pass https://cdn-files.twomc.su/$stand_cdn_path;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_ssl_name cdn-files.twomc.su;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_set_header Host cdn-files.twomc.su;
+        proxy_set_header Cookie "";
+        proxy_set_header Authorization "";
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Connection "";
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_hide_header X-Robots-Tag;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Set-Cookie;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 20s;
+    }
+
+    # Приём Bridge: тот же auth_request (gate пропускает ровно эти 4 маршрута и методы), но лимит тела 300k вместо 20m
+    # (приложение режет 256k). Точное совпадение по нормализованному $uri; остальная схема /api/ без изменений.
+    location = /api/bridge/v1/handshake {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/handshake;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/events {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/events;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/delivery/claim {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/claim;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /api/bridge/v1/delivery/ack {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/ack;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    # Приём Bridge в корне (плагин требует siteUrl без пути и шлёт на /bridge/v1/*): те же 4 маршрута и методы, что и под /api,
+    # путь в API тот же (/bridge/v1/...: guard подписывает req.originalUrl). Другой метод -> 405 до auth_request (fail-closed);
+    # любой другой путь /bridge/v1/* попадает в location / (форма входа). Обход формы решает gate по X-Original-URI (точный путь).
+    location = /bridge/v1/handshake {
+        if ($request_method != GET) { return 405; }
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/handshake;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /bridge/v1/events {
+        if ($request_method != POST) { return 405; }
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/events;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /bridge/v1/delivery/claim {
+        if ($request_method != POST) { return 405; }
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/claim;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
+    location = /bridge/v1/delivery/ack {
+        if ($request_method != POST) { return 405; }
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
+        client_max_body_size 300k;
+        proxy_pass http://127.0.0.1:${API_PORT}/bridge/v1/delivery/ack;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Stand-Gate "";
+        proxy_set_header Cookie $stand_fwd_cookie;
+        proxy_set_header Connection "";
+        proxy_read_timeout 120s;
+    }
+
     location /api/ {
+        auth_request /__stand/auth;
+        error_page 401 = @stand_api_401;
         proxy_pass http://127.0.0.1:${API_PORT}/;
         # API под префиксом /api (префикс срезается): cookie API с Path=/auth (two_factor_challenge, social_nonce,
         # social_pkce; Set-Cookie и clearCookie с тем же Path) иначе не уходят браузером на /api/auth/*.
@@ -97,7 +329,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header X-Stand-Gate "";
         proxy_set_header Cookie $stand_fwd_cookie;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $stand_connection_upgrade;
@@ -105,13 +337,14 @@ server {
     }
 
     location / {
+        auth_request /__stand/auth;
         proxy_pass http://127.0.0.1:${WEB_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header Authorization $stand_fwd_authz;
+        proxy_set_header X-Stand-Gate "";
         proxy_set_header Cookie $stand_fwd_cookie;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $stand_connection_upgrade;

@@ -110,6 +110,7 @@ infrastructure/vds-runner/run-remote.sh unit      --worktree /c/path/to/my-workt
 infrastructure/vds-runner/run-remote.sh api-e2e   --worktree /c/path/to/my-worktree
 infrastructure/vds-runner/run-remote.sh web-build --worktree /c/path/to/my-worktree --out /c/path/to/scratch/out   # по умолчанию только отслеживаемые файлы; новые — git add -N или флаг --include-untracked
 ```
+- Перед постановкой проверьте `git status --short` в своём worktree: новые файлы кода и тестов должны быть в git (`git add`, лучше коммит), иначе раннер их не видит и прогон ложно падает (решение владельца 28.11.2026; пример: 27.11 e2e сорван TS2307 из-за неотслеживаемого `vote-webhook-ip.ts`). Исключение — артефакты `vds-runner-out/`, они в `.gitignore`.
 - Скрипт можно запускать из любого worktree (путь к скрипту берётся из ветки, где он есть; в `main` - после слияния).
 - Параллельный запуск от нескольких исполнителей безопасен: SSH сериализуется локальной блокировкой, задания на сервере идут по очереди (FIFO); ожидание - короткими опросами.
 - Долгое ожидание не держите: `--no-wait` ставит задание и возвращает id, позже `--attach <id>`.

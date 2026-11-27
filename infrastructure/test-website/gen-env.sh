@@ -5,6 +5,8 @@
 #
 #   STAND_DOMAIN=test-website.twomc.su ./gen-env.sh
 # Перенос на другой домен: STAND_DOMAIN=twomc.su (+ выбор режима, см. docs/runbooks/test-website-stand.md).
+# Флаги (PAYMENT_METHODS, QUICK_BUY_ENABLED, STORE_REFUNDS_ENABLED, WALLET_LEDGER_ENABLED, BRIDGE_ENABLED, BRIDGE_STATS_ENABLED, BRIDGE_INVENTORY_ENABLED) берутся из stand-flags.defaults;
+# на уже развёрнутом стенде их меняет stand-flags.sh, а не этот скрипт (stand.env не перезаписывается).
 # Окончательный файл учётных данных /home/twomc/test-website-credentials.txt этот скрипт НЕ пишет и не изменяет (правило стенда).
 set -euo pipefail
 umask 077
@@ -15,6 +17,8 @@ ENV_FILE="${STAND_ROOT}/stand.env"
 WEB_PORT="${WEB_PORT:-3000}"
 API_PORT="${API_PORT:-4000}"
 STAND_PG_PORT="${STAND_PG_PORT:-55432}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLAGS_FILE="${FLAGS_FILE:-$HERE/stand-flags.defaults}"   # allowlist флагов: тот же файл использует stand-flags.sh
 
 # ЗАЩИТА ОТ ПЕРЕЗАПИСИ: существующий stand.env не трогается (флага ротации нет намеренно: пароль БД живёт в томе).
 if [[ -e "$ENV_FILE" ]]; then
@@ -22,6 +26,10 @@ if [[ -e "$ENV_FILE" ]]; then
   exit 0
 fi
 
+[[ -f "$FLAGS_FILE" ]] || { echo "Нет $FLAGS_FILE" >&2; exit 1; }
+flag() { # значение флага из allowlist (строка ИМЯ=ЗНАЧЕНИЕ); пусто, если нет
+  grep -E "^$1=" "$FLAGS_FILE" | head -1 | cut -d= -f2- | tr -d '[:cntrl:]' || true
+}
 command -v openssl >/dev/null || { echo "Нужен openssl" >&2; exit 1; }
 [[ "$STAND_DOMAIN" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$ ]] || { echo "Недопустимый STAND_DOMAIN: $STAND_DOMAIN" >&2; exit 1; }
 mkdir -p "$STAND_ROOT"
@@ -77,7 +85,9 @@ REDIS_PASS="$(hex 24)"
   echo "# Платежи: только мок-провайдер без ключей. Вебхук-секрет сгенерирован локально."
   echo "PAYMENT_PROVIDER=test"
   echo "PAYMENT_WEBHOOK_SECRET=$(hex 24)"
-  echo "STORE_REFUNDS_ENABLED=false"
+  echo "PAYMENT_METHODS=$(flag PAYMENT_METHODS)"
+  echo "STORE_REFUNDS_ENABLED=$(flag STORE_REFUNDS_ENABLED)"
+  echo "WALLET_LEDGER_ENABLED=$(flag WALLET_LEDGER_ENABLED)"
   echo "# Выдача на игровые серверы не включается: STORE_DELIVERY_ENABLED не задан, настройка сайта по умолчанию выкл."
   echo
   echo "# Turnstile: проверка выключена (разрешено только вне production); публичный тестовый site key Cloudflare (всегда проходит, не секрет)."
@@ -85,10 +95,12 @@ REDIS_PASS="$(hex 24)"
   echo "NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA"
   echo
   echo "# Почта: SMTP_HOST не задан - письма только в лог API. Боевые интеграции выключены."
-  echo "BRIDGE_ENABLED=false"
+  echo "BRIDGE_ENABLED=$(flag BRIDGE_ENABLED)"
+  echo "BRIDGE_STATS_ENABLED=$(flag BRIDGE_STATS_ENABLED)"
+  echo "BRIDGE_INVENTORY_ENABLED=$(flag BRIDGE_INVENTORY_ENABLED)"
   echo "GIVEAWAY_ENABLED=false"
   echo "LITEBANS_ENABLED=false"
-  echo "QUICK_BUY_ENABLED=false"
+  echo "QUICK_BUY_ENABLED=$(flag QUICK_BUY_ENABLED)"
   echo "AUTH_TEST_OTP_ENABLED=false"
   echo
   echo "# Bootstrap-аккаунты тестовой БД (только для этого стенда). Личные данные не используются."
