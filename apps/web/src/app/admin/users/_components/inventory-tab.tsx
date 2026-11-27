@@ -7,7 +7,9 @@ import { QueryBoundary } from '@/components/admin/query-boundary';
 import { InventoryView } from '@/components/inventory/inventory-view';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { ForbiddenState } from '@/components/ui/error-state';
 import { SkeletonRows } from '@/components/ui/skeleton';
+import { ApiError } from '@/lib/api/errors';
 import { usePermissions } from '@/lib/auth/use-permissions';
 import { formatDateTime, formatNumber } from '@/lib/format';
 import {
@@ -86,9 +88,27 @@ function InventoryBlock({ userId }: { userId: string }) {
   );
 }
 
-export function InventoryTab({ user }: { user: AdminUserFull }) {
-  const { can } = usePermissions();
-  if (!can(INVENTORY_TAB_REQUIREMENT)) return null;
+function isForbidden(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 403;
+}
+
+function InventoryTabContent({ user }: { user: AdminUserFull }) {
+  // Те же ключи, что и в блоках: запросы дедуплицируются react-query.
+  const stats = useAdminPlayerStats(user.id, true);
+  const inventory = useAdminPlayerInventory(user.id, true);
+  const allForbidden =
+    stats.isError && inventory.isError && isForbidden(stats.error) && isForbidden(inventory.error);
+  if (allForbidden) {
+    // Оба запроса отклонены по правам — показываем одно сообщение, а не два.
+    return (
+      <div className="flex flex-col gap-5" data-testid="player-inventory-tab">
+        <ForbiddenState
+          title="Недостаточно прав"
+          description="Сервер отклонил запрос: у вашей роли нет нужного permission."
+        />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-5" aria-live="polite" data-testid="player-inventory-tab">
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -100,4 +120,10 @@ export function InventoryTab({ user }: { user: AdminUserFull }) {
       <InventoryBlock userId={user.id} />
     </div>
   );
+}
+
+export function InventoryTab({ user }: { user: AdminUserFull }) {
+  const { can } = usePermissions();
+  if (!can(INVENTORY_TAB_REQUIREMENT)) return null;
+  return <InventoryTabContent user={user} />;
 }

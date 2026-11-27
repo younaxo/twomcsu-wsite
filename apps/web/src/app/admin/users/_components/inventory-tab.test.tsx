@@ -122,7 +122,8 @@ describe('Инвентарь и статистика в карточке пол�
       },
     );
     render(<InventoryTab user={USER} />, { wrapper: Providers });
-    await waitFor(() => expect(screen.getAllByText('Недостаточно прав')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Недостаточно прав')).toHaveLength(1));
+    expect(screen.getAllByText('Недостаточно прав')).toHaveLength(1);
     expect(screen.queryByTestId('player-stats')).toBeNull();
   });
 });
