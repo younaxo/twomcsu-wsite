@@ -116,6 +116,11 @@ const BYPASS = [
   { re: /^\/api\/bridge\/v1\/events$/, methods: ['POST'] },
   { re: /^\/api\/bridge\/v1\/delivery\/claim$/, methods: ['POST'] },
   { re: /^\/api\/bridge\/v1\/delivery\/ack$/, methods: ['POST'] },
+  // То же в корне: плагин требует siteUrl без пути и шлёт на /bridge/v1/*. nginx проксирует их в API с тем же путём.
+  { re: /^\/bridge\/v1\/handshake$/, methods: ['GET'] },
+  { re: /^\/bridge\/v1\/events$/, methods: ['POST'] },
+  { re: /^\/bridge\/v1\/delivery\/claim$/, methods: ['POST'] },
+  { re: /^\/bridge\/v1\/delivery\/ack$/, methods: ['POST'] },
 ];
 
 export function isBypass(originalUri, method) {

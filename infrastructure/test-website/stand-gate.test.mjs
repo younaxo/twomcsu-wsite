@@ -107,7 +107,7 @@ test('bypass Bridge: ровно 4 маршрута и методы, вариац
     ['/api/bridge/v1/%2e%2e/auth/me', 'GET'], ['/api/bridge/v1/events%2f', 'POST'], ['/api/bridge//v1/events', 'POST'],
     ['/api//bridge/v1/events', 'POST'], ['//api/bridge/v1/events', 'POST'], ['/api/Bridge/v1/events', 'POST'],
     ['/api/bridge/V1/events', 'POST'], ['/api/bridge/v1/EVENTS', 'POST'], ['/api/bridge/v1/delivery/Claim', 'POST'],
-    ['/api/bridge/v1/events;x', 'POST'], ['/api/bridge/v1/events\n', 'POST'], ['/bridge/v1/events', 'POST'],
+    ['/api/bridge/v1/events;x', 'POST'], ['/api/bridge/v1/events\n', 'POST'],
     ['/api/bridge/v1/delivery/claim/ack', 'POST'], ['/x/api/bridge/v1/events', 'POST'],
     // вариации обхода: слеш в конце, «;», %3f (не «?»), HEAD/PUT/DELETE на POST-маршрутах, методы handshake
     ['/api/bridge/v1/events/', 'POST'], ['/api/bridge/v1/events/?x=1', 'POST'], ['/api/bridge/v1/handshake/', 'GET'],
@@ -372,4 +372,28 @@ test('шаблон: fallback картинок на CDN - только чтени
   for (const bad of ['/api/uploads/../etc/passwd', '/api/uploads/a/../b', '/api/uploads/a b', '/api/uploads/a%2e%2e/b', '/api/uploads/', '/api/uploads/a?x=1']) {
     assert.equal(re.exec(bad), null, bad);
   }
+});
+
+test('bypass Bridge в корне: ровно 4 маршрута и методы, вариации -> gate', () => {
+  assert.equal(isBypass('/bridge/v1/handshake', 'GET'), true);
+  assert.equal(isBypass('/bridge/v1/handshake?a=1', 'get'), true);
+  assert.equal(isBypass('/bridge/v1/events', 'POST'), true);
+  assert.equal(isBypass('/bridge/v1/delivery/claim', 'POST'), true);
+  assert.equal(isBypass('/bridge/v1/delivery/ack?x=1', 'POST'), true);
+  for (const [p, m] of [
+    ['/bridge/v1/handshake', 'POST'], ['/bridge/v1/handshake', 'HEAD'], ['/bridge/v1/handshake', 'PUT'],
+    ['/bridge/v1/events', 'GET'], ['/bridge/v1/events', 'HEAD'], ['/bridge/v1/events', 'PUT'], ['/bridge/v1/events', 'DELETE'],
+    ['/bridge/v1/events', 'PATCH'], ['/bridge/v1/events', 'OPTIONS'], ['/bridge/v1/delivery/claim', 'GET'],
+    ['/bridge/v1/delivery/ack', 'GET'], ['/bridge/v1/delivery/ack', 'DELETE'],
+    ['/bridge/v1/other', 'GET'], ['/bridge/v1/other', 'POST'], ['/bridge/v1/', 'GET'], ['/bridge/v1', 'GET'], ['/bridge', 'GET'],
+    ['/bridge/v1/events/', 'POST'], ['/bridge/v1/events/x', 'POST'], ['/bridge/v1/handshake/', 'GET'], ['/bridge/v1/delivery', 'POST'],
+    ['/bridge/v1/delivery/claim/', 'POST'], ['/bridge/v1/delivery/ack/', 'POST'], ['/bridge/v1/delivery/claim/ack', 'POST'],
+    ['//bridge/v1/events', 'POST'], ['/bridge//v1/events', 'POST'], ['/bridge/v1//events', 'POST'], ['/bridge/v1/delivery//ack', 'POST'],
+    ['/bridge/v1/%65vents', 'POST'], ['/bridge/v1/%2e%2e/auth/me', 'GET'], ['/bridge/v1/%2E/events', 'POST'], ['/bridge/v1/./events', 'POST'],
+    ['/bridge/v1/../events', 'POST'], ['/bridge/v1/events%2f', 'POST'], ['/bridge/v1/events%3f', 'POST'], ['/bridge/v1/events%00', 'POST'],
+    ['/Bridge/v1/events', 'POST'], ['/bridge/V1/events', 'POST'], ['/bridge/v1/Events', 'POST'], ['/bridge/v1/EVENTS', 'POST'],
+    ['/bridge/v1/delivery/Claim', 'POST'], ['/bridge/v1/events;x', 'POST'], ['/bridge/v1/events;', 'POST'], ['/bridge/v1/handshake;a=b', 'GET'],
+    ['/bridge/v1/events\n', 'POST'], ['/x/bridge/v1/events', 'POST'], ['/bridge/v1/events/..', 'POST'],
+    ['/apibridge/v1/events', 'POST'], ['/bridge/v1/events.json', 'POST'],
+  ]) assert.equal(isBypass(p, m), false, `${m} ${JSON.stringify(p)}`);
 });
