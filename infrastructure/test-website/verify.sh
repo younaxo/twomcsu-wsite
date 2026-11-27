@@ -110,6 +110,8 @@ check "POST /__stand/logout с Origin -> 303" "HTTP/*303*" "$(head -1 <<<"$LOGOU
 check "выход очищает cookie (Max-Age=0)" "1" "$(grep -ci '^set-cookie: __Host-stand_gate=;.*max-age=0' <<<"$LOGOUT_HDR")"
 check "после выхода запрос без cookie -> 302" "302" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/")"
 # Картинки: приложение, при 404 - публичные файлы CDN (health.txt есть только на CDN). Только чтение.
+# Диагностика цепочки CDN так же, как её проверяет nginx (бандл ca-certificates, глубина 3): код 0 = цепочка полная и доверенная; 20 = нет издателя в бандле/цепочка неполная.
+check "картинки: TLS-цепочка cdn-files.twomc.su проверяется бандлом nginx (verify 0)" "Verify return code: 0 (ok)" "$(timeout 15 openssl s_client -connect cdn-files.twomc.su:443 -servername cdn-files.twomc.su -verify_hostname cdn-files.twomc.su -verify_depth 3 -CAfile /etc/ssl/certs/ca-certificates.crt </dev/null 2>/dev/null | grep -m1 'Verify return code' || echo none)"
 check "картинки без входа -> 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt")"
 check "картинки: fallback на CDN (health.txt)" "ok 200*" "$(authed -s -w '\n%{http_code}' "https://$STAND_DOMAIN/api/uploads/health.txt" | tr '\n' ' ')"
 check "картинки: защитные заголовки без дублей" "1" "$(authed -sI "https://$STAND_DOMAIN/api/uploads/health.txt" | grep -ci '^x-content-type-options')"
