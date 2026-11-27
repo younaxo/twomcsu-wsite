@@ -257,7 +257,8 @@ export async function seedDemoPunishmentLinks(
         ...data,
         createdAt: new Date(now - a.daysAgo * DAY),
       },
-      update: data,
+      // Существующее (возможно обработанное) обращение не трогаем.
+      update: {},
     });
   }
   return `аккаунт ${name}, обжалований ${DEMO_APPEALS.length}`;

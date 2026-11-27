@@ -54,7 +54,7 @@ export async function seedDemoStandPlayer(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
-  assertDemoSeedAllowed(process.env);
+  assertDemoSeedAllowed(env);
   const username = env.DEMO_STAND_PLAYER_USERNAME?.trim();
   if (!username) return 'тестовый игрок стенда: не задан';
   if (username.startsWith('demo_')) {
@@ -69,16 +69,34 @@ export async function seedDemoStandPlayer(
     return 'тестовый игрок стенда: не найден, пропуск';
   }
 
+  const staffRole = await prisma.userRole.findFirst({
+    where: { userId: user.id },
+    select: { roleId: true },
+  });
+  if (staffRole) {
+    console.warn(
+      "Тестовый игрок стенда имеет роли персонала: пропуск (демо-наказания не создаются).",
+    );
+    return "тестовый игрок стенда: роли персонала, пропуск";
+  }
+
   let account = await prisma.minecraftAccount.findUnique({
     where: { userId: user.id },
   });
+  if (account && account.uuid !== STAND_PLAYER_UUID) {
+    // Настоящий аккаунт: демо-наказания на реальный uuid публичны, не создаём.
+    console.warn(
+      "У тестового игрока стенда уже есть настоящий MinecraftAccount: пропуск (демо-наказания не создаются).",
+    );
+    return "тестовый игрок стенда: есть настоящий аккаунт, пропуск";
+  }
   if (!account) {
     const holder = await prisma.minecraftAccount.findUnique({
       where: { uuid: STAND_PLAYER_UUID },
     });
     if (holder && holder.userId !== user.id) {
-      console.warn('Фиктивный uuid тестового игрока занят: пропуск.');
-      return 'тестовый игрок стенда: uuid занят, пропуск';
+      console.warn("Фиктивный uuid тестового игрока занят: пропуск.");
+      return "тестовый игрок стенда: uuid занят, пропуск";
     }
     account = await prisma.minecraftAccount.upsert({
       where: { userId: user.id },
@@ -136,7 +154,8 @@ export async function seedDemoStandPlayer(
       ...data,
       createdAt: new Date(now.getTime() - 0.5 * DAY),
     },
-    update: data,
+    // Уже существующее (возможно обработанное) обращение не трогаем.
+    update: {},
   });
   return `тестовый игрок стенда: наказаний ${STAND_PUNISHMENTS.length}, обжалование 1`;
 }

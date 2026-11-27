@@ -355,6 +355,13 @@ function fakePrisma() {
         tables.get(name)?.get(keyOf(args.where)) ?? null,
       );
     },
+    findFirst: (args: { where: Record<string, unknown> }) => {
+      calls.push(`${name}.findFirst`);
+      const hit = [...(tables.get(name)?.values() ?? [])].find((r) =>
+        Object.entries(args.where).every(([k, v]) => r[k] === v),
+      );
+      return Promise.resolve(hit ?? null);
+    },
     upsert: (args: {
       where: Record<string, unknown>;
       create: Record<string, unknown>;
@@ -641,6 +648,7 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   const run = (f: ReturnType<typeof fakePrisma>, name?: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     seedDemoStandPlayer(f.prisma as any, {
+      ...ok,
       ...(name ? { DEMO_STAND_PLAYER_USERNAME: name } : {}),
     } as NodeJS.ProcessEnv);
 
@@ -708,21 +716,51 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
     for (const d of DEMO_PUNISHMENTS) expect(ids).not.toContain(d.sourceId);
   });
 
-  it('уже есть MinecraftAccount: используется его uuid', async () => {
+  it('уже есть настоящий MinecraftAccount: пропуск без наказаний и обжалования', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const real = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
     const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: real, name: 'Existing' });
     await run(f, 'tester');
-    expect(f.tables.get('minecraftAccount')!.size).toBe(1);
-    expect(f.calls).not.toContain('minecraftAccount.upsert');
-    for (const p of f.tables.get('minecraftPunishment')!.values()) {
-      expect(p).toMatchObject({ subjectUuid: real, subjectName: 'Existing' });
-    }
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+    expect(f.tables.has('minecraftPunishment')).toBe(false);
+    expect(f.tables.has('report')).toBe(false);
+    expect(String(warn.mock.calls[0][0])).not.toContain('tester');
+  });
+
+  it('аккаунт уже с фиктивным uuid: наказания создаются', async () => {
+    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: STAND_PLAYER_UUID, name: 'StandPlayer' });
+    await run(f, 'tester');
+    expect(f.tables.get('minecraftPunishment')!.size).toBe(3);
+  });
+
+  it('роли персонала: пропуск без записей', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = prepare('tester');
+    f.tables.set('userRole', new Map([['k', { userId: 'u-stand', roleId: 'r1' }]]));
+    await run(f, 'tester');
+    expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
+  });
+
+  it('повтор не возвращает обработанное обжалование в IN_REVIEW', async () => {
+    const f = prepare('tester');
+    await run(f, 'tester');
+    const rep = [...f.tables.get('report')!.values()][0];
+    rep.status = 'RESOLVED';
+    rep.verdict = 'ACCEPTED';
+    await run(f, 'tester');
+    expect([...f.tables.get('report')!.values()][0]).toMatchObject({ status: 'RESOLVED', verdict: 'ACCEPTED' });
   });
 
   it('без разрешённого окружения отклоняется', async () => {
-    process.env.NODE_ENV = 'production';
     const f = prepare('tester');
-    await expect(run(f, 'tester')).rejects.toThrow(/fail closed/);
+    await expect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      seedDemoStandPlayer(f.prisma as any, {
+        ...ok,
+        NODE_ENV: 'production',
+        DEMO_STAND_PLAYER_USERNAME: 'tester',
+      } as NodeJS.ProcessEnv),
+    ).rejects.toThrow(/fail closed/);
     expect(f.calls).toEqual([]);
   });
 });
