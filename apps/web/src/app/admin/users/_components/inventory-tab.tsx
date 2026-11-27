@@ -24,8 +24,7 @@ import {
 /// Без права вкладка не рендерится вовсе (запросы не отправляются).
 export const INVENTORY_TAB_REQUIREMENT = PLAYER_INVENTORY_PERMISSION;
 
-export const NO_PLAYER_SNAPSHOT_TEXT =
-  'Нет снимка — игрок ещё не заходил на сервер с плагином.';
+export const NO_PLAYER_SNAPSHOT_TEXT = 'Нет снимка — игрок ещё не заходил на сервер с плагином.';
 
 function StatsBlock({ userId }: { userId: string }) {
   const query = useAdminPlayerStats(userId, true);
@@ -38,10 +37,7 @@ function StatsBlock({ userId }: { userId: string }) {
               Статистики пока нет.
             </p>
           ) : (
-            <dl
-              className="grid grid-cols-2 gap-3 sm:grid-cols-3"
-              data-testid="player-stats"
-            >
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3" data-testid="player-stats">
               {[
                 ['Время в игре', formatPlayTime(data.stats.playTimeMinutes)],
                 ['Убийства', formatNumber(data.stats.kills)],

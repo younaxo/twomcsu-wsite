@@ -47,8 +47,7 @@ export function useAdminPlayerInventory(userId: string, enabled: boolean) {
 export function useAdminPlayerStats(userId: string, enabled: boolean) {
   return useQuery({
     queryKey: adminPlayerKeys.stats(userId),
-    queryFn: () =>
-      api.get<AdminPlayerStats>(`/admin/players/${encodeURIComponent(userId)}/stats`),
+    queryFn: () => api.get<AdminPlayerStats>(`/admin/players/${encodeURIComponent(userId)}/stats`),
     enabled: enabled && userId.length > 0,
     retry: false,
   });
