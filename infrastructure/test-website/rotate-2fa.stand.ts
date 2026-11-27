@@ -44,7 +44,7 @@ async function apply(): Promise<void> {
     rolledBack(); // до обращения к БД
   }
   const sealer = box as SecretBox;
-  const prisma = new PrismaClient();
+  const prisma = new PrismaClient({ log: [] });
   try {
     let userId = '';
     try {
@@ -75,10 +75,18 @@ async function apply(): Promise<void> {
       ]);
     } catch {
       // Ошибка транзакции не доказывает откат (возможен обрыв после коммита): сверяем фактическое состояние.
+      // Чтение сразу после сбоя может увидеть состояние до коммита: rolled_back только если ОБА чтения (с паузой ~3 с) показывают прежний секрет.
+      const readIsNew = async (): Promise<boolean> => {
+        const row = await prisma.user.findUnique({ where: { id: userId }, select: { twoFactorSecret: true } });
+        return !!row?.twoFactorSecret && sealer.decrypt(row.twoFactorSecret) === secret;
+      };
       let isNew: boolean;
       try {
-        const row = await prisma.user.findUnique({ where: { id: userId }, select: { twoFactorSecret: true } });
-        isNew = !!row?.twoFactorSecret && sealer.decrypt(row.twoFactorSecret) === secret;
+        isNew = await readIsNew();
+        if (!isNew) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          isNew = await readIsNew();
+        }
       } catch {
         throw new Error('rotate-2fa: исход неизвестен');
       }
