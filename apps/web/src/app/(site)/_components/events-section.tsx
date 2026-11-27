@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { CalendarEventDto } from '@twomc/shared';
 import { CalendarClock, Radio } from 'lucide-react';
-import Image from 'next/image';
+import { FallbackImage } from '@/components/ui/fallback-image';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -69,7 +69,7 @@ export function EventCard({
               highlighted && 'md:w-2/5 md:aspect-auto',
             )}
           >
-            <Image
+            <FallbackImage
               src={event.coverImage}
               alt=""
               fill

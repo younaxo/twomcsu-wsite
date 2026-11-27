@@ -2,7 +2,7 @@
 
 import type { ServerOverviewItem } from '@twomc/shared';
 import { ArrowRight, Server } from 'lucide-react';
-import Image from 'next/image';
+import { FallbackImage } from '@/components/ui/fallback-image';
 import Link from 'next/link';
 import { StatusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,7 +36,7 @@ function ServerCard({ server, featured }: { server: ServerOverviewItem; featured
         )}
       >
         {server.iconUrl ? (
-          <Image
+          <FallbackImage
             src={server.iconUrl}
             alt={server.name}
             fill
