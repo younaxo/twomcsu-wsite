@@ -111,6 +111,11 @@ const BYPASS = [
   { re: /^\/api\/health$/, methods: ['GET', 'HEAD'] },
   { re: /^\/api\/webhooks\/payments\/[A-Za-z0-9_-]{1,64}$/, methods: ['POST'] },
   { re: /^\/api\/voting\/webhook\/[A-Za-z0-9_-]{1,64}$/, methods: ['POST'] },
+  // Приём Bridge (плагины игровых серверов): подпись проверяет приложение (bridge-signature.guard). Ровно четыре маршрута.
+  { re: /^\/api\/bridge\/v1\/handshake$/, methods: ['GET', 'HEAD'] },
+  { re: /^\/api\/bridge\/v1\/events$/, methods: ['POST'] },
+  { re: /^\/api\/bridge\/v1\/delivery\/claim$/, methods: ['POST'] },
+  { re: /^\/api\/bridge\/v1\/delivery\/ack$/, methods: ['POST'] },
 ];
 
 export function isBypass(originalUri, method) {

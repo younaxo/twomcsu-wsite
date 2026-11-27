@@ -5,7 +5,7 @@
 #
 #   STAND_DOMAIN=test-website.twomc.su ./gen-env.sh
 # Перенос на другой домен: STAND_DOMAIN=twomc.su (+ выбор режима, см. docs/runbooks/test-website-stand.md).
-# Флаги (PAYMENT_METHODS, QUICK_BUY_ENABLED, STORE_REFUNDS_ENABLED, WALLET_LEDGER_ENABLED, BRIDGE_ENABLED) берутся из stand-flags.defaults;
+# Флаги (PAYMENT_METHODS, QUICK_BUY_ENABLED, STORE_REFUNDS_ENABLED, WALLET_LEDGER_ENABLED, BRIDGE_ENABLED, BRIDGE_STATS_ENABLED, BRIDGE_INVENTORY_ENABLED) берутся из stand-flags.defaults;
 # на уже развёрнутом стенде их меняет stand-flags.sh, а не этот скрипт (stand.env не перезаписывается).
 # Окончательный файл учётных данных /home/twomc/test-website-credentials.txt этот скрипт НЕ пишет и не изменяет (правило стенда).
 set -euo pipefail
@@ -96,6 +96,8 @@ REDIS_PASS="$(hex 24)"
   echo
   echo "# Почта: SMTP_HOST не задан - письма только в лог API. Боевые интеграции выключены."
   echo "BRIDGE_ENABLED=$(flag BRIDGE_ENABLED)"
+  echo "BRIDGE_STATS_ENABLED=$(flag BRIDGE_STATS_ENABLED)"
+  echo "BRIDGE_INVENTORY_ENABLED=$(flag BRIDGE_INVENTORY_ENABLED)"
   echo "GIVEAWAY_ENABLED=false"
   echo "LITEBANS_ENABLED=false"
   echo "QUICK_BUY_ENABLED=$(flag QUICK_BUY_ENABLED)"

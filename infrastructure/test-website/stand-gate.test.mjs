@@ -90,6 +90,29 @@ test('bypass: только точные пути и методы', () => {
   assert.equal(isBypass('/api/auth/me', 'GET'), false);
 });
 
+test('bypass Bridge: ровно 4 маршрута и методы, вариации -> gate', () => {
+  assert.equal(isBypass('/api/bridge/v1/handshake', 'GET'), true);
+  assert.equal(isBypass('/api/bridge/v1/handshake', 'HEAD'), true);
+  assert.equal(isBypass('/api/bridge/v1/handshake?a=1', 'GET'), true);
+  assert.equal(isBypass('/api/bridge/v1/events', 'POST'), true);
+  assert.equal(isBypass('/api/bridge/v1/delivery/claim', 'POST'), true);
+  assert.equal(isBypass('/api/bridge/v1/delivery/ack', 'POST'), true);
+  for (const [p, m] of [
+    ['/api/bridge/v1/handshake', 'POST'], ['/api/bridge/v1/events', 'GET'], ['/api/bridge/v1/events', 'PUT'],
+    ['/api/bridge/v1/events', 'DELETE'], ['/api/bridge/v1/delivery/claim', 'GET'], ['/api/bridge/v1/delivery/ack', 'GET'],
+    ['/api/bridge/v1/other', 'GET'], ['/api/bridge/v1/other', 'POST'], ['/api/bridge/v1/', 'GET'], ['/api/bridge/v1', 'GET'],
+    ['/api/bridge/v1/events/', 'POST'], ['/api/bridge/v1/events/x', 'POST'], ['/api/bridge/v1/delivery', 'POST'],
+    ['/api/bridge/v1/../auth/me', 'GET'], ['/api/bridge/v1/events/..', 'POST'], ['/api/bridge/v1/%65vents', 'POST'],
+    ['/api/bridge/v1/%2e%2e/auth/me', 'GET'], ['/api/bridge/v1/events%2f', 'POST'], ['/api/bridge//v1/events', 'POST'],
+    ['/api//bridge/v1/events', 'POST'], ['//api/bridge/v1/events', 'POST'], ['/api/Bridge/v1/events', 'POST'],
+    ['/api/bridge/V1/events', 'POST'], ['/api/bridge/v1/EVENTS', 'POST'], ['/api/bridge/v1/delivery/Claim', 'POST'],
+    ['/api/bridge/v1/events;x', 'POST'], ['/api/bridge/v1/events\n', 'POST'], ['/bridge/v1/events', 'POST'],
+    ['/api/bridge/v1/delivery/claim/ack', 'POST'], ['/x/api/bridge/v1/events', 'POST'],
+  ]) assert.equal(isBypass(p, m), false, `${m} ${JSON.stringify(p)}`);
+  assert.equal(isBypass(undefined, 'POST'), false);
+  assert.equal(isBypass('/api/bridge/v1/events', undefined), false);
+});
+
 test('auth: без cookie 401, с cookie 204, сервисный заголовок, неверный токен, истёкшая cookie', async () => {
   const s = await start();
   try {

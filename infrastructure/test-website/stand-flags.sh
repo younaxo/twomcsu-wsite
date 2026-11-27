@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Флаги тестового стенда НА СЕРВЕРЕ: идемпотентно выставляет в $STAND_ROOT/stand.env ТОЛЬКО allowlist из stand-flags.defaults
-# (PAYMENT_METHODS, QUICK_BUY_ENABLED, STORE_REFUNDS_ENABLED, WALLET_LEDGER_ENABLED, BRIDGE_ENABLED).
+# (PAYMENT_METHODS, QUICK_BUY_ENABLED, STORE_REFUNDS_ENABLED, WALLET_LEDGER_ENABLED, BRIDGE_ENABLED, BRIDGE_STATS_ENABLED, BRIDGE_INVENTORY_ENABLED).
 #   stand-flags.sh [--dry-run|--apply]      (по умолчанию --dry-run: только показать различия, файлы не менять)
 # Печатает только «имя: было -> стало» для имён из allowlist (значения флагов не секретны; остальные строки stand.env не читаются в вывод).
 # Отказ: нет stand.env, права не 600, NODE_ENV в stand.env не равен development.
@@ -40,7 +40,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$FLAGS_FILE"
 (( ${#NAMES[@]} > 0 )) || { echo "Пустой allowlist" >&2; exit 2; }
 for n in "${NAMES[@]}"; do
-  case "$n" in PAYMENT_METHODS|QUICK_BUY_ENABLED|STORE_REFUNDS_ENABLED|WALLET_LEDGER_ENABLED|BRIDGE_ENABLED) ;; *) echo "Имя $n вне разрешённого списка скрипта" >&2; exit 2 ;; esac
+  case "$n" in PAYMENT_METHODS|QUICK_BUY_ENABLED|STORE_REFUNDS_ENABLED|WALLET_LEDGER_ENABLED|BRIDGE_ENABLED|BRIDGE_STATS_ENABLED|BRIDGE_INVENTORY_ENABLED) ;; *) echo "Имя $n вне разрешённого списка скрипта" >&2; exit 2 ;; esac
 done
 
 WORK="$(mktemp "$STAND_ROOT/.stand.env.XXXXXX")"
