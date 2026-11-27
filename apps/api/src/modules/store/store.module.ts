@@ -22,6 +22,7 @@ import { OrdersService } from './orders.service';
 import { CheckoutPolicyService } from './checkout-policy.service';
 import { PaidRemovalService } from './paid-removal.service';
 import { NickResolver } from './nick-resolver.service';
+import { QuickBuyDenialLimiter } from './quick-buy-denial-limiter.service';
 import { PaymentProviderRegistry } from './payment/payment-provider.registry';
 import { TestPaymentProvider } from './payment/test-payment-provider.service';
 import { MockHttpPaymentProvider } from './payment/mock-http-payment-provider.service';
@@ -89,6 +90,7 @@ import { WishlistService } from './wishlist.service';
     WishlistService,
     OrdersService,
     NickResolver,
+    QuickBuyDenialLimiter,
     CheckoutPolicyService,
     PaidRemovalService,
     StoreStatsService,

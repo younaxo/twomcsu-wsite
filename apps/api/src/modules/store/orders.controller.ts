@@ -4,9 +4,11 @@ import {
   Get,
   Header,
   HttpCode,
+  HttpException,
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
@@ -17,9 +19,21 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { GuestOrderLookupDto } from './dto/guest-order-lookup.dto';
 import { QuickBuyDto } from './dto/quick-buy.dto';
 import { OrdersService } from './orders.service';
+import { QuickBuyDenialLimiter } from './quick-buy-denial-limiter.service';
 import { PaymentRouter } from './payment/payment-router.service';
 import { Throttle } from '@nestjs/throttler';
+import { StoreCheckoutError } from './store-errors';
 import { SiteModule } from '../system/site-module.decorator';
+
+function isNickDenial(error: unknown): boolean {
+  if (!(error instanceof HttpException)) return false;
+  const body = error.getResponse();
+  return (
+    typeof body === 'object' &&
+    body !== null &&
+    (body as { code?: unknown }).code === StoreCheckoutError.NICK_UNAVAILABLE
+  );
+}
 
 @SiteModule('store')
 @Controller('store')
@@ -27,6 +41,7 @@ export class StoreExtrasController {
   constructor(
     private readonly orders: OrdersService,
     private readonly paymentRouter: PaymentRouter,
+    private readonly denials: QuickBuyDenialLimiter,
   ) {}
 
   @Get('recent-purchases')
@@ -50,8 +65,22 @@ export class StoreExtrasController {
   /// Анонимный: без лимита любой может плодить PENDING-заказы (SEC-07, ADR-0157).
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('quick-buy')
-  async quickBuy(@Body() dto: QuickBuyDto) {
-    return this.orders.quickBuy(dto);
+  async quickBuy(
+    @Body() dto: QuickBuyDto,
+    @Req() req: { ip?: string; socket?: { remoteAddress?: string } },
+  ) {
+    // Порядок: флаг -> лимит отказов по IP (ADR-0186 Р1) -> остальное.
+    this.orders.assertQuickBuyEnabled();
+    const ip = req.ip ?? req.socket?.remoteAddress;
+    await this.denials.assertAllowed(ip);
+    try {
+      return await this.orders.quickBuy(dto);
+    } catch (error) {
+      if (isNickDenial(error)) {
+        await this.denials.recordDenial(ip);
+      }
+      throw error;
+    }
   }
 
   /// Страница заказа без входа (0.12a, ADR-0190): токен в теле, ответ без кэша и
