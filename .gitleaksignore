@@ -7,3 +7,8 @@ b091e2a8a325f168b3ce67b9614f9a693c437b66:docs/implementation/CHANGELOG.md:generi
 # vds-runner: секреты e2e/unit генерируются во время выполнения ($(rnd)), DATABASE_URL unit — заглушка unused; не секреты
 38aeacc22b16d6dac2b303b52619bb43da8a1962:infrastructure/vds-runner/server/ops/jobs/api-e2e.sh:generic-api-key:29
 38aeacc22b16d6dac2b303b52619bb43da8a1962:infrastructure/vds-runner/server/ops/jobs/unit.sh:generic-api-key:10
+# Java-тесты плагина Bridge: claim-токены — пример UUID 123e4567-… из документации, не секреты
+7ccdb05b096a993b9a860f46c4c9a4cc141b882c:plugins/bridge/src/test/java/ru/twomc/bridge/DeliveryEngineTest.java:generic-api-key:27
+7ccdb05b096a993b9a860f46c4c9a4cc141b882c:plugins/bridge/src/test/java/ru/twomc/bridge/DeliveryEngineTest.java:generic-api-key:28
+7ccdb05b096a993b9a860f46c4c9a4cc141b882c:plugins/bridge/src/test/java/ru/twomc/bridge/DeliveryEngineTest.java:generic-api-key:29
+7ccdb05b096a993b9a860f46c4c9a4cc141b882c:plugins/bridge/src/test/java/ru/twomc/bridge/DeliveryProtocolTest.java:generic-api-key:16
