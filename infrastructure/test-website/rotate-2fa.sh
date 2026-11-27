@@ -3,8 +3,8 @@
 #   rotate-2fa.sh --dry-run          показать шаги, ничего не менять
 #   rotate-2fa.sh --yes              выполнить ротацию
 # Что делает: генерирует НОВЫЙ TOTP-секрет и 10 резервных кодов (контейнер twomc-stand-tools, тот же SecretBox/генераторы, что в API),
-# пишет в БД стенда; порядок: генерация -> временный файл рядом с файлом учёток (600) -> .bak-<UTC> -> транзакция БД -> атомарный rename. При сбое БД временный файл удаляется, файл учёток не тронут; при сбое rename временный файл остаётся (печатается только его путь).
-# `<файл>.bak-<UTC>` (600) и заменяет в файле учёток строку `admin2fa:` (600).
+# пишет в БД стенда; порядок: генерация -> временный файл рядом с файлом учёток (600) -> .bak-<UTC> -> транзакция БД -> атомарный rename. Временный файл удаляется ТОЛЬКО после подтверждённого отката БД (маркер rolled_back от .ts) или после успешного mv; при неизвестном исходе (код != 0 без маркера, обрыв SSH, SIGTERM) он сохраняется (в нём единственная копия новых значений), печатается только путь.
+# Копия `<файл>.bak-<UTC>` (600) содержит ещё ДЕЙСТВУЮЩИЙ пароль админа и старые 2FA-значения; строка `admin2fa:` в файле учёток заменяется (600). Коды возврата: 0 ok, 1 откат подтверждён или не начато, 3 сбой mv, 4 исход неизвестен.
 # В stdout/лог попадают только путь, «ok» и отпечаток (первые 8 hex sha256 секрета). ЗНАЧЕНИЯ НЕ ПЕЧАТАЮТСЯ НИКОГДА.
 # Окружение: ADMIN_USERNAME (по умолчанию - ник из строки `admin:` файла учёток), STAND_USER (по умолчанию twomc).
 # Тестовые хуки (только при STAND_ROOT != /srv/twomc-stand): ROTATE_2FA_TEST_GEN=<скрипт, пишущий $OUT_FILE>, ROTATE_2FA_TEST_APPLY=<скрипт-заглушка БД, читает $IN_FILE; код возврата != 0 = сбой БД>, ROTATE_2FA_TEST_FAIL_RENAME=1, CREDENTIALS_FILE=<путь>; БД и docker не используются.
@@ -47,7 +47,7 @@ echo "План (admin=$ADMIN_USERNAME):"
 echo "  1. сгенерировать новый TOTP-секрет и резервные коды на сервере (значения не печатаются)"
 echo "  2. записать блок во временный файл рядом с файлом учёток (600), сделать копию $BAK (600)"
 echo "  3. транзакция в БД стенда (SecretBox как в API), старые коды удалить, refresh-токены админа отозвать"
-echo "  4. при успехе атомарный rename поверх $CREDENTIALS_FILE (600); при сбое БД временный файл удаляется"
+echo "  4. при успехе атомарный rename поверх $CREDENTIALS_FILE (600); временный файл удаляется только после подтверждённого отката БД"
 if [[ "$DRY" == 1 ]]; then echo "dry-run: изменений нет."; exit 0; fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rotate2fa.XXXXXX")"
@@ -64,12 +64,12 @@ if [[ -n "$TEST_GEN" ]]; then
 else
   envval() { grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2-; }  # env-файл не source-им (в DATABASE_URL есть '&')
   printf 'DATABASE_URL=postgresql://%s:%s@127.0.0.1:%s/%s\n' "$(envval POSTGRES_USER)" "$(envval POSTGRES_PASSWORD)" "$(envval STAND_PG_PORT)" "$(envval POSTGRES_DB)" > "$WORK/db.env"
-  run_tool() {  # $1 = generate|apply
+  run_tool() {  # $1 = generate|apply, $2 = файл для stdout (маркер/ok; значений в stdout нет)
     docker run --rm --network host --user "$(id -u):$(id -g)" --env-file "$ENV_FILE" --env-file "$WORK/db.env" \
       -e NODE_ENV=development -e HOME=/tmp -e TS_NODE_TRANSPILE_ONLY=1 -e ADMIN_USERNAME="$ADMIN_USERNAME" \
       -e ROTATE_MODE="$1" -e OUT_FILE=/out/new-2fa.txt -e IN_FILE=/out/new-2fa.txt \
       -v "$WORK:/out" -v "$TS_SRC:/app/apps/api/rotate-2fa.stand.ts:ro" \
-      -w /app/apps/api "$IMAGE" pnpm exec ts-node rotate-2fa.stand.ts >/dev/null
+      -w /app/apps/api "$IMAGE" pnpm exec ts-node rotate-2fa.stand.ts > "${2:-/dev/null}"
   }
   run_tool generate || { echo "Ротация не выполнена: генерация не удалась (БД и файл учёток не тронуты)" >&2; exit 1; }
 fi
@@ -78,7 +78,7 @@ chmod 600 "$BLOCK"
 [[ "$(grep -c '^admin2fa:' "$BLOCK")" == 1 ]] || { echo "Некорректный новый блок (БД и файл учёток не тронуты)" >&2; exit 1; }
 
 # Шаг 2. Копия .bak-<UTC> заранее, затем временный файл учёток РЯДОМ с целевым (umask 077, chmod 600) с уже новым блоком.
-cp -p "$CREDENTIALS_FILE" "$BAK"
+cp "$CREDENTIALS_FILE" "$BAK"   # без -p: под umask 077 копия создаётся с 600
 chmod 600 "$BAK"
 NEWCRED="$(mktemp "$CREDENTIALS_FILE.new.XXXXXX")"
 chmod 600 "$NEWCRED"
@@ -89,29 +89,39 @@ awk -v rf="$BLOCK" '
 ' "$CREDENTIALS_FILE" > "$NEWCRED"
 [[ "$(grep -c '^admin2fa:' "$NEWCRED")" == 1 ]] || { echo "Сбой подготовки временного файла (БД и файл учёток не тронуты)" >&2; rm -f "$BAK"; exit 1; }
 
-# Шаг 3. Транзакция в БД. При сбое: временный файл и копия удаляются, файл учёток не тронут.
+# Шаг 3. Транзакция в БД. KEEP_NEWCRED=1 выставляется ДО apply: пока откат не подтверждён, временный файл с новыми значениями не удаляется.
+# Подтверждение отката - маркер ROTATE_RESULT=rolled_back в stdout .ts (stdout содержит только маркер/ok, значений нет).
+on_signal() { echo "ПРЕРВАНО: исход записи в БД неизвестен. Новые значения сохранены во временном файле: $NEWCRED. Проверьте вход новыми значениями из этого файла; если не входит - повторите --yes." >&2; exit 143; }
+trap on_signal TERM HUP INT
+KEEP_NEWCRED=1
+APPLY_OUT="$WORK/apply.out"; : > "$APPLY_OUT"
 if [[ -n "$TEST_GEN" ]]; then
-  APPLY_RC=0; IN_FILE="$BLOCK" bash "${ROTATE_2FA_TEST_APPLY:?в тестовом режиме нужен ROTATE_2FA_TEST_APPLY}" >/dev/null || APPLY_RC=$?
+  APPLY_RC=0; IN_FILE="$BLOCK" bash "${ROTATE_2FA_TEST_APPLY:?в тестовом режиме нужен ROTATE_2FA_TEST_APPLY}" > "$APPLY_OUT" || APPLY_RC=$?
 else
-  APPLY_RC=0; run_tool apply || APPLY_RC=$?
+  APPLY_RC=0; run_tool apply "$APPLY_OUT" || APPLY_RC=$?
 fi
 if [[ "$APPLY_RC" != 0 ]]; then
-  rm -f "$NEWCRED" "$BAK"; NEWCRED=""
-  echo "Ротация не выполнена: сбой записи в БД (транзакция откатилась; файл учёток не тронут, 2FA прежняя)" >&2
-  exit 1
+  if grep -qx 'ROTATE_RESULT=rolled_back' "$APPLY_OUT"; then
+    KEEP_NEWCRED=0; rm -f "$NEWCRED" "$BAK"; NEWCRED=""
+    echo "Ротация не выполнена: сбой записи в БД, откат транзакции подтверждён (файл учёток не тронут, 2FA прежняя). Можно повторить --yes." >&2
+    exit 1
+  fi
+  echo "ВНИМАНИЕ: исход записи в БД НЕИЗВЕСТЕН (код $APPLY_RC, подтверждения отката нет). Новые значения сохранены во временном файле: $NEWCRED" >&2
+  echo "Проверьте вход новыми значениями из этого файла; если не входит - повторите --yes. Прежний файл: $BAK (значения в нём могут быть ещё действующими, пароль админа - точно). Файл учёток не заменён." >&2
+  exit 4
 fi
 
-# Шаг 4. БД уже новая: атомарный rename временного файла поверх файла учёток.
+# Шаг 4. БД новая (подтверждено кодом 0): атомарный rename. KEEP_NEWCRED сбрасывается только после успешного mv.
 rename_over() {
   if [[ -n "$TEST_GEN" && "${ROTATE_2FA_TEST_FAIL_RENAME:-0}" == 1 ]]; then return 1; fi
   mv -f "$NEWCRED" "$CREDENTIALS_FILE"
 }
 if ! rename_over; then
-  KEEP_NEWCRED=1
   echo "ВНИМАНИЕ: БД обновлена, но замена файла учёток не удалась. Новые значения сохранены ТОЛЬКО во временном файле: $NEWCRED" >&2
-  echo "Выполните вручную: mv -f '$NEWCRED' '$CREDENTIALS_FILE' && chmod 600 '$CREDENTIALS_FILE'  (прежний файл: $BAK, значения в нём уже недействительны). Не повторяйте ротацию, пока не заберёте файл." >&2
+  echo "Выполните вручную: mv -f '$NEWCRED' '$CREDENTIALS_FILE' && chmod 600 '$CREDENTIALS_FILE'  (прежний файл: $BAK, 2FA-значения в нём уже недействительны, пароль админа - действующий). Не повторяйте ротацию, пока не заберёте файл." >&2
   exit 3
 fi
+KEEP_NEWCRED=0
 NEWCRED=""
 chmod 600 "$CREDENTIALS_FILE"
 FP="$(awk '{print $2}' "$BLOCK" | tr -d '\n' | sha256sum | cut -c1-8)"
