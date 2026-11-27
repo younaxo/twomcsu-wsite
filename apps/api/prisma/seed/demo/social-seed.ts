@@ -239,7 +239,7 @@ export async function seedDemoPunishmentLinks(
       );
     }
     const data = {
-      type: PUNISHMENT_APPEAL as const,
+      type: 'PUNISHMENT_APPEAL' as const,
       status: a.status,
       authorId: user.id,
       description: a.description,
