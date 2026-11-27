@@ -55,6 +55,8 @@ check "Bridge: POST events без cookie -> ответ приложения (JSO
 check "Bridge: POST events без cookie не 302 на форму" "0" "$(curl -s -X POST --data-binary 'x' -o /dev/null -w '%{redirect_url}' "https://$STAND_DOMAIN/api/bridge/v1/events" | grep -c '__stand/login')"
 check "Bridge: POST events без cookie не gate-401 (stand_gate_required)" "0" "$(curl -s -X POST --data-binary 'x' "https://$STAND_DOMAIN/api/bridge/v1/events" | grep -c 'stand_gate_required')"
 check "Bridge: GET handshake без cookie не gate-401" "0" "$(curl -s "https://$STAND_DOMAIN/api/bridge/v1/handshake" | grep -c 'stand_gate_required')"
+check "Bridge: HEAD handshake без cookie -> gate 401 (guard принимает только GET)" "401" "$(curl -sI -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/bridge/v1/handshake")"
+check "вебхук голосования без cookie -> gate 401 (мимо формы не пропускается)" "401" "$(curl -s -X POST -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/voting/webhook/test")"
 check "Bridge: GET /api/bridge/v1/other -> gate 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/bridge/v1/other")"
 check "Bridge: GET events (не тот метод) -> gate 401" "401" "$(curl -s -o /dev/null -w '%{http_code}' "https://$STAND_DOMAIN/api/bridge/v1/events")"
 check "Bridge: вариация пути (//) -> gate" "401" "$(curl -s --path-as-is -o /dev/null -w '%{http_code}' -X POST --data-binary 'x' "https://$STAND_DOMAIN/api//bridge/v1/events")"

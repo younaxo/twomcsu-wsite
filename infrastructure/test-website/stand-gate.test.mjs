@@ -83,7 +83,8 @@ test('bypass: только точные пути и методы', () => {
   assert.equal(isBypass('/api/health', 'POST'), false);
   assert.equal(isBypass('/api/webhooks/payments/test', 'POST'), true);
   assert.equal(isBypass('/api/webhooks/payments/test', 'GET'), false);
-  assert.equal(isBypass('/api/voting/webhook/topg', 'POST'), true);
+  // Вебхук голосования (нет подписи, метки времени, защиты от повтора) мимо формы не пропускается.
+  for (const m of ['POST', 'GET', 'HEAD']) assert.equal(isBypass('/api/voting/webhook/topg', m), false, m);
   assert.equal(isBypass('/api/health/../auth/me', 'GET'), false);
   assert.equal(isBypass('/api/%68ealth', 'GET'), false);
   assert.equal(isBypass('/api/webhooks/payments/a/b', 'POST'), false);
@@ -92,14 +93,13 @@ test('bypass: только точные пути и методы', () => {
 
 test('bypass Bridge: ровно 4 маршрута и методы, вариации -> gate', () => {
   assert.equal(isBypass('/api/bridge/v1/handshake', 'GET'), true);
-  assert.equal(isBypass('/api/bridge/v1/handshake', 'HEAD'), true);
   assert.equal(isBypass('/api/bridge/v1/handshake?a=1', 'GET'), true);
   assert.equal(isBypass('/api/bridge/v1/events', 'POST'), true);
   assert.equal(isBypass('/api/bridge/v1/events?x=1', 'POST'), true);
   assert.equal(isBypass('/api/bridge/v1/delivery/claim', 'POST'), true);
   assert.equal(isBypass('/api/bridge/v1/delivery/ack', 'POST'), true);
   for (const [p, m] of [
-    ['/api/bridge/v1/handshake', 'POST'], ['/api/bridge/v1/events', 'GET'], ['/api/bridge/v1/events', 'PUT'],
+    ['/api/bridge/v1/handshake', 'POST'], ['/api/bridge/v1/handshake', 'HEAD'],['/api/bridge/v1/events', 'GET'], ['/api/bridge/v1/events', 'PUT'],
     ['/api/bridge/v1/events', 'DELETE'], ['/api/bridge/v1/delivery/claim', 'GET'], ['/api/bridge/v1/delivery/ack', 'GET'],
     ['/api/bridge/v1/other', 'GET'], ['/api/bridge/v1/other', 'POST'], ['/api/bridge/v1/', 'GET'], ['/api/bridge/v1', 'GET'],
     ['/api/bridge/v1/events/', 'POST'], ['/api/bridge/v1/events/x', 'POST'], ['/api/bridge/v1/delivery', 'POST'],
