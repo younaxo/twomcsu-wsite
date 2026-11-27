@@ -6,7 +6,7 @@
 # Весь каталог результатов (OUT) = $dir/out; run-remote.sh забирает его целиком в --out/out.
 # Перед стартом проверяется, что стенд не под нагрузкой (CPU, loadavg, память, диск, чужие контейнеры, порты 18081-18084); иначе выход 20, бенчмарк не стартует.
 # Параметры проверяются строго (validate_params): диапазоны, PROFILE small|medium|large, cpuset не пересекается и оставляет стенду >= 2 ядер (RUNNER_STAND_MIN_CPUS),
-# DOCKER_BUILD_ARGS - только пары `--build-arg KEY=VAL` и `--no-cache`. ВАЖНО: run-bench.sh из снимка выполняется на ХОСТЕ (не в песочнице) - только доверенные ветки.
+# DOCKER_BUILD_ARGS - только `--no-cache` и `--build-arg NODE_IMAGE=<образ>@sha256:<digest>` (allowlist ключей, M-2); значения --env не начинаются с `-` (L-2). ВАЖНО: run-bench.sh из снимка выполняется на ХОСТЕ (не в песочнице) - только доверенные ветки.
 # BENCH_PRECHECK_ONLY=1 (--env BENCH_PRECHECK_ONLY=1): только проверки и `bash -n`, сам бенчмарк НЕ запускается.
 # Коды: 0 успех, 2 неверные параметры, 20 стенд под нагрузкой / нет ресурсов, 21 нет lang-bench в снимке, иначе код run-bench.sh.
 set -uo pipefail
@@ -33,11 +33,13 @@ for k in OHA_IMAGE PROFILE DB_LATENCY_MS DATASET_FILE RULES IMPLS LEVELS DURATIO
   [[ -n "${!var:-}" ]] || continue
   val="${!var}"
   [[ "$val" =~ ^[A-Za-z0-9._:/@+,=-]+$ ]] || { echo "##### bench: недопустимое значение $k"; exit 2; }
+  # L-2: значение не должно начинаться с "-" (иначе станет флагом docker/oha); исключения - списки флагов, для них своя проверка в validate_params
+  case "$k" in DOCKER_BUILD_ARGS|JAVA_GC) ;; *) [[ "$val" != -* ]] || { echo "##### bench: значение $k не должно начинаться с минуса"; exit 2; } ;; esac
   case "$k" in IMPLS|LEVELS|DOCKER_BUILD_ARGS) val="${val//,/ }" ;; esac
   if [[ "$k" == DATASET_FILE ]]; then valid_rel_path "$val" || { echo "##### bench: недопустимый DATASET_FILE"; exit 2; }; fi
   export "$k=$val"
 done
-[[ -z "${ENV_BENCH_NODE_IMAGE:-}" ]] || { [[ "$ENV_BENCH_NODE_IMAGE" =~ ^[A-Za-z0-9._:/@+-]+$ ]] || { echo "##### bench: недопустимый BENCH_NODE_IMAGE"; exit 2; }; export NODE_IMAGE="$ENV_BENCH_NODE_IMAGE"; }
+[[ -z "${ENV_BENCH_NODE_IMAGE:-}" ]] || { [[ "$ENV_BENCH_NODE_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$ ]] || { echo "##### bench: недопустимый BENCH_NODE_IMAGE"; exit 2; }; export NODE_IMAGE="$ENV_BENCH_NODE_IMAGE"; }
 precheck_only="${ENV_BENCH_PRECHECK_ONLY:-0}"
 
 # ---- строгая проверка значений (M2/M3/L3): диапазоны, cpuset не отбирает у стенда ядра, DOCKER_BUILD_ARGS - только --build-arg KEY=VAL и --no-cache
@@ -60,6 +62,11 @@ expand_cpus() { # expand_cpus <список вида 0-1,4>: по одному �
 validate_params() {
   local bad=0 v i ncpu s_list l_list union s_n l_n m h tok expect="" arg_ok=1
   ncpu="$(nproc)"
+  for v in OHA_IMAGE NODE_IMAGE DATASET_FILE; do   # L-2: значения не начинаются с "-" (не станут флагом)
+    [[ "${!v:-}" != -* ]] || { echo "##### bench: $v не должен начинаться с минуса"; bad=1; }
+  done
+  # NODE_IMAGE (BENCH_NODE_IMAGE): закреплён по digest, как и значение в DOCKER_BUILD_ARGS
+  [[ -z "${NODE_IMAGE:-}" || "$NODE_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,150}@sha256:[0-9a-f]{64}$ ]] || { echo "##### bench: NODE_IMAGE (BENCH_NODE_IMAGE) - только <образ>@sha256:<digest>"; bad=1; }
   [[ -z "${PROFILE:-}" || "$PROFILE" =~ ^(small|medium|large)$ ]] || { echo "##### bench: PROFILE должен быть small|medium|large"; bad=1; }
   [[ -z "${DB_LATENCY_MS:-}" ]] || in_range "$DB_LATENCY_MS" 0 10000 || { echo "##### bench: DB_LATENCY_MS - целое 0..10000"; bad=1; }
   [[ -z "${DURATION:-}" ]]  || in_range "$DURATION" 1 3600 || { echo "##### bench: DURATION - целое 1..3600 с"; bad=1; }
@@ -84,14 +91,15 @@ validate_params() {
   # DOCKER_BUILD_ARGS (запятые уже заменены пробелами): только `--no-cache` и пары `--build-arg KEY=VAL`
   for tok in ${DOCKER_BUILD_ARGS:-}; do
     if [[ -n "$expect" ]]; then
-      [[ "$tok" =~ ^[A-Z][A-Z0-9_]{0,63}=[A-Za-z0-9._:/@+-]{0,200}$ ]] || arg_ok=0
+      # M-2: allowlist КЛЮЧЕЙ - только NODE_IMAGE, значение закреплено по digest (...@sha256:<64 hex>), не начинается с "-"
+      [[ "$tok" =~ ^NODE_IMAGE=[A-Za-z0-9][A-Za-z0-9._:/+-]{0,150}@sha256:[0-9a-f]{64}$ ]] || arg_ok=0
       expect=""
     elif [[ "$tok" == --no-cache ]]; then :
     elif [[ "$tok" == --build-arg ]]; then expect=1
     else arg_ok=0
     fi
   done
-  [[ -z "$expect" && "$arg_ok" == 1 ]] || { echo "##### bench: DOCKER_BUILD_ARGS - только пары '--build-arg,KEY=VAL' и '--no-cache'"; bad=1; }
+  [[ -z "$expect" && "$arg_ok" == 1 ]] || { echo "##### bench: DOCKER_BUILD_ARGS - только '--no-cache' и '--build-arg,NODE_IMAGE=<образ>@sha256:<digest>'"; bad=1; }
   # cpuset: формат, номера < nproc, наборы не пересекаются, стенду остаётся >= STAND_MIN_CPUS ядер
   s_list="$(expand_cpus "${SERVER_CPUS:-0-1}")" || { echo "##### bench: SERVER_CPUS - неверный список ядер (0..$(( ncpu - 1 )))"; bad=1; s_list=""; }
   l_list="$(expand_cpus "${LOADGEN_CPUS:-2-3}")" || { echo "##### bench: LOADGEN_CPUS - неверный список ядер (0..$(( ncpu - 1 )))"; bad=1; l_list=""; }

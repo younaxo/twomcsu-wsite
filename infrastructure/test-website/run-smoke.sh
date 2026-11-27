@@ -9,6 +9,9 @@ trap vds_exit_cleanup EXIT
 vds_stage_new
 {
   echo 'set -euo pipefail; d=$(mktemp -d); trap "rm -rf \"$d\"" EXIT'
+  echo "cat > \"\$d/mask.mjs\" <<'MASK_MJS_EOF'"
+  cat "$HERE/mask.mjs"
+  echo 'MASK_MJS_EOF'
   echo "cat > \"\$d/smoke.mjs\" <<'SMOKE_MJS_EOF'"
   cat "$HERE/smoke.mjs"
   echo 'SMOKE_MJS_EOF'
