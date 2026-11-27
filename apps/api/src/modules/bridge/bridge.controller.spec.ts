@@ -332,6 +332,21 @@ describe('BridgeController (HTTP, подпись по сырому телу)', (
       expect(res.status).toBe(413);
     });
 
+    // Часы заморожены: предзаполненные корзины и корзина, которую считает
+    // сервер, вычисляются от одного и того же момента. Раньше Date.now()
+    // шёл вперёд между предзаполнением и запросом, и под нагрузкой (параллельный
+    // jest) окно в 1 с уезжало за bucket+1 - лимит не срабатывал.
+    // Момент выровнен на середину 60-секундного окна, чтобы граница корзины
+    // не попала в тест.
+    let FROZEN_MS = 0;
+    beforeEach(() => {
+      FROZEN_MS = Math.floor(Date.now() / 60_000) * 60_000 + 30_000;
+      jest.spyOn(Date, 'now').mockReturnValue(FROZEN_MS);
+    });
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     function preloadBuckets(
       h2: Harness,
       scope: string,
