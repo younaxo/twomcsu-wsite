@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   FakePrisma,
   FakeRedisClient,
@@ -62,7 +63,11 @@ function batch(events: Array<Record<string, unknown>>): BridgeBatch {
   return parsed.value;
 }
 
-function setup(cfg: BridgeConfig = config(), linked = true) {
+function setup(
+  cfg: BridgeConfig = config(),
+  linked = true,
+  inventory?: BridgeInventoryService,
+) {
   const store = new InMemoryInventoryStore();
   if (linked) store.link(TEST_UUID, USER);
   const apply = new InventoryApplyService(store);
@@ -77,7 +82,7 @@ function setup(cfg: BridgeConfig = config(), linked = true) {
     redis,
     source,
     undefined,
-    new BridgeInventoryService(apply),
+    inventory ?? new BridgeInventoryService(apply),
   );
   return { service, store, redisClient };
 }
@@ -251,5 +256,296 @@ describe('BridgeIngestService: inventory.snapshot', () => {
       batch([makeEvent('inventory.delta', {})]),
     );
     expect(res).toMatchObject({ status: 'rejected', code: 'unsupported_type' });
+  });
+});
+
+const MIN = 60_000;
+
+describe('inventory.snapshot: порядок свежести (M5)', () => {
+  it('перезапуск плагина: новая epoch и rev=1 принимаются', async () => {
+    const { service, store } = setup();
+    const epoch1 = Date.now() - 2 * 3_600_000;
+    const epoch2 = Date.now() - 30 * MIN;
+    await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch: epoch1, rev: 40 }))]),
+    );
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch: epoch2, rev: 1, slots: [] }))]),
+    );
+    expect(res.status).toBe('accepted');
+    const row = store.get(USER, SLUG, 'main');
+    expect(row?.epoch).toBe(String(epoch2));
+    expect(row?.rev).toBe(1);
+    expect(row?.slotCount).toBe(0);
+  });
+
+  it('старая epoch с большим rev после перезапуска - stale, ряд не меняется', async () => {
+    const { service, store } = setup();
+    const epoch1 = Date.now() - 2 * 3_600_000;
+    const epoch2 = Date.now() - 30 * MIN;
+    await service.ingest(ctx(), batch([inv(data({ epoch: epoch2, rev: 1 }))]));
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch: epoch1, rev: 999, slots: [] }))]),
+    );
+    expect(res.status).toBe('stale');
+    const row = store.get(USER, SLUG, 'main');
+    expect(row?.epoch).toBe(String(epoch2));
+    expect(row?.rev).toBe(1);
+    expect(row?.slotCount).toBe(1);
+  });
+
+  it('равные (epoch, rev), тот же состав, новый eventId - accepted без записи', async () => {
+    const { service, store } = setup();
+    const d = data();
+    await service.ingest(ctx(), batch([inv(d)]));
+    const before = store.get(USER, SLUG, 'main');
+    const [res] = await service.ingest(ctx(), batch([inv({ ...d })]));
+    expect(res.status).toBe('accepted');
+    expect(store.get(USER, SLUG, 'main')).toEqual(before);
+  });
+
+  it('равные (epoch, rev), другой состав - stale, ряд не меняется', async () => {
+    const { service, store } = setup();
+    const d = data();
+    await service.ingest(ctx(), batch([inv(d)]));
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv({ ...d, slots: [] })]),
+    );
+    expect(res.status).toBe('stale');
+    expect(store.get(USER, SLUG, 'main')?.slotCount).toBe(1);
+  });
+
+  it('отказ по данным не закрепляется: тот же eventId с исправленными данными принимается', async () => {
+    const { service, store } = setup();
+    const ev = inv(data({ epoch: Date.now() + 3_600_000 }));
+    const [bad] = await service.ingest(ctx(), batch([ev]));
+    expect(bad).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+    // Данные не прошли схему до Redis: маркер дедупликации не создан, поэтому
+    // исправленное событие с тем же eventId не даёт conflict и применяется.
+    const [good] = await service.ingest(
+      ctx(),
+      batch([{ ...ev, data: data() }]),
+    );
+    expect(good).toEqual({ eventId: ev.eventId, status: 'accepted' });
+    expect(store.get(USER, SLUG, 'main')?.rev).toBe(1);
+  });
+
+  it('отказ приёмника инвентаря (invalid после маркера) не закрепляется: повтор применяется', async () => {
+    const applySnapshot = jest
+      .fn()
+      .mockResolvedValueOnce('invalid')
+      .mockResolvedValueOnce('applied');
+    const { service } = setup(config(), true, {
+      applySnapshot,
+    } as unknown as BridgeInventoryService);
+    const ev = inv();
+    const [first] = await service.ingest(ctx(), batch([ev]));
+    expect(first).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+    const [second] = await service.ingest(ctx(), batch([ev]));
+    expect(second).toEqual({ eventId: ev.eventId, status: 'accepted' });
+    expect(applySnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('сбой хранилища: исключение (503 в контроллере), повтор той же пачки проходит', async () => {
+    const { service, store } = setup();
+    const ev = inv();
+    jest.spyOn(store, 'mutate').mockRejectedValueOnce(new Error('db down'));
+    const errorLog = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    await expect(service.ingest(ctx(), batch([ev]))).rejects.toThrow('db down');
+    errorLog.mockRestore();
+    expect(store.rows.size).toBe(0);
+    const [res] = await service.ingest(ctx(), batch([ev]));
+    expect(res).toEqual({ eventId: ev.eventId, status: 'accepted' });
+    expect(store.get(USER, SLUG, 'main')?.rev).toBe(1);
+  });
+});
+
+/// Размер события гейт считает как `Buffer.byteLength(JSON.stringify(ev.data))`
+/// и сравнивает с 16384 (bridge-ingest.service.ts, MAX_EVENT_DATA_BYTES).
+describe('inventory.snapshot: размер события 16 КБ (M4)', () => {
+  const LIMIT = 16 * 1024;
+  const size = (d: unknown) => Buffer.byteLength(JSON.stringify(d), 'utf8');
+
+  const SLOT_REFS = [
+    ...Array.from({ length: 9 }, (_, i) => ({ area: 'hotbar', slot: i })),
+    ...Array.from({ length: 27 }, (_, i) => ({ area: 'main', slot: i })),
+    ...Array.from({ length: 4 }, (_, i) => ({ area: 'armor', slot: i })),
+    { area: 'offhand', slot: 0 },
+  ];
+
+  /// Полный инвентарь (41 слот) с `data` ровно `target` байт: добор длины -
+  /// текстом первой строки лора (ASCII, 1 байт на символ).
+  function dataOfSize(target: number): Record<string, unknown> {
+    const build = (pad: (i: number) => number) =>
+      data({
+        slots: SLOT_REFS.map((ref, i) => ({
+          ...ref,
+          item: item('minecraft:stick', {
+            name: [{ text: 'x'.repeat(200) }],
+            lore: [[{ text: 'y'.repeat(1 + pad(i)) }]],
+          }),
+        })),
+      });
+    const diff = target - size(build(() => 0));
+    const each = Math.floor(diff / SLOT_REFS.length);
+    const extra = diff % SLOT_REFS.length;
+    const d = build((i) => each + (i < extra ? 1 : 0));
+    expect(size(d)).toBe(target);
+    return d;
+  }
+
+  it('ровно 16384 байта - проходит гейт и принимается', async () => {
+    const { service, store } = setup();
+    const [res] = await service.ingest(ctx(), batch([inv(dataOfSize(LIMIT))]));
+    expect(res.status).toBe('accepted');
+    expect(store.get(USER, SLUG, 'main')?.slotCount).toBe(41);
+  });
+
+  it('16385 байт - invalid_data по размеру, без записи', async () => {
+    const { service, store } = setup();
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv(dataOfSize(LIMIT + 1))]),
+    );
+    expect(res).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+    expect(store.mutateCalls).toBe(0);
+    expect(store.rows.size).toBe(0);
+  });
+
+  const E = (id: string, level: number) => ({ id: `minecraft:${id}`, level });
+  const run = (text: string, color?: string, bold?: boolean) => ({
+    text,
+    ...(color ? { color } : {}),
+    ...(bold ? { bold: true } : {}),
+  });
+  const heavy = (id: string) =>
+    item(id, {
+      damage: 120,
+      maxDamage: 2031,
+      enchants: [
+        E('sharpness', 5),
+        E('unbreaking', 3),
+        E('mending', 1),
+        E('looting', 3),
+        E('fire_aspect', 2),
+      ],
+      name: [run('Меч Полдня', '#F26A1B', true)],
+      lore: [
+        [run('Редкость: ', '#AAAAAA'), run('Легендарный', '#FFAA00', true)],
+        [run('Урон +12', '#55FF55')],
+        [run('Принадлежит игроку TestPlayer001', '#AAAAAA')],
+        [run('Сезон 3 · Анархия Новой Эры', '#5555FF')],
+      ],
+    });
+  const light = (id: string) =>
+    item(id, {
+      damage: 10,
+      maxDamage: 250,
+      enchants: [E('efficiency', 4), E('unbreaking', 3)],
+    });
+
+  it('реалистичный полный инвентарь (41 слот, чары и лор у части предметов) укладывается в 16 КБ', async () => {
+    const { service, store } = setup();
+    const slots = SLOT_REFS.map((ref, i) => ({
+      ...ref,
+      item:
+        ref.area === 'hotbar'
+          ? i < 4
+            ? heavy('minecraft:netherite_sword')
+            : light('minecraft:diamond_pickaxe')
+          : ref.area === 'main'
+            ? ref.slot < 20
+              ? item('minecraft:cobblestone', { count: 64 })
+              : ref.slot < 24
+                ? light('minecraft:diamond_axe')
+                : heavy('minecraft:elytra')
+            : ref.area === 'armor'
+              ? heavy('minecraft:netherite_chestplate')
+              : light('minecraft:shield'),
+    }));
+    const d = data({ slots });
+    expect(slots).toHaveLength(41);
+    expect(size(d)).toBeLessThanOrEqual(LIMIT);
+    const [res] = await service.ingest(ctx(), batch([inv(d)]));
+    expect(res.status).toBe('accepted');
+    expect(store.get(USER, SLUG, 'main')?.slotCount).toBe(41);
+  });
+
+  it('41 слот тяжёлых предметов с лором не укладывается: invalid_data до среза частей', async () => {
+    const { service, store } = setup();
+    const slots = SLOT_REFS.map((ref) => ({
+      ...ref,
+      item: heavy('minecraft:netherite_sword'),
+    }));
+    const d = data({ slots });
+    expect(size(d)).toBeGreaterThan(LIMIT);
+    const [res] = await service.ingest(ctx(), batch([inv(d)]));
+    expect(res).toMatchObject({ status: 'rejected', code: 'invalid_data' });
+    expect(store.rows.size).toBe(0);
+  });
+});
+
+describe('inventory.snapshot: предупреждение о ряде с epoch из будущего (M1)', () => {
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+  });
+  afterEach(() => warn.mockRestore());
+
+  const warnings = () =>
+    warn.mock.calls
+      .map((c) => String(c[0]))
+      .filter((m) => m.includes('row epoch ahead of clock'));
+
+  it('ряд опережает часы на 5 минут, честный снимок - stale и warn без ПДн', async () => {
+    const { service } = setup();
+    const future = Date.now() + 5 * MIN;
+    await service.ingest(ctx(), batch([inv(data({ epoch: future, rev: 1 }))]));
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch: Date.now() - 3_600_000, rev: 2 }))]),
+    );
+    expect(res.status).toBe('stale');
+    const logged = warnings();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain(`server=${SLUG}`);
+    expect(logged[0]).toContain(`epoch=${future}`);
+    expect(logged[0]).not.toContain(USER);
+    expect(logged[0]).not.toContain(TEST_UUID);
+  });
+
+  it('повторные stale по тому же ряду не засоряют лог (не чаще раза в 10 минут)', async () => {
+    const { service } = setup();
+    await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch: Date.now() + 5 * MIN, rev: 1 }))]),
+    );
+    for (let i = 0; i < 3; i += 1) {
+      await service.ingest(
+        ctx(),
+        batch([inv(data({ epoch: Date.now() - 3_600_000, rev: 2 + i }))]),
+      );
+    }
+    expect(warnings()).toHaveLength(1);
+  });
+
+  it('ряд в пределах 120 с от часов (обычный stale) - без warn', async () => {
+    const { service } = setup();
+    const epoch = Date.now() - 3_600_000;
+    await service.ingest(ctx(), batch([inv(data({ epoch, rev: 5 }))]));
+    const [res] = await service.ingest(
+      ctx(),
+      batch([inv(data({ epoch, rev: 4 }))]),
+    );
+    expect(res.status).toBe('stale');
+    expect(warnings()).toHaveLength(0);
   });
 });
