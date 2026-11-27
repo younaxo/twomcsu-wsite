@@ -1,7 +1,7 @@
 'use client';
 
 import { UserRound } from 'lucide-react';
-import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { Textarea, type TextareaProps } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
 import { useMentionAutocomplete } from './use-mention-autocomplete';
@@ -36,6 +36,23 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
     }, []);
 
     const mention = useMentionAutocomplete({ value, commit, maxLength: props.maxLength });
+
+    // Radix Dialog/Sheet слушает Esc на document в capture-фазе, раньше React.
+    // Пока список открыт, перехватываем Esc на window (ещё раньше), закрываем
+    // только список и не пускаем событие к модальному слою.
+    const { open: listOpen, close: closeList } = mention;
+    useEffect(() => {
+      if (!listOpen) return;
+      const onEscape = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape' || event.target !== inner.current) return;
+        if (event.isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeList();
+      };
+      window.addEventListener('keydown', onEscape, true);
+      return () => window.removeEventListener('keydown', onEscape, true);
+    }, [listOpen, closeList]);
     const syncCaret = () => {
       const el = inner.current;
       if (el) mention.setCaret(el.selectionStart ?? 0);

@@ -10,6 +10,14 @@ export interface MentionToken {
 }
 
 export const MENTION_MIN_LENGTH = 2;
+/// Максимальная длина ника Minecraft; более длинный токен не ищем.
+export const MENTION_MAX_LENGTH = 16;
+
+/// Допустимый ник для вставки (как на сервере): 3–16 символов `[A-Za-z0-9_]`.
+const VALID_NICK = /^[A-Za-z0-9_]{3,16}$/;
+export function isValidNick(nick: string): boolean {
+  return VALID_NICK.test(nick);
+}
 
 const NICK_CHAR = /[A-Za-z0-9_]/;
 

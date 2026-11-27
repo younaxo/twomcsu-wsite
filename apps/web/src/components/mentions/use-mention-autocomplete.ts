@@ -7,6 +7,8 @@ import type { PlayerSearchItem, PlayerSearchResult } from '@/lib/profile/player-
 import {
   applyMention,
   findMentionToken,
+  isValidNick,
+  MENTION_MAX_LENGTH,
   MENTION_MIN_LENGTH,
   type MentionToken,
 } from './mention-token';
@@ -59,7 +61,13 @@ export function useMentionAutocomplete({
   const [notice, setNotice] = useState<string | null>(null);
 
   const token: MentionToken | null = findMentionToken(value, caret);
-  const query = token && token.query.length >= MENTION_MIN_LENGTH ? token.query : null;
+  const query =
+    token &&
+    token.query.length >= MENTION_MIN_LENGTH &&
+    token.query.length <= MENTION_MAX_LENGTH &&
+    /^[A-Za-z0-9_]+$/.test(token.query)
+      ? token.query
+      : null;
   const tokenStart = token?.start ?? null;
   const dismissed =
     dismissal !== null &&
@@ -88,7 +96,9 @@ export function useMentionAutocomplete({
         })
         .then((response) => {
           if (controller.signal.aborted) return;
-          const items = (response.items as Candidate[]).filter((i) => !i.hidden && !i.banned);
+          const items = (response.items as Candidate[]).filter(
+            (i) => !i.hidden && !i.banned && isValidNick(i.username),
+          );
           setResult({ query, items, error: null });
           setActiveIndex(0);
         })
@@ -120,7 +130,7 @@ export function useMentionAutocomplete({
 
   const select = useCallback(
     (item: PlayerSearchItem) => {
-      if (!token) return;
+      if (!token || !isValidNick(item.username)) return;
       const next = applyMention(value, token, item.username);
       if (maxLength !== undefined && next.value.length > maxLength) {
         // Безопасный вариант: текст не трогаем, сообщаем через live-region.

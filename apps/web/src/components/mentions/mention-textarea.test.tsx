@@ -277,4 +277,46 @@ describe('MentionTextarea', () => {
     expect(mocks.get).not.toHaveBeenCalled();
     expect(screen.queryByRole('listbox')).toBeNull();
   });
+
+  it('не показывает ники, не проходящие проверку 3–16 [A-Za-z0-9_]', async () => {
+    mocks.get.mockResolvedValue({
+      ...ITEMS,
+      items: [
+        { username: 'Steve', tag: null, avatar: null },
+        { username: 'Bad Nick', tag: null, avatar: null },
+        { username: 'ab', tag: null, avatar: null },
+        { username: 'a'.repeat(17), tag: null, avatar: null },
+        { username: 'Ёжик', tag: null, avatar: null },
+      ],
+    });
+    render(<Host />);
+    await typeAt('@st');
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(options[0]?.textContent).toContain('Steve');
+  });
+
+  it('не ищет, если токен длиннее 16 символов', async () => {
+    render(<Host />);
+    await typeAt(`@${'a'.repeat(16)}`);
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    mocks.get.mockClear();
+    await typeAt(`@${'a'.repeat(17)}`);
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it('abort при размонтировании во время запроса', async () => {
+    const signals: AbortSignal[] = [];
+    mocks.get.mockImplementation((_path: string, opts: { signal: AbortSignal }) => {
+      signals.push(opts.signal);
+      return new Promise(() => {});
+    });
+    const { unmount } = render(<Host />);
+    await typeAt('@st');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    unmount();
+    expect(signals[0]?.aborted).toBe(true);
+  });
 });
