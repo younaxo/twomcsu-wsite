@@ -161,7 +161,7 @@ function BadgesSettings() {
   });
   const meQ = useQuery({
     queryKey: ['users', 'me', 'display-badge'],
-    queryFn: () => api.get<MeView>('/users/me'),
+    queryFn: () => api.get<MeView>('/users/me/profile'),
   });
   const [badges, setBadges] = useState<MyBadge[] | null>(null);
   const [awards, setAwards] = useState<MyAward[] | null>(null);

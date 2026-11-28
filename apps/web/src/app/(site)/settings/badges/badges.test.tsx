@@ -48,7 +48,8 @@ beforeEach(() => {
         { id: 'a2', slug: 'second', name: 'Вторая награда', grantedAt: '2026-01-02' },
       ];
     }
-    return { displayBadge: { id: 'b1', type: 'VERIFIED' } };
+    if (path === '/users/me/profile') return { displayBadge: { id: 'b1', type: 'VERIFIED' } };
+    throw new ApiError(404, ['Cannot GET ' + path]);
   });
 });
 
@@ -149,5 +150,17 @@ describe('Бейджи и награды (J-07-6)', () => {
     await waitFor(() =>
       expect(mocks.get.mock.calls.length).toBeGreaterThanOrEqual(callsBefore + 3),
     );
+  });
+
+  it('обращается только к существующим маршрутам API (без GET /users/me)', async () => {
+    const existing = ['/users/me/badges', '/users/me/awards', '/users/me/profile'];
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('badges-order');
+    expect(within(list).getByRole('button', { name: 'Ниже: Подтверждённый игрок' })).toBeEnabled();
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/users/me/profile'));
+    const called = mocks.get.mock.calls.map((call) => call[0] as string);
+    expect(called.filter((path) => !existing.includes(path))).toEqual([]);
+    expect(called).not.toContain('/users/me');
+    expect(screen.queryByText(/Не удалось загрузить/)).toBeNull();
   });
 });
