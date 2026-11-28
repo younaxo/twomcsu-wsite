@@ -8,6 +8,8 @@
 #   секунды    10..600 (по умолчанию 90)
 #   --mc-version <ver>  версия протокола клиента (по умолчанию 1.21.4; сервер Paper 1.21.x с ViaVersion транслирует). Автоопределение по SLP отключено: Maintenance подменяет строку версии
 #   --debug-protocol    печатать только имена и версии стадий login/configuration/play (STAGE proto ...), без содержимого пакетов
+#   --resource-pack accept|decline  ответ на ресурс-пак сервера (по умолчанию accept: статусы accepted -> downloaded -> successfully_loaded без реальной загрузки; в configuration без ответа сервер не пускает в play)
+#   --spawn-timeout <сек>  сколько ждать spawn (10..600, по умолчанию 90; печатается как ERROR connect-timeout)
 #   --check    только чтение: GET аллокации и GET списка /plugins (поиск плагинов авторизации); бот не запускается
 # Панель: ТОЛЬКО чтение (PTERO_ALLOW_WRITE=0): аллокация (адрес и порт) и список /plugins сервера из SERVER_UUID.
 # Бот: временный контейнер (образ node как в ptero.sh), `npm i --ignore-scripts --no-audit --no-fund mineflayer@<закреплённая версия>` + `npm ls --all` в лог (lock не используется; контейнер видит пароль только до его первого чтения ботом, затем файл удаляется) ВНУТРИ контейнера (в репозиторий и на хост
@@ -24,7 +26,7 @@ set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 trap ptero_cleanup EXIT
 
-NICK=""; SECS=90; CHECK=0; BOT_NET=host; MC_VER_ARG=""; DEBUG_PROTO=0
+NICK=""; SECS=90; CHECK=0; BOT_NET=host; MC_VER_ARG=""; DEBUG_PROTO=0; RP_MODE=accept; SPAWN_TO=90
 while (( $# )); do
   a="$1"
   case "$a" in
@@ -32,6 +34,8 @@ while (( $# )); do
     --net) shift; BOT_NET="${1:-}"; [[ "$BOT_NET" == host || "$BOT_NET" == bridge ]] || { echo "--net: host (по умолчанию) или bridge (отладка)" >&2; exit 2; } ;;
     --mc-version) shift; MC_VER_ARG="${1:-}"; [[ -n "$MC_VER_ARG" ]] || { echo "--mc-version: нужна версия, например 1.21.4" >&2; exit 2; } ;;
     --debug-protocol) DEBUG_PROTO=1 ;;
+    --resource-pack) shift; RP_MODE="${1:-}"; [[ "$RP_MODE" == accept || "$RP_MODE" == decline ]] || { echo "--resource-pack: accept (по умолчанию) или decline" >&2; exit 2; } ;;
+    --spawn-timeout) shift; SPAWN_TO="${1:-}"; { [[ "$SPAWN_TO" =~ ^[0-9]{2,3}$ ]] && (( 10#$SPAWN_TO >= 10 && 10#$SPAWN_TO <= 600 )); } || { echo "--spawn-timeout: 10..600 секунд" >&2; exit 2; }; SPAWN_TO=$(( 10#$SPAWN_TO )) ;;
     -*) echo "Неизвестный аргумент: $a" >&2; exit 2 ;;
     *) if [[ -z "$NICK" ]]; then NICK="$a"; elif [[ "$a" =~ ^[0-9]+$ ]]; then SECS="$a"; else echo "Лишний аргумент: $a" >&2; exit 2; fi ;;
   esac
@@ -102,6 +106,8 @@ const E = process.env;
 let PASS = '';
 if (E.BOT_AUTH === '1') { const fs = require('fs'); PASS = String(fs.readFileSync('/botpass/pass', 'utf8')).trim(); try { fs.unlinkSync('/botpass/pass'); } catch (e) { fs.writeFileSync('/botpass/pass', ''); } }
 const SECS = Number(E.BOT_SECS) || 90;
+const RP_MODE = E.BOT_RESOURCE_PACK === 'decline' ? 'decline' : 'accept';
+const SPAWN_TO = Math.min(600, Math.max(10, Number(E.BOT_SPAWN_TIMEOUT) || 90));
 let bot = null;
 const clean = (v) => {
   let s = String(v == null ? '' : v);
@@ -152,14 +158,48 @@ if (E.BOT_DEBUG_PROTO === '1') {
   try {
     const c = bot._client;
     console.log('STAGE proto client-version=' + clean(E.BOT_VERSION) + ' mineflayer=' + clean(E.BOT_MF || '?'));
+    // имена пакетов стадии configuration (для custom_payload - только имя канала, без данных)
+    c.on('packet', (data, meta) => {
+      if (!meta || meta.state !== 'configuration') return;
+      console.log('STAGE proto packet configuration ' + clean(meta.name) + (meta.name === 'custom_payload' && data && typeof data.channel === 'string' ? ' channel=' + clean(data.channel) : ''));
+    });
     c.on('state', (ns, os) => console.log('STAGE proto state ' + clean(os) + ' -> ' + clean(ns) + ' version=' + clean(c.version) + ' protocol=' + clean(c.protocolVersion)));
   } catch (_) {}
 }
+// Ресурс-пак (Nexo/ModelEngine): сервер шлёт add_resource_pack (1.20.3+; ранее resource_pack_send) уже в configuration и не завершает её без ответа.
+// Статусы resource_pack_receive (1.20.3+): 0 successfully_loaded, 1 declined, 2 failed_download, 3 accepted, 4 downloaded. Реальной загрузки нет; URL/хэш не печатаются.
+const RP_STATUS = { loaded: 0, declined: 1, accepted: 3, downloaded: 4 };
+function installResourcePackHandlers(client, b, mode, log) {
+  const seq = mode === 'decline' ? ['declined'] : ['accepted', 'downloaded', 'loaded'];
+  const answer = (name) => (pkt) => {
+    // в play отвечает уровень mineflayer (bot.on('resourcePack')), чтобы не слать ответ дважды
+    if (client.state !== 'configuration') return;
+    const p = pkt || {};
+    for (const st of seq) {
+      try {
+        const out = { result: RP_STATUS[st] };
+        if (p.uuid !== undefined) out.uuid = p.uuid;
+        client.write('resource_pack_receive', out);
+        log('STAGE resourcepack ' + name + ' configuration -> ' + st);
+      } catch (e) { log('ERROR resourcepack-reply ' + st + ' ' + clean(e && (e.code || e.message))); break; }
+    }
+  };
+  for (const n of ['add_resource_pack', 'resource_pack_send', 'resource_pack_push']) client.on(n, answer(n));
+  b.on('resourcePack', () => {
+    try {
+      if (mode === 'decline') { if (typeof b.denyResourcePack === 'function') b.denyResourcePack(); }
+      else if (typeof b.acceptResourcePack === 'function') b.acceptResourcePack();
+      log('STAGE resourcepack play ' + mode);
+    } catch (e) { log('ERROR resourcepack-play ' + clean(e && (e.code || e.message))); }
+  });
+}
+try { installResourcePackHandlers(bot._client, bot, RP_MODE, (m) => console.log(m)); } catch (_) {}
 const connectTimer = setTimeout(() => {
-  console.log('ERROR connect-timeout (45s)'); process.exit(1);
-}, 45000);
-bot.once('login', () => { phase = 'connected'; clearTimeout(connectTimer); console.log('STAGE connected'); });
+  console.log('ERROR connect-timeout (' + SPAWN_TO + 's) phase=' + phase); process.exit(1);
+}, SPAWN_TO * 1000);
+bot.once('login', () => { phase = 'connected'; console.log('STAGE connected'); });
 bot.once('spawn', () => {
+  clearTimeout(connectTimer);
   phase = 'spawned'; console.log('STAGE spawned');
   if (E.BOT_AUTH === '1') {
     setTimeout(() => { try { bot.chat('/register ' + PASS + ' ' + PASS); } catch (_) {} }, 1500);
@@ -249,9 +289,9 @@ fi
 # редакция вывода: сам пароль (если есть) и любые hex-строки от 20 символов
 redact() { if [[ -n "$PASS_PLAIN" ]]; then sed -E -e "s/$PASS_PLAIN/***/g" -e 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; else sed -E 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; fi; }
 out="$BOTDIR/bot.out"
-timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" --network "$BOT_NET" \
+timeout $(( SECS + SPAWN_TO + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" --network "$BOT_NET" \
   --user "$CUID:$CGID" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
-  --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\nBOT_DEBUG_PROTO=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION" "$DEBUG_PROTO") \
+  --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\nBOT_DEBUG_PROTO=%s\nBOT_RESOURCE_PACK=%s\nBOT_SPAWN_TIMEOUT=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION" "$DEBUG_PROTO" "$RP_MODE" "$SPAWN_TO") \
   -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund --prefer-offline "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; rm -rf /tmp/.npm; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
   </dev/null > "$out" 2>/dev/null
 rc=$?
