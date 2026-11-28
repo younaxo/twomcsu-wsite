@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
+import { NotificationPriority, NotificationType } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../files/storage.service';
