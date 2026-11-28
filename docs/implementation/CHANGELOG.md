@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+### Ночной режим (28.11)
+
+- Ночной режим: см. docs/reports/2026-11-28-night-summary.md (PR #270–#298).
+
 ### Отчёт готовности (27.11)
 
 - Отчёт готовности в процентах по фактам: docs/reports/2026-11-27-readiness-percentages.md.
