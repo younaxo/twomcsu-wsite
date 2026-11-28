@@ -8,6 +8,7 @@ import {
 } from '@twomc/shared';
 import { useState, type HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { arePrefixImagesOnCdn } from '@/lib/env';
 import { crispScale, useDevicePixelRatio } from '@/lib/use-device-pixel-ratio';
 import { getPrefixAsset, getRolePrefixAsset, type DisplayableRole } from '@/lib/roles/primary-role';
 import { Badge } from './badge';
@@ -51,7 +52,8 @@ export interface RolePrefixProps extends Omit<HTMLAttributes<HTMLSpanElement>, '
   loading?: 'eager' | 'lazy';
 }
 
-/// Графический префикс роли TwoMC (PNG из resource pack на CDN). Только
+/// Графический префикс роли TwoMC (PNG из resource pack на CDN; пока флаг
+/// NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN не включён — сразу текстовый бейдж без запроса). Только
 /// визуализация роли — права определяет backend RBAC, не изображение.
 export function RolePrefix({
   role,
@@ -73,7 +75,7 @@ export function RolePrefix({
   const [failed, setFailed] = useState(false);
   const dpr = useDevicePixelRatio();
 
-  if (!asset || failed) {
+  if (!asset || failed || !arePrefixImagesOnCdn()) {
     if (fallback === 'none' || !label) {
       return null;
     }

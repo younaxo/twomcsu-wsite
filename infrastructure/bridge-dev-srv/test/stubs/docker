@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# ЗАГЛУШКА docker для сухих прогонов (только тесты). FAKE - корень: players, version, psql.out.
+case "${1:-}" in
+  image) exit 0 ;;
+  exec)
+    echo "docker exec $*" >> "$FAKE/docker.log"
+    [[ -f "$FAKE/psql.out" ]] && { cat "$FAKE/psql.out"; exit 0; }
+    exit 1 ;;
+  run)
+    echo "docker run $*" >> "$FAKE/docker-run.log"
+    if [[ "$*" == *PT_HOST* ]]; then
+      echo "players=$(cat "$FAKE/players") max=20 version=$(cat "$FAKE/version")"
+    else
+      printf 'AUTH_OK\nL: There are %s of a max of 20 players online\nUNTIL_MATCH\n' "$(cat "$FAKE/players")"
+    fi
+    exit 0 ;;
+esac
+exit 1

@@ -84,6 +84,21 @@ describe('Настройки → Кошелёк', () => {
     ).toBeNull();
   });
 
+  it('блок «закрыто по плану» виден, действий трат и передачи нет, пополнение ведёт в магазин', async () => {
+    route({ items: [], total: 0, page: 1, limit: 20 });
+    render(<WalletSettingsPage />, { wrapper: Providers });
+    const block = await screen.findByTestId('wallet-closed-block');
+    expect(block).toHaveTextContent(/закрыто по плану, появятся после решения владельца/);
+    expect(within(block).queryAllByRole('button')).toHaveLength(0);
+    expect(within(block).queryAllByRole('link')).toHaveLength(0);
+    expect(block.querySelectorAll('[aria-disabled="true"]').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('wallet-topup-link')).toHaveAttribute('href', '/shop');
+    // Только запросы на чтение: баланс и история.
+    expect(mocks.get.mock.calls.every(([p]) => p === '/wallet' || p === '/wallet/history')).toBe(
+      true,
+    );
+  });
+
   it('пустой журнал: пустое состояние', async () => {
     route({ items: [], total: 0, page: 1, limit: 20 });
     render(<WalletSettingsPage />, { wrapper: Providers });

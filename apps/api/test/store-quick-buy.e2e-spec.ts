@@ -8,6 +8,7 @@ import { AppModule } from './../src/app.module';
 import { APP_CREATE_OPTIONS, configureApp } from './../src/configure-app';
 import { signPaymentWebhook } from './helpers/sign-payment-webhook';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 import { PaidRemovalService } from '../src/modules/store/paid-removal.service';
 import { PAID_REMOVAL_SETTING } from '../src/modules/store/paid-removal-rules';
 
@@ -159,7 +160,16 @@ describe('Store quick-buy by nick (e2e)', () => {
     }
   }
 
-  afterEach(() => {
+  /// Счётчик отказов по нику (ADR-0186 Р1) живёт в Redis на IP: чистим, чтобы
+  /// повторные прогоны с одного адреса не упирались в 30/час.
+  async function clearDenialKeys() {
+    const client = app.get(RedisService).client;
+    const keys = await client.keys('store:qb:deny:*');
+    if (keys.length > 0) await client.del(...keys);
+  }
+
+  afterEach(async () => {
+    await clearDenialKeys();
     const storage = app.get<{ storage: Record<string, unknown> }>(
       ThrottlerStorage,
     );
@@ -215,6 +225,71 @@ describe('Store quick-buy by nick (e2e)', () => {
         where: { guestMinecraftNick: `Nope${unique}`.slice(0, 16) },
       }),
     ).toBe(before);
+  });
+
+  it('неверный формат ника (2 символа, пробел, дефис, 17 символов) — 400 без nick_unavailable', async () => {
+    for (const bad of [
+      'ab',
+      'Bad Nick',
+      'bad-nick',
+      'a'.repeat(17),
+      'Ник123',
+    ]) {
+      const res = await quickBuy({
+        variantId: privilegeVariantId,
+        guestMinecraftNick: bad,
+      }).expect(400);
+      expect(res.body.code).not.toBe('nick_unavailable');
+    }
+  });
+
+  it('известный ник без учёта регистра — заказ с каноническим написанием', async () => {
+    const res = await quickBuy({
+      variantId: privilegeVariantId,
+      guestMinecraftNick: knownNick.toUpperCase(),
+    }).expect(201);
+    orderNumbers.push(res.body.order.orderNumber);
+    expect(res.body.order.guestMinecraftNick).toBe(knownNick);
+  });
+
+  it('неизвестный ник: ответ не быстрее нижней границы выравнивания (R145)', async () => {
+    const started = Date.now();
+    await quickBuy({
+      variantId: privilegeVariantId,
+      guestMinecraftNick: `Slow${unique}`.slice(0, 16),
+    }).expect(400);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(240);
+  });
+
+  it('отказ, отличный от неизвестного ника (paid_removal_unavailable), тоже не быстрее нижней границы', async () => {
+    // Правила снятия по умолчанию пусты: UNMUTE отказывает 503 после проверки ника.
+    const started = Date.now();
+    const res = await quickBuy({
+      variantId: unmuteVariantId,
+      guestMinecraftNick: knownNick,
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.code).not.toBe('quick_buy_disabled');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(240);
+  });
+
+  it('исчерпан лимит отказов по IP (30/час, ADR-0186 Р1) — 429 quick_buy_rate_limited, заказа нет', async () => {
+    const client = app.get(RedisService).client;
+    const keys = await client.keys('store:qb:deny:*');
+    if (keys.length > 0) await client.del(...keys);
+    // Реальный ключ IP неизвестен тесту: делаем отказ, затем поднимаем счётчик.
+    await quickBuy({
+      variantId: privilegeVariantId,
+      guestMinecraftNick: `Lim${unique}`.slice(0, 16),
+    }).expect(400);
+    const created = await client.keys('store:qb:deny:*');
+    expect(created).toHaveLength(1);
+    await client.set(created[0], '30', 'EX', 3600);
+    const res = await quickBuy({
+      variantId: privilegeVariantId,
+      guestMinecraftNick: knownNick,
+    }).expect(429);
+    expect(res.body.code).toBe('quick_buy_rate_limited');
   });
 
   it('лимит: 11-й запрос quick-buy за минуту — 429 (Q13)', async () => {
@@ -408,6 +483,20 @@ describe('Store quick-buy by nick (e2e)', () => {
 
     afterAll(() => {
       jest.restoreAllMocks();
+    });
+
+    it('неизвестный ник и ник без наказания — идентичные статус и тело', async () => {
+      const unknown = await quickBuy({
+        variantId: unmuteVariantId,
+        guestMinecraftNick: `Zz${unique}`.slice(0, 16),
+      });
+      const known = await quickBuy({
+        variantId: unmuteVariantId,
+        guestMinecraftNick: knownNick,
+      });
+      expect(unknown.status).toBe(400);
+      expect(known.status).toBe(unknown.status);
+      expect(known.body).toEqual(unknown.body);
     });
 
     it('ник без наказания: nick_unavailable (без раскрытия причины)', async () => {

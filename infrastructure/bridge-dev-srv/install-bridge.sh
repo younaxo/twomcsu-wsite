@@ -174,7 +174,11 @@ if [[ "$MODE" == yes ]]; then
   ptero_restart_guard install || block "проверка игроков перед restart не пройдена"
 else
   pl="$(ptero_players_online 2>/dev/null)"; say "$pl"
-  say "dry-run: число игроков не запрашивается (команда list не отправляется)"
+  say "dry-run: число игроков берётся через SLP (только чтение); команда list не отправляется"
+  if sv="$(ptero_slp 2>/dev/null)"; then
+    say "SLP: $sv"
+    ptero_slp_maintenance "${sv##* version=}" && say "WARN: version.name указывает на техработы/whitelist; бот войти не сможет без добавления в whitelist владельцем (не блокер установки)"
+  fi
 fi
 
 if [[ "$MODE" == dry ]]; then
@@ -239,12 +243,7 @@ if ptero_files_list /plugins | grep -qxF -- "- $JAR_SRV_NAME"; then say "JAR н�
 # ---- 7. restart
 step 7 "restart сервера"
 ptero_power restart || block "команда restart не принята (HTTP $PTERO_HTTP)"
-seen_down=0
-for _ in $(seq 1 12); do sleep 10; st="$(ptero_state)"; if [[ -n "$st" && "$st" != running ]]; then seen_down=1; break; fi; done
-[[ "$seen_down" == 1 ]] || say "WARN: остановка сервера не замечена за 120 с (ждём running)"
-up=0
-for _ in $(seq 1 36); do sleep 10; if [[ "$(ptero_state)" == running ]]; then up=1; break; fi; done
-if [[ "$up" == 1 ]]; then say "сервер: running"; else block "сервер не вернулся в running за 360 с (смотрите консоль в панели)"; fi
+ptero_wait_restart || block "сервер не вернулся в running за 600 с (смотрите консоль в панели)"
 
 # ---- 8. включение плагина
 step 8 "проверка включения плагина"

@@ -5,15 +5,15 @@
 
 ## Состав на сервере
 
-| Что | Где |
-|---|---|
-| Корень раздачи | `/srv/cdn-files` (владелец `twomc`, 755/644) |
-| Манифест синхронизации | `/srv/cdn-state/site.manifest` (sha256, путь) |
-| nginx | `/etc/nginx/conf.d/cdn-files.conf` (из `server/nginx.cdn.conf.template`) |
-| Сертификат | Let's Encrypt, webroot `/var/www/certbot`, продление certbot.timer, deploy-hook `reload-nginx.sh` |
-| Квоты | `/etc/cdn-files.conf`: `CDN_QUOTA_MB=2048`, `CDN_MAX_FILE_MB=8`, `CDN_MAX_FILES=5000` |
-| Бэкап | `/usr/local/sbin/cdn-files-backup.sh`, cron `/etc/cron.d/cdn-files-backup` 03:17 -> `/srv/backups/cdn-files/cdn-files-YYYYMMDD.tar.gz`, хранится 14 |
-| Проверочный файл | `/srv/cdn-files/health.txt` (`ok`) |
+| Что                    | Где                                                                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Корень раздачи         | `/srv/cdn-files` (владелец `twomc`, 755/644)                                                                                                        |
+| Манифест синхронизации | `/srv/cdn-state/site.manifest` (sha256, путь)                                                                                                       |
+| nginx                  | `/etc/nginx/conf.d/cdn-files.conf` (из `server/nginx.cdn.conf.template`)                                                                            |
+| Сертификат             | Let's Encrypt, webroot `/var/www/certbot`, продление certbot.timer, deploy-hook `reload-nginx.sh`                                                   |
+| Квоты                  | `/etc/cdn-files.conf`: `CDN_QUOTA_MB=2048`, `CDN_MAX_FILE_MB=8`, `CDN_MAX_FILES=5000`                                                               |
+| Бэкап                  | `/usr/local/sbin/cdn-files-backup.sh`, cron `/etc/cron.d/cdn-files-backup` 03:17 -> `/srv/backups/cdn-files/cdn-files-YYYYMMDD.tar.gz`, хранится 14 |
+| Проверочный файл       | `/srv/cdn-files/health.txt` (`ok`)                                                                                                                  |
 
 ## Установка и обновление конфигурации
 
@@ -38,6 +38,7 @@ SVG без script, foreignObject, обработчиков событий и в�
 выложенные прошлой синхронизацией (по манифесту), чужие каталоги (например будущая `media/`) не затрагиваются.
 
 ### Квота: почему мягкая
+
 Выбрана простая проверка размера в `cdn-apply.sh` (общий размер каталога после выкладки не больше `CDN_QUOTA_MB`, иначе отказ без изменений), а не loop-образ:
 на диске 197 ГБ, единственный писатель - скрипт синхронизации по SSH, loop-том добавляет `fstab` и риск незагрузки. Если появится загрузка пользователями
 (медиа-библиотека), перейти на отдельный ext4/xfs loop-том или project quota и вынести проверку в сервис загрузки.
@@ -63,14 +64,17 @@ curl -sI https://cdn-files.twomc.su/assets/        # 404, листинга не�
 ls -l /srv/backups/cdn-files/
 tar -xzf /srv/backups/cdn-files/cdn-files-YYYYMMDD.tar.gz -C /srv/cdn-files     # восстановление поверх
 ```
+
 После восстановления манифест `/srv/cdn-state/site.manifest` остаётся актуальным для файлов сайта; при сомнениях запустить `sync-cdn.sh` (он вернёт файлы сайта).
 
 ## Откат
+
 - Конфигурация nginx: `sudo rm /etc/nginx/conf.d/cdn-files.conf && sudo nginx -t && sudo systemctl reload nginx` (сайты стенда не затрагиваются).
 - Данные: файлы в `/srv/cdn-files` восстанавливаются из бэкапа; сертификат можно оставить (`sudo certbot delete --cert-name cdn-files.twomc.su` только по решению владельца).
 - cron: `sudo rm /etc/cron.d/cdn-files-backup`.
 
 ## Подключение Cloudflare позже (без смены URL)
+
 1. DNS `cdn-files` в Cloudflare включить в режим proxied (оранжевое облако); IP origin не меняется. SSL/TLS режим Full (strict): на origin уже валидный сертификат Let's Encrypt (продление по HTTP-01 работает, пока правило Cloudflare не блокирует `/.well-known/acme-challenge/`).
 2. Кэш: заголовки уже корректны (`immutable` для хэшированных имён, 5 минут для остальных). Правило Cache Rules: Cache everything по расширениям изображений, Respect origin TTL. `Vary: Origin` сохраняется: в правилах кэша не игнорировать Origin (для CORS), либо ограничить хостом.
 3. Реальный IP клиентов: добавить `set_real_ip_from` для диапазонов Cloudflare и `real_ip_header CF-Connecting-IP` в конфиг CDN (как для основного сайта, см. `docs/runbooks/cloudflare-real-ip.md`); `limit_req` иначе будет считать по IP Cloudflare.
@@ -78,9 +82,11 @@ tar -xzf /srv/backups/cdn-files/cdn-files-YYYYMMDD.tar.gz -C /srv/cdn-files     
 5. Игровой трафик Minecraft через Cloudflare не проксируется (решение Q14); это касается только HTTP-статики.
 
 ## Что не сделано в этой серверной части
+
 Медиа-библиотека в админке (загрузка, перекодирование, SVG-очистка), перенос ссылок на `CDN_BASE_URL` в коде сайта, File Browser за basic auth - отдельные задачи (код `apps/**` в эту область не входил).
 
 ## Известные ограничения
+
 - Расширения файлов только в нижнем регистре (`a.png`, не `A.PNG`): `sync-cdn.sh` пропускает прочие с причиной, `cdn-apply.sh` на сервере отклоняет их (код 6).
 - Ошибка `rsync` на сервере завершает применение кодом 8: устаревшие файлы не удаляются, манифест не обновляется; повторите синхронизацию.
 - Бандлы приходят в приватный `~/.twomc-inbox` (700) на VDS; редирект HTTP на HTTPS идёт на фиксированный `https://${CDN_DOMAIN}`, а не на заголовок Host.
@@ -88,3 +94,18 @@ tar -xzf /srv/backups/cdn-files/cdn-files-YYYYMMDD.tar.gz -C /srv/cdn-files     
   при включении проксирования нужно проверить Cache Rules (ключ кэша с учётом Origin или отдельный хост для CORS-ресурсов) и повторить `curl -I -H 'Origin: ...'` через оба Origin.
 - Мягкая квота проверяет размер каталога, а не использует loop/project quota (см. раздел о квоте); при появлении пользовательских загрузок это нужно заменить.
 - Остальные замечания низкой серьёзности ревью (L2-L6, L9-L11) - в бэклоге; на безопасность не влияют.
+
+## Отсутствующие ассеты
+
+На 2026-11-28 по проверке стенда этих файлов нет на CDN (владелец загрузит позже через `sync-cdn.sh`). Сайт при этом не показывает битых картинок и не ходит за ними в 404:
+
+| Путь на CDN                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Чем заменено в коде                                                                  | Флаг включения CDN-пути                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------- |
+| `assets/images/logo.png`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | локальный `/icons/icon-192.png` (`SITE_LOGO_URL`, `apps/web/src/lib/site/config.ts`) | нет: логотип всегда локальный           |
+| `minecraft/resourspack/currencies/ruby.png`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | локальный `/assets/currencies/ruby.svg`; при ошибке - встроенная SVG-заглушка        | `NEXT_PUBLIC_RUBY_ICON_ON_CDN=true`     |
+| `minecraft/resourspack/prefixes/<slug>.png` для всех slug из `ROLE_PREFIXES` (`owner`, `chief-curator`, `senior-curator`, `chief-developer`, `curator`, `head-pr-manager`, `chief-technical-administrator`, `project-team`, `head-developer`, `special-administrator`, `developer`, `chief-administrator`, `pr-manager`, `technical-administrator`, `head-cheat-hunter`, `senior-administrator`, `head-pr-assistant`, `administrator`, `junior-administrator`, `cheat-hunter`, `chief-moderator`, `senior-moderator`, `pr-assistant`, `moderator`, `junior-moderator`, `chief-helper`, `senior-helper`, `helper`, `junior-helper`) | текстовый бейдж с названием роли (запрос не отправляется)                            | `NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN=true` |
+| `minecraft/resourspack/prefixes/media/*.png`, `prefixes/donations/*.png`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | то же (текстовый бейдж)                                                              | тот же флаг                             |
+
+Скриншоты `spawn-*` и `3d-casino` из прошлой визуальной проверки в репозитории и docs не описаны (упоминаний нет); если они нужны на CDN, владелец указывает пути отдельно.
+
+После загрузки файлов: проверить `curl -I https://cdn-files.twomc.su/<путь>` (200, `image/png`), затем включить флаги в production `.env` (значения задаёт владелец) и пересобрать web: `NEXT_PUBLIC_*` инлайнятся при сборке.
