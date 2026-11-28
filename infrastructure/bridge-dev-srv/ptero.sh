@@ -19,6 +19,7 @@ export LC_ALL=C   # проверки [A-Za-z] и регэкспы не зави�
 #        session.lock в корне; plugins/*.jar, кроме TwoMCBridge*;
 #      write: /server.properties, /whitelist.json, /ops.json, /plugins/<каталог>/config.yml (только config.yml), /plugins/TwoMCBridge/bridge-key.txt;
 #        каждый вариант - и с суффиксом .bak-<UTC> (копия); для Bridge ещё .disabled-<UTC>;
+#      proxy-yaml: /spigot.yml и /config/paper-global.yml - ТОЛЬКО через ptero_yaml_get/ptero_yaml_set, ключи из allowlist (см. конец файла), значения true|false;
 #      upload: только /plugins/TwoMCBridge*.jar; rename: только TwoMCBridge*.jar -> *.jar.disabled-<UTC> и файлы Bridge -> *.disabled-<UTC>;
 #      mkdir: только /plugins + TwoMCBridge; chmod: только 600 для bridge-key.txt[.bak-<UTC>];
 #      list: /, /plugins, /plugins/<каталог>; read: критичные файлы выше (кроме bridge-key.txt), version_history.json, logs/latest.log;
@@ -156,6 +157,8 @@ _pt_path_denied() {
 _pt_critical_path() {
   local p="$1" re
   case "$p" in /server.properties|/whitelist.json|/ops.json|/plugins/TwoMCBridge/bridge-key.txt) return 0 ;; esac
+  # прокси-конфиги: только внутри ptero_yaml_get/ptero_yaml_set (в paper-global.yml лежит секрет Velocity: целиком читать и писать нельзя)
+  case "$p" in /spigot.yml|/config/paper-global.yml) [[ "${_PT_YAML_ACTIVE:-0}" == 1 ]] && return 0; return 1 ;; esac
   re="^/plugins/$_PT_PLUGDIR_RE/config\.yml\$"
   [[ "$p" =~ $re && "$p" != /plugins/*.jar/* ]] && return 0
   return 1
@@ -172,7 +175,7 @@ _pt_path_allowed() {
   esac
   case "$op" in
     list)
-      [[ "$p" == / || "$p" == /plugins ]] && return 0
+      [[ "$p" == / || "$p" == /plugins || "$p" == /config ]] && return 0
       re="^/plugins/$_PT_PLUGDIR_RE\$"; [[ "$p" =~ $re && "$p" != *.jar ]] && return 0 ;;
     read)
       case "$p" in /version_history.json|/logs/latest.log|/plugins/TwoMCBridge/config.yml) return 0 ;; esac
@@ -210,6 +213,9 @@ _pt_req() {
 
 # Извлечение строкового поля из JSON без python: ptero_json_str <файл> <имя поля> (первое вхождение).
 ptero_json_str() { sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" | head -n1; }
+
+# _pt_json_unescape <строка>: убирает JSON-экранирование «\/» -> «/» и «&» -> «&» (sed, без подстановок bash: не зависит от patsub_replacement).
+_pt_json_unescape() { printf '%s' "$1" | sed -e 's#\\/#/#g' -e 's#\\u0026#\&#g'; }
 
 _pt_urlenc_path() { local s="$1"; s="${s//\//%2F}"; printf '%s' "$s"; }
 _pt_check_path() { [[ "$1" =~ ^/[A-Za-z0-9._/-]*$ && "$1" != *..* ]] || { ptero_die "недопустимый путь на сервере: $1"; return 1; }; }
@@ -501,7 +507,7 @@ ptero_upload() {
   [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "upload: получение URL, HTTP $PTERO_HTTP" >&2; return 1; }
   _pt_jb "/plugins/$name" "upload" "$was" "sha256:$sha" || { _pt_wipe; ptero_die "журнал: запись «начато» не сделана, загрузка отменена"; return 1; }
   local url; url="$(ptero_json_str "$PTERO_BODY" url)"; _pt_wipe
-  url="${url//\\//\/}"; url="${url//\u0026/&}"
+  url="$(_pt_json_unescape "$url")"   # не ${var//..//..}: в bash 5.2 (patsub_replacement) амперсанд и обратная косая в замене трактуются иначе
   [[ "$url" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?/upload/file\?[A-Za-z0-9._=\&%~+-]+$ ]] || { url=""; ptero_die "signed URL неожиданного формата"; return 1; }
   # Каталог и имя - наши проверенные константы; недоверенных значений в форме нет. Имя файла задаётся --form-string-стилем: filename= в -F.
   local code
@@ -702,7 +708,7 @@ _pt_ws() {
   [[ "$PTERO_HTTP" == "200" ]] || { _pt_wipe; echo "websocket: HTTP $PTERO_HTTP" >&2; return 1; }
   local tok sock
   tok="$(ptero_json_str "$PTERO_BODY" token)"; sock="$(ptero_json_str "$PTERO_BODY" socket)"
-  sock="${sock//\\\//\/}"   # JSON экранирует «/» как «\/»
+  sock="$(_pt_json_unescape "$sock")"   # JSON экранирует «/» как «\/»
   : > "$PTERO_BODY"
   [[ "$tok" =~ ^[A-Za-z0-9._-]+$ && "$sock" =~ ^wss?://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._/-]+$ ]] || { ptero_die "ответ websocket неожиданного формата"; return 1; }
   if (( jr == 1 )); then _pt_jb "console: $send" "command (websocket)" "-" "-" || { ptero_die "журнал: запись «начато» не сделана, команда не отправлена"; return 1; }; fi
@@ -939,4 +945,129 @@ ptero_allocation() {
   host="${alias:-$ip}"
   [[ "$host" =~ ^[A-Za-z0-9.-]+$ && "$port" =~ ^[0-9]{2,5}$ ]] || { ptero_die "адрес аллокации неожиданного формата"; return 1; }
   printf '%s %s\n' "$host" "$port"
+}
+
+# ---- ожидание running после restart ----
+# ptero_wait_restart: фаза 1 - ждать, пока сервер уйдёт из running (до 60 с, предупреждение, если не замечено); фаза 2 - ждать running до 600 с.
+# Опрос GET /resources каждые 5 с (первая проверка сразу, без паузы), прогресс: при смене состояния и не реже раза в 30 с.
+# Причина прежних сбоев (install-bridge.sh/rollback-bridge.sh): цикл «sleep 10 + 36 попыток» считал попытки, а не время, не печатал состояние,
+# ошибки опроса были неотличимы от «ещё не running»; при зависании запроса (60 с) счётчик не отражал реальное время. Теперь отсчёт по часам (SECONDS).
+# Для тестов (только _PT_TEST=1): PTERO_WAIT_TIMEOUT, PTERO_WAIT_INTERVAL, PTERO_WAIT_DOWN. Код 0 - running, 1 - таймаут, 2 - неверные параметры.
+ptero_wait_restart() {
+  local to=600 iv=5 dto=60 st last="" t0 el lastp=-100 saw=0
+  if [[ "$_PT_TEST" == 1 ]]; then to="${PTERO_WAIT_TIMEOUT:-600}"; iv="${PTERO_WAIT_INTERVAL:-5}"; dto="${PTERO_WAIT_DOWN:-60}"; fi
+  [[ "$to" =~ ^[0-9]{1,4}$ && "$iv" =~ ^[0-9]{1,3}$ && "$dto" =~ ^[0-9]{1,4}$ ]] || { ptero_die "wait_restart: неверные параметры"; return 2; }
+  echo "ожидание перезапуска: сначала остановка (до $dto с), затем running (до $to с), опрос каждые $iv с"
+  t0=$SECONDS
+  while (( SECONDS - t0 < dto )); do
+    st="$(ptero_state 2>/dev/null)" || st="?"; el=$(( SECONDS - t0 ))
+    if [[ "$st" != "$last" ]]; then echo "  [$el с] состояние: ${st:-?}"; last="$st"; fi
+    if [[ -n "$st" && "$st" != "?" && "$st" != running ]]; then saw=1; break; fi
+    sleep "$iv"
+  done
+  (( saw == 1 )) || echo "WARN: остановка сервера не замечена за $dto с (ждём running)"
+  t0=$SECONDS; lastp=-100
+  while (( SECONDS - t0 < to )); do
+    st="$(ptero_state 2>/dev/null)" || st="?"; el=$(( SECONDS - t0 ))
+    if [[ "$st" == running ]]; then echo "сервер: running (через $el с после остановки)"; return 0; fi
+    if [[ "$st" != "$last" || $(( el - lastp )) -ge 30 ]]; then echo "  [$el с из $to] состояние: ${st:-?}"; last="$st"; lastp=$el; fi
+    sleep "$iv"
+  done
+  echo "сервер не вернулся в running за $to с (последнее состояние: ${last:-?}); смотрите консоль в панели" >&2
+  return 1
+}
+
+# ---- точечная правка YAML-ключей прокси-форвардинга (spigot.yml, config/paper-global.yml) ----
+# Файлы целиком читать и писать нельзя: в paper-global.yml есть секрет Velocity. Доступ к этим путям открывается ТОЛЬКО внутри
+# ptero_yaml_get/ptero_yaml_set (флаг _PT_YAML_ACTIVE), только для ключей из allowlist и значений true|false. Печатается только значение ключа.
+#   /spigot.yml:               settings.bungeecord
+#   /config/paper-global.yml:  proxies.bungee-cord.online-mode, proxies.velocity.enabled, proxies.velocity.online-mode
+# Правка - строка с ключом заменяется на месте (отступ и комментарий сохраняются), остальной файл не меняется. Перед записью ptero_file_write делает
+# копию <файл>.bak-<UTC> рядом; журнал: файл | ключ | было | стало.
+_PT_YAML_ACTIVE=0
+_pt_yaml_key_ok() {
+  case "$1:$2" in
+    /spigot.yml:settings.bungeecord) return 0 ;;
+    /config/paper-global.yml:proxies.bungee-cord.online-mode|/config/paper-global.yml:proxies.velocity.enabled|/config/paper-global.yml:proxies.velocity.online-mode) return 0 ;;
+  esac
+  ptero_die "yaml: пара файл/ключ не в allowlist: $1 $2"; return 1
+}
+
+# _pt_yaml_awk <get|set> <ключ a.b.c> <значение>: stdin -> stdout. get: печатает значение; set: весь файл с заменой значения. Код 3 - ключ найден не ровно один раз.
+_pt_yaml_awk() {
+  awk -v mode="$1" -v want="$2" -v nv="${3:-}" -v q="'" '
+    BEGIN { n = 0; found = 0 }
+    {
+      line = $0; cr = ""
+      if (line ~ /\r$/) { cr = "\r"; sub(/\r$/, "", line) }
+      if (line ~ /^[ ]*(#|$)/ || line !~ /^[ ]*[A-Za-z0-9_.-]+:([ ]|$)/) { if (mode == "set") print $0; next }
+      match(line, /^[ ]*/); ind = RLENGTH
+      rest = substr(line, ind + 1); k = rest; sub(/:.*/, "", k)
+      while (n > 0 && lvi[n] >= ind) n--
+      n++; lvi[n] = ind; lvk[n] = k
+      path = lvk[1]; for (i = 2; i <= n; i++) path = path "." lvk[i]
+      if (path == want) {
+        val = substr(rest, length(k) + 2); cmt = ""
+        if (match(val, /[ \t]+#/)) { cmt = substr(val, RSTART); val = substr(val, 1, RSTART - 1) }
+        gsub(/^[ \t]+|[ \t]+$/, "", val); gsub(/^"|"$/, "", val); sub("^" q, "", val); sub(q "$", "", val)
+        found++
+        if (mode == "get") { print val } else { print substr(line, 1, ind) k ": " nv cmt cr }
+        next
+      }
+      if (mode == "set") print $0
+    }
+    END { if (found != 1) exit 3 }'
+}
+
+# _pt_yaml_load <путь> <ключ>: значение ключа в YAML_VAL. Коды: 0; 3 ключа нет; 4 файла нет (404); 1 ошибка. Локальная копия затирается.
+_pt_yaml_load() {
+  local tmp rc
+  YAML_VAL=""; _pt_mktemp || return 1; tmp="$_PT_LAST"; _PT_YAML_TMP="$tmp"
+  ptero_file_fetch "$1" "$tmp" 2>/dev/null; rc=$?
+  if (( rc != 0 )); then : > "$tmp"; [[ "$PTERO_HTTP" == "404" ]] && return 4; return 1; fi
+  YAML_VAL="$(_pt_yaml_awk get "$2" < "$tmp")"; rc=$?
+  : > "$tmp"
+  (( rc == 0 )) || { YAML_VAL=""; return 3; }
+  return 0
+}
+
+# ptero_yaml_get <путь> <ключ>: печатает true|false|<значение>. Коды: 0; 2 вне allowlist; 3 ключа нет; 4 файла нет; 1 ошибка.
+ptero_yaml_get() {
+  local rc
+  _pt_yaml_key_ok "$1" "$2" || return 2
+  _PT_YAML_ACTIVE=1; _pt_yaml_load "$1" "$2"; rc=$?; _PT_YAML_ACTIVE=0
+  (( rc == 0 )) && printf '%s\n' "$YAML_VAL"
+  return $rc
+}
+
+# ptero_yaml_set <путь> <ключ> <true|false>: точечная замена. Значение уже такое - ничего не пишется (код 0). Коды как у get, плюс 1 при неудачной записи/сверке.
+ptero_yaml_set() {
+  local p="$1" k="$2" v="$3" old rc tmp
+  _pt_yaml_key_ok "$p" "$k" || return 2
+  [[ "$v" == true || "$v" == false ]] || { ptero_die "yaml: значение только true или false"; return 2; }
+  _pt_write_ready "yaml_set $p" || return 1
+  _PT_YAML_ACTIVE=1
+  _pt_yaml_set_impl "$p" "$k" "$v"; rc=$?
+  _PT_YAML_ACTIVE=0
+  return $rc
+}
+_pt_yaml_set_impl() {
+  local p="$1" k="$2" v="$3" old rc tmp tmp2
+  _pt_yaml_load "$p" "$k"; rc=$?; (( rc == 0 )) || return $rc
+  old="$YAML_VAL"
+  if [[ "$old" == "$v" ]]; then echo "yaml: $p $k уже $v (не менялось)"; return 0; fi
+  [[ "$old" == true || "$old" == false ]] || { ptero_die "yaml: текущее значение $k не булево (не меняю)"; return 1; }
+  _pt_mktemp || return 1; tmp="$_PT_LAST"
+  ptero_file_fetch "$p" "$tmp" 2>/dev/null || { : > "$tmp"; return 1; }
+  _pt_mktemp || return 1; tmp2="$_PT_LAST"
+  _pt_yaml_awk set "$k" "$v" < "$tmp" > "$tmp2"; rc=$?
+  : > "$tmp"
+  (( rc == 0 )) || { : > "$tmp2"; return 3; }
+  ptero_file_write "$p" "$tmp2"; rc=$?
+  : > "$tmp2"
+  (( rc == 0 )) || return 1
+  ptero_journal "$p" "$k" "$old" "$v" || true
+  _pt_yaml_load "$p" "$k"; rc=$?
+  if (( rc == 0 )) && [[ "$YAML_VAL" == "$v" ]]; then echo "yaml: $p $k: $old -> $v"; return 0; fi
+  ptero_die "yaml: после записи $k не подтверждён"; return 1
 }

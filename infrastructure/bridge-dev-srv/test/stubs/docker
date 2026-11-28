@@ -7,6 +7,7 @@ case "${1:-}" in
     [[ -f "$FAKE/psql.out" ]] && { cat "$FAKE/psql.out"; exit 0; }
     exit 1 ;;
   run)
+    echo "docker run $*" >> "$FAKE/docker-run.log"
     if [[ "$*" == *PT_HOST* ]]; then
       echo "players=$(cat "$FAKE/players") max=20 version=$(cat "$FAKE/version")"
     else

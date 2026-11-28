@@ -28,6 +28,10 @@ function mk(opts = {}) {
   w(join(fs, "server.properties"), "white-list=true\nenforce-whitelist=false\nonline-mode=false\n");
   w(join(fs, "whitelist.json"), '[\n  {"uuid": "u-Alice", "name": "Alice"}\n]\n');
   w(join(fs, "plugins/Maintenance/config.yml"), `maintenance-enabled: ${opts.maintenance ?? "true"}\nkick: true\n`);
+  if (opts.proxy !== false) {
+    w(join(fs, "spigot.yml"), "# main configuration file for Spigot\nconfig-version: 12\nsettings:\n  debug: false\n  bungeecord: true   # forward\n  save-user-cache-on-stop-only: false\nmessages:\n  whitelist: You are not whitelisted\nworld-settings:\n  default:\n    bungeecord: true\n");
+    w(join(fs, "config/paper-global.yml"), "_version: 29\nproxies:\n  bungee-cord:\n    online-mode: true\n  proxy-protocol: false\n  velocity:\n    enabled: true\n    online-mode: true\n    secret: 'S3CR3T-VELOCITY-VALUE'\n");
+  }
   w(join(fs, "plugins/Maintenance-4.1.jar"), "jar");
   w(join(fs, "plugins/Other.jar"), "jar");
   w(join(fs, "plugins/OtherPlugin/config.yml"), "token: secretvalue\n");
@@ -52,7 +56,7 @@ function env(d) {
   return {
     ...process.env, STAND_TEST: "1", PTERO_TEST_ROOT: p, FAKE: p, FAKE_UUID: UUID, TMPDIR: p + "/tmp", PTERO_CRED_FILE: p + "/ptero.cred",
     PTERO_CHANGES_LOG: p + "/changes.log", STAND_ROOT: p + "/stand", STAND_CRED_FILE: p + "/stand.cred", DEVSRV_STATE_FILE: p + "/access.state",
-    DEVSRV_POLL_SLEEP: "0", PTERO_GUARD_WAIT1: "0", PTERO_GUARD_WAIT2: "0", PTERO_ALLOW_PULL: "1",
+    DEVSRV_POLL_SLEEP: "0", PTERO_WAIT_INTERVAL: "0", PTERO_WAIT_TIMEOUT: "20", PTERO_WAIT_DOWN: "5", PTERO_GUARD_WAIT1: "0", PTERO_GUARD_WAIT2: "0", PTERO_ALLOW_PULL: "1",
   };
 }
 // umask 077: на Git Bash (noacl) режим файлов вычисляется из umask, иначе проверка «права ровно 600» не пройдёт
@@ -476,4 +480,178 @@ test("--restore: недопустимые MT_DIR/MT_KEY/MT_CMD_* из state - о
     assert.match(r.out, /недопустимые MT_DIR\/MT_KEY\/MT_CMD/);
     assert.equal(rd(d, "commands.log"), before, "команды не отправлялись: " + bad);
   }
+});
+
+// ------------------------------------------------------------------ п.1: signed URL без patsub_replacement
+test("upload: JSON-экранирование signed URL (\\/ и \\u0026) декодируется sed, в том числе при включённом patsub_replacement", () => {
+  const d = mk();
+  for (const patsub of ["shopt -s patsub_replacement 2>/dev/null", "shopt -u patsub_replacement 2>/dev/null"]) {
+    const r = lib(d, patsub + String.raw`; _pt_json_unescape 'https:\/\/h.test:8080\/upload\/file?token=a.b-1&x=2'; echo`);
+    assert.equal(r.out.trim(), "https://h.test:8080/upload/file?token=a.b-1&x=2", r.err);
+  }
+  const u = lib(d, `PTERO_ALLOW_WRITE=1; echo jar > "$TMPDIR/l"; ptero_upload "$TMPDIR/l" /plugins TwoMCBridge-0.1.0.jar; echo rc=$?`);
+  assert.match(u.out, /rc=0/, u.out + u.err);
+  const logged = rd(d, "upload-url.log");
+  assert.ok(logged.includes("https://node.test:8080/upload/file?token=abc.def-1&foo=bar&directory=%2Fplugins"), logged);
+  assert.ok(!logged.includes("\\"), "обратных косых в адресе нет");
+  assert.ok(!u.out.includes("node.test") && !u.err.includes("node.test"), "signed URL не печатается");
+});
+
+// ------------------------------------------------------------------ п.2: ожидание running
+test("wait_restart: starting -> running с прогрессом; значения по умолчанию 600 с и 5 с", () => {
+  const d = mk();
+  w(join(d, "restart.seq"), "stopping\nstarting\nstarting\nrunning\n");
+  const r = lib(d, `PTERO_ALLOW_WRITE=1; _PT_GUARD_OK=1; ptero_power restart; ptero_wait_restart; echo rc=$?`);
+  assert.match(r.out, /rc=0/, r.out + r.err);
+  assert.match(r.out, /состояние: stopping/); assert.match(r.out, /состояние: starting/); assert.match(r.out, /сервер: running/);
+  assert.match(r.out, /до 20 с[)], опрос каждые 0 с/);
+  const dd = mk();
+  const r2 = lib(dd, "ptero_wait_restart; echo rc=$?", { PTERO_WAIT_INTERVAL: "", PTERO_WAIT_TIMEOUT: "", PTERO_WAIT_DOWN: "0" });
+  assert.match(r2.out, /до 600 с[)], опрос каждые 5 с/); assert.match(r2.out, /rc=0/);
+});
+
+test("wait_restart: сервер застрял в starting - таймаут, код 1, последнее состояние в сообщении; неверные параметры - код 2", () => {
+  const d = mk();
+  w(join(d, "state.seq"), "stopping\nstarting\n");
+  const r = lib(d, "ptero_wait_restart; echo rc=$?", { PTERO_WAIT_INTERVAL: "1", PTERO_WAIT_TIMEOUT: "2", PTERO_WAIT_DOWN: "3" });
+  assert.match(r.out, /rc=1/, r.out + r.err);
+  assert.match(r.err, /не вернулся в running за 2 с \(последнее состояние: starting\)/);
+  const bad = lib(d, "ptero_wait_restart; echo rc=$?", { PTERO_WAIT_TIMEOUT: "abc" });
+  assert.match(bad.out, /rc=2/);
+  assert.ok(rd(d, "states.log").split("\n").filter(Boolean).every((x) => x !== "running"), "running не возвращался");
+});
+
+// ------------------------------------------------------------------ п.4: точечная правка YAML-ключей
+const lines = (d, p) => rd(d, p).split("\n");
+test("yaml: get по allowlist; файлы целиком и ключи вне allowlist отказывают; секрет не выводится", () => {
+  const d = mk();
+  const g = lib(d, `ptero_yaml_get /spigot.yml settings.bungeecord; echo rc=$?; ptero_yaml_get /config/paper-global.yml proxies.velocity.enabled; echo rc=$?; ptero_yaml_get /config/paper-global.yml proxies.velocity.secret; echo rc=$?; ptero_yaml_get /spigot.yml messages.whitelist; echo rc=$?; ptero_yaml_get /spigot.yml world-settings.default.bungeecord; echo rc=$?; ptero_file_read /config/paper-global.yml; echo rc=$?; ptero_file_read /spigot.yml; echo rc=$?; PTERO_ALLOW_WRITE=1; echo x > "$TMPDIR/l"; ptero_file_write /config/paper-global.yml "$TMPDIR/l"; echo rc=$?; ptero_file_write /spigot.yml "$TMPDIR/l"; echo rc=$?; ptero_yaml_set /spigot.yml settings.bungeecord yes; echo rc=$?; ptero_yaml_set /spigot.yml messages.whitelist false; echo rc=$?`);
+  assert.equal([...g.out.matchAll(/^true$/gm)].length, 2, g.out);
+  assert.equal([...g.out.matchAll(/rc=(\d+)/g)].map((m) => m[1]).join(","), "0,0,2,2,2,2,2,2,2,2,2", g.out);
+  assert.ok(!g.out.includes("S3CR3T") && !g.err.includes("S3CR3T"), "секрет Velocity не выведен");
+  assert.equal(rd(d, "writes.log"), "", "ни одной записи");
+});
+
+test("yaml: set меняет только строку ключа (отступ и комментарий сохранены); вложенный одноимённый ключ и секрет не тронуты; бэкап и журнал", () => {
+  const d = mk();
+  const before = lines(d, "fs/spigot.yml");
+  const r = lib(d, `PTERO_ALLOW_WRITE=1; ptero_yaml_set /spigot.yml settings.bungeecord false; echo rc=$?`);
+  assert.match(r.out, /rc=0/, r.out + r.err);
+  const after = lines(d, "fs/spigot.yml");
+  assert.equal(after.length, before.length);
+  const diff = after.map((l, i) => [before[i], l]).filter(([a, b]) => a !== b);
+  assert.deepEqual(diff, [["  bungeecord: true   # forward", "  bungeecord: false   # forward"]]);
+  assert.ok(after.includes("    bungeecord: true"), "world-settings.default.bungeecord не тронут");
+  const baks = readdirSync(join(d, "fs")).filter((n) => /^spigot\.yml\.bak-\d{8}T\d{6}Z/.test(n));
+  assert.equal(baks.length, 1, "бэкап рядом с датой");
+  assert.equal(rd(d, "fs/" + baks[0]).split("\n").join("\n"), before.join("\n"), "бэкап = прежнее содержимое");
+  assert.ok(journal(d).some((l) => /\| \/spigot\.yml \| settings\.bungeecord \| true \| false$/.test(l)), journal(d).join("\n"));
+  // повтор: значение уже false - записи нет
+  const n = rd(d, "writes.log").split("\n").filter(Boolean).length;
+  const r2 = lib(d, `PTERO_ALLOW_WRITE=1; ptero_yaml_set /spigot.yml settings.bungeecord false; echo rc=$?`);
+  assert.match(r2.out, /rc=0/); assert.match(r2.out, /уже false/);
+  assert.equal(rd(d, "writes.log").split("\n").filter(Boolean).length, n);
+  // paper-global: секрет и соседние ключи
+  const p0 = lines(d, "fs/config/paper-global.yml");
+  const r3 = lib(d, `PTERO_ALLOW_WRITE=1; ptero_yaml_set /config/paper-global.yml proxies.velocity.enabled false; echo rc=$?`);
+  assert.match(r3.out, /rc=0/, r3.out + r3.err);
+  const p1 = lines(d, "fs/config/paper-global.yml");
+  assert.deepEqual(p1.map((l, i) => [p0[i], l]).filter(([a, b]) => a !== b), [["    enabled: true", "    enabled: false"]]);
+  assert.ok(p1.includes("    secret: 'S3CR3T-VELOCITY-VALUE'"));
+  assert.ok(!journal(d).join("\n").includes("S3CR3T"), "секрет не попал в журнал");
+  assert.ok(!r3.out.includes("S3CR3T") && !r3.err.includes("S3CR3T"));
+});
+
+test("yaml: нет ключа (код 3), нет файла (код 4) - без записи; без PTERO_ALLOW_WRITE запись отказывает", () => {
+  const d = mk();
+  w(join(d, "fs/spigot.yml"), "settings:\n  debug: false\n");
+  const r = lib(d, `PTERO_ALLOW_WRITE=1; ptero_yaml_set /spigot.yml settings.bungeecord false; echo rc=$?; ptero_yaml_get /spigot.yml settings.bungeecord; echo rc=$?`);
+  assert.deepEqual([...r.out.matchAll(/rc=(\d+)/g)].map((m) => m[1]), ["3", "3"], r.out + r.err);
+  assert.equal(rd(d, "writes.log"), "");
+  const d2 = mk({ proxy: false });
+  const r2 = lib(d2, `PTERO_ALLOW_WRITE=1; ptero_yaml_get /config/paper-global.yml proxies.velocity.enabled; echo rc=$?; ptero_yaml_set /config/paper-global.yml proxies.velocity.enabled false; echo rc=$?`);
+  assert.deepEqual([...r2.out.matchAll(/rc=(\d+)/g)].map((m) => m[1]), ["4", "4"], r2.out + r2.err);
+  const d3 = mk();
+  const r3 = lib(d3, `PTERO_ALLOW_WRITE=0; ptero_yaml_set /spigot.yml settings.bungeecord false; echo rc=$?`);
+  assert.match(r3.out, /rc=1/); assert.equal(rd(d3, "writes.log"), "");
+});
+
+// ------------------------------------------------------------------ п.4: --open --direct-join / --restore
+test("--open --direct-join: форвардинг выключен точечно, прежние значения в state, restart через guard; --restore возвращает значения и перезапускает", () => {
+  const d = mk({ players: 2 });
+  w(join(d, "restart.seq"), "stopping\nstarting\nrunning\n");
+  const o = access(d, "--open Bot1 --no-owner --direct-join");
+  assert.equal(o.code, 0, o.out + o.err);
+  assert.match(o.out, /spigot\.yml settings\.bungeecord: true -> false/); assert.match(o.out, /proxies\.velocity\.enabled: true -> false/);
+  assert.match(o.out, /сервер: running/);
+  assert.ok(lines(d, "fs/spigot.yml").includes("  bungeecord: false   # forward"));
+  assert.ok(lines(d, "fs/config/paper-global.yml").includes("    enabled: false"));
+  assert.equal(lines(d, "fs/config/paper-global.yml").filter((l) => l === "    online-mode: true").length, 2, "online-mode ключи не менялись");
+  const st = rd(d, "access.state");
+  for (const kv of ["FWD_DIRECT=1", "FWD_SB=true", "FWD_PB=true", "FWD_VE=true", "FWD_VO=true"]) assert.ok(st.includes(kv + "\n"), kv + "\n" + st);
+  assert.match(rd(d, "commands.log"), /say TwoMC: server restart in 60 seconds/);
+  assert.equal(rd(d, "power.log").split("\n").filter((x) => x.includes("restart")).length, 1);
+  const j = journal(d).join("\n");
+  assert.match(j, /\/spigot\.yml \| settings\.bungeecord \| true \| false/); assert.match(j, /\/config\/paper-global\.yml \| proxies\.velocity\.enabled \| true \| false/);
+  assert.ok(readdirSync(join(d, "fs")).some((n) => n.startsWith("spigot.yml.bak-")), "бэкап spigot.yml");
+  assert.ok(readdirSync(join(d, "fs/config")).some((n) => n.startsWith("paper-global.yml.bak-")), "бэкап paper-global.yml");
+  assert.ok(!(o.out + o.err + j).includes("S3CR3T"));
+  assert.ok(wl(d).includes("Bot1"));
+  // повторный --open не затирает прежние значения в state и не перезапускает сервер
+  const o2 = access(d, "--open Bot2 --no-owner --direct-join");
+  assert.equal(o2.code, 0, o2.out + o2.err);
+  const st2 = rd(d, "access.state");
+  assert.ok(st2.includes("FWD_SB=true\n") && st2.includes("FWD_VE=true\n"), st2);
+  assert.equal(rd(d, "power.log").split("\n").filter((x) => x.includes("restart")).length, 1);
+  const r = access(d, "--restore");
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.ok(lines(d, "fs/spigot.yml").includes("  bungeecord: true   # forward"));
+  assert.ok(lines(d, "fs/config/paper-global.yml").includes("    enabled: true"));
+  assert.match(r.out, /прокси-форвардинг settings\.bungeecord \| true \| true \| OK/);
+  assert.equal(rd(d, "power.log").split("\n").filter((x) => x.includes("restart")).length, 2);
+  assert.ok(!wl(d).includes("Bot1") && !wl(d).includes("Bot2"));
+  assert.ok(lines(d, "fs/config/paper-global.yml").includes("    secret: 'S3CR3T-VELOCITY-VALUE'"));
+});
+
+test("--open без --direct-join форвардинг и питание не трогает; --direct-join вне --open - код 2; нет файлов - пропуск без restart", () => {
+  const d = mk();
+  const o = access(d, "--open Bot1 --no-owner"); assert.equal(o.code, 0, o.out + o.err);
+  assert.equal(rd(d, "power.log"), ""); assert.ok(lines(d, "fs/spigot.yml").includes("  bungeecord: true   # forward"));
+  assert.ok(!rd(d, "access.state").includes("FWD_"));
+  assert.equal(access(d, "--restore --direct-join").code, 2);
+  assert.equal(access(d, "--status --direct-join").code, 2);
+  const d2 = mk({ proxy: false });
+  const o2 = access(d2, "--open Bot1 --no-owner --direct-join"); assert.equal(o2.code, 0, o2.out + o2.err);
+  assert.match(o2.out, /файла или ключа нет \(пропущено\)/); assert.equal(rd(d2, "power.log"), "");
+  assert.ok(rd(d2, "access.state").includes("FWD_SB=-\n"));
+  assert.equal(access(d2, "--restore").code, 0);
+  assert.equal(rd(d2, "power.log"), "");
+});
+
+test("--open --direct-join: online-mode=true - предупреждение (код 3); status показывает форвардинг и direct-join", () => {
+  const d = mk();
+  w(join(d, "fs/server.properties"), "white-list=true\nenforce-whitelist=false\nonline-mode=true\n");
+  w(join(d, "restart.seq"), "stopping\nrunning\n");
+  const o = access(d, "--open Bot1 --no-owner --direct-join");
+  assert.equal(o.code, 3, o.out + o.err); assert.match(o.out, /online-mode=true/);
+  const s = access(d, "--status");
+  assert.match(s.out, /прокси-форвардинг: spigot settings\.bungeecord=false/); assert.match(s.out, /direct-join/);
+});
+
+// ------------------------------------------------------------------ п.3: bot-join (tmpfs 1g и проверка памяти)
+function botJoin(d, memKb) {
+  w(join(d, "meminfo"), `MemTotal: 8000000 kB\nMemAvailable: ${memKb} kB\n`);
+  const r = spawnSync("bash", ["-c", `umask 077; export PATH="${posix(d)}/bin:$PATH"; bash "${posix(SRC)}/bot-join.sh" Bot1 10`], { env: { ...env(d), BOT_MEMINFO_FILE: posix(d) + "/meminfo", BOT_PASS_FILE: posix(d) + "/bot.pass" }, encoding: "utf8", timeout: 60000 });
+  return { code: r.status, out: r.stdout, err: r.stderr };
+}
+test("bot-join: tmpfs 1g и лимит памяти 1280m; мало памяти хоста - отказ до запуска контейнера", () => {
+  const low = mk(); const a = botJoin(low, 500000);
+  assert.equal(a.code, 1, a.out + a.err); assert.match(a.out + a.err, /мало свободной памяти хоста: 488 МБ/, a.out + a.err);
+  assert.equal(rd(low, "docker-run.log"), "");
+  const ok = mk(); const b = botJoin(ok, 4000000);
+  assert.match(b.out, /память хоста: доступно 3906 МБ/);
+  const run = rd(ok, "docker-run.log");
+  assert.ok(run.includes("--tmpfs /tmp:rw,exec,size=1g"), run); assert.ok(run.includes("--memory 1280m"), run);
+  assert.ok(!run.includes("size=300m"));
+  assert.ok(run.includes("--prefer-offline"), "npm с --prefer-offline");
 });
