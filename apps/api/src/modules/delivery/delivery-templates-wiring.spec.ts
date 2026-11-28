@@ -1,5 +1,6 @@
 import { DeliveryService } from './delivery.service';
 import { CommandExecutor } from './executors/command.executor';
+import { MockCommandTransport } from './executors/mock-command-transport';
 import { ManualExecutor } from './executors/manual.executor';
 import { SiteExecutor } from './executors/site.executor';
 
@@ -55,7 +56,7 @@ function setup(opts: {
     { logInTx: jest.fn() } as never,
     new ManualExecutor(),
     new SiteExecutor(prisma as never),
-    new CommandExecutor(),
+    new CommandExecutor(new MockCommandTransport()),
   );
   return { service, tx };
 }

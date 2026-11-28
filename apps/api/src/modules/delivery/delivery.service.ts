@@ -182,7 +182,10 @@ export class DeliveryService {
     const bridgeSlug = rawSlug && isValidSlug(rawSlug) ? rawSlug : null;
     const value: DeliverySettings = {
       enabled: get(DELIVERY_ENABLED_SETTING) === 'true',
-      commandEnabled: get(DELIVERY_COMMAND_ENABLED_SETTING) === 'true',
+      // R143: настройки мало, нужен ещё транспорт с дедупликацией/подтверждением.
+      commandEnabled:
+        get(DELIVERY_COMMAND_ENABLED_SETTING) === 'true' &&
+        this.executors.get(EXECUTOR_COMMAND)?.operational?.() === true,
       bridgeServerSlug: bridgeSlug,
       // Нужны и включение, и корректный slug: иначе fail closed на `command`.
       bridgeEnabled:
@@ -865,7 +868,12 @@ export class DeliveryService {
           };
           break;
         case 'awaiting_manual':
-          data = { status: DeliveryTaskStatus.AWAITING_MANUAL };
+          data = {
+            status: DeliveryTaskStatus.AWAITING_MANUAL,
+            ...(result.reason
+              ? { lastError: sanitizeDeliveryError(result.reason) }
+              : {}),
+          };
           break;
       }
       const moved = await tx.deliveryTask.updateMany({
@@ -1052,7 +1060,12 @@ export class DeliveryService {
           task.executor === EXECUTOR_BRIDGE &&
           task.bridgeJob != null &&
           BRIDGE_UNSETTLED.includes(task.bridgeJob.status);
-        if (bridgeUnsettled) {
+        // R143: у команды исход неизвестен в NEEDS_ATTENTION (unknown, истёкшая
+        // аренда): те же правила, что для Bridge.
+        const commandUnsettled =
+          task.executor === EXECUTOR_COMMAND &&
+          task.status === DeliveryTaskStatus.NEEDS_ATTENTION;
+        if (bridgeUnsettled || commandUnsettled) {
           if (input.serverChecked !== true) {
             throw new BadRequestException({
               code: 'delivery_retry_server_check_required',
@@ -1103,6 +1116,14 @@ export class DeliveryService {
                   bridgeIdempotencyKey: `${task.orderItemId}:${task.step}`,
                   serverChecked: input.serverChecked === true,
                   unsettledRetry: bridgeUnsettled,
+                }
+              : {}),
+            ...(commandUnsettled
+              ? {
+                  // Ключ при повторе тот же: транспорт обязан дедуплицировать.
+                  commandIdempotencyKey: `${task.orderItemId}:${task.step}`,
+                  serverChecked: input.serverChecked === true,
+                  unsettledRetry: true,
                 }
               : {}),
             ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),

@@ -10,6 +10,7 @@ import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { DeliveryService } from '../src/modules/delivery/delivery.service';
+import { CommandExecutor } from '../src/modules/delivery/executors/command.executor';
 import { OrdersService } from '../src/modules/store/orders.service';
 
 jest.setTimeout(30_000);
@@ -1306,6 +1307,101 @@ describe('Выдача купленного (0.7, e2e)', () => {
       } finally {
         await setFlag('false');
       }
+    });
+  });
+
+  describe('выдача командой без транспорта (R143)', () => {
+    const CMD_KEY = 'store.delivery.executor.command.enabled';
+
+    afterAll(async () => {
+      await prisma.siteSetting.deleteMany({ where: { key: CMD_KEY } });
+      delivery.resetSettingsCache();
+    });
+
+    it('настройка true не включает executor.command: нет транспорта с dedupAck', async () => {
+      await prisma.siteSetting.upsert({
+        where: { key: CMD_KEY },
+        create: { key: CMD_KEY, value: 'true' },
+        update: { value: 'true' },
+      });
+      delivery.resetSettingsCache();
+      expect(app.get(CommandExecutor).operational()).toBe(false);
+      await expect(delivery.settings()).resolves.toMatchObject({
+        commandEnabled: false,
+      });
+    });
+
+    it('исполнитель без транспорта: ручная выдача, не retry', async () => {
+      await expect(
+        app.get(CommandExecutor).execute({
+          taskId: 't',
+          orderItemId: 'i',
+          orderId: 'o',
+          step: 1,
+          executor: 'command',
+          attempt: 1,
+          idempotencyKey: 'i:1',
+          nick: 'Steve',
+          recipientUserId: null,
+          quantity: 1,
+          decorationId: null,
+          renderedCommand: 'say hi',
+        }),
+      ).resolves.toMatchObject({ kind: 'awaiting_manual' });
+    });
+
+    it('повтор команды из NEEDS_ATTENTION: без serverChecked — 400, с serverChecked и причиной — 200 и аудит', async () => {
+      const no = await makeOrder(alice, [{ productId: gameProductId }]);
+      await payment(no);
+      const [item] = await prisma.orderItem.findMany({
+        where: { order: { orderNumber: no } },
+      });
+      await prisma.deliveryTask.deleteMany({ where: { orderItemId: item.id } });
+      const task = await prisma.deliveryTask.create({
+        data: {
+          orderItemId: item.id,
+          step: 1,
+          executor: 'command',
+          status: 'NEEDS_ATTENTION',
+          lastError: 'socket hang up',
+        },
+      });
+      const url = `/admin/delivery/tasks/${task.id}/retry`;
+      await http()
+        .post(url)
+        .set('Authorization', auth(admin))
+        .send({ confirmed: true, reason: 'проверил' })
+        .expect(400);
+      await http()
+        .post(url)
+        .set('Authorization', auth(admin))
+        .send({ confirmed: true, serverChecked: true })
+        .expect(400);
+      expect(
+        (
+          await prisma.deliveryTask.findUniqueOrThrow({
+            where: { id: task.id },
+          })
+        ).status,
+      ).toBe('NEEDS_ATTENTION');
+      await http()
+        .post(url)
+        .set('Authorization', auth(admin))
+        .send({
+          confirmed: true,
+          serverChecked: true,
+          reason: 'проверил консоль',
+        })
+        .expect(200);
+      const audit = await prisma.auditLog.findMany({
+        where: { action: 'delivery.task.retried', targetId: task.id },
+      });
+      expect(audit).toHaveLength(1);
+      expect(audit[0].changes).toMatchObject({
+        serverChecked: true,
+        unsettledRetry: true,
+        commandIdempotencyKey: `${item.id}:1`,
+      });
     });
   });
 });

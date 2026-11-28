@@ -38,7 +38,8 @@ export type DeliveryResult =
   | { kind: 'failed'; reason: string }
   /// Команда могла уйти, подтверждения нет: без автоповтора.
   | { kind: 'unknown'; reason: string }
-  | { kind: 'awaiting_manual' };
+  /// Ручная выдача (необязательная причина пишется в lastError).
+  | { kind: 'awaiting_manual'; reason?: string };
 
 export interface DeliveryExecutor {
   /// manual | site | command | (позже) wallet, bridge.
@@ -61,7 +62,17 @@ export interface TransportAck {
   ref?: string;
 }
 
+///
+/// Контракт дедупликации и подтверждения (R143, ADR-0184 поправка 2026-11-28):
+/// транспорт ОБЯЗАН быть идемпотентным по `context.idempotencyKey` (повторная
+/// отправка того же ключа не выполняет команду второй раз и возвращает прежнее
+/// подтверждение) и возвращать `ack` только после подтверждения исполнения на
+/// стороне сервера. Только такой транспорт объявляет `dedupAck: true`. Без
+/// признака (RCON «выстрелил и забыл» не подходит) executor `command` считается
+/// выключенным: автоматическая выдача командой не выполняется.
 export interface CommandTransport {
+  /// Транспорт заявляет идемпотентность по ключу и подтверждение исполнения.
+  readonly dedupAck: true;
   /// Отправить одну команду. `CommandNotSentError` — известно, что команда не
   /// ушла (до отправки); любая другая ошибка и тайм-аут — исход неизвестен.
   send(
