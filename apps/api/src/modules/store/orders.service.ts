@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -63,7 +62,6 @@ import {
   notFound,
   paymentUnavailable,
   StoreCartError,
-  StoreCheckoutError,
 } from './store-errors';
 
 function limitLinesOf(lines: PricedLine[]): CartLimitLine[] {
@@ -199,19 +197,6 @@ const ADMIN_ORDER_CARD_INCLUDE = {
 } satisfies Prisma.OrderInclude;
 
 const MAX_SEARCH_LENGTH = 100;
-
-/// Нижняя граница времени ответа при отказе по нику в quick-buy (мс).
-export const QUICK_BUY_DENIAL_MIN_MS = 250;
-
-function isNickUnavailable(error: unknown): boolean {
-  if (!(error instanceof HttpException)) return false;
-  const body = error.getResponse();
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    (body as { code?: unknown }).code === StoreCheckoutError.NICK_UNAVAILABLE
-  );
-}
 
 @Injectable()
 export class OrdersService {
@@ -436,7 +421,6 @@ export class OrdersService {
   async quickBuy(dto: QuickBuyDto) {
     // Флаг проверяется раньше ника и любых обращений к данным.
     this.checkout.assertQuickBuyEnabled();
-    const startedAt = Date.now();
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: dto.variantId },
       include: { product: true },
@@ -488,27 +472,15 @@ export class OrdersService {
     ) {
       throw loginRequired();
     }
-    try {
-      return await this.createOrderFromLines(
-        null,
-        dto.guestMinecraftNick,
-        totals.lines,
-        totals,
-        null,
-        dto.offerVersion,
-        dto.paymentMethod,
-      );
-    } catch (error) {
-      // R145/ADR-0186 п. 2 B: отказ по нику (неизвестный ник или иная причина)
-      // выглядит одинаково и по времени — выравниваем до нижней границы.
-      if (isNickUnavailable(error)) {
-        const rest = QUICK_BUY_DENIAL_MIN_MS - (Date.now() - startedAt);
-        if (rest > 0) {
-          await new Promise((resolve) => setTimeout(resolve, rest));
-        }
-      }
-      throw error;
-    }
+    return this.createOrderFromLines(
+      null,
+      dto.guestMinecraftNick,
+      totals.lines,
+      totals,
+      null,
+      dto.offerVersion,
+      dto.paymentMethod,
+    );
   }
 
   /// Публичные параметры оформления для страницы /shop/checkout (0.5): версия

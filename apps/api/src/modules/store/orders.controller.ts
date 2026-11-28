@@ -11,6 +11,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { randomInt } from 'crypto';
 import { ListMyOrdersQueryDto } from './dto/list-my-orders-query.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -24,6 +25,21 @@ import { PaymentRouter } from './payment/payment-router.service';
 import { Throttle } from '@nestjs/throttler';
 import { StoreCheckoutError } from './store-errors';
 import { SiteModule } from '../system/site-module.decorator';
+
+/// Нижняя граница времени ответа при ЛЮБОМ отказе quick-buy (R145, ADR-0186
+/// п. 2 B) и случайная добавка 0-50 мс: ответы на отказы не различаются по
+/// времени. Единая точка выравнивания для всех причин отказа.
+export const QUICK_BUY_DENIAL_MIN_MS = 250;
+export const QUICK_BUY_DENIAL_JITTER_MS = 50;
+
+async function alignDenialTiming(startedAt: number): Promise<void> {
+  const target =
+    QUICK_BUY_DENIAL_MIN_MS + randomInt(QUICK_BUY_DENIAL_JITTER_MS + 1);
+  const rest = target - (Date.now() - startedAt);
+  if (rest > 0) {
+    await new Promise((resolve) => setTimeout(resolve, rest));
+  }
+}
 
 function isNickDenial(error: unknown): boolean {
   if (!(error instanceof HttpException)) return false;
@@ -71,6 +87,7 @@ export class StoreExtrasController {
   ) {
     // Порядок: флаг -> лимит отказов по IP (ADR-0186 Р1) -> остальное.
     this.orders.assertQuickBuyEnabled();
+    const startedAt = Date.now();
     const ip = req.ip ?? req.socket?.remoteAddress;
     await this.denials.assertAllowed(ip);
     try {
@@ -79,6 +96,7 @@ export class StoreExtrasController {
       if (isNickDenial(error)) {
         await this.denials.recordDenial(ip);
       }
+      await alignDenialTiming(startedAt);
       throw error;
     }
   }

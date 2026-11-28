@@ -1,19 +1,18 @@
 import { NickResolver } from './nick-resolver.service';
 
 function setup(account: string | null, mirrored: string | null) {
-  const prisma = {
+  const base = {
     minecraftAccount: {
       findFirst: jest
         .fn()
         .mockResolvedValue(account === null ? null : { name: account }),
       findUnique: jest.fn(),
     },
-    minecraftPunishment: {
-      findFirst: jest
-        .fn()
-        .mockResolvedValue(mirrored === null ? null : { subjectName: mirrored }),
-    },
   };
+  const queryRaw = jest
+    .fn()
+    .mockResolvedValue(mirrored === null ? [] : [{ subjectName: mirrored }]);
+  const prisma = { ...base, $queryRaw: queryRaw };
   return { prisma, resolver: new NickResolver(prisma as never) };
 }
 
@@ -24,7 +23,7 @@ describe('NickResolver (R158)', () => {
       const { prisma, resolver } = setup('Steve', 'Steve');
       await expect(resolver.resolve(nick)).resolves.toBeNull();
       expect(prisma.minecraftAccount.findFirst).not.toHaveBeenCalled();
-      expect(prisma.minecraftPunishment.findFirst).not.toHaveBeenCalled();
+      expect(prisma.$queryRaw).not.toHaveBeenCalled();
     },
   );
 
@@ -42,7 +41,7 @@ describe('NickResolver (R158)', () => {
     const { prisma, resolver } = setup('Steve', 'Steve');
     await resolver.resolve('Steve');
     expect(prisma.minecraftAccount.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.minecraftPunishment.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
   it('ни один источник не дал результата — null (fail closed)', async () => {

@@ -17,6 +17,9 @@ export class NickResolver {
   /// Каноническое написание известного ника или null. Регистр не важен
   /// (в Minecraft ники регистронезависимо уникальны). Оба источника всегда
   /// опрашиваются (без раннего возврата), чтобы время не выдавало источник.
+  /// minecraft_accounts.name без индекса по lower(): таблица ограничена числом
+  /// привязанных игроков (одна строка на пользователя), seq scan малой таблицы
+  /// дёшев; миграция не нужна (ADR-0158), пересмотреть при росте до сотен тысяч.
   async resolve(nick: string): Promise<string | null> {
     const trimmed = nick.trim();
     if (!NICK_FORMAT.test(trimmed)) {
@@ -27,12 +30,15 @@ export class NickResolver {
         where: { name: { equals: trimmed, mode: 'insensitive' } },
         select: { name: true },
       }),
-      this.prisma.minecraftPunishment.findFirst({
-        where: { subjectName: { equals: trimmed, mode: 'insensitive' } },
-        select: { subjectName: true },
-      }),
+      // lower("subjectName") = lower($1): точное равенство, использует индекс
+      // minecraft_punishments_subjectName_lower_idx (миграция 20261117040000);
+      // mode:"insensitive" в Prisma даёт ILIKE без индекса. Параметр привязан.
+      this.prisma.$queryRaw<Array<{ subjectName: string | null }>>`
+        SELECT "subjectName" FROM "minecraft_punishments"
+        WHERE lower("subjectName") = lower(${trimmed})
+        LIMIT 1`,
     ]);
-    return account?.name ?? mirrored?.subjectName ?? null;
+    return account?.name ?? mirrored[0]?.subjectName ?? null;
   }
 
   /// Привязанный ник пользователя (по умолчанию для вошедшего) или null.

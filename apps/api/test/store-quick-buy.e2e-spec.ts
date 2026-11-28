@@ -228,7 +228,13 @@ describe('Store quick-buy by nick (e2e)', () => {
   });
 
   it('неверный формат ника (2 символа, пробел, дефис, 17 символов) — 400 без nick_unavailable', async () => {
-    for (const bad of ['ab', 'Bad Nick', 'bad-nick', 'a'.repeat(17), 'Ник123']) {
+    for (const bad of [
+      'ab',
+      'Bad Nick',
+      'bad-nick',
+      'a'.repeat(17),
+      'Ник123',
+    ]) {
       const res = await quickBuy({
         variantId: privilegeVariantId,
         guestMinecraftNick: bad,
@@ -252,6 +258,18 @@ describe('Store quick-buy by nick (e2e)', () => {
       variantId: privilegeVariantId,
       guestMinecraftNick: `Slow${unique}`.slice(0, 16),
     }).expect(400);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(240);
+  });
+
+  it('отказ, отличный от неизвестного ника (paid_removal_unavailable), тоже не быстрее нижней границы', async () => {
+    // Правила снятия по умолчанию пусты: UNMUTE отказывает 503 после проверки ника.
+    const started = Date.now();
+    const res = await quickBuy({
+      variantId: unmuteVariantId,
+      guestMinecraftNick: knownNick,
+    });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.code).not.toBe('quick_buy_disabled');
     expect(Date.now() - started).toBeGreaterThanOrEqual(240);
   });
 
