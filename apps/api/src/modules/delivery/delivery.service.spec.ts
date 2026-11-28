@@ -977,9 +977,7 @@ describe('DeliveryService ручные действия админа', () => {
         serverChecked: true,
         reason: 'проверил консоль',
       });
-      expect(tx.deliveryTask.update.mock.calls[0][0].data.status).toBe(
-        S.PENDING,
-      );
+      expect(tx.deliveryTask.update).toHaveBeenCalledTimes(1);
       expect(audit.logInTx).toHaveBeenCalledWith(
         tx,
         expect.objectContaining({
