@@ -26,6 +26,7 @@ import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import { demoFieldId, demoResponseId } from './keys';
 import { DEMO_PLAYERS, demoPlayerEmail } from './social';
 import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
+import { seedDemoStandBadgesAndAwards } from './badges-awards-seed';
 import { seedDemoStandPlayer } from './stand-player';
 import { seedDemoWalletAndOrders } from './wallet-orders-seed';
 
@@ -330,9 +331,10 @@ async function main(): Promise<void> {
     const linksSummary = await seedDemoPunishmentLinks(prisma);
     const standSummary = await seedDemoStandPlayer(prisma);
     const walletSummary = await seedDemoWalletAndOrders(prisma);
+    const badgesSummary = await seedDemoStandBadgesAndAwards(prisma);
 
     console.log(
-      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}, ${linksSummary}, ${standSummary}, ${walletSummary}`,
+      `Демо: категорий ${DEMO_CATEGORIES.length}, товаров ${products.length}, новостей ${DEMO_NEWS.length}, форм ${DEMO_FORMS.length}, серверов ${DEMO_SERVERS.length}, наказаний ${DEMO_PUNISHMENTS.length}, тем ${DEMO_TOPICS.length}, событий ${DEMO_EVENTS.length}, достижений ${DEMO_ACHIEVEMENTS.length}, ${socialSummary}, ${linksSummary}, ${standSummary}, ${walletSummary}, ${badgesSummary}`,
     );
   } finally {
     await prisma.$disconnect();

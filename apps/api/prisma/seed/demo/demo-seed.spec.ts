@@ -36,6 +36,10 @@ import {
   demoPlayerTag,
   demoSlotsHash,
 } from './social';
+import {
+  DEMO_AWARDS,
+  seedDemoStandBadgesAndAwards,
+} from './badges-awards-seed';
 import { seedDemoPunishmentLinks, seedDemoSocial } from './social-seed';
 import {
   STAND_PLAYER_UUID,
@@ -297,9 +301,7 @@ describe('demo seed social data', () => {
         const slots = buildDemoInventorySlots(p, g);
         for (const s of slots) {
           expect(
-            g === 'main'
-              ? ['hotbar', 'main', 'armor', 'offhand']
-              : ['ender'],
+            g === 'main' ? ['hotbar', 'main', 'armor', 'offhand'] : ['ender'],
           ).toContain(s.area);
           expect(s.slot).toBeGreaterThanOrEqual(0);
           expect(s.item.id).toMatch(/^[a-z0-9_.-]+:[a-z0-9_./-]+$/);
@@ -365,9 +367,7 @@ function fakePrisma() {
   const model = (name: string) => ({
     findUnique: (args: { where: Record<string, unknown> }) => {
       calls.push(`${name}.findUnique`);
-      return Promise.resolve(
-        tables.get(name)?.get(keyOf(args.where)) ?? null,
-      );
+      return Promise.resolve(tables.get(name)?.get(keyOf(args.where)) ?? null);
     },
     findFirst: (args: { where: Record<string, unknown> }) => {
       calls.push(`${name}.findFirst`);
@@ -375,6 +375,18 @@ function fakePrisma() {
         Object.entries(args.where).every(([k, v]) => r[k] === v),
       );
       return Promise.resolve(hit ?? null);
+    },
+    update: (args: {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    }) => {
+      calls.push(`${name}.update`);
+      const hit = [...(tables.get(name)?.values() ?? [])].find((r) =>
+        Object.entries(args.where).every(([k, v]) => r[k] === v),
+      );
+      if (!hit) return Promise.reject(new Error('not found'));
+      Object.assign(hit, args.data);
+      return Promise.resolve(hit);
     },
     upsert: (args: {
       where: Record<string, unknown>;
@@ -456,17 +468,20 @@ describe('seedDemoSocial: защита и чужие пользователи', 
     { ...ok, NODE_ENV: undefined },
     { ...ok, SEED_DEMO: undefined },
     { ...ok, DATABASE_URL: 'postgresql://u:p@db.example.com:5432/x' },
-  ])('прямой вызов без разрешённого окружения отклоняется, БД не трогается: %j', async (env) => {
-    process.env = { ...savedEnv, ...env } as NodeJS.ProcessEnv;
-    if (env.NODE_ENV === undefined) delete process.env.NODE_ENV;
-    if (env.SEED_DEMO === undefined) delete process.env.SEED_DEMO;
-    const { prisma, calls } = fakePrisma();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(seedDemoSocial(prisma as any, 'pos-1')).rejects.toThrow(
-      /fail closed/,
-    );
-    expect(calls).toEqual([]);
-  });
+  ])(
+    'прямой вызов без разрешённого окружения отклоняется, БД не трогается: %j',
+    async (env) => {
+      process.env = { ...savedEnv, ...env } as NodeJS.ProcessEnv;
+      if (env.NODE_ENV === undefined) delete process.env.NODE_ENV;
+      if (env.SEED_DEMO === undefined) delete process.env.SEED_DEMO;
+      const { prisma, calls } = fakePrisma();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await expect(seedDemoSocial(prisma as any, 'pos-1')).rejects.toThrow(
+        /fail closed/,
+      );
+      expect(calls).toEqual([]);
+    },
+  );
 
   it('чужой пользователь с ником demo_*: сид прерван, ничего не записано', async () => {
     Object.assign(process.env, ok);
@@ -489,7 +504,11 @@ describe('seedDemoSocial: защита и чужие пользователи', 
     expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
     expect(
       tables.get('user')!.get(JSON.stringify({ username: foreign.username })),
-    ).toEqual({ id: 'real-1', username: foreign.username, email: 'real@mail.test' });
+    ).toEqual({
+      id: 'real-1',
+      username: foreign.username,
+      email: 'real@mail.test',
+    });
   });
 
   it('assertDemoUserNotForeign: нет пользователя или свой email — проходит; demo_system с чужим email — ошибка', async () => {
@@ -497,13 +516,25 @@ describe('seedDemoSocial: защита и чужие пользователи', 
       user: { findUnique: async () => (email ? { email } : null) },
     });
     await expect(
-      assertDemoUserNotForeign(mk(null), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+      assertDemoUserNotForeign(
+        mk(null),
+        DEMO_AUTHOR.username,
+        DEMO_AUTHOR.email,
+      ),
     ).resolves.toBeUndefined();
     await expect(
-      assertDemoUserNotForeign(mk(DEMO_AUTHOR.email), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+      assertDemoUserNotForeign(
+        mk(DEMO_AUTHOR.email),
+        DEMO_AUTHOR.username,
+        DEMO_AUTHOR.email,
+      ),
     ).resolves.toBeUndefined();
     await expect(
-      assertDemoUserNotForeign(mk('x@y.z'), DEMO_AUTHOR.username, DEMO_AUTHOR.email),
+      assertDemoUserNotForeign(
+        mk('x@y.z'),
+        DEMO_AUTHOR.username,
+        DEMO_AUTHOR.email,
+      ),
     ).rejects.toThrow(/demo_system/);
   });
 });
@@ -512,13 +543,19 @@ describe('demo: настройки, «Мои наказания», обжало�
   it('настройки: статистика и магазин включены, исполнители выдачи выключены', () => {
     expect(DEMO_SETTINGS['stats.public.enabled']).toBe('true');
     expect(DEMO_SETTINGS['store.delivery.enabled']).toBe('true');
-    expect(DEMO_SETTINGS['store.delivery.executor.command.enabled']).toBe('false');
-    expect(DEMO_SETTINGS['store.delivery.executor.bridge.enabled']).toBe('false');
+    expect(DEMO_SETTINGS['store.delivery.executor.command.enabled']).toBe(
+      'false',
+    );
+    expect(DEMO_SETTINGS['store.delivery.executor.bridge.enabled']).toBe(
+      'false',
+    );
     expect(DEMO_SETTINGS).not.toHaveProperty('punishments.paidRemoval');
   });
   it('аккаунт: валидный uuid версии 4 (не офлайн), демо-игрок из списка', () => {
     const { uuid, name, username } = DEMO_PUNISHMENT_ACCOUNT;
-    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(uuid.charAt(14)).not.toBe('3');
     expect(name.length).toBeLessThanOrEqual(16);
     expect(DEMO_PLAYERS.map((p) => p.username)).toContain(username);
@@ -538,14 +575,21 @@ describe('demo: настройки, «Мои наказания», обжало�
     expect(new Set(ids).size).toBe(ids.length);
   });
   it('обжалования: одно на рассмотрении, одно отклонённое, ссылаются на существующее наказание', () => {
-    expect(DEMO_APPEALS.map((a) => a.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+    expect(DEMO_APPEALS.map((a) => a.status).sort()).toEqual([
+      'IN_REVIEW',
+      'REJECTED',
+    ]);
     for (const a of DEMO_APPEALS) {
-      const p = DEMO_PUNISHMENTS.find((x) => x.sourceId === a.punishmentSourceId);
+      const p = DEMO_PUNISHMENTS.find(
+        (x) => x.sourceId === a.punishmentSourceId,
+      );
       expect(p?.kind).toBe(a.punishmentKind);
       expect(p?.subjectUuid).toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
       expect(a.description.startsWith('[Демо]')).toBe(true);
     }
-    expect(DEMO_APPEALS.filter((a) => a.status === 'IN_REVIEW')).toHaveLength(1);
+    expect(DEMO_APPEALS.filter((a) => a.status === 'IN_REVIEW')).toHaveLength(
+      1,
+    );
   });
 });
 
@@ -574,14 +618,17 @@ describe('seedDemoPunishmentLinks (in-memory Prisma)', () => {
     );
     const mp = new Map<string, Record<string, unknown>>();
     for (const a of DEMO_APPEALS) {
-      const key = JSON.stringify({
-        source_sourceScope_kind_sourceId: {
-          source: 'litebans',
-          sourceScope: 'default',
-          kind: a.punishmentKind,
-          sourceId: demoPunishmentSourceId(a.punishmentSourceId),
+      const key = JSON.stringify(
+        {
+          source_sourceScope_kind_sourceId: {
+            source: 'litebans',
+            sourceScope: 'default',
+            kind: a.punishmentKind,
+            sourceId: demoPunishmentSourceId(a.punishmentSourceId),
+          },
         },
-      }, (_k, v) => (typeof v === 'bigint' ? v.toString() : v));
+        (_k, v) => (typeof v === 'bigint' ? v.toString() : v),
+      );
       mp.set(key, { id: `mp-${a.punishmentSourceId}` });
     }
     f.tables.set('minecraftPunishment', mp);
@@ -610,25 +657,35 @@ describe('seedDemoPunishmentLinks (in-memory Prisma)', () => {
         appealedMinecraftPunishmentId: 'mp-9001',
       });
     }
-    expect(reports.map((r) => r.status).sort()).toEqual(['IN_REVIEW', 'REJECTED']);
+    expect(reports.map((r) => r.status).sort()).toEqual([
+      'IN_REVIEW',
+      'REJECTED',
+    ]);
   });
 
   it('без разрешённого окружения отклоняется до обращения к БД', async () => {
     process.env.NODE_ENV = 'production';
     const { prisma, calls } = prepare();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/fail closed/);
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(
+      /fail closed/,
+    );
     expect(calls).toEqual([]);
   });
 
   it('чужой пользователь demo_ember: ничего не записано', async () => {
     const { prisma, tables, calls } = prepare();
-    tables.get('user')!.set(
-      JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }),
-      { id: 'real', username: DEMO_PUNISHMENT_ACCOUNT.username, email: 'real@mail.test' },
-    );
+    tables
+      .get('user')!
+      .set(JSON.stringify({ username: DEMO_PUNISHMENT_ACCOUNT.username }), {
+        id: 'real',
+        username: DEMO_PUNISHMENT_ACCOUNT.username,
+        email: 'real@mail.test',
+      });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(/demo_ember/);
+    await expect(seedDemoPunishmentLinks(prisma as any)).rejects.toThrow(
+      /demo_ember/,
+    );
     expect(calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
   });
 });
@@ -643,7 +700,10 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
     jest.restoreAllMocks();
   });
   const userKey = (n: string) => JSON.stringify({ username: n });
-  const prepare = (username?: string, existingAccount?: Record<string, unknown>) => {
+  const prepare = (
+    username?: string,
+    existingAccount?: Record<string, unknown>,
+  ) => {
     const f = fakePrisma();
     if (username) {
       f.tables.set(
@@ -661,10 +721,13 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   };
   const run = (f: ReturnType<typeof fakePrisma>, name?: string) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    seedDemoStandPlayer(f.prisma as any, {
-      ...ok,
-      ...(name ? { DEMO_STAND_PLAYER_USERNAME: name } : {}),
-    } as NodeJS.ProcessEnv);
+    seedDemoStandPlayer(
+      f.prisma as any,
+      {
+        ...ok,
+        ...(name ? { DEMO_STAND_PLAYER_USERNAME: name } : {}),
+      } as NodeJS.ProcessEnv,
+    );
 
   it('env не задана: ничего не пишется', async () => {
     const f = prepare('tester');
@@ -673,7 +736,9 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   });
 
   it('пользователя нет: предупреждение без имени, без записей', async () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     const f = prepare();
     await run(f, 'secretname');
     expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
@@ -698,7 +763,9 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
       uuid: STAND_PLAYER_UUID,
       name: 'StandPlayer',
     });
-    expect(STAND_PLAYER_UUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(STAND_PLAYER_UUID).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(STAND_PLAYER_UUID).not.toBe(DEMO_PUNISHMENT_ACCOUNT.uuid);
     const pun = [...f.tables.get('minecraftPunishment')!.values()];
     expect(pun.map((p) => [p.kind, p.status]).sort()).toEqual([
@@ -731,9 +798,16 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   });
 
   it('уже есть настоящий MinecraftAccount: пропуск без наказаний и обжалования', async () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     const real = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: real, name: 'Existing' });
+    const f = prepare('tester', {
+      id: 'a1',
+      userId: 'u-stand',
+      uuid: real,
+      name: 'Existing',
+    });
     await run(f, 'tester');
     expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
     expect(f.tables.has('minecraftPunishment')).toBe(false);
@@ -742,7 +816,12 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   });
 
   it('аккаунт уже с фиктивным uuid: наказания создаются', async () => {
-    const f = prepare('tester', { id: 'a1', userId: 'u-stand', uuid: STAND_PLAYER_UUID, name: 'StandPlayer' });
+    const f = prepare('tester', {
+      id: 'a1',
+      userId: 'u-stand',
+      uuid: STAND_PLAYER_UUID,
+      name: 'StandPlayer',
+    });
     await run(f, 'tester');
     expect(f.tables.get('minecraftPunishment')!.size).toBe(3);
   });
@@ -750,7 +829,10 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
   it('роли персонала: пропуск без записей', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const f = prepare('tester');
-    f.tables.set('userRole', new Map([['k', { userId: 'u-stand', roleId: 'r1' }]]));
+    f.tables.set(
+      'userRole',
+      new Map([['k', { userId: 'u-stand', roleId: 'r1' }]]),
+    );
     await run(f, 'tester');
     expect(f.calls.filter((c) => c.endsWith('.upsert'))).toEqual([]);
   });
@@ -762,18 +844,24 @@ describe('seedDemoStandPlayer (in-memory Prisma)', () => {
     rep.status = 'RESOLVED';
     rep.verdict = 'ACCEPTED';
     await run(f, 'tester');
-    expect([...f.tables.get('report')!.values()][0]).toMatchObject({ status: 'RESOLVED', verdict: 'ACCEPTED' });
+    expect([...f.tables.get('report')!.values()][0]).toMatchObject({
+      status: 'RESOLVED',
+      verdict: 'ACCEPTED',
+    });
   });
 
   it('без разрешённого окружения отклоняется', async () => {
     const f = prepare('tester');
     await expect(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      seedDemoStandPlayer(f.prisma as any, {
-        ...ok,
-        NODE_ENV: 'production',
-        DEMO_STAND_PLAYER_USERNAME: 'tester',
-      } as NodeJS.ProcessEnv),
+      seedDemoStandPlayer(
+        f.prisma as any,
+        {
+          ...ok,
+          NODE_ENV: 'production',
+          DEMO_STAND_PLAYER_USERNAME: 'tester',
+        } as NodeJS.ProcessEnv,
+      ),
     ).rejects.toThrow(/fail closed/);
     expect(f.calls).toEqual([]);
   });
@@ -821,8 +909,7 @@ function walletFakePrisma() {
     walletLedgerEntry: {
       findUnique: ({ where }: any) =>
         Promise.resolve(
-          ledger.find((e) => e.idempotencyKey === where.idempotencyKey) ??
-            null,
+          ledger.find((e) => e.idempotencyKey === where.idempotencyKey) ?? null,
         ),
       create: ({ data }: any) => {
         const row = { id: `le-${ledger.length + 1}`, ...data };
@@ -1027,9 +1114,7 @@ describe('демо-данные demo_ember: инвентарь, друзья, б
     const all = [...main, ...ender].map((s) => s.item);
     expect(new Set(all.map((i) => i.count)).size).toBeGreaterThan(5);
     expect(all.some((i) => (i.enchants?.length ?? 0) > 0)).toBe(true);
-    expect(all.some((i) => i.name?.some((r) => r.color === 'gold'))).toBe(
-      true,
-    );
+    expect(all.some((i) => i.name?.some((r) => r.color === 'gold'))).toBe(true);
     expect(
       all.some((i) => i.name?.some((r) => r.color === 'light_purple')),
     ).toBe(true);
@@ -1109,16 +1194,24 @@ describe('демо-сид на стенде с прошлыми данными',
   it('ЛС: существующая беседа по directKey используется, дубля и падения нет', async () => {
     const f = socialFixture();
     const direct = DEMO_CONVERSATIONS.find((c) => c.type === 'DIRECT')!;
-    const key = demoDirectKey(`u-${direct.members[0]}`, `u-${direct.members[1]}`);
+    const key = demoDirectKey(
+      `u-${direct.members[0]}`,
+      `u-${direct.members[1]}`,
+    );
     f.tables.set(
       'conversation',
       new Map([
-        [JSON.stringify({ directKey: key }), { id: 'legacy-conv', directKey: key }],
+        [
+          JSON.stringify({ directKey: key }),
+          { id: 'legacy-conv', directKey: key },
+        ],
       ]),
     );
     await seedDemoSocial(f.prisma as any, 'pos-1');
     const convs = [...f.tables.get('conversation')!.values()];
-    expect(new Set(convs.filter((c) => c.directKey === key).map((c) => c.id))).toEqual(new Set(['legacy-conv']));
+    expect(
+      new Set(convs.filter((c) => c.directKey === key).map((c) => c.id)),
+    ).toEqual(new Set(['legacy-conv']));
     expect(convs.some((c) => c.id === direct.id)).toBe(false);
     const msgs = [...f.tables.get('directMessage')!.values()].filter((m) =>
       direct.messages.some((x) => x.id === m.id),
@@ -1187,12 +1280,18 @@ describe('демо-сид на стенде с прошлыми данными',
     expect([...f.base.tables.get('chatChannel')!.values()][0].name).toBe(
       '[Демо] Переименован',
     );
-    expect(f.base.tables.get('chatMessage')!.size).toBe(DEMO_CHAT_MESSAGES.length);
+    expect(f.base.tables.get('chatMessage')!.size).toBe(
+      DEMO_CHAT_MESSAGES.length,
+    );
   });
 
   it('заказы: номер занят чужим заказом — блок пропущен целиком, кошелёк не тронут', async () => {
     const f = walletFakePrisma();
-    const other = { id: 'x-1', orderNumber: DEMO_ORDERS[1].orderNumber, userId: 'someone-else' };
+    const other = {
+      id: 'x-1',
+      orderNumber: DEMO_ORDERS[1].orderNumber,
+      userId: 'someone-else',
+    };
     f.base.tables.set(
       'order',
       new Map([[JSON.stringify({ orderNumber: other.orderNumber }), other]]),
@@ -1204,7 +1303,9 @@ describe('демо-сид на стенде с прошлыми данными',
     expect(f.ledger).toEqual([]);
     expect(summary).toContain('пропущено: заказы, кошелёк');
     expect(summary).toContain('применено: чат');
-    expect(f.base.tables.get('chatMessage')!.size).toBe(DEMO_CHAT_MESSAGES.length);
+    expect(f.base.tables.get('chatMessage')!.size).toBe(
+      DEMO_CHAT_MESSAGES.length,
+    );
   });
 
   it('сбой записи чата не мешает заказам и кошельку', async () => {
@@ -1215,5 +1316,81 @@ describe('демо-сид на стенде с прошлыми данными',
     expect(summary).toContain('пропущено: чат');
     expect(summary).toContain('применено: заказы, кошелёк');
     expect(f.ledger).toHaveLength(DEMO_WALLET_OPS.length);
+  });
+});
+
+describe('seedDemoStandBadgesAndAwards (in-memory Prisma)', () => {
+  const prepare = (extra: Record<string, unknown> = {}) => {
+    const f = fakePrisma();
+    f.tables.set(
+      'user',
+      new Map([
+        [
+          keyOf({ username: 'tester' }),
+          { id: 'u-stand', username: 'tester', ...extra },
+        ],
+        [keyOf({ username: 'other' }), { id: 'u-other', username: 'other' }],
+      ]),
+    );
+    return f;
+  };
+  const run = (f: ReturnType<typeof fakePrisma>, name = 'tester') =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    seedDemoStandBadgesAndAwards(
+      f.prisma as any,
+      {
+        ...ok,
+        DEMO_STAND_PLAYER_USERNAME: name,
+      } as NodeJS.ProcessEnv,
+    );
+  const sizes = (f: ReturnType<typeof fakePrisma>) =>
+    ['userBadge', 'award', 'userAward'].map((t) => f.tables.get(t)?.size);
+
+  it('двойной запуск: те же счётчики, выставляет displayBadge', async () => {
+    const f = prepare();
+    await run(f);
+    const first = sizes(f);
+    await run(f);
+    expect(sizes(f)).toEqual(first);
+    expect(first).toEqual([2, DEMO_AWARDS.length, DEMO_AWARDS.length]);
+    const badges = [...f.tables.get('userBadge')!.values()];
+    expect(badges.map((b) => b.type).sort()).toEqual([
+      'SUBSCRIBER_PLUS',
+      'VERIFIED',
+    ]);
+    const verified = badges.find((b) => b.type === 'VERIFIED')!;
+    const user = f.tables.get('user')!.get(keyOf({ username: 'tester' }))!;
+    expect(user.displayBadgeId).toBe(verified.id);
+    for (const a of f.tables.get('award')!.values()) {
+      expect(String(a.name)).toContain('Демо');
+      expect(String(a.iconUrl)).toMatch(/^\/icons\/icon-(192|512)\.png$/);
+    }
+    // Другой пользователь не затронут.
+    const other = f.tables.get('user')!.get(keyOf({ username: 'other' }))!;
+    expect(other.displayBadgeId).toBeUndefined();
+    for (const r of f.tables.get('userBadge')!.values())
+      expect(r.userId).toBe('u-stand');
+  });
+
+  it('выбранный displayBadge не перетирается', async () => {
+    const f = prepare({ displayBadgeId: 'chosen-badge' });
+    await run(f);
+    await run(f);
+    const user = f.tables.get('user')!.get(keyOf({ username: 'tester' }))!;
+    expect(user.displayBadgeId).toBe('chosen-badge');
+    expect(f.calls).not.toContain('user.update');
+  });
+
+  it('не задан игрок, demo_* и отсутствующий пользователь: без записей', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = prepare();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await seedDemoStandBadgesAndAwards(
+      f.prisma as any,
+      ok as NodeJS.ProcessEnv,
+    );
+    await run(f, 'demo_ember');
+    await run(f, 'ghost');
+    expect(f.calls.filter((c) => /upsert|update/.test(c))).toEqual([]);
   });
 });
