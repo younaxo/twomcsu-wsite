@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # ЗАГЛУШКА docker для сухих прогонов (только тесты). FAKE - корень: players, version, psql.out.
+# Бот (/bot/bot.js): пишет в botpass.stat режимы смонтированного каталога пароля и файла; вывод - $FAKE/bot.out (если есть), код - $FAKE/bot.rc.
+# TCP-проверка (TCP_HOST): ответ из $FAKE/tcp.host или $FAKE/tcp.bridge (по умолчанию TCP-OK).
 case "${1:-}" in
   image) exit 0 ;;
   exec)
@@ -10,6 +12,16 @@ case "${1:-}" in
     echo "docker run $*" >> "$FAKE/docker-run.log"
     if [[ "$*" == *PT_HOST* ]]; then
       echo "players=$(cat "$FAKE/players") max=20 version=$(cat "$FAKE/version")"
+    elif [[ "$*" == *TCP_HOST* ]]; then
+      if [[ "$*" == *"--network bridge"* ]]; then f="$FAKE/tcp.bridge"; else f="$FAKE/tcp.host"; fi
+      [[ -f "$f" ]] && cat "$f" || echo TCP-OK
+    elif [[ "$*" == */bot/bot.js* ]]; then
+      pdir=""; prev=""
+      for a in "$@"; do [[ "$prev" == -v && "$a" == *:/botpass ]] && pdir="${a%:/botpass}"; prev="$a"; done
+      { echo "dir=$(stat -c %a "$pdir" 2>/dev/null) file=$(stat -c %a "$pdir/pass" 2>/dev/null || echo none)"; } >> "$FAKE/botpass.stat"
+      [[ -n "$pdir" && -f "$pdir/pass" ]] && rm -f "$pdir/pass"
+      [[ -f "$FAKE/bot.out" ]] && cat "$FAKE/bot.out"
+      [[ -f "$FAKE/bot.rc" ]] && exit "$(cat "$FAKE/bot.rc")"
     else
       printf 'AUTH_OK\nL: There are %s of a max of 20 players online\nUNTIL_MATCH\n' "$(cat "$FAKE/players")"
     fi
