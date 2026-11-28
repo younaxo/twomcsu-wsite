@@ -24,6 +24,12 @@ export class RetryDeliveryTaskDto {
   @IsBoolean()
   confirmed!: boolean;
 
+  /// R167: для задания Bridge с неизвестным исходом (UNKNOWN/CLAIMED) —
+  /// «проверил на сервере, выдачи не было»; тогда же причина обязательна.
+  @IsOptional()
+  @IsBoolean()
+  serverChecked?: boolean;
+
   @IsOptional()
   @Transform(trim)
   @IsString()

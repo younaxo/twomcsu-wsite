@@ -62,6 +62,7 @@ import {
   EXECUTOR_WALLET,
   MANUAL_DONE_FROM,
   REFUND_BLOCKING_STATUSES,
+  BRIDGE_UNSETTLED,
   RETRY_FROM,
 } from './delivery.constants';
 import { BridgeExecutor } from './executors/bridge.executor';
@@ -1026,7 +1027,7 @@ export class DeliveryService {
   async retryTask(
     id: string,
     actorId: string,
-    input: { confirmed: boolean; reason?: string },
+    input: { confirmed: boolean; reason?: string; serverChecked?: boolean },
   ) {
     if (input.confirmed !== true) {
       throw new BadRequestException({
@@ -1044,6 +1045,28 @@ export class DeliveryService {
             code: 'delivery_invalid_status',
             message: `Повтор невозможен из статуса ${task.status}`,
           });
+        }
+        // R167: исход выдачи через Bridge неизвестен (UNKNOWN/CLAIMED) —
+        // повтор возможен только после проверки на сервере и с причиной.
+        const bridgeUnsettled =
+          task.executor === EXECUTOR_BRIDGE &&
+          task.bridgeJob != null &&
+          BRIDGE_UNSETTLED.includes(task.bridgeJob.status);
+        if (bridgeUnsettled) {
+          if (input.serverChecked !== true) {
+            throw new BadRequestException({
+              code: 'delivery_retry_server_check_required',
+              message:
+                'Исход выдачи на сервере неизвестен: подтвердите, что проверили сервер и выдачи не было',
+            });
+          }
+          if (!input.reason?.trim()) {
+            throw new BadRequestException({
+              code: 'delivery_retry_reason_required',
+              message:
+                'Укажите причину повтора выдачи после неизвестного исхода',
+            });
+          }
         }
         const executor = this.executors.get(task.executor);
         const target = executor?.automatic
@@ -1076,6 +1099,10 @@ export class DeliveryService {
               ? {
                   bridgeJobStatus: task.bridgeJob.status,
                   bridgeClaimCount: task.bridgeJob.claimCount,
+                  // Ключ при повторе тот же (плагин ответит done, если выполнено).
+                  bridgeIdempotencyKey: `${task.orderItemId}:${task.step}`,
+                  serverChecked: input.serverChecked === true,
+                  unsettledRetry: bridgeUnsettled,
                 }
               : {}),
             ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),

@@ -17,6 +17,7 @@ import { SkeletonRows } from '@/components/ui/skeleton';
 import {
   BRIDGE_JOB_META,
   bridgeRetryMayDuplicate,
+  bridgeRetryNeedsServerCheck,
   canMarkManualDone,
   canRetryDelivery,
   deliveryTaskTitle,
@@ -43,6 +44,7 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
   const showDone = manage && canMarkManualDone(task.status);
   const showRetry = manage && canRetryDelivery(task.status);
   const bridgeWarn = bridgeRetryMayDuplicate(task);
+  const serverCheck = bridgeRetryNeedsServerCheck(task);
   const orderNumber = task.orderItem.order.orderNumber;
   const dialogTitle = `${deliveryTaskTitle(task)}, заказ ${orderNumber}`;
   const headingRef = useRef<HTMLSpanElement>(null);
@@ -185,6 +187,7 @@ function TaskCard({ task }: { task: DeliveryTaskCard }) {
           taskId={task.id}
           title={dialogTitle}
           bridgeDuplicateRisk={bridgeWarn}
+          serverCheckRequired={serverCheck}
           open
           onOpenChange={setRetryOpen}
           onSuccessFocus={focusHeading}
