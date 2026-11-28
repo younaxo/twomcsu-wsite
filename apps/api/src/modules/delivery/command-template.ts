@@ -132,7 +132,9 @@ export const DEFAULT_COMMAND_FORMS: readonly string[] = [
   'crate give {nick} {key} {qty}?',
 ];
 /// Проверочный ник вместо `{username}` при разборе шаблона.
-const SAMPLE_NICK = 'Steve';
+/// Сентинел: валидный ник, которого в литерале шаблона быть не должно. Слот ника
+/// обязан быть ровно им (т.е. только {username}); в остальных слотах он запрещён.
+const SAMPLE_NICK = 'Zq7_tplNick_9X';
 
 interface FormRule {
   root: string;
@@ -162,7 +164,8 @@ function parseForm(spec: string): FormRule {
               re.test(w) &&
               w.toLowerCase() !== 'all' &&
               (nickExact === undefined || w === nickExact)
-          : (w) => re.test(w),
+          : (w, nickExact) =>
+              re.test(w) && (nickExact === undefined || !w.includes(nickExact)),
       );
     } else {
       const alts = new Set(p.split('|').map((a) => a.toLowerCase()));

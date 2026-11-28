@@ -150,3 +150,33 @@ describe('повторная проверка готовой команды (R15
     }
   });
 });
+
+/// Слот ника — ТОЛЬКО токен {username}: литерал (в т.ч. Steve) отвергается,
+/// {username} в слотах группы/предмета/ключа тоже.
+describe('слот ника только {username} (R155)', () => {
+  it.each([
+    'give Steve {username}',
+    'lp user Steve parent set {username}',
+    'lp user Steve parent add {username}',
+    'lp user Alex parent add vip {duration} {username}',
+    'lp user {username} parent set {username}',
+    'lp user {username} parent add {username} {duration}',
+    'give {username} {username}',
+    'give {username} {username} 2',
+    'crate key give {username} {username}',
+    'eco give Steve 10 {username}',
+  ])('отвергает %s', (tpl) => {
+    expect(codeOf(() => validateTemplate(tpl))).toBe(
+      'template_form_not_allowed',
+    );
+  });
+
+  it.each([
+    'lp user {username} parent set vip',
+    'lp user {username} parent addtemp vip {duration}',
+    'give {username} diamond 3',
+    'crate key give {username} vote 2',
+  ])('принимает %s', (tpl) => {
+    expect(codeOf(() => validateTemplate(tpl))).toBeNull();
+  });
+});
