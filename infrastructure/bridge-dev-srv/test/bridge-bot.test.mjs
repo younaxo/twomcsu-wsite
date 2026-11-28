@@ -219,3 +219,67 @@ exports.createBot = (o) => { require('fs').writeFileSync(process.env.OPTS_FILE, 
   assert.doesNotMatch(q.stdout, /STAGE proto/);
   assert.match(q.stdout, /ERROR connection-ended phase=start reason=socketClosed/);
 });
+
+test("bot-join: --resource-pack (accept по умолчанию) и --spawn-timeout (90 по умолчанию) уходят в env контейнера; неверные значения - код 2", () => {
+  const e = (args) => { const d = mk(); const r = bjRun(d, args); return { r, env: rd(d, "docker-env.log") }; };
+  const a = e("Bot1 10"); assert.match(a.env, /^BOT_RESOURCE_PACK=accept$/m); assert.match(a.env, /^BOT_SPAWN_TIMEOUT=90$/m);
+  assert.match(e("Bot1 10 --resource-pack decline").env, /^BOT_RESOURCE_PACK=decline$/m);
+  assert.match(e("--resource-pack accept Bot1 10 --spawn-timeout 120").env, /^BOT_SPAWN_TIMEOUT=120$/m);
+  for (const bad of ["--resource-pack", "--resource-pack maybe", "--spawn-timeout", "--spawn-timeout 5", "--spawn-timeout 601", "--spawn-timeout x", "--spawn-timeout 1000"]) {
+    const d = mk(); assert.equal(bjRun(d, "Bot1 10 " + bad).code, 2, bad); assert.equal(rd(d, "docker-run.log"), "", bad);
+  }
+});
+
+// bot.js на заглушке mineflayer: клиент с write() и состоянием, эмитит пакеты ресурс-пака
+function runBotJs(d, driver, envx = {}) {
+  const src = readFileSync(join(SRC, "bot-join.sh"), "utf8");
+  const js = /<<'BOT_JS_EOF'\n([\s\S]*?)\nBOT_JS_EOF/.exec(src)?.[1]; assert.ok(js);
+  const nm = join(d, "nm/mineflayer"); mkdirSync(nm, { recursive: true });
+  w(join(nm, "index.js"), `const { EventEmitter } = require('events');
+exports.createBot = (o) => { const b = new EventEmitter(); const c = new EventEmitter(); b._client = c; b.players = {}; b.quit = () => {}; b.clearControlStates = () => {};
+  c.state = 'configuration'; c.writes = []; c.write = (n, p) => { console.log('WRITE ' + n + ' ' + JSON.stringify(p)); };
+  b.acceptResourcePack = () => console.log('CALL acceptResourcePack'); b.denyResourcePack = () => console.log('CALL denyResourcePack');
+  setTimeout(() => { ${driver} }, 20); return b; };`);
+  const f = join(d, "bot.js"); writeFileSync(f, js);
+  return spawnSync(process.execPath, [f], { env: { PATH: process.env.PATH, NODE_PATH: join(d, "nm"), BOT_HOST: "127.0.0.1", BOT_PORT: "25565", BOT_NICK: "BotX", BOT_SECS: "10", BOT_VERSION: "1.21.4", BOT_AUTH: "0", ...envx }, encoding: "utf8", timeout: 20000 });
+}
+const PUUID = "123e4567-e89b-12d3-a456-426614174000";
+const writes = (out) => out.split("\n").filter((l) => l.startsWith("WRITE ")).map((l) => { const m = /^WRITE (\S+) (.*)$/.exec(l); return [m[1], JSON.parse(m[2])]; });
+
+test("bot.js: add_resource_pack в configuration -> resource_pack_receive accepted(3) -> downloaded(4) -> successfully_loaded(0) с uuid пака", () => {
+  const d = mk();
+  const r = runBotJs(d, `b._client.emit('add_resource_pack', { uuid: '${PUUID}', url: 'https://cdn.example/pack.zip', hash: 'abc', forced: true }); b.emit('end', 'x');`, { BOT_RESOURCE_PACK: "accept" });
+  const wr = writes(r.stdout);
+  assert.deepEqual(wr.map(([n, p]) => [n, p.result, p.uuid]), [["resource_pack_receive", 3, PUUID], ["resource_pack_receive", 4, PUUID], ["resource_pack_receive", 0, PUUID]]);
+  assert.match(r.stdout, /STAGE resourcepack add_resource_pack configuration -> accepted/); assert.match(r.stdout, /-> loaded/);
+  assert.doesNotMatch(r.stdout.split("\n").filter((l) => l.startsWith("STAGE ")).join("\n"), /cdn\.example|pack\.zip|123e4567/);
+  // старое имя пакета (resource_pack_send, без uuid) и push тоже обрабатываются
+  const d2 = mk();
+  const o = runBotJs(d2, `b._client.emit('resource_pack_send', { url: 'u', hash: 'h' }); b._client.emit('resource_pack_push', { uuid: '${PUUID}' }); b.emit('end', 'x');`);
+  const w2 = writes(o.stdout); assert.equal(w2.length, 6); assert.equal("uuid" in w2[0][1], false); assert.equal(w2[3][1].uuid, PUUID);
+});
+
+test("bot.js: --resource-pack decline в configuration шлёт только declined(1); в play ответ делает bot.acceptResourcePack()/denyResourcePack(), низкоуровневый ответ не дублируется", () => {
+  const d = mk();
+  const dec = runBotJs(d, `b._client.emit('add_resource_pack', { uuid: '${PUUID}' }); b.emit('end', 'x');`, { BOT_RESOURCE_PACK: "decline" });
+  assert.deepEqual(writes(dec.stdout).map(([, p]) => p.result), [1]);
+  const play = (mode) => runBotJs(mk(), `b._client.state = 'play'; b._client.emit('add_resource_pack', { uuid: '${PUUID}' }); b.emit('resourcePack', 'https://x/p.zip', 'hash'); b.emit('end', 'x');`, { BOT_RESOURCE_PACK: mode });
+  const pa = play("accept"); assert.equal(writes(pa.stdout).length, 0); assert.match(pa.stdout, /CALL acceptResourcePack/); assert.doesNotMatch(pa.stdout, /CALL denyResourcePack/);
+  const pd = play("decline"); assert.equal(writes(pd.stdout).length, 0); assert.match(pd.stdout, /CALL denyResourcePack/);
+  // ошибка записи не роняет бота и печатается как ERROR resourcepack-reply
+  const bad = runBotJs(mk(), `b._client.write = () => { throw Object.assign(new Error('x'), { code: 'EWRITE' }); }; b._client.emit('add_resource_pack', { uuid: '${PUUID}' }); b.emit('end', 'x');`);
+  assert.match(bad.stdout, /ERROR resourcepack-reply accepted EWRITE/);
+});
+
+test("bot.js: --debug-protocol печатает имена пакетов configuration (custom_payload - только канал, без данных), таймаут spawn берётся из BOT_SPAWN_TIMEOUT", () => {
+  const d = mk();
+  const r = runBotJs(d, `b._client.emit('packet', { channel: 'minecraft:brand', data: 'SECRETDATA' }, { name: 'custom_payload', state: 'configuration' });
+    b._client.emit('packet', { x: 'SECRETPLAY' }, { name: 'chunk_data', state: 'play' }); b._client.emit('packet', { a: 1 }, { name: 'add_resource_pack', state: 'configuration' }); b.emit('end', 'x');`, { BOT_DEBUG_PROTO: "1" });
+  assert.match(r.stdout, /STAGE proto packet configuration custom_payload channel=minecraft:brand/);
+  assert.match(r.stdout, /STAGE proto packet configuration add_resource_pack$/m);
+  assert.doesNotMatch(r.stdout, /SECRETDATA|SECRETPLAY|chunk_data/);
+  const q = runBotJs(mk(), `b._client.emit('packet', {}, { name: 'custom_payload', state: 'configuration' }); b.emit('end', 'x');`, { BOT_DEBUG_PROTO: "0" });
+  assert.doesNotMatch(q.stdout, /STAGE proto/);
+  const src = readFileSync(join(SRC, "bot-join.sh"), "utf8");
+  assert.match(src, /SPAWN_TO \* 1000/); assert.doesNotMatch(src, /45000/);
+});
