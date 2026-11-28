@@ -37,7 +37,7 @@ case "${suffix%%\?*}" in
     else st="$(cat "$FAKE/state")"; fi
     echo "$st" >> "$FAKE/states.log"
     body="{\"object\":\"stats\",\"attributes\":{\"current_state\":\"$st\"}}" ;;
-  /network/allocations) body='{"object":"list","data":[{"object":"allocation","attributes":{"id":1,"ip":"127.0.0.1","ip_alias":"127.0.0.1","port":25565,"is_default":true}}]}' ;;
+  /network/allocations) fport=25565; [[ -f "$FAKE/port" ]] && fport="$(cat "$FAKE/port")"; body="{\"object\":\"list\",\"data\":[{\"object\":\"allocation\",\"attributes\":{\"id\":1,\"ip\":\"127.0.0.1\",\"ip_alias\":\"127.0.0.1\",\"port\":$fport,\"is_default\":true}}]}" ;;
   /websocket) body='{"data":{"token":"abc.def-1","socket":"wss:\/\/node.test\/api\/servers\/x\/ws"}}' ;;
   /files/list)
     d="$(urldecode "${suffix#*directory=}")"; [[ "$d" == "/" ]] && p="$FAKE/fs" || p="$FAKE/fs$d"

@@ -56,7 +56,7 @@
 1. `devsrv-access.sh --status` (только чтение): whitelist, техработы, игроки онлайн (SLP), наличие state.
 2. `devsrv-access.sh --open <ник...>`: бэкапы `.bak-<UTC>` ДО записи, `whitelist add`, выключение техработ, прежнее состояние в state.
 3. `install-bridge.sh --dry-run`, затем `--yes`: перед перезапуском проверка игроков (SLP, затем `list`) и `say` с ожиданием 60 с (`ptero_restart_guard`).
-4. `bot-join.sh`: бот заходит на сервер (аккаунт привязан, UUID офлайн). Контейнер: tmpfs 1g (был 300m: npm падал с ENOSPC), лимит памяти 1280m; перед запуском проверяется MemAvailable хоста (нужно не меньше 1400 МБ), иначе отказ до запуска контейнера. Для прямого входа при включённом форвардинге - `--open ... --direct-join` (раздел ниже).
+4. `bot-join.sh`: бот заходит на сервер (аккаунт привязан, UUID офлайн); контейнер в сети host по умолчанию (`--net bridge` для отладки). Контейнер: tmpfs 1g (был 300m: npm падал с ENOSPC), лимит памяти 1280m; перед запуском проверяется MemAvailable хоста (нужно не меньше 1400 МБ), иначе отказ до запуска контейнера. Для прямого входа при включённом форвардинге - `--open ... --direct-join` (раздел ниже).
 5. Проверка: `verify-bridge.sh` и `slp-check.sh` (события приняты, плагин отвечает).
 6. `live-sigcheck.sh`: проверка подписи на живом стенде.
 7. `devsrv-access.sh --restore`: убирает только добавленные нами ники, возвращает техработы, печатает сверку со state. Если плагин не нужен - `rollback-bridge.sh` (тот же guard).
@@ -103,9 +103,22 @@ State-файл `/home/twomc/bridge-dev-srv.access.state`: права 600, зап
 
 ## Проверка SLP и режим техработ
 
-`bash run-on-vds.sh script slp-check.sh` (только чтение, без записи на панель): печатает `players=N/M version=V` (V без §-кодов, пробелы как `_`). Парсер SLP читает пакет по varint-длине (не ждёт закрытия сокета), строка JSON идёт с длиной в байтах UTF-8; при сбое в stderr печатается причина по каждой сети (`ERR:net-ECONNREFUSED`, `timeout-no-data`, `bad-json` и т. д.). Контейнер идёт сначала в сети bridge, затем host.
+`bash run-on-vds.sh script slp-check.sh` (только чтение, без записи на панель): печатает `players=N/M version=V` (V без §-кодов, пробелы как `_`). Парсер SLP читает пакет по varint-длине (не ждёт закрытия сокета), строка JSON идёт с длиной в байтах UTF-8; при сбое в stderr печатается причина по каждой сети (`ERR:net-ECONNREFUSED`, `timeout-no-data`, `bad-json` и т. д.). Контейнер идёт сначала в сети bridge, затем host (бот `bot-join.sh` идёт сразу в host, см. раздел ниже).
 
 Если `version` содержит «Тех. работы»/maintenance/whitelist, сервер, вероятно, в режиме техработ или whitelist: бот войдёт только после добавления ника в whitelist владельцем (агент whitelist не меняет). `install-bridge.sh --dry-run` в этом случае печатает WARN (не блокер установки).
+
+## Бот: сеть, причины отключения, диагностика (bridgefix3)
+
+- `bot-join.sh` запускает контейнер бота в сети `host` ПО УМОЛЧАНИЮ (как `slp-check.sh`): в живом прогоне бот из docker bridge дважды получил `ERROR connect-timeout (45s)`, хотя SLP отвечал (гипотеза: файрвол VDS, ufw/DOCKER-USER FORWARD, режет исходящие из bridge к внешнему IP:порт). `--net bridge` оставлен только для отладки: `bot-join.sh <ник> 60 --net bridge`.
+- При `connect-timeout` скрипт сам печатает `DIAG:` - TCP с хоста (bash `/dev/tcp`) и из контейнера в сетях host и bridge, и вывод, какой путь работает (`РАБОЧИЙ ПУТЬ: --net host`; «TCP не проходит и с хоста: сервер не слушает или порт закрыт»; «проблема не в сети»).
+- Причины отключения: `hideErrors: false`; печатаются `ERROR kicked phase=<этап>: <текст>`, `ERROR connection-ended phase=<этап> reason=<...>`, `ERROR disconnect-packet ...`, `ERROR error phase=<этап> <код>`. Текст разбирается из компонента чата (text/extra/translate/NBT), без §-кодов. Ники других игроков (из списка игроков сервера) -> `<player>`, IP -> `<ip>`, UUID -> `<uuid>`, hex от 20 символов -> `[REDACTED]`; пароль -> `***`.
+- Файл пароля: каталог `p` в рабочем каталоге хост создаёт ВСЕГДА (раньше без плагина авторизации его создавал docker от root, отсюда `Permission denied` при затирании; теперь затирание и удаление тихие, перед `rm -rf` идёт `chmod -R u+rwX`). По умолчанию контейнер идёт с тем же uid:gid, что хост (каталог 700, файл 600). Другой uid (например node = 1000): `BOT_CONTAINER_UID=1000 BOT_CONTAINER_GID=1000` (каталог 777, файл 644; безопасно, так как рабочий каталог `/dev/shm/dev-srv-bot.*` имеет 700 и в контейнер монтируется только `p`). Скрипт печатает `права копии пароля: каталог N, файл M` (без значения). Пароль по-прежнему не в env и не в argv, бот удаляет файл после чтения.
+
+### Чтение журналов (только чтение, без записи на панель)
+
+- `bash run-on-vds.sh script verify-bridge.sh --log [N] [--bot <ник>]`: последние N (1..200, по умолчанию 40) строк `logs/latest.log` (путь уже в allowlist чтения `ptero.sh`), только строки с `TwoMCBridge`, `join`, `kick`, `disconnect`, `lost connection`, `left the game`, `whitelist`. Ники игроков кроме `--bot` -> `<player>`, IP -> `<ip>`, UUID -> `<uuid>`, длинный hex -> `<hex>`. Консольные команды не отправляются.
+- `bash run-on-vds.sh script devsrv-access.sh --changes [N]`: последние N (1..200, по умолчанию 30) строк `/home/twomc/bridge-dev-srv.changes.log`; читается локальный файл, панель не вызывается; IP и длинные токены маскируются. N указывается после `--changes`.
+- Порядок разбора провала входа: `slp-check.sh` -> `bot-join.sh <ник> 60` (читать `ERROR` и `DIAG`) -> `verify-bridge.sh --log 40 --bot <ник>` -> `devsrv-access.sh --changes 20`.
 
 ## При ошибке
 
