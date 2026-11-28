@@ -14,7 +14,8 @@ import { WalletExecutor } from './executors/wallet.executor';
 
 /// Слой доставки купленного (0.7, ADR-0184). Транспорт команд
 /// (`COMMAND_TRANSPORT`) здесь НЕ предоставляется: реальных транспортов в 0.7
-/// нет, `CommandExecutor` без него возвращает `retry`.
+/// нет, `CommandExecutor` без него отдаёт задание в ручную выдачу (R143), а
+/// executor.command не считается включённым без транспорта с `dedupAck`.
 @Module({
   imports: [WalletModule, BridgeModule],
   controllers: [DeliveryAdminController],
@@ -29,6 +30,6 @@ import { WalletExecutor } from './executors/wallet.executor';
     BridgeExecutor,
     BridgeAckApplier,
   ],
-  exports: [DeliveryService],
+  exports: [DeliveryService, CommandExecutor],
 })
 export class DeliveryModule {}

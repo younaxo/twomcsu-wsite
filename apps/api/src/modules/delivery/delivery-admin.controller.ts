@@ -16,6 +16,7 @@ import { PermissionsGuard } from '../roles/guards/permissions.guard';
 import { DeliveryService } from './delivery.service';
 import {
   MarkManualDoneDto,
+  MoveToManualDto,
   RetryDeliveryTaskDto,
 } from './dto/delivery-task-actions.dto';
 import { ListDeliveryTasksQueryDto } from './dto/list-delivery-tasks-query.dto';
@@ -48,6 +49,19 @@ export class DeliveryAdminController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.delivery.markManualDone(id, user.id, dto.reason);
+  }
+
+  /// R143: PENDING-задание команды без транспорта -> AWAITING_MANUAL
+  /// (transport_unavailable). Не "выдано вручную"; идемпотентно.
+  @Post(':id/to-manual')
+  @HttpCode(200)
+  @RequirePermissions('store.delivery.manage')
+  async toManual(
+    @Param('id') id: string,
+    @Body() dto: MoveToManualDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.delivery.moveToManual(id, user.id, dto.reason);
   }
 
   @Post(':id/retry')
