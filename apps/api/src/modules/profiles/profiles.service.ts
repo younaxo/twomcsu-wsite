@@ -634,7 +634,10 @@ export class ProfilesService {
       bio: user.bio,
       position: user.position,
       selectedDecoration: user.selectedDecoration,
-      displayBadge: user.displayBadge,
+      // Явная очистка: наружу только {id,type}, без isActive/expiresAt.
+      displayBadge: user.displayBadge
+        ? { id: user.displayBadge.id, type: user.displayBadge.type }
+        : null,
       commentsEnabled: user.commentsEnabled,
       createdAt: user.createdAt,
     };

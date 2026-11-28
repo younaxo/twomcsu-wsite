@@ -120,7 +120,7 @@ export class TwoFactorService {
       targetId: userId,
       changes: { ...options.changes, ...(staff ? { staff: true } : {}) },
       ipAddress: context?.ip,
-      userAgent: context?.userAgent,
+      userAgent: context?.userAgent?.slice(0, 255),
       severity,
       tx: options.tx,
       strict: options.tx !== undefined,

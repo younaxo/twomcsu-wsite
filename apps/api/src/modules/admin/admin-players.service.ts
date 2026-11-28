@@ -6,6 +6,11 @@ import {
 } from '../inventory/inventory.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+export interface PlayerAuditMeta {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 export interface AdminPlayerStatsDto {
   /// `no_data` - записи статистики у игрока нет.
   state: 'ok' | 'no_data';
@@ -37,22 +42,24 @@ export class AdminPlayersService {
     actorId: string,
     userId: string,
     server?: string,
+    meta: PlayerAuditMeta = {},
   ): Promise<InventoryAdminResponseDto> {
     await this.assertUser(userId);
     const body = await this.inventory.getForAdmin(userId, server);
-    await this.record(actorId, userId, 'players.inventory.view');
+    await this.record(actorId, userId, 'players.inventory.view', meta);
     return body;
   }
 
   async getStats(
     actorId: string,
     userId: string,
+    meta: PlayerAuditMeta = {},
   ): Promise<AdminPlayerStatsDto> {
     await this.assertUser(userId);
     const row = await this.prisma.playerStatistics.findUnique({
       where: { userId },
     });
-    await this.record(actorId, userId, 'players.stats.view');
+    await this.record(actorId, userId, 'players.stats.view', meta);
     return {
       state: row ? 'ok' : 'no_data',
       stats: row
@@ -81,12 +88,19 @@ export class AdminPlayersService {
   }
 
   /// strict: нет записи аудита - нет выдачи данных.
-  private record(actorId: string, userId: string, action: string) {
+  private record(
+    actorId: string,
+    userId: string,
+    action: string,
+    meta: PlayerAuditMeta,
+  ) {
     return this.audit.log({
       actorId,
       action,
       targetType: 'user',
       targetId: userId,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent?.slice(0, 255),
       strict: true,
     });
   }

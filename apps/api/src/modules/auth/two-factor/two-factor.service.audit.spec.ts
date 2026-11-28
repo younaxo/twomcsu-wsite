@@ -66,6 +66,15 @@ function setup(staff: boolean) {
 }
 
 describe('TwoFactorService: аудит событий 2FA (R181)', () => {
+  it('userAgent усекается до 255 символов', async () => {
+    const t = setup(false);
+    await t.service.disable('u1', t.password, t.goodCode, {
+      ip: CTX.ip,
+      userAgent: 'a'.repeat(500),
+    });
+    expect(t.audit.log.mock.calls[0]![0].userAgent).toBe('a'.repeat(255));
+  });
+
   it('disable: пишет critical для superuser, в той же транзакции, без секретов, и уведомляет', async () => {
     const t = setup(true);
     await t.service.disable('u1', t.password, t.goodCode, CTX);

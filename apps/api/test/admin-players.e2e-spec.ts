@@ -253,7 +253,11 @@ describe('Admin players view (e2e)', () => {
   it('аудит: запись о просмотре без содержимого (свои данные теста)', async () => {
     const auditTarget = await createUser('audt');
     for (const path of paths(auditTarget.id)) {
-      await http().get(path).set('Authorization', admin.auth).expect(200);
+      await http()
+        .get(path)
+        .set('Authorization', admin.auth)
+        .set('User-Agent', 'e2e-agent-' + 'z'.repeat(300))
+        .expect(200);
     }
     const rows = await prisma.auditLog.findMany({
       where: { actorId: admin.id, targetId: auditTarget.id },
@@ -265,6 +269,10 @@ describe('Admin players view (e2e)', () => {
     for (const row of rows) {
       expect(row.targetType).toBe('user');
       expect(row.changes).toBeNull();
+      expect(row.ipAddress).toBeTruthy();
+      expect(row.userAgent).toBe(
+        ('e2e-agent-' + 'z'.repeat(300)).slice(0, 255),
+      );
     }
   });
 
