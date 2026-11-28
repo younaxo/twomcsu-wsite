@@ -6,6 +6,8 @@
 #   причины kick/end/error mineflayer печатаются (hideErrors: false; ники других игроков, IP, UUID маскируются)
 #   <ник>      3-16 символов [A-Za-z0-9_]; должен совпадать с ником, привязанным к админу стенда (link-account.sh)
 #   секунды    10..600 (по умолчанию 90)
+#   --mc-version <ver>  версия протокола клиента (по умолчанию 1.21.4; сервер Paper 1.21.x с ViaVersion транслирует). Автоопределение по SLP отключено: Maintenance подменяет строку версии
+#   --debug-protocol    печатать только имена и версии стадий login/configuration/play (STAGE proto ...), без содержимого пакетов
 #   --check    только чтение: GET аллокации и GET списка /plugins (поиск плагинов авторизации); бот не запускается
 # Панель: ТОЛЬКО чтение (PTERO_ALLOW_WRITE=0): аллокация (адрес и порт) и список /plugins сервера из SERVER_UUID.
 # Бот: временный контейнер (образ node как в ptero.sh), `npm i --ignore-scripts --no-audit --no-fund mineflayer@<закреплённая версия>` + `npm ls --all` в лог (lock не используется; контейнер видит пароль только до его первого чтения ботом, затем файл удаляется) ВНУТРИ контейнера (в репозиторий и на хост
@@ -22,12 +24,14 @@ set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 trap ptero_cleanup EXIT
 
-NICK=""; SECS=90; CHECK=0; BOT_NET=host
+NICK=""; SECS=90; CHECK=0; BOT_NET=host; MC_VER_ARG=""; DEBUG_PROTO=0
 while (( $# )); do
   a="$1"
   case "$a" in
     --check) CHECK=1 ;;
     --net) shift; BOT_NET="${1:-}"; [[ "$BOT_NET" == host || "$BOT_NET" == bridge ]] || { echo "--net: host (по умолчанию) или bridge (отладка)" >&2; exit 2; } ;;
+    --mc-version) shift; MC_VER_ARG="${1:-}"; [[ -n "$MC_VER_ARG" ]] || { echo "--mc-version: нужна версия, например 1.21.4" >&2; exit 2; } ;;
+    --debug-protocol) DEBUG_PROTO=1 ;;
     -*) echo "Неизвестный аргумент: $a" >&2; exit 2 ;;
     *) if [[ -z "$NICK" ]]; then NICK="$a"; elif [[ "$a" =~ ^[0-9]+$ ]]; then SECS="$a"; else echo "Лишний аргумент: $a" >&2; exit 2; fi ;;
   esac
@@ -35,10 +39,10 @@ while (( $# )); do
 done
 [[ "$NICK" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Использование: bot-join.sh <ник 3-16 [A-Za-z0-9_]> [секунды 10-600] | --check <ник>" >&2; exit 2; }
 { [[ "$SECS" =~ ^[0-9]{2,3}$ ]] && (( SECS >= 10 && SECS <= 600 )); } || { echo "секунды: 10..600" >&2; exit 2; }
-BOT_VERSION="${BOT_MC_VERSION:-1.21.4}"
+BOT_VERSION="${MC_VER_ARG:-${BOT_MC_VERSION:-1.21.4}}"   # --mc-version > BOT_MC_VERSION > 1.21.4 (протокол клиента; ViaVersion на сервере транслирует)
 MF_VERSION="${BOT_MINEFLAYER_VERSION:-4.27.0}"
 [[ "$MF_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "BOT_MINEFLAYER_VERSION: нужна точная версия X.Y.Z" >&2; exit 2; }
-[[ "$BOT_VERSION" =~ ^1\.[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || { echo "BOT_MC_VERSION: неверный формат" >&2; exit 2; }
+[[ "$BOT_VERSION" =~ ^1\.[0-9]{1,2}(\.[0-9]{1,2})?$ ]] || { echo "--mc-version/BOT_MC_VERSION: неверный формат (1.X или 1.X.Y)" >&2; exit 2; }
 # Путь фиксирован, окружением не переопределяется (кроме STAND_TEST=1 для сухих прогонов).
 PASS_FILE=/home/twomc/bridge-dev-bot.pass
 [[ "${STAND_TEST:-0}" == 1 ]] && PASS_FILE="${BOT_PASS_FILE:-$PASS_FILE}"
@@ -142,6 +146,15 @@ bot = mineflayer.createBot({
 process.on('uncaughtException', (e) => { console.log('ERROR uncaught phase=' + phase + ' ' + clean(e && (e.code || e.message))); process.exit(1); });
 try { bot._client.on('error', (e) => console.log('ERROR client-error phase=' + phase + ' ' + clean(e && (e.code || e.message)))); } catch (_) {}
 try { bot._client.on('disconnect', (p) => console.log('ERROR disconnect-packet phase=' + phase + ': ' + clean(reasonText(p && p.reason)))); } catch (_) {}
+try { bot._client.on('kick_disconnect', (p) => console.log('ERROR kick-disconnect-packet phase=' + phase + ': ' + clean(reasonText(p && p.reason)))); } catch (_) {}
+// --debug-protocol: только имена стадий и версии (login/configuration/play), содержимое пакетов не печатается
+if (E.BOT_DEBUG_PROTO === '1') {
+  try {
+    const c = bot._client;
+    console.log('STAGE proto client-version=' + clean(E.BOT_VERSION) + ' mineflayer=' + clean(E.BOT_MF || '?'));
+    c.on('state', (ns, os) => console.log('STAGE proto state ' + clean(os) + ' -> ' + clean(ns) + ' version=' + clean(c.version) + ' protocol=' + clean(c.protocolVersion)));
+  } catch (_) {}
+}
 const connectTimer = setTimeout(() => {
   console.log('ERROR connect-timeout (45s)'); process.exit(1);
 }, 45000);
@@ -238,7 +251,7 @@ redact() { if [[ -n "$PASS_PLAIN" ]]; then sed -E -e "s/$PASS_PLAIN/***/g" -e 's
 out="$BOTDIR/bot.out"
 timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" --network "$BOT_NET" \
   --user "$CUID:$CGID" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
-  --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION") \
+  --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\nBOT_DEBUG_PROTO=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION" "$DEBUG_PROTO") \
   -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund --prefer-offline "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; rm -rf /tmp/.npm; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
   </dev/null > "$out" 2>/dev/null
 rc=$?
