@@ -27,8 +27,9 @@ describe('Communications: фоновые рассылки (e2e)', () => {
   const content = { title: 'Рассылка', message: 'Текст рассылки' };
 
   async function createUser(label: string) {
-    const email = `mj-${label}-${unique}@example.com`;
-    const username = `mj${label}${unique}`.slice(0, 16);
+    const n = userIds.length;
+    const email = `mj-${label}-${n}-${unique}@example.com`;
+    const username = `mj${label}${n}${unique}`.slice(0, 16);
     await http()
       .post('/auth/register')
       .send({ email, username, password })
