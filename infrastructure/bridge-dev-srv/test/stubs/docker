@@ -16,6 +16,7 @@ case "${1:-}" in
       if [[ "$*" == *"--network bridge"* ]]; then f="$FAKE/tcp.bridge"; else f="$FAKE/tcp.host"; fi
       [[ -f "$f" ]] && cat "$f" || echo TCP-OK
     elif [[ "$*" == */bot/bot.js* ]]; then
+      prev=""; for a in "$@"; do [[ "$prev" == --env-file ]] && cat "$a" >> "$FAKE/docker-env.log" 2>/dev/null; prev="$a"; done   # env бота (пароля там нет)
       pdir=""; prev=""
       for a in "$@"; do [[ "$prev" == -v && "$a" == *:/botpass ]] && pdir="${a%:/botpass}"; prev="$a"; done
       { echo "dir=$(stat -c %a "$pdir" 2>/dev/null) file=$(stat -c %a "$pdir/pass" 2>/dev/null || echo none)"; } >> "$FAKE/botpass.stat"
