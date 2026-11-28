@@ -1,6 +1,6 @@
 'use client';
 
-import type { MediaBadgeKind, UserBadgeKind } from '@twomc/shared';
+import type { DisplayBadge, MediaBadgeKind, UserBadgeKind } from '@twomc/shared';
 import type { ReactNode } from 'react';
 import { MinecraftHead } from '@/components/profile/minecraft-head';
 import {
@@ -80,7 +80,7 @@ export function ProfileHero({
   /// Действия зрителя справа от ника (кнопка дружбы, срез 2.1).
   actions?: ReactNode;
   /// Выбранный бейдж рядом с ником (J-07-6); оформление ника не меняется.
-  displayBadge?: { id: string; type: string } | null;
+  displayBadge?: DisplayBadge | null;
   /// Значки под ником; на странице профиля они в витрине «Награды и значки».
   showBadges?: boolean;
   /// Явная кампания украшения шапки (design-lab); по умолчанию — сайта.

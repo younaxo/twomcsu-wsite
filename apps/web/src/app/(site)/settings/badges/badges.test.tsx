@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ApiError } from '@/lib/api/errors';
 import { useAuthStore } from '@/lib/auth/store';
 import BadgesSettingsPage from './page';
 
@@ -86,6 +87,67 @@ describe('Бейджи и награды (J-07-6)', () => {
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() =>
       expect(mocks.put).toHaveBeenCalledWith('/users/me/display-badge', { userBadgeId: null }),
+    );
+  });
+
+  it('фокус остаётся на кнопке элемента; у края уходит на соседнюю; объявляется позиция', async () => {
+    const user = userEvent.setup();
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('badges-order');
+    await user.click(within(list).getByRole('button', { name: 'Ниже: Подтверждённый игрок' }));
+    // элемент стал последним: «Ниже» недоступна — фокус на «Выше» того же элемента
+    await waitFor(() =>
+      expect(
+        within(list).getByRole('button', { name: 'Выше: Подтверждённый игрок' }),
+      ).toHaveFocus(),
+    );
+    expect(screen.getByTestId('badges-order-live')).toHaveTextContent(
+      'Подтверждённый игрок: позиция 2 из 2',
+    );
+    expect(screen.getByTestId('badges-order-live')).toHaveAttribute('aria-live', 'polite');
+    await user.click(within(list).getByRole('button', { name: 'Выше: Подтверждённый игрок' }));
+    await waitFor(() =>
+      expect(
+        within(list).getByRole('button', { name: 'Ниже: Подтверждённый игрок' }),
+      ).toHaveFocus(),
+    );
+    expect(screen.getByTestId('badges-order-live')).toHaveTextContent(
+      'Подтверждённый игрок: позиция 1 из 2',
+    );
+  });
+
+  it('ошибка шага: называет шаг, перечитывает данные', async () => {
+    const user = userEvent.setup();
+    mocks.put.mockImplementation(async (path: string) => {
+      if (path === '/users/me/awards/order') throw new Error('сбой сети');
+      return { success: true };
+    });
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    await screen.findByTestId('badges-order');
+    const callsBefore = mocks.get.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    const status = await screen.findByText(/Не удалось сохранить: порядок наград/);
+    expect(status).toHaveTextContent('Предыдущие шаги (1 из 3) уже сохранены');
+    expect(mocks.put).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(mocks.get.mock.calls.length).toBeGreaterThanOrEqual(callsBefore + 3),
+    );
+  });
+
+  it('истёкший или отозванный бейдж: понятная ошибка и refetch', async () => {
+    const user = userEvent.setup();
+    mocks.put.mockImplementation(async (path: string) => {
+      if (path === '/users/me/badges/order') throw new ApiError(404, ['Бейдж не найден']);
+      return { success: true };
+    });
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    await screen.findByTestId('badges-order');
+    const callsBefore = mocks.get.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    const status = await screen.findByText(/Не удалось сохранить: порядок бейджей/);
+    expect(status).toHaveTextContent('Один из бейджей истёк или отозван');
+    await waitFor(() =>
+      expect(mocks.get.mock.calls.length).toBeGreaterThanOrEqual(callsBefore + 3),
     );
   });
 });
