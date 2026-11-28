@@ -1,0 +1,91 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useAuthStore } from '@/lib/auth/store';
+import BadgesSettingsPage from './page';
+
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  put: vi.fn(),
+}));
+vi.mock('@/lib/api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api/client')>()),
+  api: { get: mocks.get, put: mocks.put },
+}));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/settings/badges',
+}));
+
+function Providers({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <TooltipProvider delayDuration={0}>{children}</TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+beforeEach(() => {
+  mocks.get.mockReset();
+  mocks.put.mockReset().mockResolvedValue({ success: true });
+  useAuthStore.setState({ status: 'authenticated', user: { id: 'me' } as never });
+  mocks.get.mockImplementation(async (path: string) => {
+    if (path === '/users/me/badges') {
+      return [
+        { id: 'b1', type: 'VERIFIED', grantedAt: '2026-01-01' },
+        { id: 'b2', type: 'LEADERSHIP', grantedAt: '2026-01-02' },
+      ];
+    }
+    if (path === '/users/me/awards') {
+      return [
+        { id: 'a1', slug: 'first', name: 'Первая награда', grantedAt: '2026-01-01' },
+        { id: 'a2', slug: 'second', name: 'Вторая награда', grantedAt: '2026-01-02' },
+      ];
+    }
+    return { displayBadge: { id: 'b1', type: 'VERIFIED' } };
+  });
+});
+
+describe('Бейджи и награды (J-07-6)', () => {
+  it('кнопки с aria-label, границы disabled', async () => {
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('badges-order');
+    expect(within(list).getByRole('button', { name: 'Выше: Подтверждённый' })).toBeDisabled();
+    expect(within(list).getByRole('button', { name: 'Ниже: Подтверждённый' })).toBeEnabled();
+    expect(within(list).getByRole('button', { name: 'Ниже: Руководство' })).toBeDisabled();
+    const awards = screen.getByTestId('awards-order');
+    expect(within(awards).getByRole('button', { name: 'Выше: Первая награда' })).toBeDisabled();
+  });
+
+  it('переставляет и сохраняет порядок и выбранный бейдж', async () => {
+    const user = userEvent.setup();
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    const list = await screen.findByTestId('badges-order');
+    await user.click(within(list).getByRole('button', { name: 'Ниже: Подтверждённый' }));
+    const awards = screen.getByTestId('awards-order');
+    await user.click(within(awards).getByRole('button', { name: 'Ниже: Первая награда' }));
+    await user.click(screen.getByRole('radio', { name: 'Руководство' }));
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(mocks.put).toHaveBeenCalledTimes(3));
+    expect(mocks.put).toHaveBeenCalledWith('/users/me/badges/order', { ids: ['b2', 'b1'] });
+    expect(mocks.put).toHaveBeenCalledWith('/users/me/awards/order', { ids: ['a2', 'a1'] });
+    expect(mocks.put).toHaveBeenCalledWith('/users/me/display-badge', { userBadgeId: 'b2' });
+    expect(await screen.findByRole('status')).toHaveTextContent('Сохранено');
+  });
+
+  it('«Нет» отправляет null', async () => {
+    const user = userEvent.setup();
+    render(<BadgesSettingsPage />, { wrapper: Providers });
+    await screen.findByTestId('badges-order');
+    await user.click(screen.getByRole('radio', { name: 'Нет' }));
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() =>
+      expect(mocks.put).toHaveBeenCalledWith('/users/me/display-badge', { userBadgeId: null }),
+    );
+  });
+});

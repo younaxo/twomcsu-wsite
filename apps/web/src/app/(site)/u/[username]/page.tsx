@@ -108,6 +108,7 @@ export default function PublicProfilePage() {
         badges={identity?.badges}
         mediaBadges={identity?.mediaBadges}
         decoration={identity?.decoration}
+        displayBadge={(data as { displayBadge?: { id: string; type: string } | null }).displayBadge}
         showBadges={false}
       />
 

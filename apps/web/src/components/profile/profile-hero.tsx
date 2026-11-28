@@ -3,13 +3,18 @@
 import type { MediaBadgeKind, UserBadgeKind } from '@twomc/shared';
 import type { ReactNode } from 'react';
 import { MinecraftHead } from '@/components/profile/minecraft-head';
-import { ProfileBadges, type ProfileDecorationView } from '@/components/profile/profile-badges';
+import {
+  ProfileBadges,
+  USER_BADGE_META,
+  type ProfileDecorationView,
+} from '@/components/profile/profile-badges';
 import { ProfileBanner } from '@/components/profile/profile-header';
 import { ProfileEditButton } from '@/components/profile/profile-links';
 import { ProfileMetrics } from '@/components/profile/profile-metrics';
 import { ProfileReportButton } from '@/components/profile/profile-report';
 import { SeasonalHeaderDecoration } from '@/components/shell/seasonal-header-decoration';
 import { Avatar } from '@/components/ui/avatar';
+import { cn } from '@/lib/cn';
 import { RolePrefix } from '@/components/ui/role-prefix';
 import type { ProfileStatsDto } from '@/lib/profile/hooks';
 import type { SeasonalCampaign } from '@/lib/site/seasonal';
@@ -47,6 +52,7 @@ export function ProfileHero({
   badges,
   mediaBadges,
   decoration,
+  displayBadge,
   awards,
   actions,
   showBadges = true,
@@ -73,6 +79,8 @@ export function ProfileHero({
   awards?: ReactNode;
   /// Действия зрителя справа от ника (кнопка дружбы, срез 2.1).
   actions?: ReactNode;
+  /// Выбранный бейдж рядом с ником (J-07-6); оформление ника не меняется.
+  displayBadge?: { id: string; type: string } | null;
   /// Значки под ником; на странице профиля они в витрине «Награды и значки».
   showBadges?: boolean;
   /// Явная кампания украшения шапки (design-lab); по умолчанию — сайта.
@@ -82,6 +90,11 @@ export function ProfileHero({
 }) {
   const hasBadges = !!(badges?.length || mediaBadges?.length || decoration);
   const prefix = identityPrefix(role, mediaBadges);
+  const badgeMeta = displayBadge
+    ? (USER_BADGE_META as Record<string, (typeof USER_BADGE_META)[keyof typeof USER_BADGE_META]>)[
+        displayBadge.type
+      ]
+    : undefined;
   return (
     <section className="overflow-hidden rounded-xl bg-surface shadow-sm" data-testid="profile-hero">
       <div className="relative">
@@ -125,6 +138,17 @@ export function ProfileHero({
             <Title className="min-w-[6rem] shrink-[4] truncate font-display text-2xl font-bold">
               {username}
             </Title>
+            {badgeMeta ? (
+              <span
+                role="img"
+                aria-label={badgeMeta.label}
+                title={badgeMeta.label}
+                data-testid="profile-display-badge"
+                className={cn('inline-flex shrink-0', badgeMeta.className)}
+              >
+                <badgeMeta.icon aria-hidden className="size-5" />
+              </span>
+            ) : null}
           </div>
           {statusText ? (
             <p className="line-clamp-2 text-sm text-muted-foreground" data-testid="profile-status">
