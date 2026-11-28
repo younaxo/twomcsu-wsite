@@ -121,6 +121,15 @@ State-файл `/home/twomc/bridge-dev-srv.access.state`: права 600, зап
 - Если вход не проходит: попробовать `bot-join.sh <ник> 60 --mc-version 1.21.1` (или 1.21.3, 1.20.6 из `testedVersions`) и убедиться, что ViaVersion включён и не режет версию.
 - `--debug-protocol` печатает только `STAGE proto ...`: версию клиента, mineflayer и смены стадий (handshaking/login/configuration/play) с версией и номером протокола; содержимое пакетов не печатается. Причина отключения на стадии login приходит как `ERROR kick-disconnect-packet phase=...: <текст>` (chat-компонент разворачивается в текст, без §-кодов, ники/IP/UUID замаскированы как раньше).
 
+### Ресурс-пак в configuration (bridgefix5)
+
+- Симптом: бот проходит handshaking -> login -> configuration, но не доходит до play; через таймаут `ERROR connect-timeout`, на сервере `lost connection: Disconnected`. Причина (гипотеза, плагины Nexo/ModelEngine): сервер шлёт `add_resource_pack` (до 1.20.2 - `resource_pack_send`) ещё в configuration и не завершает её, пока клиент не ответит; mineflayer 4.27.0 отвечает только в play.
+- Теперь `bot.js` отвечает сам: на `add_resource_pack`/`resource_pack_send`/`resource_pack_push` в состоянии configuration шлёт `resource_pack_receive` со статусами accepted(3) -> downloaded(4) -> successfully_loaded(0) и uuid пака (если он есть). Пак не скачивается; URL и хэш не печатаются (в логе `STAGE resourcepack <пакет> configuration -> <статус>`). В play запрос обрабатывает `bot.on('resourcePack')` -> `bot.acceptResourcePack()`, низкоуровневый ответ там не дублируется.
+- `--resource-pack accept|decline` (по умолчанию accept; env контейнера `BOT_RESOURCE_PACK`). `decline` шлёт только declined(1) (в play - `denyResourcePack()`); если ресурс-пак на сервере обязательный (`forced`), сервер кикнет бота: это ожидаемо, режим нужен только для проверки.
+- `--spawn-timeout <сек>` (10..600, по умолчанию 90, было жёстко 45; env `BOT_SPAWN_TIMEOUT`): сколько ждать spawn. Таймер снимается по `spawn`, а не по `login`. При срабатывании печатается `ERROR connect-timeout (<N>s) phase=<стадия>` и запускается DIAG как раньше.
+- `--debug-protocol` дополнительно печатает `STAGE proto packet configuration <имя>` для каждого пакета стадии configuration (для `custom_payload` - `channel=<канал>`); данные пакетов не печатаются. Если после ответа на ресурс-пак вход всё равно не проходит, по последнему имени пакета видно, на каком шаге сервер ждёт клиента.
+- Проверка: `bash run-on-vds.sh script bot-join.sh <ник> 60 --debug-protocol` - ожидаются `STAGE resourcepack ... -> loaded`, затем `STAGE spawned`. Тесты: `node --test infrastructure/bridge-dev-srv/test/` (заглушки, без панели).
+
 ### Чтение журналов (только чтение, без записи на панель)
 
 - `bash run-on-vds.sh script verify-bridge.sh --log [N] [--bot <ник>]`: последние N (1..200, по умолчанию 40) строк `logs/latest.log` (путь уже в allowlist чтения `ptero.sh`), только строки с `TwoMCBridge`, `join`, `kick`, `disconnect`, `lost connection`, `left the game`, `whitelist`. Ники игроков кроме `--bot` -> `<player>`, IP -> `<ip>`, UUID -> `<uuid>`, длинный hex -> `<hex>`. Консольные команды не отправляются.
