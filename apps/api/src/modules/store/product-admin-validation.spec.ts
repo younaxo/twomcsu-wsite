@@ -1,6 +1,8 @@
+import 'reflect-metadata';
 import { ProductType } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { PRICE_STRING } from './dto/price-string';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -74,6 +76,19 @@ describe('цена — Decimal-строка', () => {
       oldPrice: '29.00',
     });
     expect(await validate(dto)).toHaveLength(0);
+  });
+});
+
+describe('CreateProductDto (R152)', () => {
+  it('поле gameCommands отвергается whitelist + forbidNonWhitelisted', async () => {
+    const dto = plainToInstance(CreateProductDto, {
+      gameCommands: ['op {username}'],
+    });
+    const errors = await validate(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+    expect(errors.some((e) => e.property === 'gameCommands')).toBe(true);
   });
 });
 

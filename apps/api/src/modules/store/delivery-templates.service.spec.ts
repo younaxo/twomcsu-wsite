@@ -335,7 +335,7 @@ describe('DeliveryTemplatesService (0.11)', () => {
       const run = async (over: Record<string, unknown>) => {
         try {
           await s.service.preview({
-            template: 'give {username}',
+            template: 'give {username} diamond',
             username: 'Steve',
             duration: 'WEEK_1',
             ...over,
