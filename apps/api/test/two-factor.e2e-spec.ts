@@ -74,6 +74,7 @@ describe('Двухфакторная аутентификация (e2e)', () => 
   });
 
   afterAll(async () => {
+    await prisma.auditLog.deleteMany({ where: { actorId: userId } });
     await prisma.refreshToken.deleteMany({ where: { userId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.role.deleteMany({ where: { slug: roleSlug } });
@@ -238,6 +239,151 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     // Неудачи 2FA считаются попытками входа с IP. e2e-наборы в CI идут
     // параллельно с одного адреса — сбросить счётчик, чтобы не задеть соседей.
     await resetBruteForce();
+  });
+
+  it('R181: enable/regen/disable и неудачи пишут аудит (IP, user-agent, без секретов); disable — critical у персонала', async () => {
+    const auth = `Bearer ${token}`;
+    const events = () =>
+      prisma.auditLog.findMany({
+        where: { actorId: userId, action: { startsWith: '2fa.' } },
+        orderBy: { createdAt: 'asc' },
+      });
+    const base = (await events()).length;
+    expect(base).toBeGreaterThanOrEqual(2); // enable + backup_code.used
+    expect((await events()).map((e) => e.action)).toEqual(
+      expect.arrayContaining(['2fa.enable', '2fa.backup_code.used']),
+    );
+
+    // Перевыпуск резервных кодов: неудача, затем успех.
+    await allowSameStep();
+    await http()
+      .post('/auth/2fa/backup-codes')
+      .set('Authorization', auth)
+      .set('User-Agent', 'e2e-agent/1')
+      .send({ code: '000000' })
+      .expect(401);
+    const regen = await http()
+      .post('/auth/2fa/backup-codes')
+      .set('Authorization', auth)
+      .set('User-Agent', 'e2e-agent/1')
+      .send({ code: code() })
+      .expect(200);
+    const regenCodes: string[] = regen.body.backupCodes;
+
+    // Выключение (пользователь пока без роли персонала — severity info) и
+    // повторное включение. Неудачные disable покрыты unit-тестом: лимит
+    // throttle на disable — 5/мин на весь набор.
+    await allowSameStep();
+    await allowSameStep();
+    const sameStepCode = code();
+    await http()
+      .post('/auth/2fa/disable')
+      .set('Authorization', auth)
+      .set('User-Agent', 'e2e-agent/1')
+      .send({ password, code: sameStepCode })
+      .expect(200);
+    const setup = await http()
+      .post('/auth/2fa/setup')
+      .set('Authorization', auth)
+      .expect(200);
+    const oldSecret = secret;
+    secret = setup.body.secret;
+    const reEnabled = await http()
+      .post('/auth/2fa/enable')
+      .set('Authorization', auth)
+      .set('User-Agent', 'e2e-agent/1')
+      .send({ code: code() })
+      .expect(200);
+    backupCodes = reEnabled.body.backupCodes;
+
+    const rows = (await events()).slice(base);
+    expect(rows.map((r) => r.action)).toEqual([
+      '2fa.backup_codes.regenerate.failed',
+      '2fa.backup_codes.regenerate',
+      '2fa.disable',
+      '2fa.enable',
+    ]);
+    for (const row of rows) {
+      expect(row.targetType).toBe('user');
+      expect(row.targetId).toBe(userId);
+      expect(row.ipAddress).toBeTruthy();
+      expect(row.userAgent).toBe('e2e-agent/1');
+    }
+    const disable = rows.find((r) => r.action === '2fa.disable')!;
+    expect(disable.severity).toBe('info'); // не персонал
+    expect(rows[0]!.severity).toBe('warning');
+
+    // Ни секретов, ни кодов, ни пароля в журнале.
+    const dump = JSON.stringify(await events());
+    for (const forbidden of [
+      oldSecret,
+      secret,
+      password,
+      sameStepCode,
+      '000000',
+      ...regenCodes,
+      ...backupCodes,
+    ]) {
+      expect(dump).not.toContain(forbidden);
+    }
+
+    // Владелец получил уведомление о выключении.
+    expect(
+      await prisma.notification.count({
+        where: { userId, title: { contains: 'выключена' } },
+      }),
+    ).toBe(1);
+  });
+
+  it('R181: disable у персонала (роль с правами) пишется как critical', async () => {
+    const role = await prisma.role.create({
+      data: {
+        name: `${roleSlug}-aud`,
+        slug: `${roleSlug}-aud`,
+        displayName: 'audit-2fa',
+        priority: 10,
+        isSystem: false,
+        isAssignable: true,
+      },
+    });
+    const permission = await prisma.permission.findUniqueOrThrow({
+      where: { key: 'dashboard.view' },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: permission.id },
+    });
+    await prisma.userRole.create({ data: { userId, roleId: role.id } });
+    await app.get(PermissionService).invalidateUser(userId);
+    const auth = `Bearer ${token}`;
+    await allowSameStep();
+    await http()
+      .post('/auth/2fa/disable')
+      .set('Authorization', auth)
+      .send({ password, code: code() })
+      .expect(200);
+    const row = await prisma.auditLog.findFirstOrThrow({
+      where: { actorId: userId, action: '2fa.disable' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(row.severity).toBe('critical');
+    expect(row.changes).toMatchObject({ staff: true });
+    // Вернуть состояние для следующих тестов: включить 2FA и убрать роль.
+    const setup = await http()
+      .post('/auth/2fa/setup')
+      .set('Authorization', auth)
+      .expect(200);
+    secret = setup.body.secret;
+    backupCodes = (
+      await http()
+        .post('/auth/2fa/enable')
+        .set('Authorization', auth)
+        .send({ code: code() })
+        .expect(200)
+    ).body.backupCodes;
+    await prisma.userRole.deleteMany({ where: { userId, roleId: role.id } });
+    await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
+    await prisma.role.delete({ where: { id: role.id } });
+    await app.get(PermissionService).invalidateUser(userId);
   });
 
   // 2FA персонала обязательна всегда (Q22), флага нет: guard смотрит на

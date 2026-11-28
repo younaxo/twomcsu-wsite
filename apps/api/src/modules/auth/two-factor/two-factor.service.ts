@@ -9,8 +9,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
+import { NotificationType, Prisma } from '@prisma/client';
+import { AuditService } from '../../audit/audit.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
+import { PermissionService } from '../../roles/permission.service';
 import { generateBackupCodes, normalizeBackupCode } from './backup-codes';
 import { SecretBox } from './secret-box';
 import { generateTotpSecret, otpauthUri, verifyTotp } from './totp';
@@ -40,6 +44,12 @@ export interface TwoFactorStatus {
 
 export type TwoFactorMethod = 'totp' | 'backup';
 
+/// Откуда пришёл запрос (для аудита): IP уже нормализован с учётом trust proxy.
+export interface TwoFactorAuditContext {
+  ip?: string;
+  userAgent?: string;
+}
+
 @Injectable()
 export class TwoFactorService {
   private readonly logger = new Logger(TwoFactorService.name);
@@ -49,6 +59,9 @@ export class TwoFactorService {
     config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly audit: AuditService,
+    private readonly permissions: PermissionService,
+    private readonly notifications: NotificationsService,
   ) {
     const key = config.get<string>('TWO_FACTOR_ENCRYPTION_KEY', '') ?? '';
     this.box = key.length >= 32 ? new SecretBox(key) : null;
@@ -71,6 +84,67 @@ export class TwoFactorService {
       });
     }
     return this.box;
+  }
+
+  /// Запись в журнал аудита о событии 2FA своего аккаунта (актёр = цель).
+  /// Без секретов и кодов: только факт, причина и способ. severity critical —
+  /// если выключение у персонала (роль с правами или superuser). Запись в
+  /// транзакции (`tx`) строгая: нет аудита — нет действия.
+  private async auditEvent(
+    userId: string,
+    action: string,
+    context: TwoFactorAuditContext | undefined,
+    options: {
+      changes?: Record<string, string | number | boolean>;
+      severity?: 'info' | 'warning' | 'critical';
+      criticalForStaff?: boolean;
+      tx?: Prisma.TransactionClient;
+    } = {},
+  ): Promise<void> {
+    let severity = options.severity ?? 'info';
+    let staff = false;
+    if (options.criticalForStaff) {
+      try {
+        const effective =
+          await this.permissions.getEffectivePermissions(userId);
+        staff = effective.superuser || effective.permissions.length > 0;
+      } catch {
+        staff = false;
+      }
+      if (staff) severity = 'critical';
+    }
+    await this.audit.log({
+      actorId: userId,
+      action,
+      targetType: 'user',
+      targetId: userId,
+      changes: { ...options.changes, ...(staff ? { staff: true } : {}) },
+      ipAddress: context?.ip,
+      userAgent: context?.userAgent,
+      severity,
+      tx: options.tx,
+      strict: options.tx !== undefined,
+    });
+  }
+
+  /// Уведомление владельцу аккаунта о выключении 2FA (без секретов). Сбой
+  /// уведомления не ломает уже выполненное действие.
+  private async notifyDisabled(userId: string): Promise<void> {
+    try {
+      await this.notifications.create({
+        userId,
+        type: NotificationType.SYSTEM,
+        title: 'Двухфакторная аутентификация выключена',
+        message:
+          'Если это были не вы, смените пароль и сразу обратитесь в поддержку.',
+        link: '/settings/security',
+        bypassPreferences: true,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось отправить уведомление о выключении 2FA: ${(error as Error).message}`,
+      );
+    }
   }
 
   async status(userId: string): Promise<TwoFactorStatus> {
@@ -117,6 +191,7 @@ export class TwoFactorService {
   async enable(
     userId: string,
     code: string,
+    context?: TwoFactorAuditContext,
   ): Promise<{ backupCodes: string[] }> {
     const box = this.requireBox();
     const user = await this.prisma.user.findUniqueOrThrow({
@@ -137,8 +212,8 @@ export class TwoFactorService {
       );
     }
     const backupCodes = generateBackupCodes();
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: {
           twoFactorEnabled: true,
@@ -147,20 +222,29 @@ export class TwoFactorService {
           twoFactorEnabledAt: new Date(),
           twoFactorLastStep: step,
         },
-      }),
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-      this.prisma.twoFactorBackupCode.createMany({
+      });
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+      await tx.twoFactorBackupCode.createMany({
         data: backupCodes.map((value) => ({
           userId,
           codeHash: box.hash(normalizeBackupCode(value)!),
         })),
-      }),
-    ]);
+      });
+      await this.auditEvent(userId, '2fa.enable', context, {
+        changes: { backupCodesIssued: backupCodes.length },
+        tx,
+      });
+    });
     return { backupCodes };
   }
 
   /// Отключение: пароль + действующий код (TOTP или резервный).
-  async disable(userId: string, password: string, code: string): Promise<void> {
+  async disable(
+    userId: string,
+    password: string,
+    code: string,
+    context?: TwoFactorAuditContext,
+  ): Promise<void> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       omit: { password: false },
@@ -169,13 +253,22 @@ export class TwoFactorService {
       throw new BadRequestException('Двухфакторная аутентификация не включена');
     }
     if (!(await bcrypt.compare(password, user.password))) {
+      await this.auditEvent(userId, '2fa.disable.failed', context, {
+        changes: { reason: 'wrong_password' },
+        severity: 'warning',
+      });
       throw new UnauthorizedException('Неверный пароль');
     }
-    if (!(await this.verify(userId, code))) {
+    const method = await this.verify(userId, code);
+    if (!method) {
+      await this.auditEvent(userId, '2fa.disable.failed', context, {
+        changes: { reason: 'wrong_code' },
+        severity: 'warning',
+      });
       throw new UnauthorizedException('Неверный код');
     }
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: userId },
         data: {
           twoFactorEnabled: false,
@@ -184,9 +277,15 @@ export class TwoFactorService {
           twoFactorEnabledAt: null,
           twoFactorLastStep: null,
         },
-      }),
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-    ]);
+      });
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+      await this.auditEvent(userId, '2fa.disable', context, {
+        changes: { method },
+        criticalForStaff: true,
+        tx,
+      });
+    });
+    await this.notifyDisabled(userId);
   }
 
   /// Новый набор резервных кодов (старые перестают действовать). Только по
@@ -194,21 +293,32 @@ export class TwoFactorService {
   async regenerateBackupCodes(
     userId: string,
     code: string,
+    context?: TwoFactorAuditContext,
   ): Promise<{ backupCodes: string[] }> {
     const box = this.requireBox();
     if (!(await this.verify(userId, code, { allowBackup: false }))) {
+      await this.auditEvent(
+        userId,
+        '2fa.backup_codes.regenerate.failed',
+        context,
+        { changes: { reason: 'wrong_code' }, severity: 'warning' },
+      );
       throw new UnauthorizedException('Неверный код');
     }
     const backupCodes = generateBackupCodes();
-    await this.prisma.$transaction([
-      this.prisma.twoFactorBackupCode.deleteMany({ where: { userId } }),
-      this.prisma.twoFactorBackupCode.createMany({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.twoFactorBackupCode.deleteMany({ where: { userId } });
+      await tx.twoFactorBackupCode.createMany({
         data: backupCodes.map((value) => ({
           userId,
           codeHash: box.hash(normalizeBackupCode(value)!),
         })),
-      }),
-    ]);
+      });
+      await this.auditEvent(userId, '2fa.backup_codes.regenerate', context, {
+        changes: { backupCodesIssued: backupCodes.length },
+        tx,
+      });
+    });
     return { backupCodes };
   }
 
@@ -280,6 +390,7 @@ export class TwoFactorService {
   async completeChallenge(
     id: string | undefined,
     code: string,
+    context?: TwoFactorAuditContext,
   ): Promise<{ userId: string; method: TwoFactorMethod }> {
     const expired = new UnauthorizedException({
       code: 'two_factor_expired',
@@ -293,6 +404,17 @@ export class TwoFactorService {
     const method = await this.verify(challenge.userId, code);
     if (method) {
       await this.redis.client.del(key);
+      if (method === 'backup') {
+        await this.auditEvent(
+          challenge.userId,
+          '2fa.backup_code.used',
+          context,
+          {
+            changes: { stage: 'login' },
+            severity: 'warning',
+          },
+        );
+      }
       return { userId: challenge.userId, method };
     }
     const attempts = challenge.attempts + 1;

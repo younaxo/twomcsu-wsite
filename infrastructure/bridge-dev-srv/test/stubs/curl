@@ -16,17 +16,27 @@ while (( $# )); do
     *) url="$1"; shift ;;
   esac
 done
-[[ -n "$kf" ]] && cat "$kf" >/dev/null 2>&1
+kcfg=""; [[ -n "$kf" ]] && kcfg="$(cat "$kf" 2>/dev/null)"
 urldecode() { local s="${1//+/ }"; printf '%b' "${s//%/\\x}"; }
 wl_names() { [[ -f "$FAKE/fs/whitelist.json" ]] && grep -o '"name": "[^"]*"' "$FAKE/fs/whitelist.json" | sed 's/.*: "//; s/"$//'; return 0; }
 wl_write() { local n first=1; { echo '['; while read -r n; do [[ -n "$n" ]] || continue; (( first )) || echo ','; first=0; printf '  {"uuid": "u-%s", "name": "%s"}' "$n" "$n"; done; echo; echo ']'; } > "$FAKE/fs/whitelist.json.new"; mv -f "$FAKE/fs/whitelist.json.new" "$FAKE/fs/whitelist.json"; }
-if [[ -z "$url" ]]; then printf '204'; exit 0; fi   # загрузка по signed URL
+if [[ -z "$url" ]]; then   # загрузка по signed URL: адрес приходит в -K конфиге (фиксируем для проверок декодирования)
+  printf '%s
+' "$kcfg" | grep '^url' >> "$FAKE/upload-url.log"
+  printf '204'; exit 0
+fi
 suffix="${url#*/servers/$FAKE_UUID}"
 echo "$method $suffix" >> "$FAKE/calls.log"
 code=200; body='{}'
 case "${suffix%%\?*}" in
   "") body="{\"object\":\"server\",\"attributes\":{\"server_owner\":true,\"identifier\":\"11111111\",\"uuid\":\"$FAKE_UUID\",\"name\":\"${FAKE_NAME-dev-srv}\",\"node\":\"n1\"}}" ;;
-  /resources) body="{\"object\":\"stats\",\"attributes\":{\"current_state\":\"$(cat "$FAKE/state")\"}}" ;;
+  /resources)
+    # последовательность состояний: файл $FAKE/state.seq (по строке на опрос; последняя строка повторяется); иначе $FAKE/state
+    if [[ -s "$FAKE/state.seq" ]]; then
+      st="$(head -n1 "$FAKE/state.seq")"; [[ "$(wc -l < "$FAKE/state.seq")" -gt 1 ]] && sed -i '1d' "$FAKE/state.seq"
+    else st="$(cat "$FAKE/state")"; fi
+    echo "$st" >> "$FAKE/states.log"
+    body="{\"object\":\"stats\",\"attributes\":{\"current_state\":\"$st\"}}" ;;
   /network/allocations) body='{"object":"list","data":[{"object":"allocation","attributes":{"id":1,"ip":"127.0.0.1","ip_alias":"127.0.0.1","port":25565,"is_default":true}}]}' ;;
   /websocket) body='{"data":{"token":"abc.def-1","socket":"wss:\/\/node.test\/api\/servers\/x\/ws"}}' ;;
   /files/list)
@@ -40,6 +50,7 @@ case "${suffix%%\?*}" in
       done
       body+=']}'
     else code=404; fi ;;
+  /files/upload) body='{"object":"signed_url","attributes":{"url":"https:\/\/node.test:8080\/upload\/file?token=abc.def-1\u0026foo=bar"}}' ;;
   /files/contents)
     f="$(urldecode "${suffix#*file=}")"
     if [[ -f "$FAKE/fs$f" ]]; then cp "$FAKE/fs$f" "$out"; printf '%s' "$code"; exit 0; else code=404; fi ;;
@@ -59,7 +70,7 @@ case "${suffix%%\?*}" in
       "maintenance off") sed -i 's/^maintenance-enabled:.*/maintenance-enabled: false/' "$FAKE/fs/plugins/Maintenance/config.yml" ;;
     esac
     code=204 ;;
-  /power) echo "$data" >> "$FAKE/power.log"; code=204 ;;
+  /power) echo "$data" >> "$FAKE/power.log"; [[ "$data" == *restart* && -f "$FAKE/restart.seq" ]] && cp "$FAKE/restart.seq" "$FAKE/state.seq"; code=204 ;;
   /files/chmod|/files/create-folder|/files/rename) echo "$suffix $data" >> "$FAKE/misc.log"; code=204 ;;
   *) code=404 ;;
 esac

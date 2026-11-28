@@ -414,7 +414,12 @@ export class OrdersService {
     return result;
   }
 
+  assertQuickBuyEnabled(): void {
+    this.checkout.assertQuickBuyEnabled();
+  }
+
   async quickBuy(dto: QuickBuyDto) {
+    // Флаг проверяется раньше ника и любых обращений к данным.
     this.checkout.assertQuickBuyEnabled();
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: dto.variantId },
