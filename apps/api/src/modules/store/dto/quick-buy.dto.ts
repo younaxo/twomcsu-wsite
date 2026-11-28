@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
   Min,
 } from 'class-validator';
 
@@ -19,7 +20,8 @@ export class QuickBuyDto {
   quantity?: number;
 
   @IsString()
-  @Length(1, 16)
+  @Length(3, 16)
+  @Matches(/^[A-Za-z0-9_]+$/)
   guestMinecraftNick!: string;
 
   /// Версия оферты, принятая покупателем (0.5); проверяется сервисом.

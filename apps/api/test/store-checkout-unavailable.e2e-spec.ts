@@ -128,6 +128,29 @@ describe('Store checkout 0.5: без провайдера и без quick-buy (e
     expect(await prisma.order.count()).toBe(before);
   });
 
+  it('quick-buy выключен + кривой ник: 400 валидации DTO раньше флага, заказа нет, nick_unavailable нет', async () => {
+    // Задокументированный порядок: ValidationPipe (формат тела) срабатывает до
+    // обработчика, поэтому флаг не скрывает ошибку формата. Состояние флага и
+    // так публично (checkout-config.quickBuyEnabled), ник не раскрывается.
+    const before = await prisma.order.count();
+    const res = await api()
+      .post('/store/quick-buy')
+      .send({ variantId, guestMinecraftNick: 'bad nick', offerVersion: '1' })
+      .expect(400);
+    expect(res.body.code).not.toBe('nick_unavailable');
+    expect(await prisma.order.count()).toBe(before);
+    // Корректный по формату, но неизвестный ник при выключенном флаге: 403.
+    const off = await api()
+      .post('/store/quick-buy')
+      .send({
+        variantId,
+        guestMinecraftNick: 'Nobody_' + unique.slice(0, 4),
+        offerVersion: '1',
+      })
+      .expect(403);
+    expect(off.body.code).toBe('quick_buy_disabled');
+  });
+
   it('вебхук при пустом реестре — 404, фейк-успеха нет', async () => {
     const signed = signPaymentWebhook(E2E_PAYMENT_WEBHOOK_SECRET, {
       orderNumber: 'O-1',

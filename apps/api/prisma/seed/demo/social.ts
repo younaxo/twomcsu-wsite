@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
+import type { Prisma } from '@prisma/client';
 import { DEMO_AUTHOR, demoEscapeToHtml } from './data';
+import {
+  DEMO_EMBER_ENDER_EXTRA,
+  DEMO_EMBER_MAIN_EXTRA,
+} from './inventory-extras';
 
 /// Демо-соцданные для стенда: игроки, статистика, снимки инвентаря, дружбы,
 /// диалоги и комментарии профиля. Все ники вымышленные (префикс `demo_`),
@@ -7,6 +12,20 @@ import { DEMO_AUTHOR, demoEscapeToHtml } from './data';
 export const DEMO_USER_PASSWORD = DEMO_AUTHOR.password;
 export const DEMO_INVENTORY_SERVER_SLUG = 'anarchy-new-era';
 export const DEMO_INVENTORY_EPOCH = 'demo-epoch';
+
+/// Предмет демо-снимка (подмножество NormalizedItem API; лишних полей нет).
+export type DemoItem = {
+  id: string;
+  count: number;
+  damage?: number;
+  maxDamage?: number;
+  enchants?: Array<{ id: string; level: number }>;
+  storedEnchants?: Array<{ id: string; level: number }>;
+  name?: Array<{ text: string; color?: string; bold?: boolean }>;
+  lore?: Array<Array<{ text: string; color?: string }>>;
+  potion?: string;
+  containerItemCount?: number;
+};
 
 export interface DemoPlayer {
   username: string;
@@ -22,6 +41,11 @@ export interface DemoPlayer {
   /// Состав инвентаря: [id предмета, количество] для хотбара и Ender Chest.
   hotbar: Array<[string, number]>;
   ender: Array<[string, number]>;
+  /// Дополнительные слоты (редкие/зачарованные предметы, броня, вторая рука):
+  /// слот с теми же area+slot заменяет базовый. Иконок предметов на сайте нет
+  /// (запасная иконка компонента), поэтому запросов за картинками не бывает.
+  extraMain?: readonly DemoSlot[];
+  extraEnder?: readonly DemoSlot[];
 }
 
 const DEMO_BIO = '[Демо] Тестовый профиль для стенда.';
@@ -41,6 +65,8 @@ export const DEMO_PLAYERS: readonly DemoPlayer[] = [
       ['minecraft:netherite_ingot', 7],
       ['minecraft:totem_of_undying', 2],
     ],
+    extraMain: DEMO_EMBER_MAIN_EXTRA,
+    extraEnder: DEMO_EMBER_ENDER_EXTRA,
   },
   {
     username: 'demo_frost',
@@ -123,9 +149,9 @@ export function buildDemoStatsRow(p: DemoPlayer) {
 
 /// type, а не interface: значение кладётся в Json-колонку Prisma.
 export type DemoSlot = {
-  area: 'hotbar' | 'ender';
+  area: 'hotbar' | 'main' | 'armor' | 'offhand' | 'ender';
   slot: number;
-  item: { id: string; count: number };
+  item: DemoItem;
 };
 
 export function buildDemoInventorySlots(
@@ -134,11 +160,13 @@ export function buildDemoInventorySlots(
 ): DemoSlot[] {
   const area = group === 'main' ? 'hotbar' : 'ender';
   const source = group === 'main' ? p.hotbar : p.ender;
-  return source.map(([id, count], slot) => ({
-    area,
-    slot,
-    item: { id, count },
-  }));
+  const extra = (group === 'main' ? p.extraMain : p.extraEnder) ?? [];
+  const bySlot = new Map<string, DemoSlot>();
+  source.forEach(([id, count], slot) =>
+    bySlot.set(`${area}:${slot}`, { area, slot, item: { id, count } }),
+  );
+  for (const s of extra) bySlot.set(`${s.area}:${s.slot}`, s);
+  return [...bySlot.values()];
 }
 
 /// Канонический JSON (ключи отсортированы) — как canonicalJson в API.
@@ -169,7 +197,7 @@ export function buildDemoInventoryRow(
   return {
     epoch: DEMO_INVENTORY_EPOCH,
     rev: 1,
-    slots,
+    slots: slots as unknown as Prisma.InputJsonValue,
     slotCount: slots.length,
     contentHash: demoSlotsHash(slots),
     capturedAt: now,
@@ -189,6 +217,8 @@ export const DEMO_FRIENDSHIPS: ReadonlyArray<
   ['demo_gale', 'demo_ivy', 'ACCEPTED'],
   ['demo_onyx', 'demo_ivy', 'ACCEPTED'],
   ['demo_pixel', 'demo_ember', 'PENDING'],
+  ['demo_ember', 'demo_ivy', 'ACCEPTED'],
+  ['demo_gale', 'demo_ember', 'PENDING'],
 ];
 
 export interface DemoMessage {
@@ -208,6 +238,39 @@ export interface DemoConversation {
 }
 
 export const DEMO_CONVERSATIONS: readonly DemoConversation[] = [
+  {
+    id: 'demo-conv-direct-ember-onyx',
+    type: 'DIRECT',
+    title: null,
+    owner: 'demo_onyx',
+    members: ['demo_onyx', 'demo_ember'],
+    messages: [
+      {
+        id: 'demo-dm-onyx-1',
+        sender: 'demo_onyx',
+        text: '[Демо] Ember, го на арену после ивента?',
+        minutesAgo: 75,
+      },
+      {
+        id: 'demo-dm-onyx-2',
+        sender: 'demo_ember',
+        text: '[Демо] Давай, только схожу в магазин за зельями.',
+        minutesAgo: 70,
+      },
+      {
+        id: 'demo-dm-onyx-3',
+        sender: 'demo_onyx',
+        text: '[Демо] Хорошо, жду у портала.',
+        minutesAgo: 65,
+      },
+      {
+        id: 'demo-dm-onyx-4',
+        sender: 'demo_ember',
+        text: '[Демо] Уже иду!',
+        minutesAgo: 20,
+      },
+    ],
+  },
   {
     id: 'demo-conv-direct-ember-frost',
     type: 'DIRECT',
@@ -317,3 +380,55 @@ export const DEMO_PROFILE_COMMENTS: readonly DemoProfileComment[] = [
 
 export const demoCommentHtml = (text: string): string =>
   demoEscapeToHtml(text);
+
+/// Общий чат стенда: свой канал (slug не пересекается с настоящими каналами),
+/// сообщения только от demo_* пользователей.
+export const DEMO_CHAT_CHANNEL = {
+  slug: 'demo-general',
+  name: '[Демо] Общий чат',
+  description: 'Демонстрационный канал для тестового стенда',
+} as const;
+
+export const DEMO_CHAT_MESSAGES: ReadonlyArray<{
+  id: string;
+  author: string;
+  text: string;
+  minutesAgo: number;
+}> = [
+  {
+    id: 'demo-chat-1',
+    author: 'demo_onyx',
+    text: '[Демо] Всем привет! Кто сегодня на арене?',
+    minutesAgo: 240,
+  },
+  {
+    id: 'demo-chat-2',
+    author: 'demo_ember',
+    text: '[Демо] Я буду после вечернего ивента.',
+    minutesAgo: 235,
+  },
+  {
+    id: 'demo-chat-3',
+    author: 'demo_ivy',
+    text: '[Демо] На ферме новый урожай, заходите за пшеницей.',
+    minutesAgo: 200,
+  },
+  {
+    id: 'demo-chat-4',
+    author: 'demo_frost',
+    text: '[Демо] Строим базу у портала, нужны факелы.',
+    minutesAgo: 150,
+  },
+  {
+    id: 'demo-chat-5',
+    author: 'demo_gale',
+    text: '[Демо] Продам стрелы, пишите в личку.',
+    minutesAgo: 90,
+  },
+  {
+    id: 'demo-chat-6',
+    author: 'demo_ember',
+    text: '[Демо] Всем удачной игры!',
+    minutesAgo: 30,
+  },
+];
