@@ -270,21 +270,10 @@ describe('Двухфакторная аутентификация (e2e)', () => 
       .expect(200);
     const regenCodes: string[] = regen.body.backupCodes;
 
-    // Выключение: неверный код, затем верный (пользователь пока без роли
-    // персонала — severity info), затем снова включение.
+    // Выключение (пользователь пока без роли персонала — severity info) и
+    // повторное включение. Неудачные disable покрыты unit-тестом: лимит
+    // throttle на disable — 5/мин на весь набор.
     await allowSameStep();
-    await http()
-      .post('/auth/2fa/disable')
-      .set('Authorization', auth)
-      .set('User-Agent', 'e2e-agent/1')
-      .send({ password, code: '000000' })
-      .expect(401);
-    await http()
-      .post('/auth/2fa/disable')
-      .set('Authorization', auth)
-      .set('User-Agent', 'e2e-agent/1')
-      .send({ password: 'Wr0ng-Passw0rd-Zz', code: code() })
-      .expect(401);
     await allowSameStep();
     const sameStepCode = code();
     await http()
@@ -311,8 +300,6 @@ describe('Двухфакторная аутентификация (e2e)', () => 
     expect(rows.map((r) => r.action)).toEqual([
       '2fa.backup_codes.regenerate.failed',
       '2fa.backup_codes.regenerate',
-      '2fa.disable.failed',
-      '2fa.disable.failed',
       '2fa.disable',
       '2fa.enable',
     ]);
