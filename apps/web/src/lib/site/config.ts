@@ -1,5 +1,4 @@
 import type { PublicSiteSettings, SiteSocialPlatform } from '@twomc/shared';
-import { cdnUrl } from '../env';
 import type { FlagCode } from '@/components/ui/flag-icon';
 
 /// Единый источник глобального содержимого shell (sidebar, header, footer,
@@ -13,7 +12,9 @@ import type { FlagCode } from '@/components/ui/flag-icon';
 export const SITE_NAME = 'twomc.su';
 export const SITE_DESCRIPTION =
   'Minecraft-проект с собственными серверами, уникальными механиками, магазином и живым сообществом.';
-export const SITE_LOGO_URL = cdnUrl('assets/images/logo.png');
+/// Локальный статический ассет (public/icons): файла assets/images/logo.png на CDN нет
+/// (см. docs/runbooks/cdn.md, «Отсутствующие ассеты»), через /_next/image remote он давал 404.
+export const SITE_LOGO_URL = '/icons/icon-192.png';
 
 /// Адрес для подключения в игре (показывается в hero, быстром старте, CTA).
 export const SERVER_ADDRESS = process.env.NEXT_PUBLIC_SERVER_ADDRESS || 'play.twomc.su';

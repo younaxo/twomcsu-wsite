@@ -31,3 +31,16 @@ export function cdnUrl(relativePath: string): string {
 /// который всегда проходит). Пустой ключ → виджет не рендерится, а форма
 /// честно сообщает, что защита не настроена.
 export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? '';
+
+/// Флаги «ассет уже лежит на CDN». Пока файла на CDN нет (владелец загрузит
+/// позже, см. docs/runbooks/cdn.md, «Отсутствующие ассеты»), по умолчанию
+/// используется локальный ассет/текстовый бейдж и лишних запросов в 404 нет.
+/// Читаются в момент вызова (а не при загрузке модуля) — так их можно
+/// переопределять в тестах; в бандл значение всё равно инлайнится при сборке.
+export function isRubyIconOnCdn(): boolean {
+  return process.env.NEXT_PUBLIC_RUBY_ICON_ON_CDN === 'true';
+}
+
+export function arePrefixImagesOnCdn(): boolean {
+  return process.env.NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN === 'true';
+}
