@@ -113,6 +113,7 @@ describe('Шаблоны команд и тексты магазина (0.11, e2
     await makeStaff(owner, `e2e-tp-owner-${unique}`, [
       'store.delivery.templates.manage',
       'store.settings.manage',
+      'settings.edit',
     ]);
     await makeStaff(textsEditor, `e2e-tp-texts-${unique}`, [
       'store.settings.manage',
@@ -200,6 +201,91 @@ describe('Шаблоны команд и тексты магазина (0.11, e2
     expect(
       await prisma.deliveryCommandTemplate.count({ where: { productId } }),
     ).toBe(0);
+  });
+
+  /// R155: нормализации нет, всё нестандартное отклоняется; белый список форм
+  /// согласован с CommandPolicy плагина Bridge (Q112).
+  it.each([
+    'lp  user {username} parent add vip',
+    'lp user {username} permission set vip',
+    'lp user all parent add vip',
+    'lp user Notch parent add vip',
+    'lp user {username} parent add vip 5x',
+    'give {username}',
+    'minecraft:give {username} diamond',
+    'luckperms:lp user {username} parent add vip',
+    '/lp user {username} parent add vip',
+    'lp	user {username} parent add vip',
+    '​lp user {username} parent add vip',
+    'lp user {username}​ parent add vip',
+    'ｌp user {username} parent add vip',
+    'give {username} diamond',
+    'give {username} diamond 1;op {username}',
+    'give {username} diamond 1 && stop',
+    'give {username} @a',
+    'give {username} * 1',
+  ])('обход нормализации %j: 400, шаблон не сохранён', async (template) => {
+    await put(owner, { template }).expect(400);
+    expect(
+      await prisma.deliveryCommandTemplate.count({ where: { productId } }),
+    ).toBe(0);
+  });
+
+  it('форма не из белого списка: код template_form_not_allowed', async () => {
+    const res = await put(owner, {
+      template: 'lp user {username} permission set vip',
+    }).expect(400);
+    expect(JSON.stringify(res.body)).toContain('template_form_not_allowed');
+  });
+
+  it('единственный путь записи: общий PATCH /admin/settings ключ корней не пишет (403); для roots нужны право и верная 2FA', async () => {
+    const generic = await http()
+      .patch('/admin/settings')
+      .set('Authorization', auth(owner))
+      .send({ settings: { 'store.delivery.extra_command_roots': 'unban' } })
+      .expect(403);
+    expect(JSON.stringify(generic.body)).toContain('settings_key_protected');
+    expect(
+      await prisma.siteSetting.findUnique({
+        where: { key: 'store.delivery.extra_command_roots' },
+      }),
+    ).toBeNull();
+    const rootsPut = (u: TestUser, body: Record<string, unknown>) =>
+      http()
+        .put('/admin/store/delivery-templates/roots')
+        .set('Authorization', auth(u))
+        .send(body);
+    await rootsPut(plain, {
+      roots: ['unban'],
+      twoFactorCode: GOOD_CODE,
+    }).expect(403);
+    await rootsPut(textsEditor, {
+      roots: ['unban'],
+      twoFactorCode: GOOD_CODE,
+    }).expect(403);
+    await rootsPut(owner, { roots: ['unban'] }).expect(400);
+    await rootsPut(owner, { roots: ['unban'], twoFactorCode: '000000' }).expect(
+      403,
+    );
+    await rootsPut(owner, { roots: ['op'], twoFactorCode: GOOD_CODE }).expect(
+      400,
+    );
+    expect(
+      await prisma.siteSetting.findUnique({
+        where: { key: 'store.delivery.extra_command_roots' },
+      }),
+    ).toBeNull();
+    await rootsPut(owner, { roots: ['tell'], twoFactorCode: GOOD_CODE }).expect(
+      200,
+    );
+    const log = await prisma.auditLog.findFirst({
+      where: { actorId: owner.id, action: 'store.delivery.roots.updated' },
+    });
+    expect(log).toBeTruthy();
+    expect(log?.changes).toMatchObject({ before: '', after: 'tell' });
+    await prisma.siteSetting.deleteMany({
+      where: { key: 'store.delivery.extra_command_roots' },
+    });
   });
 
   it('владелец с 2FA сохраняет шаблон; аудит содержит старое и новое', async () => {

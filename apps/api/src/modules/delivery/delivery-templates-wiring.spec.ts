@@ -170,6 +170,23 @@ describe('шаблоны команд в createTasksForOrder (0.11)', () => {
     expect(created(tx).renderedCommand ?? null).toBeNull();
   });
 
+  it('корень разрешён, форма не подошла: manual без команды', async () => {
+    const { service, tx } = setup({
+      settings: ON,
+      templates: [
+        {
+          productId: 'p1',
+          variantId: null,
+          template: 'give {username}',
+          version: 1,
+        },
+      ],
+    });
+    await service.createTasksForOrder(tx as never, 'o1');
+    expect(created(tx).executor).toBe('manual');
+    expect(created(tx).renderedCommand ?? null).toBeNull();
+  });
+
   it('сайтовое украшение остаётся на site', async () => {
     const { service, tx } = setup({
       settings: ON,
