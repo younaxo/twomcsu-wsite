@@ -55,9 +55,9 @@ describe('Бейджи и награды (J-07-6)', () => {
   it('кнопки с aria-label, границы disabled', async () => {
     render(<BadgesSettingsPage />, { wrapper: Providers });
     const list = await screen.findByTestId('badges-order');
-    expect(within(list).getByRole('button', { name: 'Выше: Подтверждённый' })).toBeDisabled();
-    expect(within(list).getByRole('button', { name: 'Ниже: Подтверждённый' })).toBeEnabled();
-    expect(within(list).getByRole('button', { name: 'Ниже: Руководство' })).toBeDisabled();
+    expect(within(list).getByRole('button', { name: 'Выше: Подтверждённый игрок' })).toBeDisabled();
+    expect(within(list).getByRole('button', { name: 'Ниже: Подтверждённый игрок' })).toBeEnabled();
+    expect(within(list).getByRole('button', { name: 'Ниже: Руководство проекта' })).toBeDisabled();
     const awards = screen.getByTestId('awards-order');
     expect(within(awards).getByRole('button', { name: 'Выше: Первая награда' })).toBeDisabled();
   });
@@ -66,10 +66,10 @@ describe('Бейджи и награды (J-07-6)', () => {
     const user = userEvent.setup();
     render(<BadgesSettingsPage />, { wrapper: Providers });
     const list = await screen.findByTestId('badges-order');
-    await user.click(within(list).getByRole('button', { name: 'Ниже: Подтверждённый' }));
+    await user.click(within(list).getByRole('button', { name: 'Ниже: Подтверждённый игрок' }));
     const awards = screen.getByTestId('awards-order');
     await user.click(within(awards).getByRole('button', { name: 'Ниже: Первая награда' }));
-    await user.click(screen.getByRole('radio', { name: 'Руководство' }));
+    await user.click(screen.getByRole('radio', { name: 'Руководство проекта' }));
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
     await waitFor(() => expect(mocks.put).toHaveBeenCalledTimes(3));
     expect(mocks.put).toHaveBeenCalledWith('/users/me/badges/order', { ids: ['b2', 'b1'] });
