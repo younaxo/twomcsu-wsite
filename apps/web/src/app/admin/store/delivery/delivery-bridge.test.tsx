@@ -4,7 +4,12 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { bridgeRetryMayDuplicate } from '@/lib/admin/store-delivery';
+import { ApiError } from '@/lib/api/errors';
+import {
+  bridgeRetryMayDuplicate,
+  bridgeRetryNeedsServerCheck,
+  describeDeliveryError,
+} from '@/lib/admin/store-delivery';
 import AdminStoreDeliveryTaskPage from './[id]/page';
 import AdminStoreDeliveryPage from './page';
 
@@ -167,5 +172,90 @@ describe('Админка выдачи: Bridge', () => {
     expect(screen.queryByTestId('bridge-duplicate-warning')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Повторить' }));
     expect(screen.queryByTestId('bridge-retry-warning')).toBeNull();
+  });
+});
+
+describe('Повтор Bridge: проверка на сервере (R167)', () => {
+  const openRetry = async () => {
+    mocks.granted.add('store.delivery.view');
+    mocks.granted.add('store.delivery.manage');
+    const user = userEvent.setup();
+    render(<AdminStoreDeliveryTaskPage />, { wrapper: Providers });
+    await screen.findByTestId('bridge-job-summary');
+    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    return user;
+  };
+
+  it('bridgeRetryNeedsServerCheck: только bridge в UNKNOWN/CLAIMED', () => {
+    expect(
+      bridgeRetryNeedsServerCheck({ executor: 'bridge', bridgeJob: { status: 'UNKNOWN' } }),
+    ).toBe(true);
+    expect(
+      bridgeRetryNeedsServerCheck({ executor: 'bridge', bridgeJob: { status: 'CLAIMED' } }),
+    ).toBe(true);
+    expect(
+      bridgeRetryNeedsServerCheck({ executor: 'bridge', bridgeJob: { status: 'FAILED' } }),
+    ).toBe(false);
+    expect(
+      bridgeRetryNeedsServerCheck({ executor: 'manual', bridgeJob: { status: 'UNKNOWN' } }),
+    ).toBe(false);
+    expect(bridgeRetryNeedsServerCheck({ executor: 'bridge', bridgeJob: null })).toBe(false);
+  });
+
+  it('UNKNOWN: предупреждение, кнопка disabled до чекбокса и причины, затем шлёт serverChecked и reason', async () => {
+    mocks.post.mockResolvedValue({});
+    const user = await openRetry();
+    expect(await screen.findByTestId('bridge-server-check-warning')).toHaveTextContent(
+      'Перед повтором проверьте на игровом сервере, что выдачи не было — иначе возможна двойная выдача',
+    );
+    const submit = screen.getByRole('button', { name: 'Повторить выдачу' });
+    expect(submit).toBeDisabled();
+    const checkbox = screen.getByRole('checkbox', {
+      name: 'Я проверил на сервере: выдачи не было',
+    });
+    const reason = screen.getByRole('textbox', { name: /Причина/ });
+    expect(reason).toBeRequired();
+    expect(checkbox).toHaveAttribute('aria-describedby');
+    await user.click(checkbox);
+    expect(submit).toBeDisabled();
+    await user.type(reason, '  Проверил журнал сервера  ');
+    expect(submit).toBeEnabled();
+    await user.click(submit);
+    expect(mocks.post).toHaveBeenCalledWith('/admin/delivery/tasks/T1/retry', {
+      confirmed: true,
+      serverChecked: true,
+      reason: 'Проверил журнал сервера',
+    });
+  });
+
+  it('CLAIMED: тоже требует проверку', async () => {
+    job = { ...(job as object), status: 'CLAIMED' };
+    await openRetry();
+    expect(screen.getByRole('button', { name: 'Повторить выдачу' })).toBeDisabled();
+    expect(screen.getByTestId('bridge-server-check-warning')).toBeInTheDocument();
+  });
+
+  it('другой статус job: поведение как раньше, serverChecked не шлётся', async () => {
+    job = { ...(job as object), status: 'FAILED', claimCount: 1 };
+    mocks.post.mockResolvedValue({});
+    const user = await openRetry();
+    expect(screen.queryByTestId('bridge-server-check-warning')).toBeNull();
+    const submit = screen.getByRole('button', { name: 'Повторить выдачу' });
+    expect(submit).toBeEnabled();
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(submit);
+    expect(mocks.post).toHaveBeenCalledWith('/admin/delivery/tasks/T1/retry', { confirmed: true });
+  });
+
+  it('русские сообщения для кодов 400', () => {
+    const check = describeDeliveryError(
+      new ApiError(400, ['Server check'], { code: 'delivery_retry_server_check_required' }),
+    );
+    expect(check.message).toMatch(/Проверьте игрока на игровом сервере/);
+    const reason = describeDeliveryError(
+      new ApiError(400, ['Reason'], { code: 'delivery_retry_reason_required' }),
+    );
+    expect(reason.message).toMatch(/Укажите причину повтора/);
+    expect(reason.reasonError).toBe(reason.message);
   });
 });
