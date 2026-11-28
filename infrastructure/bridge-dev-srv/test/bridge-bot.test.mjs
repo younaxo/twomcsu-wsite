@@ -180,3 +180,42 @@ test("devsrv-access --changes [N]: последние N строк локаль�
   assert.equal(access(d, "--open Alice --changes").code, 2);
   const none = mk(); const n = access(none, "--changes"); assert.equal(n.code, 0); assert.match(n.out, /журнала изменений нет/);
 });
+
+test("bot-join: --mc-version > BOT_MC_VERSION > 1.21.4 уходит в BOT_VERSION контейнера; неверное значение - код 2", () => {
+  const ver = (args, extra) => { const d = mk(); const r = bjRun(d, args, extra); return { r, env: rd(d, "docker-env.log") }; };
+  assert.match(ver("Bot1 10").env, /^BOT_VERSION=1.21.4$/m);
+  assert.match(ver("Bot1 10 --mc-version 1.21.1").env, /^BOT_VERSION=1.21.1$/m);
+  assert.match(ver("--mc-version 1.20.4 Bot1 10").env, /^BOT_VERSION=1.20.4$/m);
+  assert.match(ver("Bot1 10", { BOT_MC_VERSION: "1.20.6" }).env, /^BOT_VERSION=1.20.6$/m);
+  assert.match(ver("Bot1 10 --mc-version 1.21.3", { BOT_MC_VERSION: "1.20.6" }).env, /^BOT_VERSION=1.21.3$/m);
+  assert.match(ver("Bot1 10").env, /^BOT_DEBUG_PROTO=0$/m);
+  assert.match(ver("Bot1 10 --debug-protocol").env, /^BOT_DEBUG_PROTO=1$/m);
+  for (const bad of ["--mc-version", "--mc-version x.y", "--mc-version '1.21.4;id'", "--mc-version 2.0"]) assert.equal(bjRun(mk(), "Bot1 10 " + bad).code, 2, bad);
+});
+
+test("bot.js: версия уходит в createBot, kick из chat-компонента на стадии login (kick_disconnect), --debug-protocol печатает только стадии", () => {
+  const src = readFileSync(join(SRC, "bot-join.sh"), "utf8");
+  const js = /<<'BOT_JS_EOF'\n([\s\S]*?)\nBOT_JS_EOF/.exec(src)?.[1]; assert.ok(js);
+  const d = mk(); const nm = join(d, "nm/mineflayer"); mkdirSync(nm, { recursive: true });
+  w(join(nm, "index.js"), `const { EventEmitter } = require('events');
+exports.createBot = (o) => { require('fs').writeFileSync(process.env.OPTS_FILE, JSON.stringify(o));
+  const b = new EventEmitter(); b._client = new EventEmitter(); b._client.version = '1.21.4'; b._client.protocolVersion = 769; b.players = {}; b.quit = () => {}; b.clearControlStates = () => {};
+  setTimeout(() => {
+    b._client.emit('state', 'login', 'handshaking'); b._client.emit('state', 'configuration', 'login'); b._client.emit('state', 'play', 'configuration');
+    b._client.emit('packet', { secretField: 'TOPSECRET' });
+    b._client.emit('kick_disconnect', { reason: JSON.stringify({ text: '', extra: [{ text: 'Maintenance ' }, { text: 'in progress', color: 'red' }, { text: ' (come back ' }, { text: 'later)' }] }) });
+    b.emit('end', 'socketClosed');
+  }, 20); return b; };`);
+  const f = join(d, "bot.js"); writeFileSync(f, js);
+  const run = (dbg) => spawnSync(process.execPath, [f], { env: { PATH: process.env.PATH, NODE_PATH: join(d, "nm"), OPTS_FILE: join(d, "opts.json"), BOT_HOST: "127.0.0.1", BOT_PORT: "25565", BOT_NICK: "BotX", BOT_SECS: "10", BOT_VERSION: "1.21.1", BOT_AUTH: "0", BOT_MF: "4.27.0", BOT_DEBUG_PROTO: dbg }, encoding: "utf8", timeout: 20000 });
+  const r = run("1");
+  assert.equal(JSON.parse(readFileSync(join(d, "opts.json"), "utf8")).version, "1.21.1");
+  assert.match(r.stdout, /ERROR kick-disconnect-packet phase=start: Maintenance in progress \(come back later\)/);
+  assert.match(r.stdout, /STAGE proto client-version=1\.21\.1 mineflayer=4\.27\.0/);
+  assert.match(r.stdout, /STAGE proto state handshaking -> login version=1\.21\.4 protocol=769/);
+  assert.match(r.stdout, /STAGE proto state configuration -> play/);
+  assert.doesNotMatch(r.stdout, /TOPSECRET|secretField/);
+  const q = run("0");
+  assert.doesNotMatch(q.stdout, /STAGE proto/);
+  assert.match(q.stdout, /ERROR connection-ended phase=start reason=socketClosed/);
+});
