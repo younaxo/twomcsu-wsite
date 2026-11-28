@@ -125,6 +125,17 @@ export function bridgeRetryMayDuplicate(task: {
   return job.claimCount > 0 || job.status === 'UNKNOWN' || job.status === 'CLAIMED';
 }
 
+/// R167: исход выдачи через Bridge неизвестен (UNKNOWN/CLAIMED): API требует
+/// serverChecked: true и непустую причину (зеркало BRIDGE_UNSETTLED).
+export function bridgeRetryNeedsServerCheck(task: {
+  executor: string;
+  bridgeJob?: { status: string } | null;
+}): boolean {
+  if (task.executor !== 'bridge') return false;
+  const status = task.bridgeJob?.status;
+  return status === 'UNKNOWN' || status === 'CLAIMED';
+}
+
 export interface DeliveryTaskOrderItem {
   id: string;
   quantity: number;
@@ -269,9 +280,18 @@ export function useMarkManualDone() {
 export function useRetryDelivery() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+    mutationFn: ({
+      id,
+      reason,
+      serverChecked,
+    }: {
+      id: string;
+      reason: string;
+      serverChecked?: boolean;
+    }) =>
       api.post<DeliveryTaskCard>(`/admin/delivery/tasks/${encodeURIComponent(id)}/retry`, {
         confirmed: true,
+        ...(serverChecked ? { serverChecked: true } : {}),
         ...(reason ? { reason } : {}),
       }),
     onSettled: () => client.invalidateQueries({ queryKey: deliveryKeys.all }),
@@ -286,8 +306,9 @@ export function validateManualDoneReason(value: string): string | null {
   return null;
 }
 
-/// Причина повтора необязательна, но не длиннее лимита.
-export function validateRetryReason(value: string): string | null {
+/// Причина повтора необязательна (кроме неизвестного исхода Bridge, `required`), но не длиннее лимита.
+export function validateRetryReason(value: string, required = false): string | null {
+  if (required && !value.trim()) return 'Укажите причину повтора';
   return value.trim().length > DELIVERY_REASON_MAX
     ? `Не длиннее ${DELIVERY_REASON_MAX} символов`
     : null;
@@ -336,6 +357,17 @@ export function describeDeliveryError(error: unknown): DeliveryActionError {
   }
   if (error.status === 404) {
     return { ...base, message: 'Задание не найдено: возможно, оно удалено.' };
+  }
+  if (error.code === 'delivery_retry_server_check_required') {
+    return {
+      ...base,
+      message:
+        'Исход выдачи на сервере неизвестен. Проверьте игрока на игровом сервере и подтвердите, что выдачи не было.',
+    };
+  }
+  if (error.code === 'delivery_retry_reason_required') {
+    const message = 'Укажите причину повтора: исход прошлой выдачи на сервере неизвестен.';
+    return { ...base, reasonError: message, message };
   }
   if (error.status === 400 || error.status === 422) {
     const reason = error.messages.find((m) => /reason|причин/i.test(m)) ?? null;

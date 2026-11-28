@@ -1,5 +1,6 @@
 'use client';
 
+import { TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { FormErrorSummary, FormField, useFocusFirstInvalid } from '@/components/admin/form-field';
@@ -31,6 +32,7 @@ export function RetryDialog({
   taskId,
   title,
   bridgeDuplicateRisk = false,
+  serverCheckRequired = false,
   open,
   onOpenChange,
   onSuccessFocus,
@@ -39,6 +41,8 @@ export function RetryDialog({
   title: string;
   /// Задание Bridge уже передавалось серверу: усиленное предупреждение (M2, R167).
   bridgeDuplicateRisk?: boolean;
+  /// Bridge UNKNOWN/CLAIMED: нужны отметка «проверил на сервере» и причина (API: 400 без них).
+  serverCheckRequired?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /// После успеха кнопка-открыватель может исчезнуть (статус сменился): фокус
@@ -54,6 +58,7 @@ export function RetryDialog({
   const [failure, setFailure] = useState<DeliveryActionError | null>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const confirmId = useId();
+  const warningId = useId();
   const openerRef = useRef<Element | null>(
     typeof document === 'undefined' ? null : document.activeElement,
   );
@@ -68,8 +73,12 @@ export function RetryDialog({
     event.preventDefault();
     if (retry.isPending) return;
     setFailure(null);
-    const reasonProblem = validateRetryReason(reason);
-    const confirmProblem = confirmed ? null : 'Подтвердите, что понимаете риск повторной выдачи';
+    const reasonProblem = validateRetryReason(reason, serverCheckRequired);
+    const confirmProblem = confirmed
+      ? null
+      : serverCheckRequired
+        ? 'Подтвердите, что проверили сервер и выдачи не было'
+        : 'Подтвердите, что понимаете риск повторной выдачи';
     setReasonError(reasonProblem);
     setConfirmError(confirmProblem);
     if (reasonProblem || confirmProblem) {
@@ -77,7 +86,11 @@ export function RetryDialog({
       return;
     }
     retry.mutate(
-      { id: taskId, reason: reason.trim() },
+      {
+        id: taskId,
+        reason: reason.trim(),
+        ...(serverCheckRequired ? { serverChecked: true } : {}),
+      },
       {
         onSuccess: () => {
           toast.success('Выдача поставлена на повтор');
@@ -97,6 +110,7 @@ export function RetryDialog({
   };
 
   const blocked = failure?.conflict === true;
+  const incomplete = serverCheckRequired && (!confirmed || reason.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -130,6 +144,19 @@ export function RetryDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="flex flex-col gap-3">
+            {serverCheckRequired ? (
+              <div
+                role="note"
+                data-testid="bridge-server-check-warning"
+                className="flex items-start gap-2 rounded-lg bg-warning-soft p-3 text-sm text-warning"
+              >
+                <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <p id={warningId}>
+                  Перед повтором проверьте на игровом сервере, что выдачи не было — иначе возможна
+                  двойная выдача.
+                </p>
+              </div>
+            ) : null}
             {bridgeDuplicateRisk ? (
               <p
                 role="alert"
@@ -159,7 +186,14 @@ export function RetryDialog({
                   checked={confirmed}
                   disabled={blocked}
                   invalid={Boolean(confirmError)}
-                  aria-describedby={confirmError ? `${confirmId}-error` : undefined}
+                  aria-describedby={
+                    [
+                      serverCheckRequired ? warningId : null,
+                      confirmError ? `${confirmId}-error` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
+                  }
                   onCheckedChange={(value) => {
                     setConfirmed(value === true);
                     if (value === true) setConfirmError(null);
@@ -167,7 +201,9 @@ export function RetryDialog({
                   className="mt-0.5"
                 />
                 <label htmlFor={confirmId} className="text-sm leading-snug">
-                  Понимаю, что команда могла уже выполниться, и подтверждаю повтор
+                  {serverCheckRequired
+                    ? 'Я проверил на сервере: выдачи не было'
+                    : 'Понимаю, что команда могла уже выполниться, и подтверждаю повтор'}
                 </label>
               </div>
               {confirmError ? (
@@ -177,7 +213,8 @@ export function RetryDialog({
               ) : null}
             </div>
             <FormField
-              label="Причина (необязательно)"
+              label={serverCheckRequired ? 'Причина' : 'Причина (необязательно)'}
+              required={serverCheckRequired}
               error={reasonError}
               hint={`До ${DELIVERY_REASON_MAX} символов`}
             >
@@ -203,7 +240,7 @@ export function RetryDialog({
               {blocked ? 'Закрыть' : 'Отмена'}
             </Button>
             {blocked ? null : (
-              <Button type="submit" loading={retry.isPending}>
+              <Button type="submit" loading={retry.isPending} disabled={incomplete}>
                 Повторить выдачу
               </Button>
             )}
