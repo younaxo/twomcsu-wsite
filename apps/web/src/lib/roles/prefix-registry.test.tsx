@@ -148,7 +148,9 @@ describe('Иконки валют', () => {
     expect(money).toHaveAttribute('width', '16');
     expect(ruby).toHaveAttribute('alt', 'Рубин');
     expect(ruby).toHaveAttribute('width', '32');
-    expect(ruby?.className).toContain('[image-rendering:pixelated]');
+    // рубин по умолчанию — локальный SVG (без pixelated); PNG с CDN — см. currency-icon.test.tsx
+    expect(ruby?.getAttribute('src')).toBe('/assets/currencies/ruby.svg');
+    expect(ruby?.className).not.toContain('[image-rendering:pixelated]');
   });
 
   it('не загрузилась — не рисуется, без битой картинки', () => {

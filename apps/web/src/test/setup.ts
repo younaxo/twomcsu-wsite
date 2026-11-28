@@ -48,3 +48,8 @@ if (typeof window !== 'undefined') {
     Element.prototype.releasePointerCapture = () => {};
   }
 }
+
+/// Существующие тесты проверяют графические префиксы с CDN: включаем флаг
+/// (в проде по умолчанию выключен, пока PNG нет на CDN). Тесты бейджа по
+/// умолчанию переопределяют его через vi.stubEnv.
+process.env.NEXT_PUBLIC_PREFIX_IMAGES_ON_CDN = 'true';
