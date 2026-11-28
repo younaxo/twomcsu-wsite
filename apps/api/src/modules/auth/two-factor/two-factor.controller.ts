@@ -21,7 +21,7 @@ import { TwoFactorAuditContext, TwoFactorService } from './two-factor.service';
 function auditContext(req: Request): TwoFactorAuditContext {
   return {
     ip: normalizeIp(req.ip ?? req.socket.remoteAddress),
-    userAgent: req.get('user-agent') ?? undefined,
+    userAgent: req.get('user-agent')?.slice(0, 255) ?? undefined,
   };
 }
 

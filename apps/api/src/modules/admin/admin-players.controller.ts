@@ -1,6 +1,14 @@
-import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { SkipAudit } from '../audit/skip-audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -8,7 +16,19 @@ import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interfa
 import { InventoryMeQueryDto } from '../inventory/dto/inventory-query.dto';
 import { RequirePermissions } from '../roles/decorators/require-permissions.decorator';
 import { PermissionsGuard } from '../roles/guards/permissions.guard';
-import { AdminPlayersService } from './admin-players.service';
+import { normalizeIp } from '../../config/trust-proxy';
+import {
+  AdminPlayersService,
+  type PlayerAuditMeta,
+} from './admin-players.service';
+
+/// IP (trust proxy) и User-Agent (до 255) для записи аудита.
+function requestMeta(req: Request): PlayerAuditMeta {
+  return {
+    ipAddress: normalizeIp(req.ip ?? req.socket.remoteAddress),
+    userAgent: req.get('user-agent')?.slice(0, 255) ?? undefined,
+  };
+}
 
 /// Инвентарь и статистика игрока для админов (Q116). PermissionsGuard
 /// обеспечивает право и обязательную 2FA (Q22). Аудит пишет сервис.
@@ -32,9 +52,15 @@ export class AdminPlayersController {
     @Param('userId') userId: string,
     @Query() query: InventoryMeQueryDto,
     @Res({ passthrough: true }) res: Response,
+    @Req() req: Request,
   ) {
     res.setHeader('Cache-Control', 'private, no-store');
-    return this.players.getInventory(admin.id, userId, query.server);
+    return this.players.getInventory(
+      admin.id,
+      userId,
+      query.server,
+      requestMeta(req),
+    );
   }
 
   @Get(':userId/stats')
@@ -45,8 +71,9 @@ export class AdminPlayersController {
     @CurrentUser() admin: AuthenticatedUser,
     @Param('userId') userId: string,
     @Res({ passthrough: true }) res: Response,
+    @Req() req: Request,
   ) {
     res.setHeader('Cache-Control', 'private, no-store');
-    return this.players.getStats(admin.id, userId);
+    return this.players.getStats(admin.id, userId, requestMeta(req));
   }
 }

@@ -91,6 +91,58 @@ describe('AdminPlayersService (Q116)', () => {
     );
   });
 
+  it('аудит: ipAddress и userAgent (усечён до 255) в обеих записях', async () => {
+    const meta = { ipAddress: '203.0.113.7', userAgent: 'x'.repeat(400) };
+    const a = setup();
+    await a.service.getInventory('a1', 'u1', undefined, meta);
+    expect(a.audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'players.inventory.view',
+        ipAddress: '203.0.113.7',
+        userAgent: 'x'.repeat(255),
+      }),
+    );
+    const b = setup();
+    await b.service.getStats('a1', 'u1', meta);
+    expect(b.audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'players.stats.view',
+        ipAddress: '203.0.113.7',
+        userAgent: 'x'.repeat(255),
+      }),
+    );
+  });
+
+  it('контроллер: ip нормализуется, userAgent усекается', async () => {
+    const service = {
+      getInventory: jest.fn().mockResolvedValue({}),
+      getStats: jest.fn().mockResolvedValue({}),
+    };
+    const ctrl = new AdminPlayersController(service as never);
+    const req = {
+      ip: '::ffff:203.0.113.9',
+      socket: {},
+      get: () => 'u'.repeat(300),
+    };
+    const res = { setHeader: jest.fn() };
+    await ctrl.stats({ id: 'a1' } as never, 'u1', res as never, req as never);
+    expect(service.getStats).toHaveBeenCalledWith('a1', 'u1', {
+      ipAddress: '203.0.113.9',
+      userAgent: 'u'.repeat(255),
+    });
+    await ctrl.inventory(
+      { id: 'a1' } as never,
+      'u1',
+      { server: 's' } as never,
+      res as never,
+      req as never,
+    );
+    expect(service.getInventory).toHaveBeenCalledWith('a1', 'u1', 's', {
+      ipAddress: '203.0.113.9',
+      userAgent: 'u'.repeat(255),
+    });
+  });
+
   it('стат: 404 для несуществующего', async () => {
     await expect(
       setup({ user: false }).service.getStats('a1', 'nope'),
