@@ -1895,6 +1895,52 @@ model Announcement {
   @@map("announcements")
 }
 
+/// J-08-4 (срез 8.6): фоновая массовая рассылка системных сообщений. Задание
+/// обрабатывается воркером пачками по курсору `cursor` (id последнего
+/// обработанного получателя); повторная доставка исключена проверкой
+/// `metadata.mailingId` у уведомления получателя.
+enum MailingJobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+model MailingJob {
+  id              String           @id @default(cuid())
+  status          MailingJobStatus @default(QUEUED)
+  title           String           @db.VarChar(120)
+  message         String           @db.VarChar(2000)
+  link            String?          @db.VarChar(500)
+  /// all | role | users (как `SystemMessageAudienceDto`).
+  audienceKind    String           @db.VarChar(16)
+  audienceRoleId  String?          @db.VarChar(64)
+  audienceUserIds Json?
+  /// Число получателей на момент подтверждения (confirmCount).
+  total           Int
+  /// Обработано получателей (доставлено + пропущено + ошибки).
+  processed       Int              @default(0)
+  delivered       Int              @default(0)
+  /// Уже получили это задание раньше (повторный вход после рестарта).
+  skipped         Int              @default(0)
+  failed          Int              @default(0)
+  /// id последнего обработанного пользователя (порядок по id).
+  cursor          String?
+  lastError       String?          @db.VarChar(200)
+  createdById     String
+  cancelledById   String?
+  cancelledAt     DateTime?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("mailing_jobs")
+}
+
 model MaintenanceMode {
   id           String    @id @default(cuid())
   isEnabled    Boolean   @default(false)

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
+  Param,
   Post,
   Query,
   UseGuards,
@@ -21,9 +22,11 @@ import {
 } from '../roles/guards/permissions.guard';
 import { PermissionService } from '../roles/permission.service';
 import { CommunicationsService } from './communications.service';
+import { MailingsService } from './mailings.service';
 import {
   BulkSystemMessageDto,
   BulkSystemMessagePreviewDto,
+  MailingsQueryDto,
   RecipientsQueryDto,
   SendSystemMessageDto,
 } from './dto/system-message.dto';
@@ -35,6 +38,7 @@ import {
 export class CommunicationsController {
   constructor(
     private readonly communications: CommunicationsService,
+    private readonly mailings: MailingsService,
     private readonly permissions: PermissionService,
     private readonly config: ConfigService,
   ) {}
@@ -88,5 +92,42 @@ export class CommunicationsController {
     @CurrentUser() actor: AuthenticatedUser,
   ) {
     return this.communications.sendBulk(dto, actor.id);
+  }
+
+  /// Фоновая рассылка (J-08-4): ставит задание, доставку ведёт воркер.
+  @Post('mailings')
+  @HttpCode(202)
+  @SkipAudit()
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @RequirePermissions('communications.messages.bulk')
+  enqueueMailing(
+    @Body() dto: BulkSystemMessageDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.mailings.enqueue(dto, actor.id);
+  }
+
+  @Get('mailings')
+  @RequirePermissions('communications.messages.bulk')
+  listMailings(@Query() query: MailingsQueryDto) {
+    return this.mailings.list(query.limit);
+  }
+
+  @Get('mailings/:id')
+  @RequirePermissions('communications.messages.bulk')
+  getMailing(@Param('id') id: string) {
+    return this.mailings.get(id);
+  }
+
+  @Post('mailings/:id/cancel')
+  @HttpCode(200)
+  @SkipAudit()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @RequirePermissions('communications.messages.bulk')
+  cancelMailing(
+    @Param('id') id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.mailings.cancel(id, actor.id);
   }
 }

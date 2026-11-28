@@ -8,6 +8,8 @@ import { AnnouncementsScheduler } from './announcements.scheduler';
 import { AnnouncementsService } from './announcements.service';
 import { CommunicationsController } from './communications.controller';
 import { CommunicationsService } from './communications.service';
+import { MailingsScheduler } from './mailings.scheduler';
+import { MailingsService } from './mailings.service';
 
 /// Коммуникации от имени сайта: системные сообщения (ADR-0080), объявления
 /// (ADR-0081).
@@ -22,6 +24,8 @@ import { CommunicationsService } from './communications.service';
     CommunicationsService,
     AnnouncementsService,
     AnnouncementsScheduler,
+    MailingsService,
+    MailingsScheduler,
   ],
   exports: [AnnouncementsService],
 })

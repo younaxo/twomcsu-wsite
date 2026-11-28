@@ -10,6 +10,7 @@ import {
   IsString,
   Length,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -86,4 +87,13 @@ export class RecipientsQueryDto {
   @IsString()
   @MaxLength(32)
   q?: string;
+}
+
+export class MailingsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

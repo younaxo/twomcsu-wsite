@@ -4,16 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  AccountType,
-  NotificationPriority,
-  NotificationType,
-  Prisma,
-} from '@prisma/client';
+import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../files/storage.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ACTIVE_USER, audienceWhere } from './mailing-audience';
+import { MailingsService } from './mailings.service';
 import {
   BulkSystemMessageDto,
   SendSystemMessageDto,
@@ -23,12 +20,6 @@ import {
 
 /// Защищённый отправитель (зеркало `SYSTEM_MESSAGE_SENDER` из shared).
 const SYSTEM_SENDER = 'system';
-
-/// Только обычные активные аккаунты: не SYSTEM и не забаненные.
-const ACTIVE_USER: Prisma.UserWhereInput = {
-  accountType: AccountType.DEFAULT,
-  isBanned: false,
-};
 
 /// Системные сообщения от имени twomc.su (ADR-0080): уведомление типа SYSTEM
 /// с `metadata.sender = 'system'`. Доставка не зависит от отключения типа в
@@ -40,6 +31,7 @@ export class CommunicationsService {
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
+    private readonly mailings: MailingsService,
   ) {}
 
   async searchRecipients(q: string | undefined) {
@@ -88,14 +80,22 @@ export class CommunicationsService {
   async previewBulk(audience: SystemMessageAudienceDto) {
     return {
       recipients: await this.prisma.user.count({
-        where: this.audienceWhere(audience),
+        where: audienceWhere(audience),
       }),
     };
   }
 
+  /// Синхронный путь сохранён (по умолчанию). С `COMMUNICATIONS_BULK_QUEUE=true`
+  /// ставит фоновое задание и отвечает сразу: `delivered: 0` + `mailingId`
+  /// (прогресс — `GET admin/communications/mailings/:id`). Новый клиент
+  /// использует `POST admin/communications/mailings`.
   async sendBulk(dto: BulkSystemMessageDto, actorId: string) {
+    if (this.mailings.queueEnabled) {
+      const job = await this.mailings.enqueue(dto, actorId);
+      return { recipients: job.total, delivered: 0, mailingId: job.id };
+    }
     const targets = await this.prisma.user.findMany({
-      where: this.audienceWhere(dto.audience),
+      where: audienceWhere(dto.audience),
       select: { id: true },
     });
     if (targets.length === 0) {
@@ -126,23 +126,6 @@ export class CommunicationsService {
       },
     });
     return { recipients: targets.length, delivered };
-  }
-
-  private audienceWhere(
-    audience: SystemMessageAudienceDto,
-  ): Prisma.UserWhereInput {
-    switch (audience.kind) {
-      case 'all':
-        return ACTIVE_USER;
-      case 'role':
-        if (!audience.roleId) throw new BadRequestException('Выберите роль');
-        return { ...ACTIVE_USER, roles: { some: { roleId: audience.roleId } } };
-      case 'users':
-        if (!audience.userIds?.length) {
-          throw new BadRequestException('Выберите получателей');
-        }
-        return { ...ACTIVE_USER, id: { in: audience.userIds } };
-    }
   }
 
   private async deliver(userId: string, content: SystemMessageContentDto) {
