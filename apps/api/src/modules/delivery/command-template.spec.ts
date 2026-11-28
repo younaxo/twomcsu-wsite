@@ -91,13 +91,13 @@ describe('renderCommand (0.11)', () => {
     ).toBe('lp user Steve_1 parent addtemp ares 30d');
   });
 
-  it('подставляет все вхождения', () => {
-    expect(
+  it('{username} в слоте группы/предмета отвергается', () => {
+    expect(() =>
       renderCommand('give {username} {username}', {
         username: 'Alex',
         duration: 'FOREVER',
       }),
-    ).toBe('give Alex Alex');
+    ).toThrow(CommandTemplateError);
   });
 
   it.each(Object.keys(DURATION_TOKENS))('срок %s из перечня', (d) => {
