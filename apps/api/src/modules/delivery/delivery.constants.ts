@@ -1,4 +1,4 @@
-import { DeliveryTaskStatus } from '@prisma/client';
+import { BridgeDeliveryJobStatus, DeliveryTaskStatus } from '@prisma/client';
 
 /// Настройка сайта (БД): доставка включена. По умолчанию выключена (ADR-0184 Р10).
 export const DELIVERY_ENABLED_SETTING = 'store.delivery.enabled';
@@ -78,4 +78,11 @@ export const MANUAL_DONE_FROM: readonly DeliveryTaskStatus[] = [
 export const RETRY_FROM: readonly DeliveryTaskStatus[] = [
   DeliveryTaskStatus.FAILED,
   DeliveryTaskStatus.NEEDS_ATTENTION,
+];
+
+/// Статусы строки очереди Bridge, при которых исход выдачи на сервере
+/// неизвестен (R167): повтор требует подтверждения проверки сервера.
+export const BRIDGE_UNSETTLED: readonly BridgeDeliveryJobStatus[] = [
+  BridgeDeliveryJobStatus.UNKNOWN,
+  BridgeDeliveryJobStatus.CLAIMED,
 ];

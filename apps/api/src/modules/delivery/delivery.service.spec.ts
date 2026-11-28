@@ -926,6 +926,83 @@ describe('DeliveryService ручные действия админа', () => {
     );
   });
 
+  describe('retry Bridge после неизвестного исхода (R167)', () => {
+    function bridgeLocked(jobStatus: string) {
+      const ctx = locked(S.NEEDS_ATTENTION, 'bridge');
+      ctx.tx.deliveryTask.findUniqueOrThrow.mockResolvedValue({
+        status: S.NEEDS_ATTENTION,
+        orderItemId: 'i1',
+        step: 1,
+        executor: 'bridge',
+        bridgeJob: { status: jobStatus, claimCount: 1 },
+      });
+      return ctx;
+    }
+
+    it.each(['UNKNOWN', 'CLAIMED'])(
+      'без serverChecked (job %s) — 400, статус не меняется',
+      async (jobStatus) => {
+        const { service, tx } = bridgeLocked(jobStatus);
+        await expect(
+          service.retryTask('t1', 'a1', { confirmed: true, reason: 'r' }),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({
+            code: 'delivery_retry_server_check_required',
+          }),
+        });
+        expect(tx.deliveryTask.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('serverChecked без причины — 400', async () => {
+      const { service, tx } = bridgeLocked('UNKNOWN');
+      await expect(
+        service.retryTask('t1', 'a1', {
+          confirmed: true,
+          serverChecked: true,
+          reason: '   ',
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: 'delivery_retry_reason_required',
+        }),
+      });
+      expect(tx.deliveryTask.update).not.toHaveBeenCalled();
+    });
+
+    it('с подтверждением и причиной — PENDING, аудит с ключом и serverChecked', async () => {
+      const { service, tx, audit } = bridgeLocked('UNKNOWN');
+      await service.retryTask('t1', 'a1', {
+        confirmed: true,
+        serverChecked: true,
+        reason: 'проверил консоль',
+      });
+      expect(tx.deliveryTask.update.mock.calls[0][0].data.status).toBe(
+        S.PENDING,
+      );
+      expect(audit.logInTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          changes: expect.objectContaining({
+            bridgeIdempotencyKey: 'i1:1',
+            serverChecked: true,
+            unsettledRetry: true,
+            reason: 'проверил консоль',
+          }),
+        }),
+      );
+    });
+
+    it.each(['FAILED', 'CANCELLED', 'DONE'])(
+      'job %s: достаточно обычного подтверждения',
+      async (jobStatus) => {
+        const { service, tx } = bridgeLocked(jobStatus);
+        await service.retryTask('t1', 'a1', { confirmed: true });
+        expect(tx.deliveryTask.update).toHaveBeenCalled();
+      },
+    );
+  });
+
   it.each([S.DELIVERED, S.MANUAL_DONE, S.IN_PROGRESS, S.PENDING, S.CANCELLED])(
     'retry из %s — 409',
     async (status) => {

@@ -449,7 +449,11 @@ describe('Bridge delivery: полный цикл (0.13 срез 2, e2e)', () => 
       await http()
         .post(`/admin/delivery/tasks/${m.taskId}/retry`)
         .set('Authorization', bearer())
-        .send({ confirmed: true, reason: 'проверил игрока' })
+        .send({
+          confirmed: true,
+          serverChecked: true,
+          reason: 'проверил игрока',
+        })
         .expect(200);
       expect((await taskRow(m.taskId)).status).toBe('PENDING');
       const audit = await prisma.auditLog.findFirst({
@@ -462,6 +466,9 @@ describe('Bridge delivery: полный цикл (0.13 срез 2, e2e)', () => 
       expect(audit?.changes).toMatchObject({
         bridgeJobStatus: 'UNKNOWN',
         bridgeClaimCount: 1,
+        bridgeIdempotencyKey: `${m.itemId}:1`,
+        serverChecked: true,
+        unsettledRetry: true,
         confirmed: true,
       });
       // Повторная постановка переиспользует строку и ключ идемпотентности.
@@ -483,6 +490,52 @@ describe('Bridge delivery: полный цикл (0.13 срез 2, e2e)', () => 
       const res = await ack(slugA, m.jobId, got.claimToken, 'done');
       expect(res.body.results[0].status).toBe('accepted');
       expect((await taskRow(m.taskId)).status).toBe('DELIVERED');
+    });
+
+    it('повтор UNKNOWN без serverChecked или без причины отклонён, аудита нет (R167)', async () => {
+      const m = await makeUnknown();
+      const url = `/admin/delivery/tasks/${m.taskId}/retry`;
+      const r1 = await http()
+        .post(url)
+        .set('Authorization', bearer())
+        .send({ confirmed: true, reason: 'без проверки' })
+        .expect(400);
+      expect(r1.body.code ?? r1.body.message?.code).toBe(
+        'delivery_retry_server_check_required',
+      );
+      const r2 = await http()
+        .post(url)
+        .set('Authorization', bearer())
+        .send({ confirmed: true, serverChecked: true })
+        .expect(400);
+      expect(r2.body.code ?? r2.body.message?.code).toBe(
+        'delivery_retry_reason_required',
+      );
+      expect((await taskRow(m.taskId)).status).toBe('NEEDS_ATTENTION');
+      expect(
+        await prisma.auditLog.count({
+          where: { action: 'delivery.task.retried', targetId: m.taskId },
+        }),
+      ).toBe(0);
+    });
+
+    it('двойной ack: второй — duplicate, задание не меняется повторно (R167)', async () => {
+      const m = await makeJob(slugA);
+      const got = await claimOne(slugA, m.jobId);
+      const first = await ack(slugA, m.jobId, got.claimToken, 'done');
+      expect(first.body.results[0].status).toBe('accepted');
+      const delivered = await taskRow(m.taskId);
+      expect(delivered.status).toBe('DELIVERED');
+      const second = await ack(slugA, m.jobId, got.claimToken, 'done');
+      expect(second.body.results[0].status).toBe('duplicate');
+      const conflict = await ack(slugA, m.jobId, got.claimToken, 'failed', 'x');
+      expect(conflict.body.results[0].status).toBe('rejected');
+      const after = await taskRow(m.taskId);
+      expect(after.status).toBe('DELIVERED');
+      expect(after.deliveredAt?.getTime()).toBe(
+        delivered.deliveredAt?.getTime(),
+      );
+      expect((await jobRow(m.jobId)).status).toBe('DONE');
     });
 
     it('«выдано вручную»: MANUAL_DONE, поздний ack плагина задание не меняет', async () => {
