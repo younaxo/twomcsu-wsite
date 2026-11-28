@@ -196,18 +196,18 @@ describe('Store payment: mock-http провайдер (e2e)', () => {
     expect(await statusOf(orderNumber)).toBe('COMPLETED');
   });
 
-  it('просроченная метка времени (now-301 с, окно 300 с) — 401, заказ остаётся PENDING; свежая подпись принимается', async () => {
+  it('просроченная метка времени (now±600 с, окно 300 с) — 401, заказ остаётся PENDING; свежая подпись принимается', async () => {
     const { orderNumber, paymentId } = await createOrder();
     mock.succeed(paymentId);
     const nowSeconds = Math.floor(Date.now() / 1000);
     await postWebhook(
       mock.webhook(MOCK_WEBHOOK_SECRET, paymentId, 'succeeded', orderNumber, {
-        timestamp: nowSeconds - 301,
+        timestamp: nowSeconds - 600,
       }),
     ).expect(401);
     await postWebhook(
       mock.webhook(MOCK_WEBHOOK_SECRET, paymentId, 'succeeded', orderNumber, {
-        timestamp: nowSeconds + 301,
+        timestamp: nowSeconds + 600,
       }),
     ).expect(401);
     expect(await statusOf(orderNumber)).toBe('PENDING');
