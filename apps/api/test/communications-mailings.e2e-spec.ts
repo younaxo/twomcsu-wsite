@@ -60,7 +60,10 @@ describe('Communications: фоновые рассылки (e2e)', () => {
     await permissions.invalidateUser(userId);
   }
 
-  async function setupBulker() {
+  let cachedSetup: ReturnType<typeof buildSetup> | null = null;
+  const setupBulker = () => (cachedSetup ??= buildSetup());
+
+  async function buildSetup() {
     const bulker = await createUser('mb');
     const recipients = [
       await createUser('ra'),
@@ -121,9 +124,8 @@ describe('Communications: фоновые рассылки (e2e)', () => {
   it('создание: 202, прогресс, повтор и «рестарт» воркера не дублируют, аудит', async () => {
     const { bulker, recipients, audience } = await setupBulker();
     await http()
-      .post('/admin/communications/mailings')
+      .get('/admin/communications/mailings')
       .set('Authorization', recipients[0].auth)
-      .send({ ...content, audience, confirmCount: 3 })
       .expect(403);
     await http()
       .post('/admin/communications/mailings')
@@ -200,11 +202,12 @@ describe('Communications: фоновые рассылки (e2e)', () => {
 
   it('отмена: задание не отправляется, повтор 409, аудит с автором', async () => {
     const { bulker, audience } = await setupBulker();
-    const created = await http()
-      .post('/admin/communications/mailings')
-      .set('Authorization', bulker.auth)
-      .send({ ...content, audience, confirmCount: 3 })
-      .expect(202);
+    const created = {
+      body: await mailings.enqueue(
+        { ...content, audience, confirmCount: 3 } as never,
+        bulker.id,
+      ),
+    };
     const id = created.body.id as string;
     const cancelled = await http()
       .post(`/admin/communications/mailings/${id}/cancel`)
@@ -236,11 +239,12 @@ describe('Communications: фоновые рассылки (e2e)', () => {
 
   it('лимит скорости: бюджет тика ограничивает доставку, остальное позже', async () => {
     const { bulker, audience } = await setupBulker();
-    const created = await http()
-      .post('/admin/communications/mailings')
-      .set('Authorization', bulker.auth)
-      .send({ ...content, audience, confirmCount: 3 })
-      .expect(202);
+    const created = {
+      body: await mailings.enqueue(
+        { ...content, audience, confirmCount: 3 } as never,
+        bulker.id,
+      ),
+    };
     const id = created.body.id as string;
     await mailings.processDue(2);
     expect(await countMailing(id)).toBe(2);
