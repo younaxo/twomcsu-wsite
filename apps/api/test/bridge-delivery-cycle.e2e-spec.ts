@@ -1,5 +1,6 @@
 import { INestApplication, Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
@@ -10,6 +11,7 @@ import {
 } from '../src/modules/bridge/bridge.config';
 import { BridgeDeliveryService } from '../src/modules/bridge/bridge-delivery.service';
 import { PrismaService } from '../src/modules/prisma/prisma.service';
+import { RedisService } from '../src/modules/redis/redis.service';
 import { PermissionService } from '../src/modules/roles/permission.service';
 import { markStaffTwoFactorEnabled } from './helpers/staff-two-factor';
 import { signedHeaders } from './support/bridge-support';
@@ -209,6 +211,24 @@ describe('Bridge delivery: полный цикл (0.13 срез 2, e2e)', () => 
     await permissions.invalidateRole(role.id);
     await permissions.invalidateUser(user.id);
   }, 60_000);
+
+  // Сбрасываем лимиты между кейсами: файл шлёт много claim/ack с одного ключа
+  // и одного IP. Сбрасываются только счётчики этого прогона (ключи по slug),
+  // сами лимиты и логика API не меняются.
+  afterEach(async () => {
+    const storage = app!.get<{ storage: Record<string, unknown> }>(
+      ThrottlerStorage,
+    );
+    for (const key of Object.keys(storage.storage)) delete storage.storage[key];
+    const client = app!.get(RedisService).client;
+    for (const pattern of [
+      `bridge:rl:*${unique}*`,
+      `bridge:slow:*${unique}*`,
+    ]) {
+      const keys = await client.keys(pattern);
+      if (keys.length > 0) await client.del(...keys);
+    }
+  });
 
   afterAll(async () => {
     try {
