@@ -22,6 +22,5 @@ ptero_restart_guard rollback || { echo "проверка игроков пере
 ptero_rename /plugins TwoMCBridge-0.1.0.jar "$new" || { echo "переименование не удалось (HTTP $PTERO_HTTP)"; exit 1; }
 echo "jar переименован: $new"
 ptero_power restart || { echo "restart не принят (HTTP $PTERO_HTTP)"; exit 1; }
-for _ in $(seq 1 12); do sleep 10; st="$(ptero_state)"; [[ -n "$st" && "$st" != running ]] && break; done
-for _ in $(seq 1 36); do sleep 10; [[ "$(ptero_state)" == running ]] && { echo "сервер: running"; exit 0; }; done
-echo "сервер не вернулся в running за 360 с: смотрите консоль в панели"; exit 1
+ptero_wait_restart && exit 0
+echo "сервер не вернулся в running за 600 с: смотрите консоль в панели"; exit 1

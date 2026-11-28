@@ -7,7 +7,7 @@
 # Панель: ТОЛЬКО чтение (PTERO_ALLOW_WRITE=0): аллокация (адрес и порт) и список /plugins сервера из SERVER_UUID.
 # Бот: временный контейнер (образ node как в ptero.sh), `npm i --ignore-scripts --no-audit --no-fund mineflayer@<закреплённая версия>` + `npm ls --all` в лог (lock не используется; контейнер видит пароль только до его первого чтения ботом, затем файл удаляется) ВНУТРИ контейнера (в репозиторий и на хост
 # ничего не ставится, install-скрипты зависимостей не выполняются). Версия закреплена: BOT_MINEFLAYER_VERSION, по умолчанию 4.27.0 (testedVersions включает 1.21.4).
-# --read-only + tmpfs, cap-drop ALL, память 384 МБ. Команды: только /register и /login (если найден плагин авторизации); команд оператора нет.
+# --read-only + tmpfs 1g (в ОЗУ), cap-drop ALL, лимит памяти 1280 МБ (проверка MemAvailable хоста перед запуском). Команды: только /register и /login (если найден плагин авторизации); команд оператора нет.
 # Пароль бота: случайный, файл /home/twomc/bridge-dev-bot.pass (600, создаётся при первом запуске, чтобы повторные входы совпадали);
 # в контейнер НЕ передаётся через env (не виден в docker inspect): копия в файл 600 внутри tmpfs (/dev/shm; запасной вариант - TMPDIR) монтируется как /botpass/pass (бот читает и сразу удаляет),
 # удаляется при выходе; нигде не печатается (вывод бота и хоста редактируется по самому паролю и по любым hex длиной от 20).
@@ -77,7 +77,9 @@ fi
 
 # рабочий каталог бота: tmpfs (/dev/shm), 700; файл пароля - 600, монтируется в контейнер ro (в env контейнера пароля нет)
 SHM=""; [[ -d /dev/shm && -w /dev/shm ]] && SHM=/dev/shm
-BOTDIR="$(umask 077; mktemp -d "${SHM:-${TMPDIR:-/tmp}}/dev-srv-bot.XXXXXX")" || exit 1
+BOTDIR=""
+[[ -z "$SHM" ]] || BOTDIR="$(umask 077; mktemp -d "$SHM/dev-srv-bot.XXXXXX" 2>/dev/null)" || { BOTDIR=""; SHM=""; }   # /dev/shm может быть недоступен для mktemp
+[[ -n "$BOTDIR" ]] || BOTDIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/dev-srv-bot.XXXXXX")" || exit 1
 [[ -n "$SHM" ]] || echo "WARN: /dev/shm недоступен: файл пароля во временном каталоге на диске (затирается и удаляется при выходе)"
 bot_cleanup() { [[ -n "${BOTDIR:-}" && -f "$BOTDIR/p/pass" ]] && : > "$BOTDIR/p/pass"; [[ -n "${BOTDIR:-}" ]] && rm -rf -- "$BOTDIR"; ptero_cleanup; }
 trap bot_cleanup EXIT
@@ -160,6 +162,20 @@ BOT_JS_EOF
 chmod 644 "$BOTDIR/bot.js"
 if [[ "$AUTH_KIND" == none ]]; then BAUTH=0; else BAUTH=1; fi
 
+# tmpfs контейнера живёт в ОЗУ и входит в лимит памяти: 300 МБ не хватало npm (ENOSPC), теперь tmpfs 1g при лимите памяти 1280m (кэш npm удаляется после установки).
+# Перед запуском проверяется доступная память хоста (MemAvailable) и, если /dev/shm используется, место в нём. Значения меняются только в STAND_TEST=1.
+BOT_TMPFS=1g; BOT_MEM=1280m; BOT_MIN_AVAIL_MB=1400
+MEMINFO=/proc/meminfo; [[ "${STAND_TEST:-0}" == 1 ]] && MEMINFO="${BOT_MEMINFO_FILE:-$MEMINFO}"
+avail_kb="$(sed -n 's/^MemAvailable:[[:space:]]*\([0-9][0-9]*\) kB.*/\1/p' "$MEMINFO" 2>/dev/null | head -n1)"
+if [[ "$avail_kb" =~ ^[0-9]+$ ]]; then
+  if (( avail_kb / 1024 < BOT_MIN_AVAIL_MB )); then echo "ОШИБКА: мало свободной памяти хоста: $(( avail_kb / 1024 )) МБ (нужно не меньше $BOT_MIN_AVAIL_MB МБ: tmpfs 1g + node); бот не запущен"; exit 1; fi
+  echo "память хоста: доступно $(( avail_kb / 1024 )) МБ (нужно не меньше $BOT_MIN_AVAIL_MB МБ)"
+else echo "WARN: MemAvailable не прочитан: проверка памяти пропущена"; fi
+if [[ -n "$SHM" ]]; then
+  shm_kb="$(df -Pk "$SHM" 2>/dev/null | awk 'NR==2{print $4}')"
+  if [[ "$shm_kb" =~ ^[0-9]+$ ]] && (( shm_kb < 1024 )); then echo "ОШИБКА: в $SHM меньше 1 МБ свободного места: файл пароля не поместится"; exit 1; fi
+fi
+
 echo "[3] запуск бота $NICK на $SECS с (контейнер, npm i --ignore-scripts mineflayer@$MF_VERSION внутри)"
 PASS_PLAIN=""
 if [[ "$BAUTH" == 1 ]]; then
@@ -170,10 +186,10 @@ fi
 # редакция вывода: сам пароль (если есть) и любые hex-строки от 20 символов
 redact() { if [[ -n "$PASS_PLAIN" ]]; then sed -E -e "s/$PASS_PLAIN/***/g" -e 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; else sed -E 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; fi; }
 out="$BOTDIR/bot.out"
-timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs /tmp:rw,exec,size=300m --cap-drop ALL --security-opt no-new-privileges --memory 384m \
+timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" \
   --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
   --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION") \
-  -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
+  -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund --prefer-offline "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; rm -rf /tmp/.npm; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
   </dev/null > "$out" 2>/dev/null
 rc=$?
 : > "$BOTDIR/p/pass" 2>/dev/null
