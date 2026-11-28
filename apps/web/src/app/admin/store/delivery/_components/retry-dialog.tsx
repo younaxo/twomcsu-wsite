@@ -59,6 +59,7 @@ export function RetryDialog({
   const confirmRef = useRef<HTMLButtonElement>(null);
   const confirmId = useId();
   const warningId = useId();
+  const incompleteId = useId();
   const openerRef = useRef<Element | null>(
     typeof document === 'undefined' ? null : document.activeElement,
   );
@@ -240,9 +241,25 @@ export function RetryDialog({
               {blocked ? 'Закрыть' : 'Отмена'}
             </Button>
             {blocked ? null : (
-              <Button type="submit" loading={retry.isPending} disabled={incomplete}>
-                Повторить выдачу
-              </Button>
+              <>
+                {incomplete ? (
+                  <p
+                    id={incompleteId}
+                    data-testid="retry-incomplete-hint"
+                    className="mr-auto text-xs text-muted-foreground"
+                  >
+                    Чтобы повторить, отметьте проверку на сервере и укажите причину.
+                  </p>
+                ) : null}
+                <Button
+                  type="submit"
+                  loading={retry.isPending}
+                  disabled={incomplete}
+                  aria-describedby={incomplete ? incompleteId : undefined}
+                >
+                  Повторить выдачу
+                </Button>
+              </>
             )}
           </DialogFooter>
         </form>
