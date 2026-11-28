@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Доступ к dev-srv для проверки Bridge: whitelist и режим техработ (только сервер из SERVER_UUID; запись по политике ptero.sh).
-# Запуск: run-on-vds.sh script devsrv-access.sh --status | --open <ник...> [--no-owner] [--direct-join] | --restore
+# Запуск: run-on-vds.sh script devsrv-access.sh --status | --open <ник...> [--no-owner] [--direct-join] | --restore | --changes [N]
+#   --changes [N]  только чтение ЛОКАЛЬНОГО файла (панель не вызывается): последние N (1..200, по умолчанию 30) строк /home/twomc/bridge-dev-srv.changes.log;
+#               IP -> <ip>, hex от 20 символов -> <hex>, длинные токены -> <redacted> (секретов в журнале нет: ptero_journal их вычищает). N идёт ПОСЛЕ --changes.
 #   --status    только чтение: whitelist вкл/выкл (white-list, enforce-whitelist), ники в whitelist, плагин техработ и его состояние, игроки онлайн
 #               (SLP), ник тестового игрока стенда (MinecraftAccount; только ник), наличие state-файла.
 #   --open      бэкап (whitelist.json.bak-<UTC>, config плагина техработ .bak-<UTC>), `whitelist add` для каждого ника (+ ник владельца стенда,
@@ -35,16 +37,17 @@ fi
 DA_WARN=0
 say() { printf '%s\n' "$*"; }
 warn() { say "WARN: $*"; DA_WARN=1; }
-usage() { echo "Использование: devsrv-access.sh --status | --open <ник...> [--no-owner] [--direct-join] | --restore" >&2; exit 2; }
+usage() { echo "Использование: devsrv-access.sh --status | --open <ник...> [--no-owner] [--direct-join] | --restore | --changes [N]" >&2; exit 2; }
 
-MODE=""; NICKS=(); NO_OWNER=0; DIRECT=0
+MODE=""; NICKS=(); NO_OWNER=0; DIRECT=0; CH_N=30
 for a in "$@"; do
   case "$a" in
-    --status|--open|--restore) [[ -z "$MODE" ]] || { echo "Режим задаётся один раз" >&2; exit 2; }; MODE="${a#--}" ;;
+    --status|--open|--restore|--changes) [[ -z "$MODE" ]] || { echo "Режим задаётся один раз" >&2; exit 2; }; MODE="${a#--}" ;;
     --no-owner) NO_OWNER=1 ;;
     --direct-join) DIRECT=1 ;;
     -*) echo "Неизвестный аргумент: $a" >&2; usage ;;
-    *) [[ "$a" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Недопустимый ник (3-16 символов [A-Za-z0-9_])" >&2; exit 2; }; NICKS+=("$a") ;;
+    *) if [[ "$MODE" == changes ]]; then [[ "$a" =~ ^[0-9]{1,3}$ ]] && (( 10#$a >= 1 && 10#$a <= 200 )) || { echo "N: 1..200 и только после --changes" >&2; exit 2; }; CH_N=$((10#$a)); continue; fi
+       [[ "$a" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Недопустимый ник (3-16 символов [A-Za-z0-9_])" >&2; exit 2; }; NICKS+=("$a") ;;
   esac
 done
 [[ -n "$MODE" ]] || usage
@@ -437,8 +440,18 @@ do_restore() {
   exit 3
 }
 
+# --changes [N]: только чтение локального журнала (без обращения к панели). Журнал секретов не содержит; доп. маскировка IP и длинных токенов.
+do_changes() {
+  local lg="$PTERO_CHANGES_LOG"
+  [[ -f "$lg" && ! -L "$lg" ]] || { say "журнала изменений нет: $lg"; exit 0; }
+  say "--- $(basename "$lg"): последние $CH_N строк (IP и длинные токены замаскированы) ---"
+  tail -n "$CH_N" "$lg" | tr -d '\000-\010\013\014\016-\037' | sed -E -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]{1,5})?/<ip>/g' -e 's/[0-9a-fA-F]{20,}/<hex>/g' -e 's/[A-Za-z0-9_-]{40,}/<redacted>/g' | cut -c1-300
+  exit 0
+}
+
 case "$MODE" in
   status) do_status ;;
   open) do_open ;;
   restore) do_restore ;;
+  changes) do_changes ;;
 esac
