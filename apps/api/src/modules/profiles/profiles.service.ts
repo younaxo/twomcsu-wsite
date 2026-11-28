@@ -57,7 +57,9 @@ const OWN_PROFILE_SELECT = {
   notifyOnOrder: true,
   position: true,
   selectedDecoration: true,
-  displayBadge: true,
+  displayBadge: {
+    select: { id: true, type: true, isActive: true, expiresAt: true },
+  },
   socialLinks: true,
   minecraftAccount: { select: { name: true } },
   createdAt: true,
@@ -101,6 +103,41 @@ export function normalizeSocialValue(
   return value;
 }
 
+/// Выбранный бейдж у ника наружу — только {id,type}; неактивный или
+/// просроченный не показываем (строка в БД остаётся до явного снятия).
+export function publicDisplayBadge(
+  badge: {
+    id: string;
+    type: string;
+    isActive: boolean;
+    expiresAt: Date | null;
+  } | null,
+  now: Date = new Date(),
+): { id: string; type: string } | null {
+  if (!badge || !badge.isActive) return null;
+  if (badge.expiresAt && badge.expiresAt <= now) return null;
+  return { id: badge.id, type: badge.type };
+}
+
+const activeBadge = () => ({
+  isActive: true,
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+});
+
+/// Новый порядок обязан быть перестановкой своих записей: без дублей, чужих и пропусков.
+export function assertFullOrder(ownIds: string[], ids: string[]): void {
+  const unique = new Set(ids);
+  if (
+    unique.size !== ids.length ||
+    ids.length !== ownIds.length ||
+    ownIds.some((id) => !unique.has(id))
+  ) {
+    throw new BadRequestException(
+      'Нужен полный набор своих записей без повторов',
+    );
+  }
+}
+
 type OwnProfile = Prisma.UserGetPayload<{ select: typeof OWN_PROFILE_SELECT }>;
 
 /// Публичный вид дня рождения: день и месяц, год — только с `showBirthDate`.
@@ -141,6 +178,10 @@ export class ProfilesService {
       ...user,
       avatar: this.storage.publicUrl(user.avatar),
       banner: this.storage.publicUrl(user.banner),
+      displayBadge: publicDisplayBadge(
+        (user as { displayBadge?: Parameters<typeof publicDisplayBadge>[0] })
+          .displayBadge ?? null,
+      ),
       selectedDecoration: user.selectedDecoration
         ? {
             ...user.selectedDecoration,
@@ -288,6 +329,7 @@ export class ProfilesService {
         orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
         take: 24,
         select: {
+          id: true,
           grantedAt: true,
           award: {
             select: {
@@ -331,7 +373,8 @@ export class ProfilesService {
     const icon = (value: string) =>
       value.startsWith('/') ? value : this.storage.publicUrl(value);
     return {
-      awards: awards.map(({ award, grantedAt }) => ({
+      awards: awards.map(({ id, award, grantedAt }) => ({
+        id,
         slug: award.slug,
         name: award.name,
         description: award.description,
@@ -456,12 +499,15 @@ export class ProfilesService {
         selectedDecoration: {
           select: { slug: true, name: true, imageUrl: true, isActive: true },
         },
+        displayBadge: {
+          select: { id: true, type: true, isActive: true, expiresAt: true },
+        },
         badges: {
           where: {
             isActive: true,
             OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
           },
-          select: { type: true },
+          select: { id: true, type: true },
           orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
         },
         mediaBadges: {
@@ -541,6 +587,11 @@ export class ProfilesService {
             }
           : null,
       badges: user.badges.map((badge) => badge.type),
+      badgeItems: user.badges.map((badge) => ({
+        id: badge.id,
+        type: badge.type,
+      })),
+      displayBadge: publicDisplayBadge(user.displayBadge),
       mediaBadges: user.mediaBadges.map((badge) => badge.mediaGroup),
       createdAt: user.createdAt.toISOString(),
       system: user.accountType === 'SYSTEM',
@@ -647,6 +698,115 @@ export class ProfilesService {
       include: { decoration: true },
       orderBy: { acquiredAt: 'desc' },
     });
+  }
+
+  /// Свои активные непросроченные бейджи в порядке показа (id нужны для
+  /// сортировки и выбора бейджа у ника).
+  async listOwnBadges(userId: string) {
+    const rows = await this.prisma.userBadge.findMany({
+      where: { userId, ...activeBadge() },
+      orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
+      select: { id: true, type: true, grantedAt: true },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      grantedAt: r.grantedAt.toISOString(),
+    }));
+  }
+
+  async listOwnAwards(userId: string) {
+    const rows = await this.prisma.userAward.findMany({
+      where: { userId, award: { isActive: true } },
+      orderBy: [{ order: 'asc' }, { grantedAt: 'asc' }],
+      select: {
+        id: true,
+        grantedAt: true,
+        award: { select: { slug: true, name: true } },
+      },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      slug: r.award.slug,
+      name: r.award.name,
+      grantedAt: r.grantedAt.toISOString(),
+    }));
+  }
+
+  /// Порядок бейджей: ровно полный набор своих активных, без дублей.
+  async reorderBadges(
+    userId: string,
+    ids: string[],
+  ): Promise<{ success: true }> {
+    const own = await this.prisma.userBadge.findMany({
+      where: { userId, ...activeBadge() },
+      select: { id: true },
+    });
+    assertFullOrder(
+      own.map((r) => r.id),
+      ids,
+    );
+    await this.prisma.$transaction(
+      ids.map((id, index) =>
+        this.prisma.userBadge.updateMany({
+          where: { id, userId },
+          data: { order: index },
+        }),
+      ),
+    );
+    return { success: true };
+  }
+
+  async reorderAwards(
+    userId: string,
+    ids: string[],
+  ): Promise<{ success: true }> {
+    const own = await this.prisma.userAward.findMany({
+      where: { userId, award: { isActive: true } },
+      select: { id: true },
+    });
+    assertFullOrder(
+      own.map((r) => r.id),
+      ids,
+    );
+    await this.prisma.$transaction(
+      ids.map((id, index) =>
+        this.prisma.userAward.updateMany({
+          where: { id, userId },
+          data: { order: index },
+        }),
+      ),
+    );
+    return { success: true };
+  }
+
+  /// Выбранный бейдж у ника: свой, активный, не просроченный; null снимает.
+  async setDisplayBadge(
+    userId: string,
+    userBadgeId: string | null,
+  ): Promise<{
+    success: true;
+    displayBadge: { id: string; type: string } | null;
+  }> {
+    if (userBadgeId === null) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { displayBadgeId: null },
+      });
+      return { success: true, displayBadge: null };
+    }
+    const badge = await this.prisma.userBadge.findFirst({
+      where: { id: userBadgeId, userId, ...activeBadge() },
+      select: { id: true, type: true },
+    });
+    if (!badge) {
+      throw new BadRequestException('Бейдж недоступен для выбора');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { displayBadgeId: badge.id },
+    });
+    return { success: true, displayBadge: { id: badge.id, type: badge.type } };
   }
 
   async selectDecoration(

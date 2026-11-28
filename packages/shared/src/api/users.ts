@@ -290,3 +290,11 @@ export const COMMENT_REPORT_REASONS = [
   'OTHER',
 ] as const;
 export type CommentReportReason = (typeof COMMENT_REPORT_REASONS)[number];
+
+/// Бейдж у ника (J-07-6): `GET /users/me` и публичный профиль, поле `displayBadge`.
+/// `id` — UserBadge, `type` — вид бейджа (строкой: сервер может отдать вид
+/// новее клиента).
+export interface DisplayBadge {
+  id: string;
+  type: string;
+}
