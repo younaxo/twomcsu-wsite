@@ -1089,6 +1089,100 @@ describe('DeliveryService ручные действия админа', () => {
     });
   });
 
+  describe('command без рабочего транспорта: ручная выдача, не вечный PENDING (R143)', () => {
+    function lockedNoTransport(
+      status: DeliveryTaskStatus,
+      executor = 'command',
+    ) {
+      const ctx = setup({ noTransport: true });
+      ctx.tx.deliveryTask.findUniqueOrThrow.mockResolvedValue({
+        status,
+        orderItemId: 'i1',
+        step: 1,
+        executor,
+        bridgeJob: null,
+      });
+      return ctx;
+    }
+
+    it('retry из FAILED: AWAITING_MANUAL с transport_unavailable', async () => {
+      const { service, tx } = lockedNoTransport(S.FAILED);
+      await service.retryTask('t1', 'a1', { confirmed: true });
+      expect(tx.deliveryTask.update.mock.calls[0][0].data).toMatchObject({
+        status: S.AWAITING_MANUAL,
+        lastError: 'transport_unavailable',
+      });
+    });
+
+    it('retry из NEEDS_ATTENTION (serverChecked, причина): AWAITING_MANUAL', async () => {
+      const { service, tx } = lockedNoTransport(S.NEEDS_ATTENTION);
+      await service.retryTask('t1', 'a1', {
+        confirmed: true,
+        serverChecked: true,
+        reason: 'проверил',
+      });
+      expect(tx.deliveryTask.update.mock.calls[0][0].data).toMatchObject({
+        status: S.AWAITING_MANUAL,
+        lastError: 'transport_unavailable',
+      });
+    });
+
+    it('retry command с рабочим транспортом: PENDING без lastError', async () => {
+      const { service, tx } = locked(S.FAILED, 'command');
+      await service.retryTask('t1', 'a1', { confirmed: true });
+      expect(tx.deliveryTask.update.mock.calls[0][0].data).toMatchObject({
+        status: S.PENDING,
+        lastError: null,
+      });
+    });
+
+    it('to-manual: PENDING command -> AWAITING_MANUAL, аудит', async () => {
+      const { service, tx, audit } = lockedNoTransport(S.PENDING);
+      await service.moveToManual('t1', 'a1', ' нет транспорта ');
+      expect(tx.deliveryTask.update.mock.calls[0][0].data).toMatchObject({
+        status: S.AWAITING_MANUAL,
+        lastError: 'transport_unavailable',
+        leaseToken: null,
+      });
+      expect(audit.logInTx).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          action: 'delivery.task.moved_to_manual',
+          changes: expect.objectContaining({
+            from: S.PENDING,
+            to: S.AWAITING_MANUAL,
+            reason: 'нет транспорта',
+          }),
+        }),
+      );
+    });
+
+    it('to-manual идемпотентен: уже AWAITING_MANUAL - без записи и аудита', async () => {
+      const { service, tx, audit } = lockedNoTransport(S.AWAITING_MANUAL);
+      await service.moveToManual('t1', 'a1');
+      expect(tx.deliveryTask.update).not.toHaveBeenCalled();
+      expect(audit.logInTx).not.toHaveBeenCalled();
+    });
+
+    it.each([S.IN_PROGRESS, S.DELIVERED, S.FAILED, S.RETRY_WAIT])(
+      'to-manual из %s - 409',
+      async (status) => {
+        const { service, tx } = lockedNoTransport(status);
+        await expect(service.moveToManual('t1', 'a1')).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+        expect(tx.deliveryTask.update).not.toHaveBeenCalled();
+      },
+    );
+
+    it('to-manual не для не-command - 409', async () => {
+      const { service } = lockedNoTransport(S.PENDING, 'site');
+      await expect(service.moveToManual('t1', 'a1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
   it.each([S.DELIVERED, S.MANUAL_DONE, S.IN_PROGRESS, S.PENDING, S.CANCELLED])(
     'retry из %s — 409',
     async (status) => {

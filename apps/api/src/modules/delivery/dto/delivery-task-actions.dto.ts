@@ -36,3 +36,12 @@ export class RetryDeliveryTaskDto {
   @MaxLength(1000)
   reason?: string;
 }
+
+/// Перевод задания команды в ручную выдачу; причина необязательна.
+export class MoveToManualDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
+}

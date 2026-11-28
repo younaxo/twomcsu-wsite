@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  BridgeDeliveryJobStatus,
   DeliveryTaskStatus,
   OrderStatus,
   Prisma,
@@ -63,6 +64,7 @@ import {
   MANUAL_DONE_FROM,
   REFUND_BLOCKING_STATUSES,
   BRIDGE_UNSETTLED,
+  TRANSPORT_UNAVAILABLE,
   RETRY_FROM,
 } from './delivery.constants';
 import { BridgeExecutor } from './executors/bridge.executor';
@@ -346,9 +348,10 @@ export class DeliveryService {
         orderItemId: item.id,
         step: 1,
         executor: executorKind,
-        status: executor?.automatic
-          ? DeliveryTaskStatus.PENDING
-          : DeliveryTaskStatus.AWAITING_MANUAL,
+        status:
+          executor?.automatic && !this.commandTransportDown(executorKind)
+            ? DeliveryTaskStatus.PENDING
+            : DeliveryTaskStatus.AWAITING_MANUAL,
         // Р9: ник проверяется и при создании задания; негодный не сохраняется.
         nick: deliverableNickOrNull(rawNick),
         recipientUserId,
@@ -357,6 +360,10 @@ export class DeliveryService {
         executorKind === EXECUTOR_MANUAL &&
         !walletLedgerEnabled(this.config)
           ? { lastError: 'wallet_disabled' }
+          : {}),
+        ...(executorKind === EXECUTOR_COMMAND &&
+        this.commandTransportDown(executorKind)
+          ? { lastError: TRANSPORT_UNAVAILABLE }
           : {}),
         // Без шаблона поля не задаются: поведение 0.7 (null в БД) не меняется.
         ...(renderedCommand ? { renderedCommand, templateVersion } : {}),
@@ -1054,44 +1061,23 @@ export class DeliveryService {
             message: `Повтор невозможен из статуса ${task.status}`,
           });
         }
-        // R167: исход выдачи через Bridge неизвестен (UNKNOWN/CLAIMED) —
-        // повтор возможен только после проверки на сервере и с причиной.
-        const bridgeUnsettled =
-          task.executor === EXECUTOR_BRIDGE &&
-          task.bridgeJob != null &&
-          BRIDGE_UNSETTLED.includes(task.bridgeJob.status);
-        // R143: у команды исход неизвестен в NEEDS_ATTENTION (unknown, истёкшая
-        // аренда): те же правила, что для Bridge.
-        const commandUnsettled =
-          task.executor === EXECUTOR_COMMAND &&
-          task.status === DeliveryTaskStatus.NEEDS_ATTENTION;
-        if (bridgeUnsettled || commandUnsettled) {
-          if (input.serverChecked !== true) {
-            throw new BadRequestException({
-              code: 'delivery_retry_server_check_required',
-              message:
-                'Исход выдачи на сервере неизвестен: подтвердите, что проверили сервер и выдачи не было',
-            });
-          }
-          if (!input.reason?.trim()) {
-            throw new BadRequestException({
-              code: 'delivery_retry_reason_required',
-              message:
-                'Укажите причину повтора выдачи после неизвестного исхода',
-            });
-          }
-        }
+        const { bridgeUnsettled, commandUnsettled } =
+          this.assertUnsettledRetryAllowed(task, input);
         const executor = this.executors.get(task.executor);
-        const target = executor?.automatic
-          ? DeliveryTaskStatus.PENDING
-          : DeliveryTaskStatus.AWAITING_MANUAL;
+        // R143: команда при неработоспособном транспорте воркером не берётся:
+        // вместо вечного PENDING - ручная выдача с причиной.
+        const transportDown = this.commandTransportDown(task.executor);
+        const target =
+          executor?.automatic && !transportDown
+            ? DeliveryTaskStatus.PENDING
+            : DeliveryTaskStatus.AWAITING_MANUAL;
         await tx.deliveryTask.update({
           where: { id },
           data: {
             status: target,
             nextAttemptAt: null,
             leaseUntil: null,
-            lastError: null,
+            lastError: transportDown ? TRANSPORT_UNAVAILABLE : null,
           },
         });
         await this.audit.logInTx(tx, {
@@ -1127,6 +1113,115 @@ export class DeliveryService {
                 }
               : {}),
             ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
+          },
+        });
+        return tx.deliveryTask.findUniqueOrThrow({
+          where: { id },
+          select: TASK_CARD_SELECT,
+        });
+      },
+      { maxWait: 10_000, timeout: 10_000 },
+    );
+  }
+
+  /// Исход выдачи неизвестен: Bridge (UNKNOWN/CLAIMED, R167) или команда в
+  /// NEEDS_ATTENTION (unknown, истёкшая аренда, R143). Повтор тогда возможен
+  /// только после проверки сервера и с причиной. Общая проверка для обоих.
+  private assertUnsettledRetryAllowed(
+    task: {
+      status: DeliveryTaskStatus;
+      executor: string;
+      bridgeJob: { status: BridgeDeliveryJobStatus } | null;
+    },
+    input: { reason?: string; serverChecked?: boolean },
+  ): { bridgeUnsettled: boolean; commandUnsettled: boolean } {
+    const bridgeUnsettled =
+      task.executor === EXECUTOR_BRIDGE &&
+      task.bridgeJob != null &&
+      BRIDGE_UNSETTLED.includes(task.bridgeJob.status);
+    const commandUnsettled =
+      task.executor === EXECUTOR_COMMAND &&
+      task.status === DeliveryTaskStatus.NEEDS_ATTENTION;
+    if (bridgeUnsettled || commandUnsettled) {
+      if (input.serverChecked !== true) {
+        throw new BadRequestException({
+          code: 'delivery_retry_server_check_required',
+          message:
+            'Исход выдачи на сервере неизвестен: подтвердите, что проверили сервер и выдачи не было',
+        });
+      }
+      if (!input.reason?.trim()) {
+        throw new BadRequestException({
+          code: 'delivery_retry_reason_required',
+          message: 'Укажите причину повтора выдачи после неизвестного исхода',
+        });
+      }
+    }
+    return { bridgeUnsettled, commandUnsettled };
+  }
+
+  /// R143: исполнитель command зарегистрирован, но не operational (нет
+  /// транспорта с dedupAck): воркер его задания не возьмёт никогда.
+  private commandTransportDown(executorKind: string): boolean {
+    if (executorKind !== EXECUTOR_COMMAND) return false;
+    return this.executors.get(EXECUTOR_COMMAND)?.operational?.() !== true;
+  }
+
+  /// Перевод зависшего PENDING-задания команды в ручную выдачу
+  /// (AWAITING_MANUAL, `transport_unavailable`). Не «выдано вручную»: товар
+  /// остаётся невыданным, оператор затем отмечает manual-done. Идемпотентно:
+  /// уже AWAITING_MANUAL - без изменений и без повторного аудита.
+  async moveToManual(id: string, actorId: string, reason?: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const orderStatus = await this.lockOrderOfTask(tx, id);
+        const task = await this.lockTask(tx, id);
+        this.assertOrderCompleted(orderStatus);
+        if (task.executor !== EXECUTOR_COMMAND) {
+          throw new ConflictException({
+            code: 'delivery_invalid_executor',
+            message: 'Перевод в ручную выдачу только для заданий команды',
+          });
+        }
+        if (task.status === DeliveryTaskStatus.AWAITING_MANUAL) {
+          return tx.deliveryTask.findUniqueOrThrow({
+            where: { id },
+            select: TASK_CARD_SELECT,
+          });
+        }
+        if (task.status !== DeliveryTaskStatus.PENDING) {
+          throw new ConflictException({
+            code:
+              task.status === DeliveryTaskStatus.IN_PROGRESS
+                ? 'delivery_in_progress'
+                : 'delivery_invalid_status',
+            message: `Перевод в ручную выдачу невозможен из статуса ${task.status}`,
+          });
+        }
+        await tx.deliveryTask.update({
+          where: { id },
+          data: {
+            status: DeliveryTaskStatus.AWAITING_MANUAL,
+            lastError: TRANSPORT_UNAVAILABLE,
+            nextAttemptAt: null,
+            leaseToken: null,
+            leaseUntil: null,
+          },
+        });
+        await this.audit.logInTx(tx, {
+          actorId,
+          action: 'delivery.task.moved_to_manual',
+          targetType: 'delivery_task',
+          targetId: id,
+          severity: 'warning',
+          changes: {
+            orderItemId: task.orderItemId,
+            step: task.step,
+            executor: task.executor,
+            from: task.status,
+            to: DeliveryTaskStatus.AWAITING_MANUAL,
+            lastError: TRANSPORT_UNAVAILABLE,
+            ...(reason?.trim() ? { reason: reason.trim() } : {}),
           },
         });
         return tx.deliveryTask.findUniqueOrThrow({

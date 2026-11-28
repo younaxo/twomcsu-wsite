@@ -1402,6 +1402,62 @@ describe('Выдача купленного (0.7, e2e)', () => {
         unsettledRetry: true,
         commandIdempotencyKey: `${item.id}:1`,
       });
+      // Транспорта нет: не вечный PENDING, а ручная выдача с причиной.
+      await expect(
+        prisma.deliveryTask.findUniqueOrThrow({ where: { id: task.id } }),
+      ).resolves.toMatchObject({
+        status: 'AWAITING_MANUAL',
+        lastError: 'transport_unavailable',
+      });
+    });
+
+    it('to-manual: PENDING command -> AWAITING_MANUAL, идемпотентно, с аудитом и правами', async () => {
+      const no = await makeOrder(alice, [{ productId: gameProductId }]);
+      await payment(no);
+      const [item] = await prisma.orderItem.findMany({
+        where: { order: { orderNumber: no } },
+      });
+      await prisma.deliveryTask.deleteMany({ where: { orderItemId: item.id } });
+      const task = await prisma.deliveryTask.create({
+        data: {
+          orderItemId: item.id,
+          step: 1,
+          executor: 'command',
+          status: 'PENDING',
+        },
+      });
+      const url = `/admin/delivery/tasks/${task.id}/to-manual`;
+      await http()
+        .post(url)
+        .set('Authorization', auth(alice))
+        .send({})
+        .expect(403);
+      await http()
+        .post(url)
+        .set('Authorization', auth(admin))
+        .send({ reason: 'нет транспорта' })
+        .expect(200);
+      await http()
+        .post(url)
+        .set('Authorization', auth(admin))
+        .send({})
+        .expect(200);
+      await expect(
+        prisma.deliveryTask.findUniqueOrThrow({ where: { id: task.id } }),
+      ).resolves.toMatchObject({
+        status: 'AWAITING_MANUAL',
+        lastError: 'transport_unavailable',
+      });
+      const audit = await prisma.auditLog.findMany({
+        where: { action: 'delivery.task.moved_to_manual', targetId: task.id },
+      });
+      expect(audit).toHaveLength(1);
+      // Дальше оператор отмечает выдачу вручную обычным путём.
+      await http()
+        .post(`/admin/delivery/tasks/${task.id}/manual-done`)
+        .set('Authorization', auth(admin))
+        .send({ reason: 'выдал в игре' })
+        .expect(200);
     });
   });
 });

@@ -20,6 +20,14 @@ export class MockCommandTransport implements CommandTransport {
   /// Для режима `hang`: вызвать, чтобы «подтверждение» пришло позже.
   private release: (() => void) | null = null;
 
+  /// Fail closed (R143): мок с dedupAck=true нельзя создать вне тестов
+  /// (пустой или незаданный NODE_ENV считается production).
+  constructor(nodeEnv: string | undefined = process.env.NODE_ENV) {
+    if (nodeEnv !== 'test') {
+      throw new Error('MockCommandTransport разрешён только при NODE_ENV=test');
+    }
+  }
+
   async send(
     command: string,
     context: { idempotencyKey: string },

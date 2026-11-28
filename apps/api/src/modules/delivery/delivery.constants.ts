@@ -86,3 +86,7 @@ export const BRIDGE_UNSETTLED: readonly BridgeDeliveryJobStatus[] = [
   BridgeDeliveryJobStatus.UNKNOWN,
   BridgeDeliveryJobStatus.CLAIMED,
 ];
+
+/// Причина (lastError) ручной выдачи команды, у которой нет рабочего
+/// транспорта с дедупликацией (R143).
+export const TRANSPORT_UNAVAILABLE = 'transport_unavailable';
