@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Тестовый игрок (mineflayer, офлайн-авторизация) заходит на dev-srv на N секунд: двигается, переключает слоты и выходит.
-# Запускается НА VDS: run-on-vds.sh script bot-join.sh <ник> [секунды=90] | --check
+# Запускается НА VDS: run-on-vds.sh script bot-join.sh <ник> [секунды=90] | bot-join.sh --check <ник>
 #   <ник>      3-16 символов [A-Za-z0-9_]; должен совпадать с ником, привязанным к админу стенда (link-account.sh)
 #   секунды    10..600 (по умолчанию 90)
 #   --check    только чтение: GET аллокации и GET списка /plugins (поиск плагинов авторизации); бот не запускается
@@ -27,7 +27,7 @@ for a in "$@"; do
     *) if [[ -z "$NICK" ]]; then NICK="$a"; elif [[ "$a" =~ ^[0-9]+$ ]]; then SECS="$a"; else echo "Лишний аргумент: $a" >&2; exit 2; fi ;;
   esac
 done
-[[ "$NICK" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Использование: bot-join.sh <ник 3-16 [A-Za-z0-9_]> [секунды 10-600] | --check" >&2; exit 2; }
+[[ "$NICK" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Использование: bot-join.sh <ник 3-16 [A-Za-z0-9_]> [секунды 10-600] | --check <ник>" >&2; exit 2; }
 { [[ "$SECS" =~ ^[0-9]{2,3}$ ]] && (( SECS >= 10 && SECS <= 600 )); } || { echo "секунды: 10..600" >&2; exit 2; }
 BOT_VERSION="${BOT_MC_VERSION:-1.21.4}"
 MF_VERSION="${BOT_MINEFLAYER_VERSION:-4.27.0}"

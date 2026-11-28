@@ -180,7 +180,7 @@ describe('Mini profile в header (ADR-0088)', () => {
     expect(money).toHaveAttribute('data-currency', 'MONEY');
     expect(money?.getAttribute('src')).toMatch(/minecraft\/resourspack\/currencies\/money\.png$/);
     expect(ruby).toHaveAttribute('data-currency', 'RUBY');
-    expect(ruby?.getAttribute('src')).toMatch(/minecraft\/resourspack\/currencies\/ruby\.png$/);
+    expect(ruby?.getAttribute('src')).toMatch(/assets\/currencies\/ruby\.svg$/);
     expect(wallet.querySelector('svg')).toBeNull();
     expect(menu).not.toHaveTextContent('Друзья12');
     expect(within(menu).queryByTestId('mini-profile-admin')).toBeNull();

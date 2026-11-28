@@ -7,6 +7,7 @@ import {
   demoEscapeToHtml,
   demoPunishmentSourceId,
 } from './data';
+import { formatBlockReport, newBlockReport, runBlock } from './blocks';
 import { assertDemoSeedAllowed, assertDemoUserNotForeign } from './guard';
 import {
   DEMO_CONVERSATIONS,
@@ -44,7 +45,9 @@ export async function seedDemoSocial(
   }
   const now = new Date();
   const ids = new Map<string, string>();
+  const report = newBlockReport();
 
+  // Пользователи и статистика — основа остальных блоков; их сбой фатален.
   for (const p of DEMO_PLAYERS) {
     const profile = { statusText: p.statusText, bio: p.bio };
     const user = await prisma.user.upsert({
@@ -69,27 +72,6 @@ export async function seedDemoSocial(
       create: { userId: user.id, ...stats },
       update: stats,
     });
-
-    // Приватность не создаётся: нет строки InventoryPrivacy = «приватно».
-    for (const grp of ['main', 'ender'] as const) {
-      const row = buildDemoInventoryRow(p, grp, now);
-      await prisma.playerInventory.upsert({
-        where: {
-          userId_serverSlug_grp: {
-            userId: user.id,
-            serverSlug: DEMO_INVENTORY_SERVER_SLUG,
-            grp,
-          },
-        },
-        create: {
-          userId: user.id,
-          serverSlug: DEMO_INVENTORY_SERVER_SLUG,
-          grp,
-          ...row,
-        },
-        update: row,
-      });
-    }
   }
   const idOf = (username: string): string => {
     const id = ids.get(username);
@@ -97,105 +79,154 @@ export async function seedDemoSocial(
     return id;
   };
 
-  for (const [requester, addressee, status] of DEMO_FRIENDSHIPS) {
-    const data = {
-      status,
-      acceptedAt:
-        status === 'ACCEPTED' ? new Date(now.getTime() - 7 * DAY) : null,
-    };
-    await prisma.friendship.upsert({
-      where: {
-        requesterId_addresseeId: {
-          requesterId: idOf(requester),
-          addresseeId: idOf(addressee),
-        },
-      },
-      create: {
-        requesterId: idOf(requester),
-        addresseeId: idOf(addressee),
-        ...data,
-      },
-      update: data,
-    });
-  }
+  await runBlock(report, 'инвентарь', async () => {
+    // Приватность не создаётся: нет строки InventoryPrivacy = «приватно».
+    for (const p of DEMO_PLAYERS) {
+      for (const grp of ['main', 'ender'] as const) {
+        const row = buildDemoInventoryRow(p, grp, now);
+        await prisma.playerInventory.upsert({
+          where: {
+            userId_serverSlug_grp: {
+              userId: idOf(p.username),
+              serverSlug: DEMO_INVENTORY_SERVER_SLUG,
+              grp,
+            },
+          },
+          create: {
+            userId: idOf(p.username),
+            serverSlug: DEMO_INVENTORY_SERVER_SLUG,
+            grp,
+            ...row,
+          },
+          update: row,
+        });
+      }
+    }
+  });
 
-  for (const c of DEMO_CONVERSATIONS) {
-    const lastMinutes = Math.min(...c.messages.map((m) => m.minutesAgo));
-    const lastMessageAt = new Date(now.getTime() - lastMinutes * MINUTE);
-    const memberIds = c.members.map(idOf);
-    const conversation = await prisma.conversation.upsert({
-      where: { id: c.id },
-      create: {
-        id: c.id,
-        type: c.type,
-        title: c.title,
-        createdById: idOf(c.owner),
-        lastMessageAt,
-        directKey:
-          c.type === 'DIRECT'
-            ? demoDirectKey(memberIds[0], memberIds[1])
-            : null,
-      },
-      update: { lastMessageAt },
-    });
-    for (const username of c.members) {
-      await prisma.conversationMember.upsert({
+  await runBlock(report, 'дружбы', async () => {
+    for (const [requester, addressee, status] of DEMO_FRIENDSHIPS) {
+      const data = {
+        status,
+        acceptedAt:
+          status === 'ACCEPTED' ? new Date(now.getTime() - 7 * DAY) : null,
+      };
+      // Пара уже есть в обратную сторону — второй записи не создаём.
+      const reverse = await prisma.friendship.findUnique({
         where: {
-          conversationId_userId: {
-            conversationId: conversation.id,
-            userId: idOf(username),
+          requesterId_addresseeId: {
+            requesterId: idOf(addressee),
+            addresseeId: idOf(requester),
+          },
+        },
+        select: { id: true },
+      });
+      if (reverse) continue;
+      await prisma.friendship.upsert({
+        where: {
+          requesterId_addresseeId: {
+            requesterId: idOf(requester),
+            addresseeId: idOf(addressee),
           },
         },
         create: {
-          conversationId: conversation.id,
-          userId: idOf(username),
-          role:
-            c.type === 'GROUP' && username === c.owner ? 'OWNER' : 'MEMBER',
-        },
-        update: {},
-      });
-    }
-    for (const m of c.messages) {
-      const data = {
-        conversationId: conversation.id,
-        senderId: idOf(m.sender),
-        content: m.text,
-        contentHtml: demoEscapeToHtml(m.text),
-      };
-      await prisma.directMessage.upsert({
-        where: { id: m.id },
-        create: {
-          id: m.id,
+          requesterId: idOf(requester),
+          addresseeId: idOf(addressee),
           ...data,
-          createdAt: new Date(now.getTime() - m.minutesAgo * MINUTE),
         },
         update: data,
       });
     }
-  }
+  });
 
-  // Родитель стоит в списке раньше ответа.
-  for (const c of DEMO_PROFILE_COMMENTS) {
-    const data = {
-      profileId: idOf(c.profile),
-      authorId: idOf(c.author),
-      content: c.text,
-      contentHtml: demoCommentHtml(c.text),
-      parentId: c.parentId ?? null,
-      mentions: [] as string[],
-    };
-    await prisma.profileComment.upsert({
-      where: { id: c.id },
-      create: {
-        id: c.id,
-        ...data,
-        createdAt: new Date(now.getTime() - c.daysAgo * DAY),
-      },
-      update: data,
-    });
-  }
+  await runBlock(report, 'беседы', async () => {
+    for (const c of DEMO_CONVERSATIONS) {
+      const lastMinutes = Math.min(...c.messages.map((m) => m.minutesAgo));
+      const lastMessageAt = new Date(now.getTime() - lastMinutes * MINUTE);
+      const memberIds = c.members.map(idOf);
+      const directKey =
+        c.type === 'DIRECT' ? demoDirectKey(memberIds[0], memberIds[1]) : null;
+      // directKey симметричен (пара сортируется): находит ЛС в обе стороны.
+      const existingDirect = directKey
+        ? await prisma.conversation.findUnique({
+            where: { directKey },
+            select: { id: true },
+          })
+        : null;
+      const conversationId = existingDirect?.id ?? c.id;
+      const conversation = await prisma.conversation.upsert({
+        where: { id: conversationId },
+        create: {
+          id: conversationId,
+          type: c.type,
+          title: c.title,
+          createdById: idOf(c.owner),
+          lastMessageAt,
+          directKey,
+        },
+        update: { lastMessageAt },
+      });
+      for (const username of c.members) {
+        await prisma.conversationMember.upsert({
+          where: {
+            conversationId_userId: {
+              conversationId: conversation.id,
+              userId: idOf(username),
+            },
+          },
+          create: {
+            conversationId: conversation.id,
+            userId: idOf(username),
+            role:
+              c.type === 'GROUP' && username === c.owner ? 'OWNER' : 'MEMBER',
+          },
+          update: {},
+        });
+      }
+      for (const m of c.messages) {
+        const data = {
+          conversationId: conversation.id,
+          senderId: idOf(m.sender),
+          content: m.text,
+          contentHtml: demoEscapeToHtml(m.text),
+        };
+        await prisma.directMessage.upsert({
+          where: { id: m.id },
+          create: {
+            id: m.id,
+            ...data,
+            createdAt: new Date(now.getTime() - m.minutesAgo * MINUTE),
+          },
+          update: data,
+        });
+      }
+    }
+  });
 
-  return `игроков ${DEMO_PLAYERS.length}, дружб ${DEMO_FRIENDSHIPS.length}, бесед ${DEMO_CONVERSATIONS.length}, комментариев профиля ${DEMO_PROFILE_COMMENTS.length}`;
+  await runBlock(report, 'комментарии профиля', async () => {
+    // Родитель стоит в списке раньше ответа.
+    for (const c of DEMO_PROFILE_COMMENTS) {
+      const data = {
+        profileId: idOf(c.profile),
+        authorId: idOf(c.author),
+        content: c.text,
+        contentHtml: demoCommentHtml(c.text),
+        parentId: c.parentId ?? null,
+        mentions: [] as string[],
+      };
+      await prisma.profileComment.upsert({
+        where: { id: c.id },
+        create: {
+          id: c.id,
+          ...data,
+          createdAt: new Date(now.getTime() - c.daysAgo * DAY),
+        },
+        update: data,
+      });
+    }
+  });
+
+  return `игроков ${DEMO_PLAYERS.length}, дружб ${DEMO_FRIENDSHIPS.length}, бесед ${DEMO_CONVERSATIONS.length}, комментариев профиля ${DEMO_PROFILE_COMMENTS.length} (${formatBlockReport(report)})`;
 }
 
 /// «Мои наказания» и обжалования демо-игрока: фиктивный (не офлайн) Minecraft-

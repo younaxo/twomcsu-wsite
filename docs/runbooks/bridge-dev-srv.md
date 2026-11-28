@@ -29,7 +29,7 @@
 4. `link-account.sh <ник> --dry-run`, затем `--yes` (VDS): привязка тестового ника (офлайн-UUID) к админу стенда, иначе события будут `skipped_unlinked`. Условия отказа: `NODE_ENV` стенда не `development` (код 8); пользователь ищется строго по `username` (email из файла учёток не принимается), и он обязан быть админом стенда (роль с `isSuperuser`), иначе код 7.
 5. Сборка JAR: `bash ../vds-runner/run-remote.sh java-build --worktree <worktree> --path plugins/bridge`; в сводке `tests=... failed=0`, sha256. Затем stage: `bash run-on-vds.sh stage <путь к TwoMCBridge-0.1.0.jar>` (панель не трогает).
 6. `bash run-on-vds.sh install --dry-run`: только чтение (версия MC 1.21.4-1.21.11, Java 21, `online-mode`, отсутствие плагина, подписанный handshake). Блокеры (`BLOCKER:`) устранить, повторить.
-7. `bash run-on-vds.sh install --yes [--sha256=<hex>]`: сверка sha256 JAR (по умолчанию `6aa484549a3bf7408b41893c1b5ab0f78caf2839a13e4be8a032343297d7a7a8`; несовпадение - BLOCKER, повторная сверка копии прямо перед загрузкой), бэкапы прежних `config.yml.bak-<время>` и `bridge-key.txt.bak-<время>` (600) перед перезаписью, `config.yml`, `bridge-key.txt`, JAR, проверка игроков (при игроках: `say`, 60 с, повторная проверка; если зашли новые - ещё `say` и 30 с), restart, `/twomcbridge events`. Код 0: сайт принял события; 3: установлено, ждём игрока. Установленным считается только точное имя `TwoMCBridge-0.1.0.jar`; `TwoMCBridge-0.1.0.jar.disabled-<время>` установке не мешает.
+7. `bash run-on-vds.sh install --yes [--sha256=<hex>]`: сверка sha256 JAR (по умолчанию `6aa484549a3bf7408b41893c1b5ab0f78caf2839a13e4be8a032343297d7a7a8`; несовпадение - BLOCKER, повторная сверка копии прямо перед загрузкой), бэкапы прежних `config.yml.bak-<время>` и `bridge-key.txt.bak-<время>` (600) перед перезаписью, `config.yml`, `bridge-key.txt`, JAR, проверка игроков (число игроков: основной способ - Server List Ping на адрес и порт аллокации dev-srv из временного node-контейнера, только чтение статуса, таймаут 5 с; запасной - команда `list` через websocket консоли до 30 с; не удалось ни так, ни так - BLOCKER, restart не выполняется; при игроках: `say`, 60 с, повторная проверка; если зашли новые - ещё `say` и 30 с), restart, `/twomcbridge events`. Код 0: сайт принял события; 3: установлено, ждём игрока. Установленным считается только точное имя `TwoMCBridge-0.1.0.jar`; `TwoMCBridge-0.1.0.jar.disabled-<время>` установке не мешает.
 8. `bash run-on-vds.sh script bot-join.sh --check` (только GET: адрес и список `/plugins`), затем `bot-join.sh <ник> [секунды]`: `npm i --ignore-scripts mineflayer@4.27.0` (версия закреплена, поддерживает 1.21.4; `BOT_MINEFLAYER_VERSION` меняет её осознанно) ставится внутри временного контейнера node; при AuthMe/nLogin бот шлёт `/register` и `/login` со случайным паролем (файл `/home/twomc/bridge-dev-bot.pass`, 600). Пароль в env контейнера не передаётся: копия в файле 600 на tmpfs (`/dev/shm`) монтируется ro и затирается при выходе; вывод редактируется по самому паролю и по hex от 20 символов. Код 3: нужен ручной вход владельца.
 9. Проверка на стенде: `bash run-on-vds.sh script verify-bridge.sh` (код 0: события приняты), в админке стенда видны статистика и инвентарь тестового игрока.
 10. `bash run-on-vds.sh script live-sigcheck.sh [--loopback] [--no-payments] [--api-prefix]`: по умолчанию Bridge бьёт в `https://test-website.twomc.su/bridge/v1/events` (подписанный путь `/bridge/v1/events`, как у плагина); `--api-prefix` - в `/api/bridge/v1/events` (подписанный путь тот же). `SITE_URL` в `secret.env` обязан быть `https://test-website.twomc.su`, иначе отказ. Случаи Bridge: 4 дважды (2xx затем 401), 1 без подписи, 2 мусорная, 3 ts на 120 с старше; webhook `/api/webhooks/payments/test` (4 с несуществующим заказом, 1, 2, 3 с ts на 400 с старше: окно webhook 300 с). Печатает только «проверка | ожидалось | получено | PASS/FAIL».
@@ -49,9 +49,51 @@
 - Консольные команды: `say TwoMC: <текст из [A-Za-z0-9 .,:!?-]>`, `list`, `twomcbridge events`. `op`, `stop`, любые другие - отказ. Питание: только `restart`.
 - Тело ответа панели очищается сразу после использования. `rollback-bridge.sh` и `verify-bridge.sh` запускаются только через `run-on-vds.sh script ...`; `verify-bridge.sh` включает запись только на время отправки `twomcbridge events`.
 
+## Порядок работ на dev-srv: status -> open -> install -> bot -> проверка -> sigcheck -> restore
+
+Все шаги только через `bash run-on-vds.sh script <скрипт> ...`, только сервер из `SERVER_UUID`. Без секретов в выводе.
+
+1. `devsrv-access.sh --status` (только чтение): whitelist, техработы, игроки онлайн (SLP), наличие state.
+2. `devsrv-access.sh --open <ник...>`: бэкапы `.bak-<UTC>` ДО записи, `whitelist add`, выключение техработ, прежнее состояние в state.
+3. `install-bridge.sh --dry-run`, затем `--yes`: перед перезапуском проверка игроков (SLP, затем `list`) и `say` с ожиданием 60 с (`ptero_restart_guard`).
+4. `bot-join.sh`: бот заходит на сервер (аккаунт привязан, UUID офлайн).
+5. Проверка: `verify-bridge.sh` и `slp-check.sh` (события приняты, плагин отвечает).
+6. `live-sigcheck.sh`: проверка подписи на живом стенде.
+7. `devsrv-access.sh --restore`: убирает только добавленные нами ники, возвращает техработы, печатает сверку со state. Если плагин не нужен - `rollback-bridge.sh` (тот же guard).
+
+Перед любым перезапуском или остановкой (`restart`, `stop`, `kill`, консольные `stop`/`restart`) скрипт проверяет число игроков и пишет `say` за 60 с; без этого `ptero_power` отказывает. `devsrv-access.sh` сервер не перезапускает (только консольные `whitelist add|remove`, команды плагина техработ, правка config с последующим `reload` плагина), поэтому guard ему не нужен.
+
+State-файл `/home/twomc/bridge-dev-srv.access.state`: права 600, запись атомарная (tmp + mv), повторный `--open` дополняет и не затирает прежние значения; после `--restore` переименовывается в `.restored-<UTC>`, не удаляется.
+
+### Журнал изменений `/home/twomc/bridge-dev-srv.changes.log` (600)
+
+Каждая изменяющая операция дописывает ровно одну строку из 5 колонок; без журнала запись отказывает. `--restore` пишет колонки «было/стало» по каждому параметру (ник, техработы, state).
+
+| время UTC | файл | параметр | было | стало |
+|---|---|---|---|---|
+| 2026-11-28T10:00:00Z | /whitelist.json | whitelist: Alice | absent | added |
+| 2026-11-28T10:00:05Z | /plugins/Maintenance/config.yml | maintenance | true | false |
+| 2026-11-28T11:00:00Z | /whitelist.json | whitelist: Alice | added | removed |
+| 2026-11-28T11:00:05Z | /plugins/Maintenance/config.yml | maintenance | false | true |
+
+Значения очищаются: без `|`, управляющих символов, длинных hex и ключей, не длиннее 160 символов.
+
+### Allowlist записи и денайлист команд (кратко)
+
+- Запись и бэкап: только критичные файлы (`whitelist.json`, config плагина техработ, файлы TwoMCBridge) и их `.bak-<UTC>`; бэкап обязателен до записи. Причина: минимальная зона поражения и возможность отката без удаления.
+- Запрещено: `world*/`, `playerdata`, чужие jar, `..` в путях, удаление/копирование/архивы. Причина: данные игроков и мир необратимы.
+- Денайлист консоли: `plugman`, `plugins`-управление (load/unload/reload/delete), `reload`/`rl`, обёртки (`pm`, `pluginmanager`). `op`/`deop` разрешены только по политике ptero.sh. Причина: смена набора плагинов на живом сервере ломает состояние и обходит бэкап.
+- Санитизация команд: CR/LF, табуляция, управляющие и не ASCII символы отклоняются, длина не более 256. Причина: инъекция второй команды через перевод строки.
+
 ## Откат (без удаления)
 
-Откат: `bash run-on-vds.sh script rollback-bridge.sh --dry-run`, затем `--yes` (запуск только через этот пакет): проверка игроков и `say`-предупреждение перед restart (те же правила: 60 с, повторная проверка, при новых игроках ещё `say` и 30 с), JAR переименовывается в `TwoMCBridge-0.1.0.jar.disabled-<время>`, сервер перезапускается. `config.yml` и `bridge-key.txt` остаются. Повторная установка после отката возможна: `.disabled-*` не считается установленным плагином.
+Откат: `bash run-on-vds.sh script rollback-bridge.sh --dry-run`, затем `--yes` (запуск только через этот пакет): проверка игроков (тем же способом: SLP, затем websocket `list`) и `say`-предупреждение перед restart (те же правила: 60 с, повторная проверка, при новых игроках ещё `say` и 30 с), JAR переименовывается в `TwoMCBridge-0.1.0.jar.disabled-<время>`, сервер перезапускается. `config.yml` и `bridge-key.txt` остаются. Повторная установка после отката возможна: `.disabled-*` не считается установленным плагином.
+
+## Проверка SLP и режим техработ
+
+`bash run-on-vds.sh script slp-check.sh` (только чтение, без записи на панель): печатает `players=N/M version=V` (V без §-кодов, пробелы как `_`). Парсер SLP читает пакет по varint-длине (не ждёт закрытия сокета), строка JSON идёт с длиной в байтах UTF-8; при сбое в stderr печатается причина по каждой сети (`ERR:net-ECONNREFUSED`, `timeout-no-data`, `bad-json` и т. д.). Контейнер идёт сначала в сети bridge, затем host.
+
+Если `version` содержит «Тех. работы»/maintenance/whitelist, сервер, вероятно, в режиме техработ или whitelist: бот войдёт только после добавления ника в whitelist владельцем (агент whitelist не меняет). `install-bridge.sh --dry-run` в этом случае печатает WARN (не блокер установки).
 
 ## При ошибке
 
