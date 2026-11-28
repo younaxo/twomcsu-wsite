@@ -2,6 +2,7 @@
 
 import type {
   ConnectedProvider,
+  DisplayBadge,
   OwnProfileDto,
   ProfileShowcaseDto,
   PublicProfileSummary,
@@ -22,6 +23,8 @@ export interface ProfileStatsDto {
 export type PublicProfileDto = Partial<OwnProfileDto> &
   Pick<OwnProfileDto, 'id' | 'username'> & {
     minecraftName?: string | null;
+    /// Бейдж у ника (J-07-6); нет поля — не выбран.
+    displayBadge?: DisplayBadge | null;
     /// День рождения по приватности (ADR-0100): нет поля — скрыт; year: null —
     /// показываются только день и месяц.
     birthday?: { day: number; month: number; year: number | null } | null;
