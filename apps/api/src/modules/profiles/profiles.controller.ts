@@ -17,6 +17,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { DisplayBadgeDto } from './dto/display-badge.dto';
+import { OrderIdsDto } from './dto/order-ids.dto';
 import { CreateMediaRequestDto } from './dto/create-media-request.dto';
 import { CreateProfileReportDto } from './dto/create-profile-report.dto';
 import { ProfileReactionDto } from './dto/profile-reaction.dto';
@@ -147,6 +149,45 @@ export class ProfilesController {
     @Body() dto: SelectDecorationDto,
   ) {
     return this.profiles.selectDecoration(user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/badges')
+  async listOwnBadges(@CurrentUser() user: AuthenticatedUser) {
+    return this.profiles.listOwnBadges(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('me/badges/order')
+  async reorderBadges(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: OrderIdsDto,
+  ) {
+    return this.profiles.reorderBadges(user.id, dto.ids);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/awards')
+  async listOwnAwards(@CurrentUser() user: AuthenticatedUser) {
+    return this.profiles.listOwnAwards(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('me/awards/order')
+  async reorderAwards(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: OrderIdsDto,
+  ) {
+    return this.profiles.reorderAwards(user.id, dto.ids);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('me/display-badge')
+  async setDisplayBadge(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: DisplayBadgeDto,
+  ) {
+    return this.profiles.setDisplayBadge(user.id, dto.userBadgeId);
   }
 
   @UseGuards(JwtAuthGuard)

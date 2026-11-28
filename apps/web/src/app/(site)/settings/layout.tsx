@@ -14,6 +14,7 @@ const SECTIONS = [
   { href: '/settings/punishments', label: 'Наказания' },
   { href: '/settings/media', label: 'Медиа' },
   { href: '/settings/showcase', label: 'Витрина' },
+  { href: '/settings/badges', label: 'Бейджи' },
   { href: '/settings/linked-accounts', label: 'Привязки' },
   { href: '/settings/wallet', label: 'Кошелёк' },
   { href: '/settings/inventory', label: 'Мой инвентарь' },
