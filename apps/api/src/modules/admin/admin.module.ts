@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DeliveryModule } from '../delivery/delivery.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { ModerationModule } from '../moderation/moderation.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -18,7 +19,13 @@ import { ExportService } from './export.service';
 import { SiteController } from './site.controller';
 
 @Module({
-  imports: [InventoryModule, ModerationModule, NotificationsModule, StoreModule],
+  imports: [
+    DeliveryModule,
+    InventoryModule,
+    ModerationModule,
+    NotificationsModule,
+    StoreModule,
+  ],
   controllers: [
     AdminController,
     AdminPlayersController,

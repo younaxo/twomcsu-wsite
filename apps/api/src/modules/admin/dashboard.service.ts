@@ -4,12 +4,15 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import {
   STORE_OFFER_VERSION_MAX_LENGTH,
   STORE_OFFER_VERSION_SETTING,
 } from '../store/checkout-policy.service';
 import { EXTRA_ROOTS_SETTING } from '../delivery/command-template';
+import { DELIVERY_COMMAND_ENABLED_SETTING } from '../delivery/delivery.constants';
+import { CommandExecutor } from '../delivery/executors/command.executor';
 import { NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +34,7 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    @Optional() private readonly commandExecutor?: CommandExecutor,
   ) {}
 
   async getDashboard() {
@@ -137,9 +141,10 @@ export class DashboardService {
   async upsertSettings(dto: UpsertSettingsDto, actorId: string) {
     // Ключи со своими защищёнными эндпоинтами (2FA, аудит «было/стало»,
     // отдельные права) через общий settings.edit писать нельзя (ADR-0189).
-    const protectedKey = Object.keys(dto.settings).find((key) =>
-      PROTECTED_SETTING_KEYS.includes(key) ||
-      PROTECTED_SETTING_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    const protectedKey = Object.keys(dto.settings).find(
+      (key) =>
+        PROTECTED_SETTING_KEYS.includes(key) ||
+        PROTECTED_SETTING_PREFIXES.some((prefix) => key.startsWith(prefix)),
     );
     if (protectedKey !== undefined) {
       throw new HttpException(
@@ -148,6 +153,23 @@ export class DashboardService {
           message: `Ключ ${protectedKey} меняется только через специальный раздел`,
         },
         HttpStatus.FORBIDDEN,
+      );
+    }
+    // R143: executor.command нельзя включить без транспорта с дедупликацией и
+    // подтверждением (иначе настройка создавала бы ложное ощущение выдачи).
+    const commandFlag = dto.settings[DELIVERY_COMMAND_ENABLED_SETTING];
+    if (
+      typeof commandFlag === 'string' &&
+      commandFlag.trim().toLowerCase() === 'true' &&
+      this.commandExecutor?.operational() !== true
+    ) {
+      throw new HttpException(
+        {
+          code: 'delivery_command_transport_unavailable',
+          message:
+            'Выдача командой недоступна: нет транспорта с дедупликацией и подтверждением. Используйте ручную выдачу или Bridge',
+        },
+        HttpStatus.CONFLICT,
       );
     }
     const offerVersion = dto.settings[STORE_OFFER_VERSION_SETTING];
