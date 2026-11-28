@@ -22,8 +22,8 @@ export class MockCommandTransport implements CommandTransport {
 
   /// Fail closed (R143): мок с dedupAck=true нельзя создать вне тестов
   /// (пустой или незаданный NODE_ENV считается production).
-  constructor(nodeEnv: string | undefined = process.env.NODE_ENV) {
-    if (nodeEnv !== 'test') {
+  constructor(env: { NODE_ENV?: string } = process.env) {
+    if (env.NODE_ENV !== 'test') {
       throw new Error('MockCommandTransport разрешён только при NODE_ENV=test');
     }
   }
