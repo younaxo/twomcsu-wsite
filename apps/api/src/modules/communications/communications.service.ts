@@ -89,6 +89,7 @@ export class CommunicationsService {
   /// ставит фоновое задание и отвечает сразу: `delivered: 0` + `mailingId`
   /// (прогресс — `GET admin/communications/mailings/:id`). Новый клиент
   /// использует `POST admin/communications/mailings`.
+  /** @deprecated Устарел, используйте POST admin/communications/mailings. */
   async sendBulk(dto: BulkSystemMessageDto, actorId: string) {
     if (this.mailings.queueEnabled) {
       const job = await this.mailings.enqueue(dto, actorId);

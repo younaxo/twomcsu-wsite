@@ -82,6 +82,7 @@ export class CommunicationsController {
     return this.communications.previewBulk(dto.audience);
   }
 
+  /** @deprecated Устарел, используйте POST admin/communications/mailings. */
   @Post('messages/bulk')
   @HttpCode(201)
   @SkipAudit()
