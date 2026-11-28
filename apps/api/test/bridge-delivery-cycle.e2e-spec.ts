@@ -519,6 +519,40 @@ describe('Bridge delivery: полный цикл (0.13 срез 2, e2e)', () => 
       ).toBe(0);
     });
 
+    it('повтор CLAIMED без serverChecked или с serverChecked:false отклонён (R167)', async () => {
+      const m = await makeJob(slugA);
+      await claimOne(slugA, m.jobId);
+      expect((await jobRow(m.jobId)).status).toBe('CLAIMED');
+      await prisma.deliveryTask.update({
+        where: { id: m.taskId },
+        data: { status: 'NEEDS_ATTENTION' },
+      });
+      const url = `/admin/delivery/tasks/${m.taskId}/retry`;
+      const r1 = await http()
+        .post(url)
+        .set('Authorization', bearer())
+        .send({ confirmed: true, reason: 'без проверки' })
+        .expect(400);
+      expect(r1.body.code ?? r1.body.message?.code).toBe(
+        'delivery_retry_server_check_required',
+      );
+      const r2 = await http()
+        .post(url)
+        .set('Authorization', bearer())
+        .send({ confirmed: true, serverChecked: false, reason: 'не проверял' })
+        .expect(400);
+      expect(r2.body.code ?? r2.body.message?.code).toBe(
+        'delivery_retry_server_check_required',
+      );
+      expect((await taskRow(m.taskId)).status).toBe('NEEDS_ATTENTION');
+      expect((await jobRow(m.jobId)).status).toBe('CLAIMED');
+      expect(
+        await prisma.auditLog.count({
+          where: { action: 'delivery.task.retried', targetId: m.taskId },
+        }),
+      ).toBe(0);
+    });
+
     it('двойной ack: второй — duplicate, задание не меняется повторно (R167)', async () => {
       const m = await makeJob(slugA);
       const got = await claimOne(slugA, m.jobId);
