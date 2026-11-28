@@ -22,8 +22,8 @@ describe('validateTemplate (0.11)', () => {
   it.each([
     'lp user {username} parent addtemp ares {duration}',
     'give {username} diamond 1',
-    'give {username}',
-    '  eco {username}  ',
+    'give {username} diamond',
+    '  eco give {username} 100  ',
   ])('принимает %j', (t) => {
     expect(validateTemplate(t)).toBe(t.trim());
   });
@@ -66,12 +66,14 @@ describe('validateTemplate (0.11)', () => {
 
   it('длина шаблона ограничена', () => {
     const ok =
-      'give ' +
-      'a'.repeat(TEMPLATE_MAX_LENGTH - 'give '.length - '{username}'.length) +
+      'tell ' +
+      'a'.repeat(TEMPLATE_MAX_LENGTH - 'tell '.length - '{username}'.length) +
       '{username}';
     expect(ok.length).toBe(TEMPLATE_MAX_LENGTH);
-    expect(validateTemplate(ok)).toBe(ok);
-    expect(codeOf(() => validateTemplate(ok + 'a'))).toBe('template_too_long');
+    expect(validateTemplate(ok, ['tell'])).toBe(ok);
+    expect(codeOf(() => validateTemplate(ok + 'a', ['tell']))).toBe(
+      'template_too_long',
+    );
   });
 
   it('не строка отклоняется', () => {
@@ -89,13 +91,13 @@ describe('renderCommand (0.11)', () => {
     ).toBe('lp user Steve_1 parent addtemp ares 30d');
   });
 
-  it('подставляет все вхождения', () => {
-    expect(
+  it('{username} в слоте группы/предмета отвергается', () => {
+    expect(() =>
       renderCommand('give {username} {username}', {
         username: 'Alex',
         duration: 'FOREVER',
       }),
-    ).toBe('give Alex Alex');
+    ).toThrow(CommandTemplateError);
   });
 
   it.each(Object.keys(DURATION_TOKENS))('срок %s из перечня', (d) => {
@@ -171,10 +173,20 @@ describe('renderCommand (0.11)', () => {
 
 describe('белый список корней команд (0.11, ADR-0189)', () => {
   it('по умолчанию разрешены lp, luckperms, give, crate, cratekey, eco', () => {
-    for (const r of ['lp', 'luckperms', 'give', 'crate', 'cratekey', 'eco']) {
-      expect(validateTemplate(`${r} {username} x`)).toBe(`${r} {username} x`);
+    const samples: Record<string, string> = {
+      lp: 'lp user {username} parent add vip',
+      luckperms: 'luckperms user {username} parent set vip',
+      give: 'give {username} diamond 2',
+      crate: 'crate give {username} vote 1',
+      cratekey: 'cratekey key give {username} vote',
+      eco: 'eco give {username} 12.5',
+    };
+    for (const r of Object.keys(samples)) {
+      expect(validateTemplate(samples[r])).toBe(samples[r]);
     }
-    expect(validateTemplate('LP {username} x')).toBe('LP {username} x');
+    expect(validateTemplate('LP user {username} parent add vip')).toBe(
+      'LP user {username} parent add vip',
+    );
   });
 
   it('корень вне списка отклоняется, расширение его разрешает', () => {

@@ -63,6 +63,9 @@ export const FORBIDDEN_COMMAND_ROOTS: readonly string[] = [
   'minecraft:op',
   'save-all',
   'save-off',
+  'save-on',
+  'minecraft:stop',
+  'minecraft:execute',
   'setworldspawn',
   'gamemode',
   'fill',
@@ -98,6 +101,98 @@ export function normalizeRoots(input: unknown): string[] {
   return [...out];
 }
 
+/// Белый список ФОРМ команд для корней по умолчанию (R155, Q112). Зеркало
+/// `Protocol.DEFAULT_TEMPLATES` и типов аргументов плагина Bridge
+/// (CommandPolicy.java): сайт НЕ шире плагина; паритет проверяет
+/// command-template-plugin-parity.spec.ts (читает Protocol.java как данные).
+/// Синтаксис: слова через один пробел; `a|b` — варианты литерала; `{тип}` —
+/// аргумент по `COMMAND_ARG_TYPES`; суффикс `?` — необязательный хвост.
+/// Корни из `extra_command_roots` форму не проверяют (как extraRoots
+/// плагина); корни из DEFAULT_COMMAND_ROOTS — только по этим формам.
+export const COMMAND_ARG_TYPES: Readonly<Record<string, string>> = {
+  nick: '^[A-Za-z0-9_]{3,16}$',
+  group: '^[A-Za-z0-9_-]{1,32}$',
+  key: '^[A-Za-z0-9_-]{1,32}$',
+  duration: '^([0-9]{1,4}[smhdwyM]|forever|season|once)$',
+  int: '^[0-9]{1,6}$',
+  qty: '^[0-9]{1,4}$',
+  num: '^[0-9]{1,12}(\\.[0-9]{1,2})?$',
+  item: '^[A-Za-z0-9_.-]{1,64}(:[A-Za-z0-9_.-]{1,64})?$',
+};
+export const DEFAULT_COMMAND_FORMS: readonly string[] = [
+  'lp user {nick} parent add|addtemp {group} {duration}?',
+  'luckperms user {nick} parent add|addtemp {group} {duration}?',
+  'lp user {nick} parent set {group}',
+  'luckperms user {nick} parent set {group}',
+  'eco give {nick} {num}',
+  'give {nick} {item} {qty}?',
+  'crate key give {nick} {key} {qty}?',
+  'cratekey key give {nick} {key} {qty}?',
+  'cratekey give {nick} {key} {qty}?',
+  'crate give {nick} {key} {qty}?',
+];
+/// Проверочный ник вместо `{username}` при разборе шаблона.
+/// Сентинел: валидный ник, которого в литерале шаблона быть не должно. Слот ника
+/// обязан быть ровно им (т.е. только {username}); в остальных слотах он запрещён.
+const SAMPLE_NICK = 'Zq7_tplNick_9X';
+
+interface FormRule {
+  root: string;
+  args: Array<(word: string, nickExact?: string) => boolean>;
+  required: number;
+}
+
+function parseForm(spec: string): FormRule {
+  const parts = spec.split(' ');
+  const args: FormRule['args'] = [];
+  let required = parts.length - 1;
+  let optional = false;
+  for (let i = 1; i < parts.length; i++) {
+    let p = parts[i];
+    const opt = p.endsWith('?');
+    if (opt) p = p.slice(0, -1);
+    if (opt && !optional) {
+      optional = true;
+      required = i - 1;
+    }
+    if (p.startsWith('{') && p.endsWith('}')) {
+      const type = p.slice(1, -1);
+      const re = new RegExp(COMMAND_ARG_TYPES[type]);
+      args.push(
+        type === 'nick'
+          ? (w, nickExact) =>
+              re.test(w) &&
+              w.toLowerCase() !== 'all' &&
+              (nickExact === undefined || w === nickExact)
+          : (w, nickExact) =>
+              re.test(w) && (nickExact === undefined || !w.includes(nickExact)),
+      );
+    } else {
+      const alts = new Set(p.split('|').map((a) => a.toLowerCase()));
+      args.push((w) => alts.has(w.toLowerCase()));
+    }
+  }
+  return { root: parts[0], args, required };
+}
+
+const FORM_RULES: readonly FormRule[] = DEFAULT_COMMAND_FORMS.map(parseForm);
+
+/// Команда (слова через ОДИН пробел) подходит хотя бы одной форме своего
+/// корня. `nickExact`: слот ника обязан содержать именно это значение.
+function matchesDefaultForm(command: string, nickExact?: string): boolean {
+  const words = command.split(' ');
+  const root = words[0].toLowerCase();
+  return FORM_RULES.some((rule) => {
+    if (rule.root !== root) return false;
+    const n = words.length - 1;
+    if (n < rule.required || n > rule.args.length) return false;
+    for (let i = 0; i < n; i++) {
+      if (!rule.args[i](words[i + 1], nickExact)) return false;
+    }
+    return true;
+  });
+}
+
 const LITERAL_RE = /^[A-Za-z0-9_ .:,+-]*$/;
 const VARIABLE_RE = /\{([^{}]*)\}/g;
 
@@ -114,6 +209,7 @@ export type TemplateErrorCode =
   | 'invalid_duration'
   | 'rendered_too_long'
   | 'root_not_allowed'
+  | 'template_form_not_allowed'
   | 'root_forbidden'
   | 'root_invalid';
 
@@ -145,6 +241,14 @@ export function validateTemplate(
     throw err(
       'template_control_chars',
       'Шаблон не может содержать управляющие символы и переводы строк',
+    );
+  }
+  // Нормализации нет сознательно: всё вне печатного ASCII (NBSP, нулевой
+  // ширины, омоглифы, NFKC-формы, полноширинные знаки) отклоняется до trim.
+  if (/[^ -~]/.test(raw)) {
+    throw err(
+      'template_forbidden_chars',
+      'Шаблон содержит недопустимые символы (только печатный ASCII)',
     );
   }
   const template = raw.trim();
@@ -197,6 +301,21 @@ export function validateTemplate(
       'Шаблон должен содержать переменную {username}',
     );
   }
+  if (DEFAULT_COMMAND_ROOTS.includes(root)) {
+    // Форма проверяется для КАЖДОГО срока из перечня: {duration} может
+    // оказаться только там, где плагин принимает срок.
+    for (const token of Object.values(DURATION_TOKENS)) {
+      const probe = template.replace(VARIABLE_RE, (_m, name: string) =>
+        name === 'username' ? SAMPLE_NICK : token,
+      );
+      if (!matchesDefaultForm(probe, SAMPLE_NICK)) {
+        throw err(
+          'template_form_not_allowed',
+          'Форма команды не из белого списка (ник — только {username}, ровно один пробел между словами)',
+        );
+      }
+    }
+  }
   return template;
 }
 
@@ -241,7 +360,8 @@ export function renderCommand(
       'Итоговая команда не прошла проверку',
     );
   }
-  return rendered;
+  // Итог проверяется как готовая команда (форма по белому списку плагина).
+  return validateRenderedCommand(rendered, extraRoots);
 }
 
 /// Проверка УЖЕ готовой команды (без переменных) перед отправкой на сервер
@@ -286,6 +406,9 @@ export function validateRenderedCommand(
       'template_forbidden_chars',
       'Команда не прошла проверку символов',
     );
+  }
+  if (DEFAULT_COMMAND_ROOTS.includes(root) && !matchesDefaultForm(command)) {
+    throw err('template_form_not_allowed', 'Форма команды не из белого списка');
   }
   return command;
 }

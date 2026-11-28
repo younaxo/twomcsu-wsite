@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Тестовый игрок (mineflayer, офлайн-авторизация) заходит на dev-srv на N секунд: двигается, переключает слоты и выходит.
-# Запускается НА VDS: run-on-vds.sh script bot-join.sh <ник> [секунды=90] | bot-join.sh --check <ник>
+# Запускается НА VDS: run-on-vds.sh script bot-join.sh <ник> [секунды=90] [--net host|bridge] | bot-join.sh --check <ник>
+#   --net      сеть контейнера бота: host (ПО УМОЛЧАНИЮ, как у slp-check: bridge режется файрволом VDS) или bridge (только для отладки)
+#   connect-timeout - диагностика: TCP с хоста (bash /dev/tcp) и из контейнера в сетях host и bridge, вывод какой путь работает
+#   причины kick/end/error mineflayer печатаются (hideErrors: false; ники других игроков, IP, UUID маскируются)
 #   <ник>      3-16 символов [A-Za-z0-9_]; должен совпадать с ником, привязанным к админу стенда (link-account.sh)
 #   секунды    10..600 (по умолчанию 90)
 #   --check    только чтение: GET аллокации и GET списка /plugins (поиск плагинов авторизации); бот не запускается
@@ -19,13 +22,16 @@ set -uo pipefail
 if ! declare -F ptero_init >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/ptero.sh"; fi
 trap ptero_cleanup EXIT
 
-NICK=""; SECS=90; CHECK=0
-for a in "$@"; do
+NICK=""; SECS=90; CHECK=0; BOT_NET=host
+while (( $# )); do
+  a="$1"
   case "$a" in
     --check) CHECK=1 ;;
+    --net) shift; BOT_NET="${1:-}"; [[ "$BOT_NET" == host || "$BOT_NET" == bridge ]] || { echo "--net: host (по умолчанию) или bridge (отладка)" >&2; exit 2; } ;;
     -*) echo "Неизвестный аргумент: $a" >&2; exit 2 ;;
     *) if [[ -z "$NICK" ]]; then NICK="$a"; elif [[ "$a" =~ ^[0-9]+$ ]]; then SECS="$a"; else echo "Лишний аргумент: $a" >&2; exit 2; fi ;;
   esac
+  shift
 done
 [[ "$NICK" =~ ^[A-Za-z0-9_]{3,16}$ ]] || { echo "Использование: bot-join.sh <ник 3-16 [A-Za-z0-9_]> [секунды 10-600] | --check <ник>" >&2; exit 2; }
 { [[ "$SECS" =~ ^[0-9]{2,3}$ ]] && (( SECS >= 10 && SECS <= 600 )); } || { echo "секунды: 10..600" >&2; exit 2; }
@@ -81,7 +87,7 @@ BOTDIR=""
 [[ -z "$SHM" ]] || BOTDIR="$(umask 077; mktemp -d "$SHM/dev-srv-bot.XXXXXX" 2>/dev/null)" || { BOTDIR=""; SHM=""; }   # /dev/shm может быть недоступен для mktemp
 [[ -n "$BOTDIR" ]] || BOTDIR="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/dev-srv-bot.XXXXXX")" || exit 1
 [[ -n "$SHM" ]] || echo "WARN: /dev/shm недоступен: файл пароля во временном каталоге на диске (затирается и удаляется при выходе)"
-bot_cleanup() { [[ -n "${BOTDIR:-}" && -f "$BOTDIR/p/pass" ]] && : > "$BOTDIR/p/pass"; [[ -n "${BOTDIR:-}" ]] && rm -rf -- "$BOTDIR"; ptero_cleanup; }
+bot_cleanup() { { [[ -n "${BOTDIR:-}" && -f "$BOTDIR/p/pass" ]] && : > "$BOTDIR/p/pass"; } 2>/dev/null; [[ -n "${BOTDIR:-}" ]] && { chmod -R u+rwX -- "$BOTDIR" 2>/dev/null; rm -rf -- "$BOTDIR" 2>/dev/null; }; ptero_cleanup; }
 trap bot_cleanup EXIT
 cat > "$BOTDIR/bot.js" <<'BOT_JS_EOF'
 'use strict';
@@ -92,18 +98,50 @@ const E = process.env;
 let PASS = '';
 if (E.BOT_AUTH === '1') { const fs = require('fs'); PASS = String(fs.readFileSync('/botpass/pass', 'utf8')).trim(); try { fs.unlinkSync('/botpass/pass'); } catch (e) { fs.writeFileSync('/botpass/pass', ''); } }
 const SECS = Number(E.BOT_SECS) || 90;
+let bot = null;
 const clean = (v) => {
   let s = String(v == null ? '' : v);
   if (PASS) s = s.split(PASS).join('***');
+  // ники других игроков (из bot.players) -> <player>; ник бота остаётся
+  try {
+    for (const n of Object.keys((bot && bot.players) || {})) {
+      if (n && n !== E.BOT_NICK && /^[A-Za-z0-9_]{3,16}$/.test(n)) s = s.replace(new RegExp('\\b' + n + '\\b', 'g'), '<player>');
+    }
+  } catch (_) {}
+  s = s.replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, '<uuid>');
+  s = s.replace(/\d{1,3}(\.\d{1,3}){3}(:\d{1,5})?/g, '<ip>');
   s = s.replace(/[0-9a-fA-F]{20,}/g, '[REDACTED]');
-  return s.replace(/[^\x20-\x7e]/g, '?').slice(0, 120);
+  return s.replace(/[^\x20-\x7e]/g, '?').slice(0, 300);
+};
+// текст причины из JSON-компонента чата (строка, {text,extra,translate,with} или NBT-вид {type:'string',value}); без форматирования
+const reasonText = (r) => {
+  const out = [];
+  const walk = (o, d) => {
+    if (o == null || d > 8) return;
+    if (typeof o === 'string') { out.push(o); return; }
+    if (Array.isArray(o)) { o.forEach((x) => walk(x, d + 1)); return; }
+    if (typeof o !== 'object') return;
+    if (o.type === 'string' && typeof o.value === 'string') { out.push(o.value); return; }
+    for (const k of Object.keys(o)) {
+      if ((k === 'text' || k === 'translate') && typeof o[k] === 'string') out.push(o[k]);
+      else if (o[k] && typeof o[k] === 'object') walk(o[k], d + 1);   // строки других ключей (type, color, ...) не берутся
+    }
+  };
+  let v = r;
+  if (typeof v === 'string') { try { v = JSON.parse(v); } catch (_) { out.push(v); v = null; } }
+  walk(v, 0);
+  return out.join('').replace(/§./g, '') || '(пусто)';
 };
 let phase = 'start';
 let manual = false;
-const bot = mineflayer.createBot({
+// hideErrors: false - иначе mineflayer глушит причины сбоев; лишний вывод библиотеки отсекается фильтром префиксов на стороне хоста
+bot = mineflayer.createBot({
   host: E.BOT_HOST, port: Number(E.BOT_PORT), username: E.BOT_NICK, auth: 'offline',
-  version: E.BOT_VERSION, hideErrors: true, checkTimeoutInterval: 60000,
+  version: E.BOT_VERSION, hideErrors: false, checkTimeoutInterval: 60000,
 });
+process.on('uncaughtException', (e) => { console.log('ERROR uncaught phase=' + phase + ' ' + clean(e && (e.code || e.message))); process.exit(1); });
+try { bot._client.on('error', (e) => console.log('ERROR client-error phase=' + phase + ' ' + clean(e && (e.code || e.message)))); } catch (_) {}
+try { bot._client.on('disconnect', (p) => console.log('ERROR disconnect-packet phase=' + phase + ': ' + clean(reasonText(p && p.reason)))); } catch (_) {}
 const connectTimer = setTimeout(() => {
   console.log('ERROR connect-timeout (45s)'); process.exit(1);
 }, 45000);
@@ -142,17 +180,17 @@ function leave() {
   try { bot.clearControlStates(); bot.quit(); } catch (_) {}
   setTimeout(() => { console.log('STAGE left'); process.exit(manual ? 3 : 0); }, 3000).unref();
 }
-bot.on('end', () => {
+bot.on('end', (why) => {
   if (leaving) { console.log('STAGE left'); process.exit(manual ? 3 : 0); }
-  console.log('ERROR connection-ended phase=' + phase);
+  console.log('ERROR connection-ended phase=' + phase + (why ? ' reason=' + clean(reasonText(why)) : ''));
   process.exit(manual ? 3 : 1);
 });
-bot.on('kicked', (reason) => {
-  const r = clean(typeof reason === 'string' ? reason : JSON.stringify(reason));
-  console.log('ERROR kicked: ' + r);
+bot.on('kicked', (reason, loggedIn) => {
+  const r = clean(reasonText(reason));
+  console.log('ERROR kicked phase=' + phase + (loggedIn === false ? ' (login)' : '') + ': ' + r);
   if (/log ?in|regist|auth|парол|вход/i.test(r)) { manual = true; console.log('MANUAL_LOGIN_NEEDED'); }
 });
-bot.on('error', (e) => { console.log('ERROR ' + clean(e && (e.code || e.message))); });
+bot.on('error', (e) => { console.log('ERROR error phase=' + phase + ' ' + clean(e && (e.code || e.message))); });
 bot.on('messagestr', (m) => {
   if (E.BOT_AUTH !== '1' && phase === 'spawned' && /please (log ?in|regist)|\/login|\/register|войдите|зарегистр/i.test(m)) {
     manual = true; console.log('MANUAL_LOGIN_NEEDED');
@@ -176,26 +214,61 @@ if [[ -n "$SHM" ]]; then
   if [[ "$shm_kb" =~ ^[0-9]+$ ]] && (( shm_kb < 1024 )); then echo "ОШИБКА: в $SHM меньше 1 МБ свободного места: файл пароля не поместится"; exit 1; fi
 fi
 
-echo "[3] запуск бота $NICK на $SECS с (контейнер, npm i --ignore-scripts mineflayer@$MF_VERSION внутри)"
+echo "[3] запуск бота $NICK на $SECS с (контейнер в сети $BOT_NET, npm i --ignore-scripts mineflayer@$MF_VERSION внутри)"
+# пользователь контейнера: по умолчанию тот же uid:gid, что у хоста (файл пароля 600 в каталоге 700 читается и удаляется им же).
+# Другой uid (BOT_CONTAINER_UID/BOT_CONTAINER_GID, например 1000 = node) - каталог p 777 и файл 644: безопасно, т.к. рабочий каталог $BOTDIR имеет 700
+# (посторонние не дойдут до p), в контейнер монтируется только p.
+HUID="$(id -u)"; HGID="$(id -g)"
+CUID="${BOT_CONTAINER_UID:-$HUID}"; CGID="${BOT_CONTAINER_GID:-$HGID}"
+[[ "$CUID" =~ ^[0-9]{1,10}$ && "$CGID" =~ ^[0-9]{1,10}$ ]] || { echo "ОШИБКА: BOT_CONTAINER_UID/GID должны быть числами"; exit 2; }
 PASS_PLAIN=""
+# каталог p создаётся ВСЕГДА (иначе docker -v создаёт его от root и хост получает Permission denied при затирании/удалении)
+( umask 077; mkdir -p "$BOTDIR/p" ) || { echo "ОШИБКА: не создан каталог $BOTDIR/p"; exit 1; }
+if [[ "$CUID" == "$HUID" ]]; then DMODE=700; FMODE=600; else DMODE=777; FMODE=644; fi
+chmod "$DMODE" "$BOTDIR/p" || { echo "ОШИБКА: chmod каталога пароля не выполнен"; exit 1; }
 if [[ "$BAUTH" == 1 ]]; then
-  ( umask 077; mkdir -p "$BOTDIR/p" && cat "$PASS_FILE" > "$BOTDIR/p/pass" ) || { echo "ОШИБКА: не создана копия пароля в рабочем каталоге"; exit 1; }
-  chmod 700 "$BOTDIR/p" && chmod 600 "$BOTDIR/p/pass" || { echo "ОШИБКА: chmod копии пароля не выполнен"; exit 1; }
+  ( umask 077; cat "$PASS_FILE" > "$BOTDIR/p/pass" ) || { echo "ОШИБКА: не создана копия пароля в рабочем каталоге"; exit 1; }
+  chmod "$FMODE" "$BOTDIR/p/pass" || { echo "ОШИБКА: chmod копии пароля не выполнен"; exit 1; }
+  [[ "$CUID" == "$HUID" ]] || chown "$CUID:$CGID" "$BOTDIR/p/pass" 2>/dev/null || true
   PASS_PLAIN="$(cat "$PASS_FILE")"
+  echo "права копии пароля: каталог $(stat -c %a "$BOTDIR/p" 2>/dev/null || echo ?), файл $(stat -c %a "$BOTDIR/p/pass" 2>/dev/null || echo ?); контейнер uid=$CUID (пароль не в env и не в argv, файл удаляется ботом после чтения)"
 fi
 # редакция вывода: сам пароль (если есть) и любые hex-строки от 20 символов
 redact() { if [[ -n "$PASS_PLAIN" ]]; then sed -E -e "s/$PASS_PLAIN/***/g" -e 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; else sed -E 's/[0-9a-fA-F]{20,}/[REDACTED]/g'; fi; }
 out="$BOTDIR/bot.out"
-timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" \
-  --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
+timeout $(( SECS + 180 )) docker run --rm --read-only --tmpfs "/tmp:rw,exec,size=$BOT_TMPFS" --cap-drop ALL --security-opt no-new-privileges --memory "$BOT_MEM" --network "$BOT_NET" \
+  --user "$CUID:$CGID" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$BOTDIR:/bot:ro" -v "$BOTDIR/p:/botpass" \
   --env-file <(printf 'BOT_HOST=%s\nBOT_PORT=%s\nBOT_NICK=%s\nBOT_SECS=%s\nBOT_VERSION=%s\nBOT_AUTH=%s\nBOT_MF=%s\n' "$HOST" "$PORT" "$NICK" "$SECS" "$BOT_VERSION" "$BAUTH" "$MF_VERSION") \
   -w /tmp "$img" sh -c 'mkdir -p /tmp/b && cd /tmp/b && { npm i --ignore-scripts --no-audit --no-fund --prefer-offline "mineflayer@$BOT_MF" >/tmp/npm-i.log 2>&1 || { echo "ERROR npm-install-failed"; exit 1; }; }; npm ls --all 2>&1 | sed "s/^/NPMLS /" | head -n 400; rm -rf /tmp/.npm; NODE_PATH=/tmp/b/node_modules node /bot/bot.js' \
   </dev/null > "$out" 2>/dev/null
 rc=$?
-: > "$BOTDIR/p/pass" 2>/dev/null
-# в вывод - только строки-этапы нашего бота (фильтр по префиксам), с редакцией пароля
+{ [[ -f "$BOTDIR/p/pass" ]] && : > "$BOTDIR/p/pass"; } 2>/dev/null
+# в вывод - только строки-этапы нашего бота (фильтр по префиксам), с редакцией пароля; причины kick/end/error печатаются (замаскированы ботом)
 grep -E '^(STAGE |ERROR |MANUAL_LOGIN_NEEDED)' "$out" | head -n 40 | redact
 grep -E '^NPMLS ' "$out" | head -n 400 | redact   # дерево зависимостей (npm ls --all) в лог, без секретов
+
+# Диагностика connect-timeout: TCP с хоста (bash /dev/tcp) и из контейнера в сетях host и bridge - какой путь работает.
+_BJ_TCP_JS='const n=require("node:net");const s=n.connect({host:process.env.TCP_HOST,port:Number(process.env.TCP_PORT)});const t=setTimeout(()=>{console.log("TCP-FAIL:timeout");process.exit(1)},5000);s.on("connect",()=>{clearTimeout(t);console.log("TCP-OK");process.exit(0)});s.on("error",(e)=>{clearTimeout(t);console.log("TCP-FAIL:"+((e&&e.code)||"error"));process.exit(1)});'
+bot_tcp_container() { # <сеть> -> «OK» или «FAIL:<код>»
+  local r; r="$(timeout 20 docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges --memory 128m --network "$1" \
+    -e TCP_HOST="$HOST" -e TCP_PORT="$PORT" "$img" node -e "$_BJ_TCP_JS" </dev/null 2>/dev/null | head -n1)"
+  case "$r" in TCP-OK) echo OK ;; TCP-FAIL:[A-Za-z_-]*) echo "FAIL:${r#TCP-FAIL:}" ;; *) echo "FAIL:no-output" ;; esac
+}
+bot_diag() {
+  local h c_host c_br
+  if timeout 6 bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$HOST" "$PORT" </dev/null >/dev/null 2>&1; then h=OK; else h=FAIL; fi
+  c_host="$(bot_tcp_container host)"; c_br="$(bot_tcp_container bridge)"
+  echo "DIAG: connect-timeout у бота (сеть контейнера $BOT_NET); проверка TCP до $HOST:$PORT"
+  echo "DIAG: с хоста (bash /dev/tcp): $h"
+  echo "DIAG: из контейнера, сеть host: $c_host"
+  echo "DIAG: из контейнера, сеть bridge: $c_br"
+  if [[ "$c_host" == OK && "$c_br" != OK ]]; then echo "DIAG: РАБОЧИЙ ПУТЬ: --net host; bridge не доходит (вероятно, ufw/DOCKER-USER FORWARD режет исходящие из docker bridge): бот должен идти в host-сети"
+  elif [[ "$c_host" == OK && "$c_br" == OK ]]; then echo "DIAG: TCP доходит из обеих сетей: проблема не в сети, а в протоколе/версии/серверной стороне (см. ERROR-строки бота выше и verify-bridge.sh --log)"
+  elif [[ "$h" == OK ]]; then echo "DIAG: с хоста TCP есть, из контейнера нет: ограничение docker/файрвола для контейнеров"
+  else echo "DIAG: TCP не проходит и с хоста: сервер не слушает или порт закрыт (slp-check.sh, состояние сервера в панели, файрвол провайдера)"; fi
+}
+if grep -q '^ERROR connect-timeout' "$out"; then bot_diag; fi
+
 if grep -q '^MANUAL_LOGIN_NEEDED' "$out"; then
   echo "РУЧНОЙ ВХОД: сервер просит авторизацию, которую бот не прошёл. Владелец заходит сам ником $NICK (и вводит /register или /login), затем повторить."; exit 3
 fi

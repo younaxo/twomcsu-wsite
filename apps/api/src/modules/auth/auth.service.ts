@@ -334,6 +334,7 @@ export class AuthService {
       const { userId } = await this.twoFactor.completeChallenge(
         challengeId,
         code,
+        { ip: context.ip, userAgent: context.userAgent ?? undefined },
       );
       await this.bruteForce.reset(context.rateLimitIp ?? context.ip);
       return await this.issueSessionForUser(userId, context);

@@ -313,6 +313,33 @@ _pt_jclean() {
   printf '%s' "${s:0:160}"
 }
 
+
+# ptero_mask_log <файл> [ник-бота]: печатает файл с маскировкой: ники игроков (кроме бота) -> <player>, IPv4/IPv6 -> <ip>, UUID -> <uuid>,
+# hex от 20 символов -> <hex>, длинные токены -> <redacted>. Ники берутся из самого текста (вход, выход, UUID, чат, GameProfile) и маскируются по всему файлу.
+ptero_mask_log() {
+  local f="$1" bot="${2:-}" n; local -a args=(); local names
+  [[ -f "$f" ]] || return 1
+  names="$( {
+    sed -nE 's/.*UUID of player ([A-Za-z0-9_]{3,16}) is .*/\1/p' "$f"
+    sed -nE 's/.*(^|[]: ])([A-Za-z0-9_]{3,16})(\[\/| joined the game| left the game| lost connection| was kicked| logged in).*/\2/p' "$f"
+    sed -nE 's/.*Disconnecting ([A-Za-z0-9_]{3,16}).*/\1/p' "$f"
+    sed -nE 's/.*<([A-Za-z0-9_]{3,16})> .*/\1/p' "$f"
+    sed -nE 's/.*[ [,(]name=([A-Za-z0-9_]{3,16}).*/\1/p' "$f"
+  } | sort -u )"
+  while IFS= read -r n; do
+    [[ -n "$n" && "$n" =~ ^[A-Za-z0-9_]{3,16}$ ]] || continue
+    [[ -n "$bot" && "${n,,}" == "${bot,,}" ]] && continue
+    case "$n" in INFO|WARN|ERROR|Server|thread|the|Name) continue ;; esac
+    args+=(-e "s/\b$n\b/<player>/g")
+  done <<<"$names"
+  sed -E ${args[@]+"${args[@]}"} \
+    -e 's/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/<uuid>/g' \
+    -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}(:[0-9]{1,5})?/<ip>/g' \
+    -e 's/([0-9a-fA-F]{1,4}:){4,7}[0-9a-fA-F]{1,4}/<ip>/g' \
+    -e 's/[0-9a-fA-F]{20,}/<hex>/g' \
+    -e 's/[A-Za-z0-9_-]{40,}/<redacted>/g' \
+    -e 's/\x1b\[[0-9;]*[A-Za-z]//g' -e 's/\r$//' "$f" | tr -d '\000-\010\013\014\016-\037'
+}
 # _pt_journal_ready: журнал можно дописывать (создаётся с правами 600). Без этого изменяющие операции отказывают.
 _pt_journal_ready() {
   local d; d="$(dirname "$PTERO_CHANGES_LOG")"
